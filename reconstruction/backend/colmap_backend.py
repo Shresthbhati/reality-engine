@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -359,7 +359,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: Optional engine.pipeline.candidate_selection.WorldArbiter (assess(result, tag) / choose(a, b)).
         #: When set, incremental-vs-full is decided by how each candidate evolves the WORLD, not by how
         #: many photographs it registered. None keeps the registration-count rule.
-        self.candidate_arbiter = None
+        self.candidate_arbiter: Any = None
         # Default False: the official Windows release used here is a
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build

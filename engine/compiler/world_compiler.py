@@ -478,6 +478,79 @@ def compile_reconstruction_to_world(
                 "notes": "; ".join(room.notes),
             })
 
+    # ---- associate support surfaces with containing rooms (B09) ----
+    from world_ir.schema_v1 import EntityType, Relationship, RelationshipKind
+    support_entities = [e for e in world.entities.values() if e.type == EntityType.SUPPORT_SURFACE]
+    if support_entities:
+        promoted_rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
+        for s_ent in support_entities:
+            s_raw_id = s_ent.id.removeprefix(f"{options.structure_prefix}-")
+            s_pts = positions.get(s_raw_id) or []
+            if not s_pts and s_ent.geometry_ids:
+                s_g = world.geometries.get(s_ent.geometry_ids[0])
+                if s_g and s_g.bounds_min and s_g.bounds_max:
+                    s_pts = [
+                        (s_g.bounds_min.x, s_g.bounds_min.y, s_g.bounds_min.z),
+                        (s_g.bounds_max.x, s_g.bounds_max.y, s_g.bounds_max.z),
+                    ]
+            if not s_pts:
+                continue
+            s_cen = (
+                sum(p[0] for p in s_pts) / len(s_pts),
+                sum(p[1] for p in s_pts) / len(s_pts),
+                sum(p[2] for p in s_pts) / len(s_pts),
+            )
+            for r_ent in promoted_rooms:
+                r_box: Tuple[Tuple[float, float, float], Tuple[float, float, float]] | None = None
+                if r_ent.geometry_ids:
+                    rg = world.geometries.get(r_ent.geometry_ids[0])
+                    if rg and rg.bounds_min and rg.bounds_max:
+                        r_box = ((rg.bounds_min.x, rg.bounds_min.y, rg.bounds_min.z), (rg.bounds_max.x, rg.bounds_max.y, rg.bounds_max.z))
+                if r_box is None:
+                    lo_f: Tuple[float, float, float] | None = None
+                    hi_f: Tuple[float, float, float] | None = None
+                    for rel in r_ent.relationships:
+                        if rel.kind is RelationshipKind.CONTAINS and rel.target_id in world.entities:
+                            member = world.entities[rel.target_id]
+                            for gid in member.geometry_ids:
+                                mg = world.geometries.get(gid)
+                                if mg and mg.bounds_min and mg.bounds_max:
+                                    gl = (float(mg.bounds_min.x), float(mg.bounds_min.y), float(mg.bounds_min.z))
+                                    gh = (float(mg.bounds_max.x), float(mg.bounds_max.y), float(mg.bounds_max.z))
+                                    lo_f = gl if lo_f is None else (min(lo_f[0], gl[0]), min(lo_f[1], gl[1]), min(lo_f[2], gl[2]))
+                                    hi_f = gh if hi_f is None else (max(hi_f[0], gh[0]), max(hi_f[1], gh[1]), max(hi_f[2], gh[2]))
+                    if lo_f is not None and hi_f is not None:
+                        r_box = (lo_f, hi_f)
+                if r_box is not None:
+                    bmin, bmax = r_box
+                    margin = 0.2
+                    if (
+                        (bmin[0] - margin <= s_cen[0] <= bmax[0] + margin)
+                        and (bmin[1] - margin <= s_cen[1] <= bmax[1] + margin)
+                        and (bmin[2] - margin <= s_cen[2] <= bmax[2] + margin)
+                    ):
+                        if not any(rel.target_id == s_ent.id for rel in r_ent.relationships):
+                            r_ent.relationships.append(Relationship(
+                                kind=RelationshipKind.CONTAINS,
+                                target_id=s_ent.id,
+                                confidence=s_ent.confidence,
+                                provenance=Provenance.INFERRED,
+                                metadata={"derived_from": "room_support_surface_containment"},
+                            ))
+                        if not any(rel.target_id == r_ent.id for rel in s_ent.relationships):
+                            s_ent.relationships.append(Relationship(
+                                kind=RelationshipKind.PART_OF,
+                                target_id=r_ent.id,
+                                confidence=s_ent.confidence,
+                                provenance=Provenance.INFERRED,
+                                metadata={"derived_from": "room_support_surface_containment"},
+                            ))
+                        if not hasattr(s_ent, "custom_properties") or s_ent.custom_properties is None:
+                            s_ent.custom_properties = {}
+                        s_ent.custom_properties.setdefault("room_id", r_ent.id)
+                        s_ent.custom_properties.setdefault("space_id", r_ent.id)
+                        break
+
     # ---- interior architecture: rooms, corridors, windows, stairs, building & space graph ----
     from perception.architecture.classify import ArchitecturalElement, PlaneInput
     from perception.architecture.corridor import detect_corridors
@@ -689,6 +762,38 @@ def compile_reconstruction_to_world(
                 world.entities[st_id] = st_ent
                 entities_created.append(st_id)
                 promoted_stairs.append(st_ent)
+                # Link stair treads / support surfaces within stair bounds (B09)
+                for s_ent in [e for e in world.entities.values() if e.type == EntityType.SUPPORT_SURFACE]:
+                    s_geom = world.geometries.get(s_ent.geometry_ids[0]) if s_ent.geometry_ids else None
+                    if s_geom and s_geom.bounds_min and s_geom.bounds_max:
+                        s_cen = (
+                            (s_geom.bounds_min.x + s_geom.bounds_max.x) / 2.0,
+                            (s_geom.bounds_min.y + s_geom.bounds_max.y) / 2.0,
+                            (s_geom.bounds_min.z + s_geom.bounds_max.z) / 2.0,
+                        )
+                        if (
+                            st_bmin[0] - 0.2 <= s_cen[0] <= st_bmax[0] + 0.2
+                            and st_bmin[1] - 0.2 <= s_cen[1] <= st_bmax[1] + 0.2
+                            and st_bmin[2] - 0.2 <= s_cen[2] <= st_bmax[2] + 0.2
+                        ):
+                            if not any(r.target_id == s_ent.id for r in st_ent.relationships):
+                                st_ent.relationships.append(Relationship(
+                                    kind=RelationshipKind.CONTAINS,
+                                    target_id=s_ent.id,
+                                    confidence=min(st_ent.confidence, s_ent.confidence),
+                                    provenance=Provenance.INFERRED,
+                                    metadata={"derived_from": "stair_tread_containment"},
+                                ))
+                            if not any(r.target_id == st_id for r in s_ent.relationships):
+                                s_ent.relationships.append(Relationship(
+                                    kind=RelationshipKind.PART_OF,
+                                    target_id=st_id,
+                                    confidence=min(st_ent.confidence, s_ent.confidence),
+                                    provenance=Provenance.INFERRED,
+                                    metadata={"derived_from": "stair_tread_containment"},
+                                ))
+                            s_ent.custom_properties["host_entity_id"] = st_id
+                            s_ent.custom_properties["sub_type"] = "stair_tread"
 
     # 8. Promote corridors into WorldIR and wire canonical topology
     if options.promote_corridors and corridors:
@@ -880,6 +985,107 @@ def compile_reconstruction_to_world(
         interior_warnings.extend(f"dimension consistency: {w}" for w in reconcile_room_dimensions(world)["warnings"])
     except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
         interior_warnings.append(f"dimension consistency: {type(exc).__name__}: {exc}")
+
+    # ---- Multi-View Room Association (Programme 1: Multi-View Intelligence) ----
+    try:
+        from engine.math import Quat
+        from perception.multiview.room_associator import (
+            CameraPose3D,
+            MultiViewRoomAssociator,
+            RoomBoundary,
+        )
+        from world_ir.camera import quat_to_matrix
+
+        is_y_up = abs(options.up[1]) > 0.5
+        room_boundaries: list[RoomBoundary] = []
+        for rent in world.entities.values():
+            if rent.type == EntityType.ROOM:
+                floor_z = 0.0
+                ceiling_z = 2.8
+                poly_xy: list[tuple[float, float]] = []
+
+                # 1. Prefer refined footprint polygon from multi_room metadata if present
+                mr = world.metadata.get("multi_room", {})
+                for mr_room in mr.get("rooms", []):
+                    if mr_room.get("room_id") == rent.id and mr_room.get("footprint_polygon"):
+                        poly_xy = [(float(pt[0]), float(pt[1])) for pt in mr_room["footprint_polygon"]]
+                        break
+
+                # 2. Fall back to bounding box from room geometry
+                geom = world.geometries.get(rent.geometry_ids[0]) if rent.geometry_ids else None
+                if geom and geom.bounds_min and geom.bounds_max:
+                    floor_z = float(geom.bounds_min.y if is_y_up else geom.bounds_min.z)
+                    ceiling_z = float(geom.bounds_max.y if is_y_up else geom.bounds_max.z)
+                    if not poly_xy:
+                        x0, x1 = float(geom.bounds_min.x), float(geom.bounds_max.x)
+                        d0 = float(geom.bounds_min.z if is_y_up else geom.bounds_min.y)
+                        d1 = float(geom.bounds_max.z if is_y_up else geom.bounds_max.y)
+                        poly_xy = [(x0, d0), (x1, d0), (x1, d1), (x0, d1)]
+
+                if poly_xy:
+                    b_walls: list[dict] = []
+                    for rel in rent.relationships:
+                        if rel.kind == RelationshipKind.CONTAINS:
+                            w_ent = world.entities.get(rel.target_id)
+                            if w_ent and getattr(w_ent, "type", None) == EntityType.WALL and w_ent.geometry_ids:
+                                w_geom = world.geometries.get(w_ent.geometry_ids[0])
+                                if w_geom and w_geom.bounds_min and w_geom.bounds_max:
+                                    s0 = float(w_geom.bounds_min.x)
+                                    s1 = float(w_geom.bounds_min.z if is_y_up else w_geom.bounds_min.y)
+                                    e0 = float(w_geom.bounds_max.x)
+                                    e1 = float(w_geom.bounds_max.z if is_y_up else w_geom.bounds_max.y)
+                                    b_walls.append({
+                                        "id": w_ent.id,
+                                        "start": [s0, s1],
+                                        "end": [e0, e1],
+                                    })
+                    room_boundaries.append(RoomBoundary(
+                        room_id=rent.id,
+                        name=rent.name or rent.id,
+                        polygon_xy=poly_xy,
+                        floor_z=floor_z,
+                        ceiling_z=ceiling_z,
+                        boundary_walls=b_walls,
+                    ))
+
+        if room_boundaries and result.camera_poses:
+            cam_objs: list[CameraPose3D] = []
+            for p in result.camera_poses:
+                pos = tuple(float(v) for v in p.position)
+                look = (0.0, 1.0, 0.0) if not is_y_up else (0.0, 0.0, 1.0)
+                if hasattr(p, "rotation") and p.rotation is not None:
+                    try:
+                        w, x, y, z = (float(c) for c in p.rotation)
+                        quat = Quat(w=w, x=x, y=y, z=z).normalized()
+                        R = quat_to_matrix(quat)
+                        look = (float(R[0][2]), float(R[1][2]), float(R[2][2]))
+                    except Exception:
+                        pass
+                cam_objs.append(CameraPose3D(
+                    evidence_id=str(p.evidence_id),
+                    position=pos,
+                    look_dir=look,
+                ))
+
+            associator = MultiViewRoomAssociator(up=options.up)
+            associations = associator.associate_photographs(cam_objs, room_boundaries)
+            covis = associator.build_cross_view_covisibility(associations)
+
+            world.metadata["multiview_rooms"] = {
+                "associations": [a.to_dict() for a in associations],
+                "covisibility": {f"{k[0]}:{k[1]}": v for k, v in covis.items()},
+                "rooms_count": len(room_boundaries),
+                "cameras_count": len(cam_objs),
+            }
+
+            for assoc in associations:
+                if assoc.inside_room_id and assoc.inside_room_id in world.entities:
+                    rent = world.entities[assoc.inside_room_id]
+                    if not hasattr(rent, "custom_properties") or rent.custom_properties is None:
+                        rent.custom_properties = {}
+                    rent.custom_properties.setdefault("camera_stations", []).append(assoc.evidence_id)
+    except Exception as exc:  # noqa: BLE001
+        interior_warnings.append(f"multiview room association: {type(exc).__name__}: {exc}")
 
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its

@@ -90,7 +90,7 @@ def test_support_surfaces_in_full_reconstruction_workflow():
         ReconstructedPoint,
         ReconstructionResult,
     )
-    from world_ir.schema_v1 import EntityType
+    from world_ir.schema_v1 import EntityType, RelationshipKind
     from world_ir.validation import validate_world_ir
 
     def _pt(x, y, z, c=[0]):
@@ -146,6 +146,88 @@ def test_support_surfaces_in_full_reconstruction_workflow():
 
     support_ents = [e for e in world.entities.values() if e.type is EntityType.SUPPORT_SURFACE]
     assert len(support_ents) == 2
+
+    room_ents = [e for e in world.entities.values() if e.type is EntityType.ROOM]
+    assert len(room_ents) == 1
+    room = room_ents[0]
+
+    # B09 room containment verification: room CONTAINS support surfaces, support surfaces PART_OF room
+    contains_ids = {r.target_id for r in room.relationships if r.kind is RelationshipKind.CONTAINS}
+    for se in support_ents:
+        assert se.id in contains_ids
+        part_of_ids = {r.target_id for r in se.relationships if r.kind is RelationshipKind.PART_OF}
+        assert room.id in part_of_ids
+        assert se.custom_properties.get("room_id") == room.id
+        assert se.custom_properties.get("space_id") == room.id
+
+    report = validate_world_ir(world)
+    assert report.is_valid(), report.messages()
+
+
+def test_stair_treads_support_surfaces_and_host_attachment():
+    from engine.compiler import CompileOptions, compile_reconstruction_to_world
+    from provenance import Uncertainty
+    from reconstruction.backend.interface import (
+        ReconstructedCameraPose,
+        ReconstructedPoint,
+        ReconstructionResult,
+    )
+    from world_ir.schema_v1 import EntityType, RelationshipKind, RelationshipKind
+    from world_ir.validation import validate_world_ir
+
+    def _pt(x, y, z, c=[0]):
+        c[0] += 1
+        return ReconstructedPoint(
+            position=(x, y, z),
+            track_id=f"pt-stair-{c[0]:05d}",
+            source_evidence_ids=["ev-1"],
+            uncertainty=Uncertainty(1.0, "synthetic"),
+        )
+
+    pts = []
+    # Floor at y=0.0 (3x3m)
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 0.0, zi * 0.1))
+    # Ceiling at y=2.5
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 2.5, zi * 0.1))
+    # 4 walls
+    for yi in range(13):
+        for zi in range(31):
+            pts.append(_pt(0.0, yi * 0.2, zi * 0.1))
+            pts.append(_pt(3.0, yi * 0.2, zi * 0.1))
+        for xi in range(31):
+            pts.append(_pt(xi * 0.1, yi * 0.2, 0.0))
+            pts.append(_pt(xi * 0.1, yi * 0.2, 3.0))
+
+    # 3 distinct wide step treads (0.8m wide, 0.4m deep)
+    for step_i in range(3):
+        sy = (step_i + 1) * 0.25
+        sz = 0.6 + step_i * 0.5
+        for xi in range(12):
+            for zi in range(7):
+                pts.append(_pt(0.8 + xi * 0.1, sy, sz + zi * 0.06))
+
+    cams = [
+        ReconstructedCameraPose("ev-0", (1.5, 1.8, 1.5), (1.0, 0.0, 0.0, 0.0)),
+        ReconstructedCameraPose("ev-1", (1.0, 1.8, 2.0), (1.0, 0.0, 0.0, 0.0)),
+    ]
+    res = ReconstructionResult(points=pts, camera_poses=cams, registration_status="success")
+    world, diag = compile_reconstruction_to_world(res, CompileOptions(seed=42, promote_stairs=True))
+
+    assert diag.planes_by_role["floor"] == 1
+    assert diag.planes_by_role["ceiling"] == 1
+    assert diag.planes_by_role["wall"] == 4
+    # All step tread planes are support surfaces, never floor
+    assert diag.planes_by_role.get("support_surface", 0) >= 1
+
+    support_ents = [e for e in world.entities.values() if e.type is EntityType.SUPPORT_SURFACE]
+    assert len(support_ents) >= 1
+    for se in support_ents:
+        part_of = {r.target_id for r in se.relationships if r.kind is RelationshipKind.PART_OF}
+        assert any(pid.startswith("room") for pid in part_of)
 
     report = validate_world_ir(world)
     assert report.is_valid(), report.messages()

@@ -58,6 +58,25 @@ SUPPORT: Dict[str, str] = {
 }
 
 
+class _TaxonomyRegistryDict(dict):
+    """Backward-compatibility mapping for legacy `taxonomy._R` access."""
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        try:
+            get(key)
+            return True
+        except KeyError:
+            return False
+
+    def __getitem__(self, key: str) -> EntityClass:
+        return get(key)
+
+
+_R: Dict[str, EntityClass] = _TaxonomyRegistryDict()
+
+
 def _node_to_entity_class(node: OntologyNode) -> EntityClass:
     cat = node.category
     if not cat:

@@ -29,7 +29,7 @@ from world_ir import Entity, EntityType, Geometry, GeometryType, Relationship, R
 
 from perception.architecture.openings import host_opening_on_wall
 from perception.architecture.room_layout import (
-    DEFAULT_THICKNESS_M, VIEW_MODEL, polygon_slab_mesh, solve_room_layout, wall_slab_mesh, wall_view_grid,
+    VIEW_MODEL, polygon_slab_mesh, solve_room_layout, wall_slab_mesh, wall_view_grid,
 )
 from perception.architecture.room_semantics import _basis, _plan
 
@@ -363,6 +363,16 @@ def _promote_room(world, room: Entity, result, P: np.ndarray, up, wall_planes, a
             _link(ent, ev, RelationshipKind.ATTACHED_TO, None, "polygon_slab_evidence_plane", conf)
         report_room["slabs"].append(eid)
     cp["wall_slab_ids"] = [e.id for e in wall_ents]
+
+    # 3D room boundary volume mesh from the solved footprint polygon
+    room_h = float(cp.get("ceiling_height_max_m") or cp.get("height_m") or 2.6)
+    ceil_xyz = xyz(layout.polygon, floor_h + room_h)
+    room_verts, room_faces = polygon_slab_mesh(ceil_xyz, u, room_h, -1, layout.polygon)
+    if room_verts and artifact_store is not None:
+        vol_gid = f"geom-volume-{room.id}"
+        _store_mesh(world, artifact_store, vol_gid, room_verts, room_faces, 0.85, Provenance.RECONSTRUCTED)
+        if vol_gid not in room.geometry_ids:
+            room.geometry_ids.append(vol_gid)
 
 
 def _on_edge(xy: np.ndarray, a: np.ndarray, b: np.ndarray) -> int:

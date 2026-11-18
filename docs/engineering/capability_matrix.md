@@ -2,7 +2,7 @@
 
 Verified = the row's unit tests passed in this run; it is not accuracy on real photographs.
 
-Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-18T23:54:02+0530.
+Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-19T00:18:39+0530.
 
 | Capability | Status | Verified | Modules (reachable from API / total) | Tests passed/failed | Real-data evidence |
 |---|---|---|---|---|---|
@@ -17,7 +17,7 @@ Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-18T23:54:02+0530.
 | Depth estimation | Partial | not run | 3 / 3 | 0/0 | DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a). |
 | SfM | Partial | not run | 3 / 3 | 0/0 | 10 photos: 9/10 registered after seed pinning; sparse geometry differed between runs (995 vs 1,423 points). |
 | MVS | Partial | not run | 3 / 3 | 0/0 | - |
-| Point-cloud fusion | Partial | not run | 2 / 2 | 0/0 | - |
+| Point-cloud fusion | Partial | not run | 2 / 3 | 0/0 | - |
 | Mesh reconstruction | Partial | not run | 2 / 3 | 0/0 | - |
 | Multi-view identity | Partial | not run | 3 / 3 | 0/0 | - |
 | Room segmentation | Partial | not run | 3 / 3 | 0/0 | Floor/wall consolidation cut replayed wall counts 25->8 and 21->6; footprint remains a ragged polygon. |
@@ -36,5 +36,6 @@ Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-18T23:54:02+0530.
 * Instance segmentation: perception/segmentation/sam2_backend.py, perception/segmentation/sam_backend.py, perception/detection/masks.py
 * Small-object detection: perception/fine_grained/estimators.py
 * Object tracking: perception/instances/track_backend.py, perception/tracking
+* Point-cloud fusion: reconstruction/fusion/robust_fusion.py
 * Mesh reconstruction: reconstruction/meshing/room_mesh.py
 * Architectural topology: perception/architecture/multi_storey_validator.py

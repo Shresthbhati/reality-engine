@@ -9,6 +9,12 @@ from reconstruction.fusion.fusion import (
     fused_to_measurement,
     fuse_quantity,
 )
+from reconstruction.fusion.robust_fusion import (
+    RobustFusionResult,
+    fuse_multisensor_points_3d,
+    robust_fuse_depth_observations,
+    robust_fuse_quantity,
+)
 
 __all__ = [
     "CONFLICT_SIGMA",
@@ -16,6 +22,10 @@ __all__ = [
     "FusedEstimate",
     "FusionError",
     "MeasurementConflict",
+    "RobustFusionResult",
+    "fuse_multisensor_points_3d",
     "fused_to_measurement",
     "fuse_quantity",
+    "robust_fuse_depth_observations",
+    "robust_fuse_quantity",
 ]

@@ -21,11 +21,12 @@ class _S:
 def test_record_carries_commit_seeds_stage_hashes_and_lineage(tmp_path):
     m = run_stages([_S("a", {"pts": "h1"}), _S("b", {})], StageContext("j", tmp_path, {}, {"x": 1}),
                    pipeline_profile="p", pipeline_version="v9")
-    rec = build_run_record(m, seeds={"pipeline": 42}, commit="abc123", models=[])
+    rec = build_run_record(m, seeds={"pipeline": 42}, commit="abc123", models=[], colmap={"version": "COLMAP 9", "seed": 0})
     assert rec["code_commit"] == "abc123" and rec["seeds"] == {"pipeline": 42}
     assert rec["pipeline_profile"] == "p" and rec["pipeline_version"] == "v9"
     assert [s["name"] for s in rec["stages"]] == ["a", "b"] and rec["stages"][0]["outputs"] == {"pts": "h1"}
     assert rec["stages"][0]["inputs_hash"] and rec["lineage"]["producer"] == {"pts": "a"}
+    assert rec["colmap"] == {"version": "COLMAP 9", "seed": 0}
     json.dumps(rec)                                                      # it goes straight onto the job payload
 
 
@@ -44,3 +45,11 @@ def test_models_available_hashes_present_active_checkpoints_only(tmp_path):
     assert set(got) == {"here", "wrong_hash"}
     assert got["here"]["sha256"] == good and got["here"]["declared_sha256_matches"] is True
     assert got["wrong_hash"]["declared_sha256_matches"] is False
+
+
+def test_colmap_info_reports_the_backends_seed_constant_and_a_version_string():
+    from engine.pipeline.stages.run_record import colmap_info
+    from reconstruction.backend.colmap_backend import COLMAP_SEED
+
+    info = colmap_info()
+    assert info["seed"] == COLMAP_SEED and isinstance(info["version"], str) and info["version"]

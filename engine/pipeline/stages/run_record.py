@@ -60,12 +60,32 @@ def models_available(specs: Optional[Mapping[str, object]] = None, hasher: Calla
     return out
 
 
+_COLMAP_CACHE: dict[str, str] = {}
+
+
+def colmap_info(binary: str = "colmap") -> dict:
+    """Version string of the COLMAP binary on PATH and the seed the backend uses for its first mapper attempt.
+    Later attempts (seeds 1, 2) only run when registration is weak; which one ran is in the job's attempts."""
+    if binary not in _COLMAP_CACHE:
+        version = "COLMAP (not found)"
+        try:
+            res = subprocess.run([binary, "version"], capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and res.stdout.strip():
+                version = res.stdout.strip().splitlines()[0]
+        except (OSError, subprocess.SubprocessError):
+            pass
+        _COLMAP_CACHE[binary] = version
+    from reconstruction.backend.colmap_backend import COLMAP_SEED
+    return {"version": _COLMAP_CACHE[binary], "seed": COLMAP_SEED}
+
+
 def build_run_record(manifest: RunManifest, *, seeds: Optional[Mapping[str, int]] = None, commit: Optional[str] = None,
-                     models: Optional[list[dict]] = None) -> dict:
+                     models: Optional[list[dict]] = None, colmap: Optional[dict] = None) -> dict:
     return {
         "code_commit": commit if commit is not None else git_commit(),
         "python": sys.version.split()[0], "platform": platform.platform(),
         "seeds": dict(seeds or {}),
+        "colmap": colmap if colmap is not None else colmap_info(),
         "pipeline_profile": manifest.pipeline_profile, "pipeline_version": manifest.pipeline_version,
         "stages": [{"name": r.name, "status": r.status, "inputs_hash": r.inputs_hash, "outputs": dict(r.outputs)}
                    for r in manifest.stages],

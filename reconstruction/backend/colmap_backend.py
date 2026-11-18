@@ -238,8 +238,9 @@ DEFAULT_GUIDED_MATCHING = False
 #: Mapper attempts, in order. COLMAP's own default seed is -1 (random every run); a fixed first seed makes a run
 #: reproducible, and the later attempts only run when registration is weak: another seed, then relaxed initialisation
 #: and absolute-pose thresholds (weak-texture or low-parallax captures).
+COLMAP_SEED = 0   # the first attempt's seed; the one a run record and the stage metrics report
 MAPPER_ATTEMPTS: Tuple[Tuple[str, ...], ...] = (
-    ("--Mapper.random_seed", "0"),
+    ("--Mapper.random_seed", str(COLMAP_SEED)),
     ("--Mapper.random_seed", "1"),
     ("--Mapper.random_seed", "2", "--Mapper.init_min_tri_angle", "8", "--Mapper.abs_pose_min_num_inliers", "20",
      "--Mapper.abs_pose_min_inlier_ratio", "0.15"),
@@ -551,7 +552,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
 
             self.last_run_info = {
                 "colmap_version": self._get_colmap_version(),
-                "seed": 0,
+                "seed": COLMAP_SEED,
                 "deterministic": is_det,
             }
 
@@ -811,7 +812,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             "new_images": [evidence_id_by_name[n] for n in new_names],
             "prior_registered": len(prior["registered"]) if prior else 0,
             "colmap_version": self._get_colmap_version(),
-            "seed": 0,
+            "seed": COLMAP_SEED,
             "deterministic": is_det,
         }
         chosen_dir: Path
@@ -938,7 +939,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         self.session.write_manifest({
             "signature": signature, "images": evidence_id_by_name, "registered": registered_names,
             "model_dir": "sparse/0", "incremental_ok": incremental_ok, "info": info,
-            "deterministic": is_det, "seed": 0, "colmap_version": info["colmap_version"],
+            "deterministic": is_det, "seed": COLMAP_SEED, "colmap_version": info["colmap_version"],
         })
         self.last_run_info = info
         self.session.last_run_info = info

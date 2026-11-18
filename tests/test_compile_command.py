@@ -38,12 +38,13 @@ class TestCompileWorldCommand:
         command_result = processor.execute(CompileWorldCommand(result=result))
 
         # World populated and version bumped (one event per command).
-        # Evidence planes (4 walls + 2 floors + 1 ceiling) PLUS the interior-semantics shell derived from the room
-        # (4 room walls + 1 floor slab + 1 ceiling slab) + 1 room. Storey/building are opt-in
+        # Evidence planes (4 walls + 1 floor + 1 ceiling + 1 support surface: the interior slab at y=1 touches no wall,
+        # so B09 calls it a table-top-like support surface, not a second floor) PLUS the interior-semantics shell derived
+        # from the room (4 room walls + 1 floor slab + 1 ceiling slab) + 1 room. Storey/building are opt-in
         # (CompileOptions.promote_building defaults to False), so none are promoted here.
         from collections import Counter
         assert Counter(e.type.value for e in world.entities.values()) == {
-            "wall": 8, "floor": 3, "ceiling": 2, "room": 1}
+            "wall": 8, "floor": 2, "support_surface": 1, "ceiling": 2, "room": 1}
         assert command_result.world_version == world.version == 2  # 1 -> 2
         room = next(e for e in world.entities.values() if e.type is EntityType.ROOM)
         assert room.custom_properties["floor_area_m2"] == pytest.approx(5.625)

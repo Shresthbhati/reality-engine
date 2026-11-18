@@ -44,7 +44,7 @@ async def extract_world_asset(
     if not world:
         raise HTTPException(404, f"World '{world_id}' not found")
 
-    enforce_project_isolation(world.team_id, auth)
+    enforce_project_isolation(world, auth)
 
     world_ir = await get_current_worldir(db, world_id)
     if world_ir is None:

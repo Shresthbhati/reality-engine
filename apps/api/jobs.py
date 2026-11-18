@@ -1526,9 +1526,41 @@ def _job_timeout_seconds() -> float:
         return 1800.0
 
 
-async def _run_job_heartbeat(job_id: str, interval_seconds: float = 5.0) -> None:
-    """Periodic background task that updates heartbeat_at in the database
-    while a handler runs, preventing false-positive staleness reap of long jobs."""
+class LeaseLost(RuntimeError):
+    """This worker no longer owns the job: it was reaped as stale and requeued (possibly claimed by another worker).
+    Whatever this worker still holds in memory is stale, so it must not write any state for the job."""
+
+
+class JobOutcomeError(RuntimeError):
+    """A handler finished but its result cannot be graded as success (unknown outcome, or a required output that the
+    outcome promises is not there). Deterministic, so never retried."""
+
+    retryable = False
+
+    def __init__(self, message: str, failure_kind: str = "persistence"):
+        super().__init__(message)
+        self.failure_kind = failure_kind
+
+
+_ALLOWED_OUTCOMES = frozenset({"succeeded", "partial", "cancelled"})
+
+
+def _lease_of(job: Job) -> tuple[str | None, int]:
+    """The fencing token of a claimed job: which worker, on which attempt. Both change on every re-claim."""
+    return job.worker_id, job.attempts
+
+
+def _owned(job_id: str, lease: tuple[str | None, int]):
+    """WHERE-clause terms that hold only while ``lease`` is still the job's current lease."""
+    return (Job.id == job_id, Job.status == JOB_RUNNING, Job.worker_id == lease[0], Job.attempts == lease[1])
+
+
+async def _run_job_heartbeat(job_id: str, interval_seconds: float = 5.0, lease: tuple[str | None, int] | None = None,
+                             lost: asyncio.Event | None = None) -> None:
+    """Periodic background task that updates heartbeat_at in the database while a handler runs, preventing false-positive
+    staleness reap of long jobs. With a ``lease`` the pulse only counts while this worker still owns the job: a pulse
+    that matches no row means the lease was lost (reaped and requeued, maybe re-claimed), so ``lost`` is set and the
+    heartbeat stops -- a zombie worker must never keep another worker's job looking alive."""
     from apps.api.db import get_sessionmaker
     from reconstruction.proc import worker_heartbeat
 
@@ -1537,17 +1569,84 @@ async def _run_job_heartbeat(job_id: str, interval_seconds: float = 5.0) -> None
         try:
             await asyncio.sleep(interval_seconds)
             async with maker() as hb_db:
-                await hb_db.execute(
-                    update(Job)
-                    .where(Job.id == job_id, Job.status == JOB_RUNNING)
-                    .values(heartbeat_at=utcnow())
-                )
+                where = _owned(job_id, lease) if lease is not None else (Job.id == job_id, Job.status == JOB_RUNNING)
+                res = await hb_db.execute(update(Job).where(*where).values(heartbeat_at=utcnow()))
                 await hb_db.commit()
+                if lease is not None and res.rowcount == 0:
+                    log.warning("job %s: lease %s lost (no longer running under this worker/attempt)", job_id, lease)
+                    if lost is not None:
+                        lost.set()
+                    return
                 worker_heartbeat(job_id)
         except asyncio.CancelledError:
             break
         except Exception:
             log.debug("Heartbeat pulse skipped/failed for job %s", job_id)
+
+
+async def _run_with_lease(coro, lost: asyncio.Event, timeout: float):
+    """Run a handler coroutine under a timeout AND the lease: if the lease is lost the handler is cancelled (its work
+    is superseded) and ``LeaseLost`` is raised; if the timeout elapses ``TimeoutError`` is raised."""
+    task = asyncio.ensure_future(coro)
+    waiter = asyncio.ensure_future(lost.wait())
+    try:
+        done, _ = await asyncio.wait({task, waiter}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        if task in done:
+            return task.result()
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # noqa: BLE001 -- the cancelled handler's own unwinding is not the story here
+            pass
+        if lost.is_set():
+            raise LeaseLost("lease lost while the handler was running")
+        raise TimeoutError
+    finally:
+        waiter.cancel()
+
+
+async def _verify_outcome(db: AsyncSession, job: Job, outcome) -> str:
+    """Grade a handler's result. Success is a claim about persisted state, so it is checked, never assumed: the outcome
+    must be one the contract defines, and a reconstruction that claims a version must point at one that exists in the
+    database and verifies in the WorldStore (no dangling pointer, no corrupt bytes)."""
+    if outcome not in _ALLOWED_OUTCOMES:
+        raise JobOutcomeError(f"handler returned an unrecognised outcome {outcome!r}; refusing to grade it as success",
+                              "invalid_outcome")
+    if job.type == RECONSTRUCT_SESSION and outcome in ("succeeded", "partial"):
+        version_id = (job.payload or {}).get("version_id")
+        if not version_id:
+            if outcome == "succeeded":
+                raise JobOutcomeError("reconstruction reported success but recorded no world version")
+            return outcome
+        from apps.api import worldstore_service as ws_svc
+        from apps.api.models import WorldVersion
+
+        if await db.get(WorldVersion, version_id) is None:
+            raise JobOutcomeError(f"reconstruction reported version {version_id} but no such version row exists")
+        try:
+            failures = ws_svc.get_store().verify_version(version_id)
+        except Exception as exc:  # the store cannot vouch for the version: not a success
+            raise JobOutcomeError(f"version {version_id} cannot be verified in the WorldStore: {exc}") from exc
+        if failures:
+            raise JobOutcomeError(f"version {version_id} failed WorldStore verification: {failures[0]['reason']}")
+    return outcome
+
+
+async def _finalize_fenced(db: AsyncSession, job: Job, lease: tuple[str | None, int]) -> bool:
+    """Write the job's final (or retry) state ONLY while ``lease`` still owns the row, in one compare-and-swap UPDATE.
+    Returns False -- after rolling back everything pending, so no stray log or notification is written -- when the lease
+    was lost: another worker owns the job now and its state must stand. The ORM object is detached first so its
+    pending changes are not flushed unconditionally by autoflush."""
+    values = {c: getattr(job, c) for c in ("status", "stage", "progress", "error", "completed_at", "payload")}
+    if job.status == JOB_QUEUED:
+        values["worker_id"] = None                       # a retry releases the lease
+    db.expunge(job)
+    res = await db.execute(update(Job).where(*_owned(job.id, lease)).values(**values).execution_options(synchronize_session=False))
+    if res.rowcount == 0:
+        await db.rollback()
+        return False
+    await db.commit()
+    return True
 
 
 async def reap_stale_jobs(db: AsyncSession) -> int:
@@ -1567,36 +1666,26 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     )
     reaped = 0
     for job in result.scalars().all():
+        # Compare-and-swap: the flip only lands if the row is STILL the stale one we read (same attempt, same dead
+        # worker, heartbeat still older than the cutoff). A worker that heartbeats between our SELECT and this UPDATE
+        # keeps its job instead of having it requeued under it.
+        seen = (job.id, job.worker_id, job.attempts, job.max_attempts)
         if job.attempts >= job.max_attempts:
-            job.status = JOB_FAILED
-            job.stage = TERMINAL_STAGE[JOB_FAILED]
-            job.completed_at = utcnow()
-            job.error = f"Worker died or job timed out after {job.attempts} attempt(s)"
-            db.add(
-                JobLog(
-                    id=new_id("log"),
-                    job_id=job.id,
-                    stage="failed",
-                    level="ERROR",
-                    message=job.error,
-                    context_json={"attempts": job.attempts, "reaped": True},
-                )
-            )
+            values = {"status": JOB_FAILED, "stage": TERMINAL_STAGE[JOB_FAILED], "completed_at": utcnow(),
+                      "error": f"Worker died or job timed out after {job.attempts} attempt(s)"}
+            entry = ("failed", "ERROR", values["error"])
         else:
-            job.status = JOB_QUEUED
-            job.stage = None
-            job.worker_id = None
-            db.add(
-                JobLog(
-                    id=new_id("log"),
-                    job_id=job.id,
-                    stage="recovered",
-                    level="WARNING",
-                    message=f"Recovered stale job from crashed worker (attempt {job.attempts}/{job.max_attempts}); requeued",
-                    context_json={"attempts": job.attempts, "reaped": True},
-                )
-            )
-        reaped += 1
+            values = {"status": JOB_QUEUED, "stage": None, "worker_id": None}
+            entry = ("recovered", "WARNING",
+                     f"Recovered stale job from crashed worker (attempt {job.attempts}/{job.max_attempts}); requeued")
+        flipped = await db.execute(
+            update(Job).where(Job.id == seen[0], Job.status == JOB_RUNNING, Job.worker_id == seen[1],
+                              Job.attempts == seen[2], Job.heartbeat_at < cutoff)
+            .values(**values).execution_options(synchronize_session=False))
+        if flipped.rowcount:
+            db.add(JobLog(id=new_id("log"), job_id=seen[0], stage=entry[0], level=entry[1], message=entry[2],
+                          context_json={"attempts": seen[2], "reaped": True}))
+            reaped += 1
     if reaped:
         await db.commit()
         log.warning("reaped %d stale running job(s)", reaped)
@@ -1706,9 +1795,11 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
     # it transparently). Cleared in the finally below.
     set_current_job(job.id)
 
-    # Active heartbeat pulsing while handler runs
+    # Active heartbeat pulsing while handler runs. The pulse is fenced by the lease (worker + attempt): if this worker is
+    # reaped and the job re-claimed, the pulse finds no matching row, trips ``lost`` and stops.
+    job_id, lease, lease_lost, abandoned = job.id, _lease_of(job), asyncio.Event(), False
     heartbeat_task = asyncio.create_task(
-        _run_job_heartbeat(job.id, interval_seconds=_heartbeat_interval_seconds())
+        _run_job_heartbeat(job.id, interval_seconds=_heartbeat_interval_seconds(), lease=lease, lost=lease_lost)
     )
 
     try:
@@ -1720,7 +1811,7 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
         # The timeout path tree-kills owned processes first, so a timed
         # out job leaves no live child behind.
         try:
-            outcome = await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
+            outcome = await _run_with_lease(handler(db, job), lease_lost, _job_timeout_seconds())
         except TimeoutError as exc:
             terminate_job_procs(job.id)
             await db.refresh(job, attribute_names=["cancel_requested"])
@@ -1733,6 +1824,7 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
             raise RuntimeError(
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
+        outcome = await _verify_outcome(db, job, outcome)  # success is checked against persisted state, never assumed
         if outcome == "partial":
             job.status = JOB_PARTIAL
         elif outcome == "cancelled":
@@ -1756,6 +1848,13 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
             )
         )
         await _emit_completion(db, job)
+    except LeaseLost as exc:
+        # Superseded: the job was requeued (and maybe re-claimed). Its state now belongs to the current lease holder, so
+        # this worker writes nothing -- not a status, not a log -- and only cleans up what it owns locally.
+        log.warning("job %s: %s; abandoning this attempt without writing state", job_id, exc)
+        terminate_job_procs(job_id)
+        await db.rollback()
+        abandoned = True
     except _JobCancelled as exc:
         log.warning("job %s cancelled: %s", job.id, exc)
         terminate_job_procs(job.id)
@@ -1831,12 +1930,15 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
                     context_json={"error": job.error, "attempts": job.attempts, "retryable": True},
                 )
             )
-    if job.status in TERMINAL_STAGE:
-        job.stage = TERMINAL_STAGE[job.status]
-        if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):
-            job.progress = 100.0
     try:
-        await db.commit()
+        if not abandoned:
+            if job.status in TERMINAL_STAGE:
+                job.stage = TERMINAL_STAGE[job.status]
+                if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):
+                    job.progress = 100.0
+            # One compare-and-swap write, valid only while this worker still holds the lease (see _finalize_fenced).
+            if not await _finalize_fenced(db, job, lease):
+                log.warning("job %s: lease lost before the final write; the current lease holder's state stands", job_id)
     finally:
         heartbeat_task.cancel()
         try:
@@ -1847,9 +1949,9 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
         # itself raises, the next claim rebinds context and the registry
         # never accumulates dead entries.
         set_current_job(None)
-        unregister_worker(job.id)
-        discard_job(job.id)
-    return job
+        unregister_worker(job_id)
+        discard_job(job_id)
+    return await db.get(Job, job_id, populate_existing=True)  # the row as it stands now (not this worker's stale copy)
 
 
 async def _emit_completion(db: AsyncSession, job: Job) -> None:

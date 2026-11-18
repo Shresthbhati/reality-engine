@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-18T21:37:58+0530",
+ "generated_at": "2026-11-18T23:54:02+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
@@ -90,9 +90,9 @@
    "modules_total": 2,
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
-    "apps.api.main",
-    "apps.api.routes_evidence_quality",
-    "evidence.quality_checks"
+    "apps.api.jobs",
+    "engine.pipeline.facade",
+    "reconstruction.capture_quality"
    ],
    "not_reachable_from_api": [],
    "entries_not_reachable_from_api": [],
@@ -117,24 +117,30 @@
    "verified": "not run",
    "modules": [
     "reconstruction/calibration/camera.py",
-    "reconstruction/colmap_intrinsics.py"
+    "reconstruction/colmap_intrinsics.py",
+    "trajectories/interpolation.py"
    ],
    "modules_missing": [],
-   "modules_total": 2,
+   "modules_total": 3,
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
-    "engine.pipeline.vertical_slice",
+    "engine.pipeline.facade",
     "reconstruction.calibration.camera"
    ],
-   "not_reachable_from_api": [],
-   "entries_not_reachable_from_api": [],
+   "not_reachable_from_api": [
+    "trajectories.interpolation"
+   ],
+   "entries_not_reachable_from_api": [
+    "trajectories/interpolation.py"
+   ],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
     "tests/test_camera_calibration.py",
     "tests/test_calibration_transforms.py",
-    "tests/test_pose_adopts_solved_intrinsics.py"
+    "tests/test_pose_adopts_solved_intrinsics.py",
+    "tests/test_trajectory_interpolation.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -223,24 +229,30 @@
    "modules": [
     "perception/entities/small_objects.py",
     "perception/detail/crop_pass.py",
-    "perception/fine_grained/pipeline.py"
+    "perception/fine_grained/pipeline.py",
+    "perception/fine_grained/estimators.py"
    ],
    "modules_missing": [],
-   "modules_total": 3,
+   "modules_total": 4,
    "reachable_from_api": 3,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "engine.pipeline.vertical_slice",
     "perception.entities.small_objects"
    ],
-   "not_reachable_from_api": [],
-   "entries_not_reachable_from_api": [],
+   "not_reachable_from_api": [
+    "perception.fine_grained.estimators"
+   ],
+   "entries_not_reachable_from_api": [
+    "perception/fine_grained/estimators.py"
+   ],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
     "tests/test_fine_grained_perception_rule5.py",
     "tests/test_fine_grained_entity_attributes.py",
-    "tests/test_prelabel_images.py"
+    "tests/test_prelabel_images.py",
+    "tests/test_fine_grained_estimators.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -436,24 +448,30 @@
    "verified": "not run",
    "modules": [
     "reconstruction/meshing/mesh.py",
-    "reconstruction/meshing/surface.py"
+    "reconstruction/meshing/surface.py",
+    "reconstruction/meshing/room_mesh.py"
    ],
    "modules_missing": [],
-   "modules_total": 2,
+   "modules_total": 3,
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "engine.pipeline.vertical_slice",
     "reconstruction.meshing.mesh"
    ],
-   "not_reachable_from_api": [],
-   "entries_not_reachable_from_api": [],
+   "not_reachable_from_api": [
+    "reconstruction.meshing.room_mesh"
+   ],
+   "entries_not_reachable_from_api": [
+    "reconstruction/meshing/room_mesh.py"
+   ],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
     "tests/test_meshing_pipeline.py",
     "tests/test_mesh_validation.py",
-    "tests/test_mesh_repair_and_completeness.py"
+    "tests/test_mesh_repair_and_completeness.py",
+    "tests/test_room_mesh.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -545,24 +563,29 @@
     "perception/architecture/topology.py",
     "perception/architecture/space_graph.py",
     "perception/architecture/openings.py",
-    "perception/architecture/stairs.py"
+    "perception/architecture/stairs.py",
+    "perception/architecture/multi_storey_validator.py"
    ],
    "modules_missing": [],
-   "modules_total": 4,
+   "modules_total": 5,
    "reachable_from_api": 4,
    "shortest_live_import_chain": [
     "apps.api.jobs",
-    "engine.pipeline.vertical_slice",
-    "engine.compiler.world_compiler",
-    "perception.architecture.topology"
+    "engine.pipeline.facade",
+    "perception.architecture.space_graph"
    ],
-   "not_reachable_from_api": [],
-   "entries_not_reachable_from_api": [],
+   "not_reachable_from_api": [
+    "perception.architecture.multi_storey_validator"
+   ],
+   "entries_not_reachable_from_api": [
+    "perception/architecture/multi_storey_validator.py"
+   ],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
     "tests/test_topology_coherence.py",
-    "tests/test_vertical_topology_graph.py"
+    "tests/test_vertical_topology_graph.py",
+    "tests/test_multi_storey_validator.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -703,10 +726,11 @@
     "reconstruction/validation.py",
     "perception/architecture/accuracy_report.py",
     "benchmarks/reality_benchmark/scorer.py",
-    "benchmarks/reality_benchmark/inventory.py"
+    "benchmarks/reality_benchmark/inventory.py",
+    "benchmarks/measured_rooms/run_accuracy_benchmark.py"
    ],
    "modules_missing": [],
-   "modules_total": 5,
+   "modules_total": 6,
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
@@ -716,12 +740,14 @@
    "not_reachable_from_api": [
     "perception.architecture.accuracy_report",
     "benchmarks.reality_benchmark.scorer",
-    "benchmarks.reality_benchmark.inventory"
+    "benchmarks.reality_benchmark.inventory",
+    "benchmarks.measured_rooms.run_accuracy_benchmark"
    ],
    "entries_not_reachable_from_api": [
     "perception/architecture/accuracy_report.py",
     "benchmarks/reality_benchmark/scorer.py",
-    "benchmarks/reality_benchmark/inventory.py"
+    "benchmarks/reality_benchmark/inventory.py",
+    "benchmarks/measured_rooms/run_accuracy_benchmark.py"
    ],
    "offline_tool": true,
    "failing_tests": [],
@@ -730,7 +756,8 @@
     "tests/test_measured_room_accuracy_report.py",
     "tests/test_reality_benchmark.py",
     "tests/test_reality_inventory.py",
-    "tests/test_world_accuracy_report.py"
+    "tests/test_world_accuracy_report.py",
+    "tests/test_run_accuracy_benchmark.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -754,8 +781,8 @@
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
-    "engine.pipeline.vertical_slice",
-    "reconstruction.completeness"
+    "engine.pipeline.facade",
+    "reconstruction.capture_quality"
    ],
    "not_reachable_from_api": [],
    "entries_not_reachable_from_api": [],

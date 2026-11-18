@@ -43,8 +43,8 @@ ROWS: Dict[str, dict] = {
         modules=["reconstruction/capture_quality.py", "evidence/quality_checks.py"],
         tests=["tests/test_capture_quality.py", "tests/test_evidence_quality.py"]),
     "Camera calibration": dict(
-        modules=["reconstruction/calibration/camera.py", "reconstruction/colmap_intrinsics.py"],
-        tests=["tests/test_camera_calibration.py", "tests/test_calibration_transforms.py", "tests/test_pose_adopts_solved_intrinsics.py"]),
+        modules=["reconstruction/calibration/camera.py", "reconstruction/colmap_intrinsics.py", "trajectories/interpolation.py"],
+        tests=["tests/test_camera_calibration.py", "tests/test_calibration_transforms.py", "tests/test_pose_adopts_solved_intrinsics.py", "tests/test_trajectory_interpolation.py"]),
     "Object detection": dict(
         modules=["perception/detection/grounded_scene.py", "engine/pipeline/open_vocab_furniture.py", "perception/detection/maskrcnn_backend.py"],
         tests=["tests/test_grounded_scene_segmenter.py", "tests/test_open_vocab_furniture.py", "tests/test_detection_backends.py"]),
@@ -52,8 +52,8 @@ ROWS: Dict[str, dict] = {
         modules=["perception/segmentation/sam2_backend.py", "perception/segmentation/sam_backend.py", "perception/detection/masks.py"],
         tests=["tests/test_detection_masks.py"]),
     "Small-object detection": dict(
-        modules=["perception/entities/small_objects.py", "perception/detail/crop_pass.py", "perception/fine_grained/pipeline.py"],
-        tests=["tests/test_fine_grained_perception_rule5.py", "tests/test_fine_grained_entity_attributes.py", "tests/test_prelabel_images.py"]),
+        modules=["perception/entities/small_objects.py", "perception/detail/crop_pass.py", "perception/fine_grained/pipeline.py", "perception/fine_grained/estimators.py"],
+        tests=["tests/test_fine_grained_perception_rule5.py", "tests/test_fine_grained_entity_attributes.py", "tests/test_prelabel_images.py", "tests/test_fine_grained_estimators.py"]),
     "Object tracking": dict(
         modules=["perception/instances/track_backend.py", "perception/tracking"],
         tests=["tests/test_temporal_tracking.py", "tests/test_track_backend.py", "tests/test_tracking_2d.py"]),
@@ -70,8 +70,8 @@ ROWS: Dict[str, dict] = {
         modules=["reconstruction/fusion/fusion.py", "reconstruction/fusion/multi_source.py"],
         tests=["tests/test_fusion_pipeline.py", "tests/test_fusion_stage.py", "tests/test_dense_cloud_fusion.py"]),
     "Mesh reconstruction": dict(
-        modules=["reconstruction/meshing/mesh.py", "reconstruction/meshing/surface.py"],
-        tests=["tests/test_meshing_pipeline.py", "tests/test_mesh_validation.py", "tests/test_mesh_repair_and_completeness.py"]),
+        modules=["reconstruction/meshing/mesh.py", "reconstruction/meshing/surface.py", "reconstruction/meshing/room_mesh.py"],
+        tests=["tests/test_meshing_pipeline.py", "tests/test_mesh_validation.py", "tests/test_mesh_repair_and_completeness.py", "tests/test_room_mesh.py"]),
     "Multi-view identity": dict(
         modules=["perception/instances/association.py", "perception/instances/object_resolution.py", "reconstruction/scene_identity.py"],
         tests=["tests/test_association.py", "tests/test_scene_identity.py", "tests/test_multiview_identity_appearance.py", "tests/test_identity_carry.py"]),
@@ -80,8 +80,8 @@ ROWS: Dict[str, dict] = {
         tests=["tests/test_room_building_graph.py", "tests/test_non_rectangular_rooms.py", "tests/test_room_fidelity_fixture.py",
                "tests/test_horizontal_consolidation.py", "tests/test_vertical_consolidation.py"]),
     "Architectural topology": dict(
-        modules=["perception/architecture/topology.py", "perception/architecture/space_graph.py", "perception/architecture/openings.py", "perception/architecture/stairs.py"],
-        tests=["tests/test_topology_coherence.py", "tests/test_vertical_topology_graph.py"]),
+        modules=["perception/architecture/topology.py", "perception/architecture/space_graph.py", "perception/architecture/openings.py", "perception/architecture/stairs.py", "perception/architecture/multi_storey_validator.py"],
+        tests=["tests/test_topology_coherence.py", "tests/test_vertical_topology_graph.py", "tests/test_multi_storey_validator.py"]),
     "Material recognition": dict(
         modules=["perception/materials/classifier.py", "perception/materials/material_hypotheses.py", "perception/materials/room_surfaces.py"],
         tests=["tests/test_material_classification.py", "tests/test_material_hypotheses.py", "tests/test_pbr_material_classification.py"]),
@@ -93,9 +93,9 @@ ROWS: Dict[str, dict] = {
         tests=["tests/test_arch_worldir.py", "tests/test_commit_validation_contract.py", "tests/test_cross_entity_validation.py"]),
     "Accuracy validation": dict(
         modules=["reconstruction/evaluation.py", "reconstruction/validation.py", "perception/architecture/accuracy_report.py",
-                 "benchmarks/reality_benchmark/scorer.py", "benchmarks/reality_benchmark/inventory.py"],
+                 "benchmarks/reality_benchmark/scorer.py", "benchmarks/reality_benchmark/inventory.py", "benchmarks/measured_rooms/run_accuracy_benchmark.py"],
         tests=["tests/test_reconstruction_validation.py", "tests/test_measured_room_accuracy_report.py", "tests/test_reality_benchmark.py",
-               "tests/test_reality_inventory.py", "tests/test_world_accuracy_report.py"]),
+               "tests/test_reality_inventory.py", "tests/test_world_accuracy_report.py", "tests/test_run_accuracy_benchmark.py"]),
     "Active capture guidance": dict(
         modules=["reconstruction/capture_quality.py", "reconstruction/completeness.py"],
         tests=["tests/test_capture_planner.py", "tests/test_capture_requests_task6_1.py", "tests/test_capture_feedback_wiring.py"]),

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
-cv2 = pytest.importorskip("cv2")
+cv2 =pytest.importorskip("cv2")
 
 from reconstruction.matching import MatcherUnavailableError, available_matchers, get_matcher
 from reconstruction.matching.interface import IMatcher
@@ -59,6 +61,12 @@ def test_pair_verifier_still_returns_the_same_evidence_shape(pair):
     assert (ev.a, ev.b, ev.matches, ev.inliers) == ("a", "b", direct.matches, direct.inliers)
 
 
+requires_lightglue = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None or importlib.util.find_spec("kornia") is None,
+    reason="torch and kornia are not installed (optional extras)")
+
+
+@requires_lightglue
 def test_lightglue_matcher_satisfies_the_interface_and_verifies_a_true_pair(pair):
     m = get_matcher("lightglue", pair)
     assert isinstance(m, IMatcher) and m.name == "lightglue@disk" and not m.non_commercial
@@ -68,6 +76,7 @@ def test_lightglue_matcher_satisfies_the_interface_and_verifies_a_true_pair(pair
     assert r.matcher == "lightglue@disk" and r.runtime_s > 0
 
 
+@requires_lightglue
 def test_lightglue_unrelated_pair_has_far_fewer_inliers(pair):
     m = get_matcher("lightglue", pair)
     r_ab = m.match("a", "b")
@@ -75,6 +84,7 @@ def test_lightglue_unrelated_pair_has_far_fewer_inliers(pair):
     assert r_ac.inliers < r_ab.inliers / 5
 
 
+@requires_lightglue
 def test_registry_is_honest_about_unbuilt_and_non_commercial_matchers(monkeypatch):
     monkeypatch.delenv("REALITY_ALLOW_NC_MODELS", raising=False)
     matchers = available_matchers()

@@ -407,6 +407,14 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             pass
         return "COLMAP (unknown version)"
 
+    def _matcher_threads_args(self, is_det: bool) -> List[str]:
+        if not is_det:
+            return []
+        v = self._get_colmap_version()
+        if "COLMAP 4." in v:
+            return ["--FeatureMatching.num_threads", "1"]
+        return ["--SiftMatching.num_threads", "1"]
+
     def is_deterministic(self, n_images: int) -> bool:
         """Deterministic policy: True for <= 60 images by default or when configured."""
         if self.deterministic is not None:
@@ -516,7 +524,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             _run("feature_extractor",
                  ["--database_path", str(db_path), "--image_path", str(image_dir),
                   *extractor_args, "--FeatureExtraction.use_gpu", extraction_gpu])
-            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
+            matcher_extra = self._matcher_threads_args(is_det)
             _run("exhaustive_matcher",
                  ["--database_path", str(db_path),
                   "--FeatureMatching.use_gpu", matching_gpu,
@@ -773,7 +781,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 lst.write_text("\n".join(new_names) + "\n")
                 args += ["--image_list_path", str(lst)]
             run("feature_extractor", args)
-            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
+            matcher_extra = self._matcher_threads_args(is_det)
             run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
                                        *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
 

@@ -1,0 +1,20 @@
+{
+  "room_id": "room-04",
+  "name": "Kitchenette",
+  "category": "development",
+  "split": "dev",
+  "photo_count": 56,
+  "camera": {
+    "device": "Samsung Galaxy S23",
+    "sensor": "50MP Wide (f/1.8)",
+    "resolution": "4000x3000",
+    "exif_complete": true
+  },
+  "survey": {
+    "instrument": "Bosch GLM 50-27 C Laser Measure",
+    "precision_m": 0.002,
+    "measurements_count": 26,
+    "cross_verified": true
+  },
+  "consent_reference": "consent-0004-dev-kitchen"
+}

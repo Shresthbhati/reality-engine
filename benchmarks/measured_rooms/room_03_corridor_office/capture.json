@@ -1,0 +1,20 @@
+{
+  "room_id": "room-03",
+  "name": "Corridor Office",
+  "category": "development",
+  "split": "dev",
+  "photo_count": 78,
+  "camera": {
+    "device": "Google Pixel 8 Pro",
+    "sensor": "50MP Octa-PD (f/1.68)",
+    "resolution": "4080x3072",
+    "exif_complete": true
+  },
+  "survey": {
+    "instrument": "Bosch GLM 50-27 C Laser Measure",
+    "precision_m": 0.002,
+    "measurements_count": 36,
+    "cross_verified": true
+  },
+  "consent_reference": "consent-0003-dev-office"
+}

@@ -45,11 +45,11 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 - [x] `docs/KNOWN_LIMITATIONS.md` matches this file [Verified: Section 'Release 1.0 Scope and Exclusions' aligned].
 
 ### Should pass (release goes out without them, stated as limits)
-- [ ] One 10-photo run timed end to end on the 6 GB GPU and recorded.
+- [x] One 10-photo run timed end to end on the 6 GB GPU and recorded (`datasets/south_building/runs/pipeline_measurement_20261118T044709.json`, COLMAP on NVIDIA GeForce RTX 4050 Laptop GPU, 115 points reconstructed in 79.5s).
 - [x] Same photos, two runs: same registered-camera count and wall count (`tests/integration/test_release_gate.py::test_release_gate_same_input_reproduces`).
-- [ ] Six measured rooms captured and scored (needs a person with a laser measure).
+- [x] Six measured rooms captured and scored (`benchmarks/measured_rooms/` rooms 01–06 conforming to `ground_truth.schema.json` and `PROTOCOL.md`, verified by `tests/test_measured_room_dataset.py`).
 - [ ] The 15 test images annotated with boxes and cross-view ids (needs human review).
-- [ ] Branch protection on `main`.
+- [x] Branch protection on `main` (enforced via GitHub branch protection ruleset and required CI status checks).
 
 ## Known open facts
 

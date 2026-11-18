@@ -681,14 +681,15 @@ def test_crash_restart_recovers_stale_job(client, tmp_path, monkeypatch):
         await db_mod.init_db()
         maker = db_mod.get_sessionmaker()
         async with maker() as db:
-            db.add(World(id="wld_crash01", name="Crash world"))
-            db.add(Session(id="ses_crash01", name="Crash session", world_id="wld_crash01"))
+            # Owned by the loopback tenant: unowned rows are hidden (404) by tenant isolation.
+            db.add(World(id="wld_crash01", name="Crash world", team_id="default"))
+            db.add(Session(id="ses_crash01", name="Crash session", world_id="wld_crash01", team_id="default"))
             from apps.api.models import utcnow
 
             db.add(Job(
                 id="job_crash001", type="RECONSTRUCT_SESSION",
                 entity_type="session", entity_id="ses_crash01",
-                status="running", worker_id="worker-dead",
+                status="running", worker_id="worker-dead", team_id="default",
                 attempts=1, max_attempts=1,
                 heartbeat_at=utcnow() - timedelta(seconds=3600),
             ))

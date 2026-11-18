@@ -102,6 +102,8 @@ jobs:
             tests/test_mep_topology.py \
             tests/test_refine_world_api.py \
             tests/test_backup_restore.py \
+            tests/test_backup_durability.py \
+            tests/test_backup_lifecycle.py \
             tests/test_adoption_transaction.py \
             tests/test_stage_runner.py \
             tests/test_auth_hardening.py \

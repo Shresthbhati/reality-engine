@@ -56,7 +56,7 @@ def test_backup_is_consistent_while_the_source_database_is_open_and_changing(tmp
     live.rollback()
     live.close()
     out = tmp_path / "r"
-    bk.restore_backup(tmp_path / "snap.tar.gz", db_path=out / "app.db", worldstore_root=out / "ws")
+    bk.restore_backup(tmp_path / "snap.tar.gz", db_path=out / "app.db", worldstore_root=out / "ws", skip=("storage",))
     assert sqlite3.connect(out / "app.db").execute("select count(*) from worlds").fetchone() == (1,)
 
 
@@ -112,12 +112,12 @@ def test_restore_never_overwrites_existing_data(tmp_path):
     (busy / "ws").mkdir(parents=True)
     (busy / "ws" / "keep.txt").write_text("precious")
     with pytest.raises(bk.BackupError, match="non-empty"):
-        bk.restore_backup(archive, db_path=busy / "app.db", worldstore_root=busy / "ws")
+        bk.restore_backup(archive, db_path=busy / "app.db", worldstore_root=busy / "ws", skip=("storage",))
     assert (busy / "ws" / "keep.txt").read_text() == "precious" and not (busy / "app.db").exists()
 
     (tmp_path / "live.db").write_bytes(b"x")
     with pytest.raises(bk.BackupError, match="existing database"):
-        bk.restore_backup(archive, db_path=tmp_path / "live.db", worldstore_root=tmp_path / "fresh")
+        bk.restore_backup(archive, db_path=tmp_path / "live.db", worldstore_root=tmp_path / "fresh", skip=("storage",))
 
 
 def test_cli_roundtrip_and_non_sqlite_is_refused_with_the_pg_dump_hint(tmp_path, monkeypatch, capsys):

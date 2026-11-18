@@ -100,7 +100,7 @@ Total: 1
 
 ## unlisted
 
-Total: 511
+Total: 520
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -154,8 +154,10 @@ Total: 511
 - `tests/test_asset_extraction.py`
 - `tests/test_assistant_tools.py`
 - `tests/test_association.py`
+- `tests/test_association_kdtree.py`
 - `tests/test_association_resolver_path.py`
 - `tests/test_attribute_classification.py`
+- `tests/test_attribute_pass.py`
 - `tests/test_audit_security_gates.py`
 - `tests/test_auth_hardening.py`
 - `tests/test_autonomous_quality_loop_rule9.py`
@@ -192,6 +194,7 @@ Total: 511
 - `tests/test_colmap_backend_dense.py`
 - `tests/test_colmap_coverage.py`
 - `tests/test_colmap_deterministic_b12.py`
+- `tests/test_colmap_matcher_flags.py`
 - `tests/test_colmap_session.py`
 - `tests/test_colour_accuracy_task13_8.py`
 - `tests/test_colour_survival.py`
@@ -254,6 +257,7 @@ Total: 511
 - `tests/test_dinov2_hf.py`
 - `tests/test_district_grammar.py`
 - `tests/test_doctor.py`
+- `tests/test_embedding_store.py`
 - `tests/test_entity_evidence_provenance_task3_5.py`
 - `tests/test_entity_perception.py`
 - `tests/test_entity_reid.py`
@@ -387,6 +391,7 @@ Total: 511
 - `tests/test_object_resolution.py`
 - `tests/test_observation_table.py`
 - `tests/test_observations_roundtrip.py`
+- `tests/test_ocr_attributes.py`
 - `tests/test_oneformer_no_fabrication.py`
 - `tests/test_onnx_quantizer.py`
 - `tests/test_ontology_extension.py`
@@ -470,7 +475,9 @@ Total: 511
 - `tests/test_reconstruction_robustness.py`
 - `tests/test_reconstruction_validation.py`
 - `tests/test_refinement_loop_b16.py`
+- `tests/test_reflective_surface_filter.py`
 - `tests/test_registration_api.py`
+- `tests/test_require_verified.py`
 - `tests/test_resource_governor.py`
 - `tests/test_resumable_upload.py`
 - `tests/test_review_coco_api.py`
@@ -483,6 +490,7 @@ Total: 511
 - `tests/test_room_ring_tracing.py`
 - `tests/test_room_schedule_csv.py`
 - `tests/test_room_semantics.py`
+- `tests/test_run_record.py`
 - `tests/test_runtime_foundation.py`
 - `tests/test_sam2_backend.py`
 - `tests/test_sam_backend.py`
@@ -523,6 +531,7 @@ Total: 511
 - `tests/test_stage_depth.py`
 - `tests/test_stage_ladder.py`
 - `tests/test_stage_layout.py`
+- `tests/test_stage_lineage.py`
 - `tests/test_stage_mesh.py`
 - `tests/test_stage_perception.py`
 - `tests/test_stage_pose_scale.py`

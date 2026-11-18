@@ -140,6 +140,15 @@ def _get_signing_secret() -> str:
     return _DEV_FALLBACK_SECRET
 
 
+def _accept_v1_tokens() -> bool:
+    """Legacy v1 tokens carry no issuer/audience: on by default for development, off in production/staging."""
+    flag = os.environ.get("REALITY_ACCEPT_V1_TOKENS")
+    if flag is not None:
+        return flag.strip().lower() in ("1", "true", "yes")
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "").lower()
+    return env not in ("production", "prod", "staging")
+
+
 def issue_scoped_token(
     tenant_id: str,
     user_id: str,
@@ -152,6 +161,9 @@ def issue_scoped_token(
 ) -> str:
     """Issue a cryptographically signed scoped bearer token with expiry, issuer, and audience (Phase 1)."""
     role_str = role.value if isinstance(role, Role) else str(role).lower()
+    for label, field in (("tenant_id", tenant_id), ("user_id", user_id), ("issuer", issuer), ("audience", audience)):
+        if not field or ":" in field:  # ':' is the token's field delimiter: it would shift every later field
+            raise ValueError(f"{label} must be non-empty and must not contain ':'")
     ts = timestamp if timestamp is not None else int(time.time())
     exp = ts + expires_in_s
     sec = secret or _get_signing_secret()
@@ -225,8 +237,9 @@ def verify_scoped_token(
         )
 
     elif version == "v1":
-        # v1:{tenant_id}:{user_id}:{role_str}:{ts}:{sig} (backward compatibility)
-        if len(parts) != 6:
+        # v1:{tenant_id}:{user_id}:{role_str}:{ts}:{sig} (backward compatibility: no issuer/audience binding, so it is
+        # refused in production/staging unless REALITY_ACCEPT_V1_TOKENS=1 says a deployment still needs it)
+        if not _accept_v1_tokens() or len(parts) != 6:
             return None
         _, tenant_id, user_id, role_str, ts_str, sig = parts
         payload = f"{tenant_id}:{user_id}:{role_str}:{ts_str}"
@@ -280,7 +293,10 @@ async def check_share_token_not_revoked(token: str) -> bool:
                 return False
             return True
     except Exception:
-        return token not in _REVOKED_SHARE_TOKENS
+        # Fail closed: when revocation cannot be checked, a share link is not honoured (a revoked link must never
+        # work because the database was briefly unreachable).
+        log.warning("share-token revocation check failed; refusing the token", exc_info=True)
+        return False
 
 def revoke_share_token_in_memory(token: str) -> None:
     """Mark a share token revoked in memory."""

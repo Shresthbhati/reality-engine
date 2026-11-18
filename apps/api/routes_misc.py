@@ -434,7 +434,7 @@ async def delete_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)) 
     ev = await db.get(Evidence, evidence_id)
     if ev is None:
         raise HTTPException(404, "Evidence not found")
-    name, session_id, upload_id = ev.name, ev.session_id, ev.upload_id
+    name, session_id, upload_id, owner = ev.name, ev.session_id, ev.upload_id, ev.team_id  # owner read before the row goes
     decision = await db.get(EvidenceDecision, evidence_id)
     if decision is not None:
         await db.delete(decision)
@@ -450,6 +450,7 @@ async def delete_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)) 
             entity_type="evidence",
             entity_id=evidence_id,
             summary=f"Evidence '{name}' removed",
+            team_id=owner,
         )
     )
     await db.commit()

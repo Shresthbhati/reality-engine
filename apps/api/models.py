@@ -344,6 +344,9 @@ class ActivityEvent(Base):
     actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     summary: Mapped[str] = mapped_column(String(500))
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: Owning tenant, stamped from the subject when the event is written (apps/api/ownership.py), so an event about a
+    #: deleted or purged entity stays visible to its team. NULL = unowned legacy row (hidden from tenants).
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -598,3 +601,6 @@ class JobStageRun(Base):
     peak_rss_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+from apps.api import ownership  # noqa: E402,F401  -- registers the ActivityEvent owner hook

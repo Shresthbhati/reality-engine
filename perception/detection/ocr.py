@@ -7,17 +7,17 @@ checkpoint raises ``Florence2Unavailable`` with the fetch command, never an empt
 from __future__ import annotations
 
 import re
-from typing import Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 
 from perception.detection.florence2_detector import Florence2Detector, Florence2Unavailable  # noqa: F401 (re-exported)
 
 TASK = "<OCR>"
-Box = Tuple[float, float, float, float]
+Box = tuple[float, float, float, float]
 
 
-def read_text(image_rgb: np.ndarray, box_px: Optional[Box] = None, detector: Optional[Florence2Detector] = None,
+def read_text(image_rgb: np.ndarray, box_px: Box | None = None, detector: Florence2Detector | None = None,
               pad: float = 0.10) -> str:
     """Text found in the whole image, or in ``box_px`` (x0, y0, x1, y1) padded by ``pad`` of its size. Empty string
     means the model read nothing on the crop."""

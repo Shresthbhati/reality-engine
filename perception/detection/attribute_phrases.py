@@ -12,9 +12,7 @@ A wrong phrase would produce a confident wrong answer, so growing this table is 
 """
 from __future__ import annotations
 
-from typing import Dict, Optional
-
-PHRASES: Dict[str, Dict[str, str]] = {
+PHRASES: dict[str, dict[str, str]] = {
     "handle_type": {
         "lever": "lever door handle",
         "knob": "round knob handle",
@@ -50,6 +48,6 @@ PHRASES: Dict[str, Dict[str, str]] = {
 }
 
 
-def phrase_for(attribute: str, value: str) -> Optional[str]:
+def phrase_for(attribute: str, value: str) -> str | None:
     """The vetted detector phrase for ``attribute`` = ``value``, or None when there is none."""
     return PHRASES.get(attribute, {}).get(value)

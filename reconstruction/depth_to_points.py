@@ -125,7 +125,7 @@ def depth_map_to_points(
     for row in rows:
         depth_row = depth.values[row]
         for col in cols:
-            d = depth_row[col]
+            d = float(depth_row[col])   # DepthMap.values may be a float32 array: a numpy scalar must not leak into points / JSON
             if not math.isfinite(d) or d <= 0.0:
                 continue
             world_point = camera.unproject(col + 0.5, row + 0.5, d)

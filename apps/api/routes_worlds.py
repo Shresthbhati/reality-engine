@@ -427,12 +427,18 @@ async def find_in_world(
 
 @worlds.post("/{world_id}/attach/{session_id}")
 async def attach_session(
-    world_id: str, session_id: str, db: AsyncSession = Depends(get_db)
+    world_id: str, session_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     w = await db.get(World, world_id)
     s = await db.get(Session, session_id)
     if w is None or s is None:
         raise HTTPException(404, "World or Session not found")
+    # Both rows must belong to the caller's tenant; a foreign id reads exactly like an unknown one.
+    for row in (w, s):
+        try:
+            enforce_project_isolation(row, auth)
+        except HTTPException:
+            raise HTTPException(404, "World or Session not found") from None
     s.world_id = w.id
     await db.commit()
     return {"session_id": s.id, "world_id": w.id}

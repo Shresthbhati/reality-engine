@@ -168,6 +168,7 @@ async def test_splats_api_endpoints():
     async with maker() as session:
         w = World(
             id=world_ir.id,
+            team_id="default",  # unauthenticated loopback client = tenant default; unowned worlds are hidden (404)
             name="Splat Testing Space",
             current_version_id=sv.version_id,
             status="active",

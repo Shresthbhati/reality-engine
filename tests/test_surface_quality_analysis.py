@@ -228,6 +228,7 @@ async def test_surface_quality_api_endpoints():
     async with maker() as session:
         world_row = World(
             id=w.id,
+            team_id="default",  # unauthenticated loopback client = tenant default; unowned worlds are hidden (404)
             name="Audit World Test",
             current_version_id=sv.version_id,
             status="active",

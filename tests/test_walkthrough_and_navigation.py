@@ -195,6 +195,7 @@ async def test_navigation_api_endpoints():
     async with maker() as session:
         w = World(
             id=world_ir.id,
+            team_id="default",  # unauthenticated loopback client = tenant default; unowned worlds are hidden (404)
             name="Modern Flat 3B",
             current_version_id=sv.version_id,
             status="active",

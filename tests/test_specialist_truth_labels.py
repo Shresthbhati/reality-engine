@@ -29,7 +29,7 @@ async def _seed(builder, prefix: str):
     sv = get_store().save_version(w, parent=None)
     await init_db()
     async with get_sessionmaker()() as session:
-        session.add(World(id=w.id, name="Truth Label Test", current_version_id=sv.version_id, status="active"))
+        session.add(World(id=w.id, name="Truth Label Test", current_version_id=sv.version_id, status="active", team_id="default"))
         session.add(WorldVersion(id=sv.version_id, world_id=w.id, label="v1", report={}))
         await session.commit()
     return TestClient(app), w.id

@@ -1562,12 +1562,14 @@ def test_cancel_queued_job(client):
     # Freeze the worker so the seeded job cannot be claimed mid-test.
     import unittest.mock as mock
 
+    sid = client.post("/api/sessions", json={"name": "cancel subject"}).json()["id"]   # owned subject: jobs are visible through it
+
     async def _seed():
         maker = db_mod.get_sessionmaker()
         async with maker() as db:
             db.add(Job(
                 id="job_cancel001", type="RECONSTRUCT_SESSION",
-                entity_type="session", entity_id="ses_x",
+                entity_type="session", entity_id=sid,
                 status="queued",
             ))
             await db.commit()
@@ -1695,12 +1697,14 @@ def test_repeat_cancel_is_idempotent(client):
     async def _noop(_db):
         return None
 
+    sid = client.post("/api/sessions", json={"name": "cancel subject"}).json()["id"]   # owned subject: jobs are visible through it
+
     async def _seed():
         maker = db_mod.get_sessionmaker()
         async with maker() as db:
             db.add(Job(
                 id="job_idem001", type="RECONSTRUCT_SESSION",
-                entity_type="session", entity_id="ses_x",
+                entity_type="session", entity_id=sid,
                 status="queued",
             ))
             await db.commit()

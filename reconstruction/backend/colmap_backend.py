@@ -414,7 +414,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         if "COLMAP 4." in v:
             return ["--FeatureMatching.num_threads", "1"]
         return ["--SiftMatching.num_threads", "1"]
-
     def is_deterministic(self, n_images: int) -> bool:
         """Deterministic policy: True for <= 60 images by default or when configured."""
         if self.deterministic is not None:

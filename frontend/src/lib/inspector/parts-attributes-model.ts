@@ -86,9 +86,13 @@ export function parsePartsTree(
 export function parseAttributes(entity: Entity | null | undefined): AttributeRow[] {
   if (!entity) return [];
 
-  const rawAttrs =
-    ((entity as any).extra_fields?.attributes as Record<string, any>) ||
-    (entity.custom_properties?.attributes as Record<string, any>) ||
+  // JSON from the API: any field may be missing or of another type, so everything is `unknown` until checked below
+  type RawAttr = { value?: unknown; basis?: unknown; p?: unknown; obs?: unknown };
+  type RawAttrs = Record<string, RawAttr | string | number | boolean | null>;
+  const withExtra = entity as unknown as { extra_fields?: { attributes?: RawAttrs } };
+  const rawAttrs: RawAttrs =
+    withExtra.extra_fields?.attributes ||
+    (entity.custom_properties?.attributes as RawAttrs | undefined) ||
     {};
 
   const rows: AttributeRow[] = [];

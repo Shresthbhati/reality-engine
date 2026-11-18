@@ -86,9 +86,10 @@ export function parsePartsTree(
 export function parseAttributes(entity: Entity | null | undefined): AttributeRow[] {
   if (!entity) return [];
 
+  const entityWithExtra = entity as unknown as { extra_fields?: { attributes?: Record<string, Record<string, unknown>> } };
   const rawAttrs =
-    ((entity as any).extra_fields?.attributes as Record<string, any>) ||
-    (entity.custom_properties?.attributes as Record<string, any>) ||
+    entityWithExtra.extra_fields?.attributes ||
+    (entity.custom_properties?.attributes as Record<string, Record<string, unknown>> | undefined) ||
     {};
 
   const rows: AttributeRow[] = [];

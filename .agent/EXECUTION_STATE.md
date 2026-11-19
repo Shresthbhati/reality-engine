@@ -36,6 +36,34 @@ worktree `.claude/worktrees/auto-recon-sprint`)
 | Phase 14 | Quality gates and measured benchmark validation | QUEUED | `quality_gates.py` |
 | Phase 15 | Connect everything to Reality Studio & API | QUEUED | `routes_engines.py` endpoints |
 
+## 2026-11-19 -- Evidence-to-world PRODUCTION INTEGRATION (branch `claude/sonnet-evidence-world-integration`, from main after PR #340)
+
+Commits (oldest first): `4b66f0f` matrix<->executor; `77f96db` WorldIR bridge; `677bb5d` evidence flow + capture-request rules; `d0f02b8` job stage; `34622f7` API + gate on legacy routes; `2422d73` structured calibration; `3f4c829` real-run fixes.
+
+| Task | Status | What is true |
+|---|---|---|
+| 1 Shared WorldIR contract | **PARTIAL / DECISION REQUIRED** | Done in my layer: calibration now names dataset+method+version (`CalibrationRef`), raw and calibrated confidence are separate, old records load (migration tested). NOT done: `Entity.confidence` still defaults to 0.5 (documented "not measured" sentinel; `ConfidenceVector` per-dimension `None` already exists and the bridge uses it). Making the scalar Optional touches ~112 non-test files that read `.confidence` and is Gemini-owned: OPTIONS (a) keep sentinel + `ConfidenceVector` (current), (b) make scalar Optional in WorldIR 2.0 with a read-compat shim. RECOMMENDATION (b), agreed with Gemini first. Nothing in WorldIR was changed. |
+| 2 Canonical -> WorldIR bridge | **IMPLEMENTED, functionally tested (synthetic)** | `engine/multiengine/worldir_bridge.py`: deterministic, parts via PART_OF, unobserved parts listed as "not observed", material/geometry only when resolved, evidence + artifact refs, `trace()`. Orientation is NOT fused (no rotation averaging exists); surfaces are NOT produced (no surface evidence quantity). |
+| 3 Matrix <-> sequential execution | **IMPLEMENTED; real-model verified for 2 engines** | `ExecutionManager(matrix=, run_id=)` persists every run (failed/unavailable/cancelled too), per-run raw output artifact (existing `world_ir.artifact_store`), restart verified in a fresh process. REAL: Depth Anything V2 (`cuda:0`) and OWL-ViT (`cuda:0`) executed and persisted. `checkpoint_id` is `None` where the registry spec declares no checkpoint (not invented). |
+| 4 Production job integration | **IMPLEMENTED, opt-in (`RE_EVIDENCE_WORLD=1`), default OFF** | New stage inside the real job; never changes the grade; operator cancel stops it before adoption; tenant-scoped durable dir `evidence-world/<team>/<world>/<job>`. Not enabled by default; not run on a real multi-photo job with real models in CI. |
+| 5 Refinement / capture requests | **PARTIAL** | Side / reverse / close-up / architectural requests fire only on measured facts. The reprocessing refinement loop is NOT run (no 3D estimates to re-measure). |
+| 6 API | **IMPLEMENTED** | `/api/worlds/{id}/evidence-world/*` (runs, entities+trace, rows incl. rejected, runs, associations, conflicts, capture-requests, hierarchy, refinement, artifacts), tenant-scoped through the world. |
+| 7 Tests | see below | |
+
+Tests executed (this machine): new files `test_multiengine_matrix_executor` (7), `test_multiengine_worldir_bridge` (10), `test_multiengine_evidence_flow` (15, one REAL-model), `test_evidence_world_job` (6, real job runner + real cancel route), `test_evidence_world_api` (6), `test_multiengine_calibration` (5); regression `test_reconstruction_reliability`, `test_durable_job_queue`, `test_job_lease_recovery`, `test_session_status_truth` -> 49 passed; API/job/sequential/refinement -> 40 passed.
+
+FLAGGED (found while doing this; not hidden):
+1. **Detector adapters crashed on every real run** (`get_prompts(scale_tier=...)`, Grounding DINO + OWL-ViT; the tests only used virtual runs). Fixed (3f4c829) with a regression test.
+2. **~27 of 33 adapter `confidence=` values are hard-coded constants** (0.92, 0.93, ...), not model scores (PR #339, Gemini). They are stored as "raw confidence". NOT changed here; recommended fix: `confidence=None` where the model emits no score.
+3. **Adapters have a `virtual:` mode that fabricates observations**; the production stage only passes real, existing files. `POST /api/engines/reconstruct` can still use it (now global-admin only).
+4. **`POST /api/engines/reconstruct` and `GET /api/engines/evidence` were open to every tenant** (shared process-wide store, arbitrary server paths). Now global-admin only (403 otherwise).
+5. UNVERIFIED: `GET/POST /api/jobs/{id}[/cancel]` take no `AuthContext` (list is tenant-scoped); exploitability not checked.
+6. `mask_rcnn`, `midas`, `sam` etc. are `integration=wired/registry-only` with no adapter in the maximum-fidelity registry: runs record `unavailable` with that reason.
+
+NOT done / BLOCKED: real furnished-room end-to-end (no interior dataset in the repo; only outdoor South Building; real OWL-ViT found 0 detections there); no engine emits metric 3D position/dimensions, so canonical entities carry NO geometry; cross-view association has no real pair scorer; physical accuracy: no ground truth exists. Production readiness: NOT claimed.
+
+Next priority: (1) agree the `Entity.confidence` decision with Gemini; (2) fix adapter hard-coded confidences; (3) a 3D lifting engine (depth + pose -> position/dimensions observations) so entities get geometry; (4) a real pair scorer (epipolar + re-ID); (5) a measured furnished-room dataset for the first benchmark; (6) decide whether to enable `RE_EVIDENCE_WORLD` by default.
+
 ## 2026-11-19 -- Evidence-to-world layer (branch `claude/sonnet-evidence-world`, from main; local commit, NOT pushed)
 
 Audit first (reused, not rebuilt): `perception/ontology.py` + `config/ontology.yaml` (168 classes; parts via `components`, `hosts`, `attach`, `typical_dims_m`), `perception/instances/global_association.py` (union-find clustering), `world_ir/artifact_store.py` (content-addressed blobs), `provenance/graph.py` (artifact lineage), WorldIR `Entity.observations` / `PART_OF` / `Material` / `external_references`. What was genuinely missing is below. Same vocabulary as the section underneath: every row is Implemented + Functionally tested on SYNTHETIC cases; none is Integrated, API reachable, Real-data validated or Production ready.

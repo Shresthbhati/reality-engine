@@ -271,6 +271,7 @@ def _obs_row(matrix: EvidenceMatrix, oid: str) -> dict[str, Any]:
         "observation_id": oid, "engine_id": o.engine_id, "model_version": o.model_version, "source_id": o.source_id,
         "frame": o.coordinate_system, "image_region": list(o.image_region) if o.image_region else None,
         "raw_confidence": o.confidence, "calibrated_confidence": c.calibrated_confidence,
+        "calibration": None if c.calibration is None else c.calibration.to_dict(),
         "fallback": dict(o.fallback) if o.fallback else None, "run_id": c.run_id, "checkpoint_id": c.checkpoint_id,
         "status": matrix.status(oid),
     }
@@ -309,6 +310,11 @@ def explain(entity: CanonicalEntity, matrix: EvidenceMatrix, *, ontology: Any | 
             row = _obs_row(matrix, oid)
             if row["calibrated_confidence"] is None:
                 uncertain.append(f"{q}: confidence of {oid} ({row['engine_id']}) is uncalibrated")
+            elif row["calibration"] and not row["calibration"]["complete"]:
+                uncertain.append(
+                    f"{q}: calibration of {oid} is incomplete (legacy record: method/version unspecified, dataset "
+                    f"{row['calibration']['dataset']!r})"
+                )
             if row["fallback"]:
                 uncertain.append(f"{q}: {oid} came from a fallback run ({row['fallback']})")
         if d.excluded:

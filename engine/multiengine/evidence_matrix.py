@@ -59,6 +59,30 @@ def _artifact_uris_in(value: Any) -> Iterator[str]:
             yield from _artifact_uris_in(v)
 
 
+LEGACY_UNSPECIFIED = "unspecified (legacy record)"
+
+
+@dataclass(frozen=True)
+class CalibrationRef:
+    """What a calibrated confidence was calibrated WITH: the dataset, the method and its version. All three are required.
+    A legacy record that only carried a free-text basis is kept readable but marked incomplete (``complete`` is False)."""
+
+    dataset: str
+    method: str
+    version: str
+
+    def __post_init__(self) -> None:
+        if not (self.dataset and self.method and self.version):
+            raise MatrixError("a calibration must name its dataset, method and version")
+
+    @property
+    def complete(self) -> bool:
+        return LEGACY_UNSPECIFIED not in (self.method, self.version)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"dataset": self.dataset, "method": self.method, "version": self.version, "complete": self.complete}
+
+
 # ------------------------------------------------------------------------------------------------ context record
 @dataclass(frozen=True)
 class EvidenceContext:
@@ -70,8 +94,9 @@ class EvidenceContext:
     world_transform: str | None = None  # id/description of the frame-graph edge used to express the value in the world frame
     artifact_refs: Mapping[str, str] = field(default_factory=dict)  # role -> artifact:// uri (masks, depth maps, ...)
     calibrated_confidence: float | None = None
-    calibration_basis: str | None = None
+    calibration_basis: str | None = None  # legacy free text; new records give ``calibration`` instead
     validation: str | None = None  # outcome of the validation actually applied; None = none was applied (never assumed passed)
+    calibration: CalibrationRef | None = None  # dataset + method + version behind ``calibrated_confidence``
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -79,12 +104,18 @@ class EvidenceContext:
         if self.calibrated_confidence is not None:
             if not (0.0 <= float(self.calibrated_confidence) <= 1.0):
                 raise MatrixError(f"calibrated_confidence {self.calibrated_confidence!r} is outside [0, 1]")
-            if not self.calibration_basis:
-                raise MatrixError(
-                    "calibrated_confidence needs calibration_basis: what the confidence was calibrated against"
+            if self.calibration is None:
+                if not self.calibration_basis:
+                    raise MatrixError(
+                        "calibrated_confidence needs calibration=CalibrationRef(dataset, method, version) "
+                        "(or, for a legacy record, a calibration_basis)"
+                    )
+                # a legacy free-text basis stays readable; it is marked incomplete rather than pretending to be complete
+                object.__setattr__(
+                    self, "calibration", CalibrationRef(self.calibration_basis, LEGACY_UNSPECIFIED, LEGACY_UNSPECIFIED)
                 )
-        elif self.calibration_basis:
-            raise MatrixError("calibration_basis was given without a calibrated_confidence")
+        elif self.calibration_basis or self.calibration is not None:
+            raise MatrixError("a calibration was given without a calibrated_confidence")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +128,7 @@ class EvidenceContext:
             "artifact_refs": dict(sorted(self.artifact_refs.items())),
             "calibrated_confidence": self.calibrated_confidence,
             "calibration_basis": self.calibration_basis,
+            "calibration": None if self.calibration is None else self.calibration.to_dict(),
             "validation": self.validation,
         }
 
@@ -113,6 +145,7 @@ class EvidenceContext:
             calibrated_confidence=d.get("calibrated_confidence"),
             calibration_basis=d.get("calibration_basis"),
             validation=d.get("validation"),
+            calibration=CalibrationRef(c["dataset"], c["method"], c["version"]) if (c := d.get("calibration")) else None,
         )
 
 

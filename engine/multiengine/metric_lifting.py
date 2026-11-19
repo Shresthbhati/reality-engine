@@ -63,6 +63,9 @@ class LiftedEntity3D:
     reprojection_error_px: float | None = None
     confidence: float | None = None
     confidence_basis: str | None = None
+    scale_units: str = "METRES"
+    is_physically_metric: bool = True
+    box_2d: Sequence[float] | None = None
 
     @property
     def orientation_quat(self) -> Quat | None:
@@ -102,6 +105,9 @@ class LiftedEntity3D:
             "is_part": self.is_part,
             "confidence": self.confidence,
             "confidence_basis": self.confidence_basis,
+            "scale_units": self.scale_units,
+            "is_physically_metric": self.is_physically_metric,
+            "box_2d": list(self.box_2d) if self.box_2d else None,
         }
 
 
@@ -124,6 +130,8 @@ class Metric3DLifter:
         min_points: int = 5,
         sensor_depth_sigma_m: float = 0.02,
         is_metric_depth: bool = True,
+        scale_state: str = "METRIC_CALIBRATED",
+        scale_units: str = "METRES",
         depth_source: str = "calibrated_metric_depth",
         calibration_source: str = "camera_metadata",
         scale_source: str = "",
@@ -133,17 +141,19 @@ class Metric3DLifter:
         confidence: float | None = None,
         source_id: str = "camera0",
     ) -> LiftedEntity3D | None:
-        """Lifts a single 2D detection or mask into a metric 3D entity.
+        """Lifts a single 2D detection or mask into a 3D entity in the target frame.
 
-        Returns None if depth is relative/unscaled, masks are incompatible,
+        Returns None if depth is unscaled relative disparity, masks are incompatible,
         points are unobserved, or geometry is degenerate. Zero geometry is fabricated.
         """
         self.last_rejection_reason = None
 
-        # 1. Enforce verified metric depth contract
-        if not is_metric_depth:
+        # 1. Enforce verified scale contract (refuses unscaled relative depth)
+        is_sfm_gauge = (scale_state == "SFM_ALIGNED_UNMETRIC" or scale_units == "COLMAP_SFM_UNITS")
+        if not is_metric_depth and not is_sfm_gauge:
             self.last_rejection_reason = "UNSCALED_RELATIVE_DEPTH"
             return None
+        is_metric = is_metric_depth and not is_sfm_gauge
 
         # 2. Validate camera calibration and pose rigidity
         from engine.multiengine.visibility_reprojection import VisibilityReprojectionValidator
@@ -355,6 +365,9 @@ class Metric3DLifter:
             source_observation_ids=(source_id,),
             confidence=confidence,
             confidence_basis="depth_unprojection_pca" if confidence is not None else None,
+            scale_units=scale_units,
+            is_physically_metric=is_metric,
+            box_2d=box_2d,
         )
 
     def associate_parts_and_parents(
@@ -420,6 +433,9 @@ class Metric3DLifter:
                     reprojection_error_px=e.reprojection_error_px,
                     confidence=e.confidence,
                     confidence_basis=e.confidence_basis,
+                    scale_units=e.scale_units,
+                    is_physically_metric=e.is_physically_metric,
+                    box_2d=e.box_2d,
                 )
                 result.append(updated)
             else:
@@ -438,6 +454,10 @@ class Metric3DLifter:
                     is_part=True,
                     source_observation_ids=e.source_observation_ids,
                     confidence=e.confidence,
+                    confidence_basis=e.confidence_basis,
+                    scale_units=e.scale_units,
+                    is_physically_metric=e.is_physically_metric,
+                    box_2d=e.box_2d,
                 )
                 result.append(updated)
 

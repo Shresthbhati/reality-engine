@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, FrozenSet, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, Tuple
 
 from engine.multiengine.observation import EngineObservation, ObservationDraft, make_observation
 
@@ -59,8 +60,8 @@ class Availability:
 @dataclass(frozen=True)
 class CheckpointRequirement:
     name: str
-    path: Optional[str] = None            # where it should be; None = acquired by the framework's own cache
-    sha256: Optional[str] = None          # None = no pinned hash (stated, not assumed)
+    path: str | None = None            # where it should be; None = acquired by the framework's own cache
+    sha256: str | None = None          # None = no pinned hash (stated, not assumed)
     redistributable: bool = False
 
 
@@ -68,8 +69,8 @@ class CheckpointRequirement:
 class HardwareRequirement:
     gpu_required: bool = False
     cpu_supported: bool = True
-    min_vram_mb: Optional[float] = None   # None = NOT MEASURED (never an estimate dressed up as a number)
-    min_ram_mb: Optional[float] = None
+    min_vram_mb: float | None = None   # None = NOT MEASURED (never an estimate dressed up as a number)
+    min_ram_mb: float | None = None
     measured_source: str = ""             # where min_* came from (a benchmark record path); "" when None
     parallel_safe: bool = False           # may run concurrently with other engines on one device
 
@@ -88,7 +89,7 @@ class EngineSpec:
     checkpoints: Tuple[CheckpointRequirement, ...] = ()
     hardware: HardwareRequirement = HardwareRequirement()
     licence: str = ""
-    commercial_ok: Optional[bool] = None   # None = not established
+    commercial_ok: bool | None = None   # None = not established
     redistribution: str = ""
     config: Mapping[str, Any] = field(default_factory=dict)
     limitations: Tuple[str, ...] = ()
@@ -107,7 +108,7 @@ class EngineSpec:
         if self.hardware.min_vram_mb is not None and not self.hardware.measured_source:
             raise ValueError(f"engine {self.engine_id!r}: a VRAM requirement must cite the measurement it came from")
 
-    def to_dict(self, availability: Optional[Availability] = None) -> dict:
+    def to_dict(self, availability: Availability | None = None) -> dict:
         a = availability
         return {
             "engine_id": self.engine_id, "name": self.name, "version": self.version, "tasks": sorted(t.value for t in self.tasks),
@@ -159,15 +160,15 @@ class Device:
 class EngineRequest:
     sources: Tuple[str, ...]               # image / video ids
     payload: Mapping[str, Any] = field(default_factory=dict)
-    max_resolution: Optional[int] = None   # long-side cap in px; None = native (the default under ACCURATE / MAXIMUM_FIDELITY)
-    seed: Optional[int] = None
+    max_resolution: int | None = None   # long-side cap in px; None = native (the default under ACCURATE / MAXIMUM_FIDELITY)
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
 class ResourceUsage:
     wall_s: float
-    peak_vram_mb: Optional[float] = None   # None = not measured
-    peak_ram_mb: Optional[float] = None
+    peak_vram_mb: float | None = None   # None = not measured
+    peak_ram_mb: float | None = None
 
 
 @dataclass(frozen=True)
@@ -176,11 +177,11 @@ class EngineRun:
     model_version: str
     status: EngineRunStatus
     observations: Tuple[EngineObservation, ...] = ()
-    device: Optional[str] = None
-    error_kind: Optional[str] = None
+    device: str | None = None
+    error_kind: str | None = None
     error: str = ""
-    usage: Optional[ResourceUsage] = None
-    fallback: Optional[Mapping[str, Any]] = None
+    usage: ResourceUsage | None = None
+    fallback: Mapping[str, Any] | None = None
     reproducibility: Mapping[str, Any] = field(default_factory=dict)
     attempts: int = 1
 
@@ -211,7 +212,7 @@ class EngineAdapter(ABC):
     @abstractmethod
     def infer(self, request: EngineRequest) -> Sequence[ObservationDraft]: ...
 
-    def measured_usage(self) -> Tuple[Optional[float], Optional[float]]:
+    def measured_usage(self) -> Tuple[float | None, float | None]:
         """(peak_vram_mb, peak_ram_mb) as actually measured by the adapter, or None. Never an estimate."""
         return None, None
 
@@ -219,7 +220,7 @@ class EngineAdapter(ABC):
         return {"engine_id": self.spec.engine_id, "model_version": self.spec.version, "seed": request.seed,
                 "config": dict(self.spec.config)}
 
-    def run(self, request: EngineRequest, device: Device, *, fallback: Optional[Mapping[str, Any]] = None,
+    def run(self, request: EngineRequest, device: Device, *, fallback: Mapping[str, Any] | None = None,
             attempts: int = 1) -> EngineRun:
         s = self.spec
         avail = self.check_available()

@@ -11,8 +11,9 @@ from __future__ import annotations
 import json
 import os
 import threading
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from engine.multiengine.observation import EngineObservation, content_id, id_core
 
@@ -25,7 +26,7 @@ RELATION_KINDS = frozenset({"refines", "conflicts_with", "supports", "same_entit
 
 
 class EvidenceStore:
-    def __init__(self, path: Optional[Path] = None) -> None:
+    def __init__(self, path: Path | None = None) -> None:
         self._lock = threading.RLock()
         self._obs: Dict[str, EngineObservation] = {}
         self._order: List[str] = []
@@ -85,9 +86,9 @@ class EvidenceStore:
     def __len__(self) -> int:
         return len(self._obs)
 
-    def query(self, *, engine_id: Optional[str] = None, task: Optional[str] = None, quantity: Optional[str] = None,
-              source_id: Optional[str] = None, frame: Optional[int] = None,
-              coordinate_system: Optional[str] = None) -> List[EngineObservation]:
+    def query(self, *, engine_id: str | None = None, task: str | None = None, quantity: str | None = None,
+              source_id: str | None = None, frame: int | None = None,
+              coordinate_system: str | None = None) -> List[EngineObservation]:
         with self._lock:
             out = []
             for oid in self._order:
@@ -125,7 +126,7 @@ class EvidenceStore:
                         frontier.append(b)
             return seen
 
-    def engines_for(self, quantity: str, source_id: str, frame: Optional[int] = None) -> Dict[str, List[str]]:
+    def engines_for(self, quantity: str, source_id: str, frame: int | None = None) -> Dict[str, List[str]]:
         """engine_id -> observation ids that report ``quantity`` for the source: who said what about the same thing."""
         out: Dict[str, List[str]] = {}
         for o in self.query(quantity=quantity, source_id=source_id, frame=frame):
@@ -145,7 +146,7 @@ class EvidenceStore:
 
     def _load(self) -> None:
         assert self._path is not None
-        with open(self._path, "r", encoding="utf-8") as fh:
+        with open(self._path, encoding="utf-8") as fh:
             lines = fh.read().splitlines()
         relations: List[Tuple[int, dict]] = []
         for n, line in enumerate(lines, start=1):

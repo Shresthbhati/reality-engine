@@ -16,13 +16,22 @@ Not implemented here (stated, not faked): remote GPU workers, a cross-run model 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, List, Mapping, Optional, Protocol, Tuple
+from typing import List, Protocol, Tuple
 
 from engine.multiengine.contract import (
-    Availability, Device, EngineAdapter, EngineErrorKind, EngineRequest, EngineRun, EngineRunStatus, EngineSpec, Task,
+    Availability,
+    Device,
+    EngineAdapter,
+    EngineErrorKind,
+    EngineRequest,
+    EngineRun,
+    EngineRunStatus,
+    EngineSpec,
+    Task,
 )
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.registry import EngineRegistry
@@ -43,15 +52,15 @@ class ReportStatus(str, Enum):
 class ResourceProbe(Protocol):
     """Honest resource facts. ``None`` means UNKNOWN -- the manager then runs sequentially and says it could not verify."""
 
-    def gpu_available(self) -> Optional[bool]: ...
-    def free_vram_mb(self) -> Optional[float]: ...
+    def gpu_available(self) -> bool | None: ...
+    def free_vram_mb(self) -> float | None: ...
 
 
 class UnknownResources:
-    def gpu_available(self) -> Optional[bool]:
+    def gpu_available(self) -> bool | None:
         return None
 
-    def free_vram_mb(self) -> Optional[float]:
+    def free_vram_mb(self) -> float | None:
         return None
 
 
@@ -67,11 +76,11 @@ class TorchResourceProbe:
 
         return torch
 
-    def gpu_available(self) -> Optional[bool]:
+    def gpu_available(self) -> bool | None:
         t = self._torch()
         return None if t is None else bool(t.cuda.is_available())
 
-    def free_vram_mb(self) -> Optional[float]:
+    def free_vram_mb(self) -> float | None:
         t = self._torch()
         if t is None or not t.cuda.is_available():
             return None
@@ -126,7 +135,7 @@ class ExecutionReport:
 
 class ExecutionManager:
     def __init__(self, registry: EngineRegistry, adapters: Mapping[str, EngineAdapter], *,
-                 store: Optional[EvidenceStore] = None, probe: Optional[ResourceProbe] = None,
+                 store: EvidenceStore | None = None, probe: ResourceProbe | None = None,
                  policy: Policy = Policy.MAXIMUM_FIDELITY, max_parallel: int = 1, max_retries: int = 2,
                  memory_wait_s: float = 0.0, sleep: Callable[[float], None] = time.sleep,
                  allow_unestablished_licence: bool = False) -> None:
@@ -222,7 +231,7 @@ class ExecutionManager:
                                tuple(warnings), mem)
 
     # ------------------------------------------------------------------ one engine
-    def _choose_device(self, spec: EngineSpec) -> Tuple[Optional[Device], Optional[dict], str]:
+    def _choose_device(self, spec: EngineSpec) -> Tuple[Device | None, dict | None, str]:
         """(device, fallback_record, refusal_reason). A fallback is recorded only when a better device was planned and could
         not be used."""
         gpu = self.probe.gpu_available()
@@ -235,7 +244,7 @@ class ExecutionManager:
             return self._wait_for_vram(spec)
         return Device("cpu"), None, ""
 
-    def _wait_for_vram(self, spec: EngineSpec) -> Tuple[Optional[Device], Optional[dict], str]:
+    def _wait_for_vram(self, spec: EngineSpec) -> Tuple[Device | None, dict | None, str]:
         need = spec.hardware.min_vram_mb
         deadline = time.monotonic() + self.memory_wait_s
         while True:

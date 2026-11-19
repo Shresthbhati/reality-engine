@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Tuple
 
 
 class ObservationError(ValueError):
@@ -45,12 +46,12 @@ class ObservationDraft:
     source_id: str                              # image / video id
     coordinate_system: str                      # frame id the values are expressed in; REQUIRED (never "unknown")
     predicted: Mapping[str, Any]                # the engine's values, in ``coordinate_system``
-    frame: Optional[int] = None                 # video frame index, if any
-    image_region: Optional[Tuple[float, float, float, float]] = None  # x0, y0, x1, y1 in source pixels
-    original_coordinates: Optional[Mapping[str, Any]] = None  # values before any conversion, in the engine's own convention
-    confidence: Optional[float] = None          # the engine's own number, if it emits one; None = not emitted
-    uncertainty: Optional[Mapping[str, Any]] = None  # e.g. {"std": ..} or {"covariance": ..}; None = unknown
-    calibration: Optional[Mapping[str, Any]] = None  # how the confidence/uncertainty was calibrated; None = UNCALIBRATED
+    frame: int | None = None                 # video frame index, if any
+    image_region: Tuple[float, float, float, float] | None = None  # x0, y0, x1, y1 in source pixels
+    original_coordinates: Mapping[str, Any] | None = None  # values before any conversion, in the engine's own convention
+    confidence: float | None = None          # the engine's own number, if it emits one; None = not emitted
+    uncertainty: Mapping[str, Any] | None = None  # e.g. {"std": ..} or {"covariance": ..}; None = unknown
+    calibration: Mapping[str, Any] | None = None  # how the confidence/uncertainty was calibrated; None = UNCALIBRATED
     relations: Tuple[Tuple[str, str], ...] = ()  # (kind, other_observation_id)
 
 
@@ -64,15 +65,15 @@ class EngineObservation:
     source_id: str
     coordinate_system: str
     predicted: Mapping[str, Any]
-    frame: Optional[int]
-    image_region: Optional[Tuple[float, float, float, float]]
-    original_coordinates: Optional[Mapping[str, Any]]
-    confidence: Optional[float]
-    uncertainty: Optional[Mapping[str, Any]]
-    calibration: Optional[Mapping[str, Any]]
+    frame: int | None
+    image_region: Tuple[float, float, float, float] | None
+    original_coordinates: Mapping[str, Any] | None
+    confidence: float | None
+    uncertainty: Mapping[str, Any] | None
+    calibration: Mapping[str, Any] | None
     execution_config: Mapping[str, Any]
     processed_at: str
-    fallback: Optional[Mapping[str, Any]]       # None = ran as planned; else what was substituted and why
+    fallback: Mapping[str, Any] | None       # None = ran as planned; else what was substituted and why
     relations: Tuple[Tuple[str, str], ...] = ()
 
     @property
@@ -95,7 +96,7 @@ class EngineObservation:
         }
 
     @classmethod
-    def from_dict(cls, d: Mapping[str, Any]) -> "EngineObservation":
+    def from_dict(cls, d: Mapping[str, Any]) -> EngineObservation:
         region = d.get("image_region")
         return cls(
             observation_id=d["observation_id"], engine_id=d["engine_id"], model_version=d["model_version"], task=d["task"],
@@ -126,7 +127,7 @@ def id_core(o: EngineObservation) -> dict:
 
 def make_observation(
     draft: ObservationDraft, *, engine_id: str, model_version: str, execution_config: Mapping[str, Any],
-    fallback: Optional[Mapping[str, Any]] = None, processed_at: Optional[str] = None,
+    fallback: Mapping[str, Any] | None = None, processed_at: str | None = None,
 ) -> EngineObservation:
     """Validate a draft and stamp it with the runner's facts. Rejects what would make the evidence unusable later."""
     if not engine_id or not model_version:

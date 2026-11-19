@@ -9,10 +9,16 @@ present AND checkpoint cached AND binary on PATH). A probe that raises is report
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Dict, List, Tuple
 
 from engine.multiengine.contract import (
-    Availability, AvailabilityStatus, CheckpointRequirement, EngineSpec, HardwareRequirement, Task,
+    Availability,
+    AvailabilityStatus,
+    CheckpointRequirement,
+    EngineSpec,
+    HardwareRequirement,
+    Task,
 )
 
 
@@ -88,7 +94,7 @@ def _probe_from_perception(name: str):
     return probe
 
 
-def _licence(model_key: str) -> Tuple[str, Optional[bool]]:
+def _licence(model_key: str) -> Tuple[str, bool | None]:
     from perception import model_registry as mr
 
     spec = mr.all_specs().get(model_key)

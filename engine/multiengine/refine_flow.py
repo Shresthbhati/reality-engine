@@ -69,6 +69,13 @@ class RefineOutcome:
         d = self.result.to_dict()
         d["final_observations"] = len(self.state.active)
         d["rolled_back_observations"] = list(self.rolled_back)
+        # Refinement is only claimed when an engine actually produced NEW inference during the loop (adopted or rolled back).
+        # A failed or impossible reprocessing attempt is recorded as an attempt, never as refinement.
+        actions = [a for it in d.get("iterations", []) for a in it.get("actions", [])]
+        inferred = [a for a in actions if a.get("outcome") in ("applied", "unchanged", "rejected_inconsistent", "rejected_regression")]
+        d["new_inference"] = bool(inferred)
+        d["reprocessing_attempts"] = len([a for a in actions if a.get("engines")])
+        d["refinement_claim"] = "refined" if any(a.get("outcome") == "applied" for a in actions) else "not_refined"
         return d
 
 

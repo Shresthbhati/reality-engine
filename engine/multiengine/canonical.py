@@ -95,6 +95,26 @@ def _path_scale(graph: FrameGraph, src: str, dst: str) -> float:
     return float(np.linalg.norm(pts[1] - pts[0]))
 
 
+def _numeric_jacobian(fn, x: np.ndarray, h: float = 1e-6) -> np.ndarray:
+    """Central-difference Jacobian of ``fn`` at ``x``. Exact (to float rounding) for the affine maps a FrameGraph composes; for a
+    non-affine map it is the first-order approximation, which is what linearised covariance propagation means."""
+    x = np.asarray(x, dtype=float)
+    cols = []
+    for i in range(x.size):
+        d = np.zeros_like(x)
+        d[i] = h * max(1.0, abs(x[i]))
+        cols.append((np.asarray(fn(x + d), dtype=float) - np.asarray(fn(x - d), dtype=float)) / (2.0 * d[i]))
+    return np.stack(cols, axis=1)
+
+
+def _propagate_covariance(cov: np.ndarray, jac: np.ndarray, n: int) -> np.ndarray | None:
+    """Sigma' = J Sigma J^T, or None when the input covariance is not a finite n x n matrix (never a silent guess)."""
+    if cov.shape != (n, n) or jac.shape != (n, n) or not np.isfinite(cov).all() or not np.isfinite(jac).all():
+        return None
+    out = jac @ cov @ jac.T
+    return 0.5 * (out + out.T)  # symmetrise away rounding asymmetry
+
+
 def determine(
     quantity: str,
     member_ids: Sequence[str],
@@ -130,19 +150,32 @@ def determine(
                     (oid, f"frame {o.coordinate_system!r} differs from {target_frame!r} and no frame graph was given")
                 )
                 continue
+            jac: np.ndarray | None = None
             try:
                 if quantity == POSITION:
                     graph.require_comparable(o.coordinate_system, target_frame)
-                    vec = graph.transform_points(vec, o.coordinate_system, target_frame)[0]
+                    src = vec
+                    vec = graph.transform_points(src, o.coordinate_system, target_frame)[0]
+                    jac = _numeric_jacobian(
+                        lambda p: graph.transform_points(p, o.coordinate_system, target_frame)[0], src
+                    )
                 else:  # lengths: need a metric path, and scale by the path's scale
                     graph.require_comparable(o.coordinate_system, target_frame, metric=True)
-                    vec = vec * _path_scale(graph, o.coordinate_system, target_frame)
+                    s = _path_scale(graph, o.coordinate_system, target_frame)
+                    vec = vec * s
+                    jac = s * np.eye(len(vec))
             except FrameMismatch as exc:
                 excluded.append((oid, str(exc)))
                 continue
             if cov_arr is not None:
-                cov_arr = None
-                notes.append(f"covariance of {oid} dropped: it is not propagated through a frame transform")
+                propagated = _propagate_covariance(cov_arr, jac, len(vec))
+                if propagated is None:
+                    notes.append(
+                        f"covariance of {oid} unavailable after the frame transform: it is not a finite {len(vec)}x{len(vec)} matrix"
+                    )
+                else:
+                    notes.append(f"covariance of {oid} propagated through {o.coordinate_system!r} -> {target_frame!r} (J S J^T)")
+                cov_arr = propagated
         estimates.append(
             Estimate(
                 engine_id=o.engine_id,

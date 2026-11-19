@@ -51,11 +51,18 @@ def _run_dir(base: Path, run_id: str) -> Path:
         raise HTTPException(404, "Run not found") from None
     if not (d / SNAPSHOT_FILE).is_file():
         raise HTTPException(404, "Run not found")
+    _snapshot(d)  # every route refuses a run whose snapshot is damaged, including those that only read the matrix
     return d
 
 
 def _snapshot(d: Path) -> dict[str, Any]:
-    return json.loads((d / SNAPSHOT_FILE).read_text(encoding="utf-8"))
+    try:
+        s = json.loads((d / SNAPSHOT_FILE).read_text(encoding="utf-8"))
+        if not isinstance(s, dict) or "status" not in s or "counts" not in s:
+            raise ValueError("not an evidence-world snapshot")
+        return s
+    except (OSError, ValueError) as exc:  # a damaged snapshot is an ERROR, never an empty successful world
+        raise HTTPException(500, f"run snapshot is unreadable: {exc}") from None
 
 
 def _matrix(d: Path) -> EvidenceMatrix:
@@ -71,7 +78,11 @@ async def list_runs(world_id: str, db: AsyncSession = Depends(get_db), auth: Aut
     runs = []
     if base.is_dir():
         for d in sorted(p for p in base.iterdir() if (p / SNAPSHOT_FILE).is_file()):
-            s = _snapshot(d)
+            try:
+                s = _snapshot(d)
+            except HTTPException:  # one damaged run is listed as such; it neither hides nor breaks the others
+                runs.append({"run_id": d.name, "status": "unreadable", "counts": None})
+                continue
             runs.append({"run_id": s["run_id"], "status": s["status"], "counts": s["counts"]})
     return {"world_id": world_id, "runs": runs}
 

@@ -228,6 +228,8 @@ def convert(
                     "model": "axis-aligned box centred on the resolved position with the resolved [w, d, h]; "
                              "orientation and component shape are not modelled by this box",
                     "derived_from": {"position": sorted(pos.supporting), "dimensions": sorted(dims.supporting)},
+                    # propagated, evidence-derived uncertainty; None = none could be derived (never a stand-in value)
+                    "uncertainty": {"position": pos.uncertainty, "dimensions": dims.uncertainty},
                 }),
             )
             geometry_ids.append(gid)

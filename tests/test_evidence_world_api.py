@@ -138,6 +138,23 @@ def test_another_tenant_cannot_see_the_world_its_runs_entities_or_artifacts(clie
     assert client.get(_url("world-does-not-exist", "run-1"), headers=A).status_code == 404
 
 
+def test_a_damaged_or_missing_snapshot_is_an_error_never_an_empty_successful_world(client, tmp_path):
+    from apps.api.evidence_world_stage import evidence_root
+
+    wid = _world(client, A)
+    _seed(tmp_path, "tenant-a", wid)  # run-1: healthy
+    bad = evidence_root("tenant-a", wid, "run-bad", base=tmp_path / "ws")
+    bad.mkdir(parents=True)
+    (bad / "snapshot.json").write_text("{ not json", encoding="utf-8")
+    for tail in ("entities", "rows", "refinement"):
+        assert client.get(_url(wid, "run-bad", tail), headers=A).status_code == 500  # explicit error, not 200 with nothing
+    assert client.get(_url(wid, "run-nothing"), headers=A).status_code == 404  # no snapshot at all: not found, not empty
+    listing = {r["run_id"]: r for r in client.get(_url(wid), headers=A).json()["runs"]}
+    assert listing["run-1"]["status"] == "complete" and listing["run-bad"]["status"] == "unreadable"  # visible, others unaffected
+    (bad / "snapshot.json").write_text('{"unrelated": true}', encoding="utf-8")  # valid JSON but not a snapshot
+    assert client.get(_url(wid, "run-bad"), headers=A).status_code == 500
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

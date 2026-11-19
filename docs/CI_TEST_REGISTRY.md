@@ -124,7 +124,7 @@ Total: 1
 
 ## unlisted
 
-Total: 519
+Total: 522
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -403,6 +403,9 @@ Total: 519
 - `tests/test_multi_session_alignment.py`
 - `tests/test_multi_source_session.py`
 - `tests/test_multi_storey_validator.py`
+- `tests/test_multiengine_alignment_consensus.py`
+- `tests/test_multiengine_foundation.py`
+- `tests/test_multiengine_refinement.py`
 - `tests/test_multistorey_matrix.py`
 - `tests/test_multistorey_plane_support.py`
 - `tests/test_multiview_identity_appearance.py`

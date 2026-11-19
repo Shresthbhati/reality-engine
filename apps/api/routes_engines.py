@@ -11,9 +11,10 @@ import uuid
 from collections import Counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from apps.api.auth import AuthContext, get_auth_context, is_global_admin
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.executor import Policy
 from engine.multiengine.quality_gates import STANDARD_GATES, default_gate_specs
@@ -105,9 +106,17 @@ def standard_quality_gates() -> dict[str, Any]:
     }
 
 
+def _require_global_admin(auth: AuthContext, what: str) -> None:
+    """These two routes use ONE process-wide store and take server file paths: they are operator tools, not tenant APIs.
+    A tenant's own evidence is served, tenant-scoped, under /api/worlds/{id}/evidence-world."""
+    if not is_global_admin(auth):
+        raise HTTPException(403, f"{what} is restricted to global administrators; use /api/worlds/{{id}}/evidence-world")
+
+
 @engines_router.post("/reconstruct")
-def execute_reconstruction(req: ReconstructRequest) -> dict[str, Any]:
-    """Execute sequential Maximum-Fidelity multi-model reconstruction session."""
+def execute_reconstruction(req: ReconstructRequest, auth: AuthContext = Depends(get_auth_context)) -> dict[str, Any]:
+    """Execute sequential Maximum-Fidelity multi-model reconstruction session (global administrators only)."""
+    _require_global_admin(auth, "running the engines on arbitrary server paths")
     if not req.sources:
         raise HTTPException(400, "At least one source image is required.")
 
@@ -124,8 +133,9 @@ def execute_reconstruction(req: ReconstructRequest) -> dict[str, Any]:
 
 
 @engines_router.get("/evidence")
-def list_evidence(limit: int = 50) -> dict[str, Any]:
-    """Query stored observations from the append-only Evidence Store."""
+def list_evidence(limit: int = 50, auth: AuthContext = Depends(get_auth_context)) -> dict[str, Any]:
+    """Query the process-wide Evidence Store (global administrators only: it mixes every caller's observations)."""
+    _require_global_admin(auth, "the shared evidence store")
     all_obs = _SHARED_STORE.query()
     return {
         "total": len(all_obs),

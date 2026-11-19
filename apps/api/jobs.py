@@ -1145,7 +1145,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 return bool(job.cancel_requested)
 
             ew_facts = _evw.run_for_job(
-                team_id=job.team_id, world_id=world.id, job_id=job.id,
+                team_id=world.team_id, world_id=world.id, job_id=job.id,  # keyed like the API authorizes: through the world
                 sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled)
             holder["evidence_world"] = ew_facts
             if ew_facts["status"] == "cancelled":

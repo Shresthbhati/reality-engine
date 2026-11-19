@@ -55,6 +55,7 @@ from apps.api.routes_life_safety import life_safety_router
 from apps.api.routes_thermal_envelope import thermal_envelope_router
 from apps.api.routes_system import system
 from apps.api.routes_engines import engines_router
+from apps.api.routes_evidence_world import evidence_world_router
 from apps.api.routes_technologies import technologies_router
 from apps.api.routes_usage import router as usage_router
 from apps.api.routes_billing import router as billing_router
@@ -92,7 +93,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, engines_router, assets_router, usage_router, furniture_router, construction, navigation, splats_router, temporal_router, bcf_router, surface_quality_router, drawings_router, mep_router, collab_router, takeoff_router, life_safety_router, thermal_envelope_router):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, engines_router, evidence_world_router, assets_router, usage_router, furniture_router, construction, navigation, splats_router, temporal_router, bcf_router, surface_quality_router, drawings_router, mep_router, collab_router, takeoff_router, life_safety_router, thermal_envelope_router):
     app.include_router(router)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

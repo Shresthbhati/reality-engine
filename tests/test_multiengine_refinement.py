@@ -310,4 +310,4 @@ def test_single_engine_and_quality_gate_endpoints():
 def test_the_main_application_mounts_the_engines_router():
     from apps.api.main import app
 
-    assert any(getattr(r, "path", "") == "/api/engines" for r in app.routes)
+    assert any(getattr(r, "path", "").rstrip("/") == "/api/engines" for r in app.routes)

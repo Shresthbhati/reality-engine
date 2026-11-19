@@ -49,6 +49,7 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
     monkeypatch.setenv("REALITY_SIGNING_KEY", SECRET)
     monkeypatch.setenv("REALITY_API_TOKEN", "master-token-for-tests")
+    monkeypatch.setenv("REALITY_DISABLE_IN_PROCESS_WORKER", "1")
     import apps.api.db as db_mod
     importlib.reload(db_mod)
     import apps.api.main as main_mod

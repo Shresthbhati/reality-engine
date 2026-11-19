@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isTerminal, isUsableResult, toJobStatus } from "../../src/lib/api/job-status.ts";
+import { isTerminal, isUsableResult, jobOutcome, toJobStatus } from "../../src/lib/api/job-status.ts";
 
 test("toJobStatus lower-cases and matches the known literals", () => {
   assert.equal(toJobStatus("Succeeded"), "succeeded");
@@ -23,6 +23,24 @@ test("toJobStatus returns unknown for anything else", () => {
 test("isTerminal is false for queued, running and unknown", () => {
   for (const s of ["partial", "succeeded", "failed", "cancelled"] as const) assert.equal(isTerminal(s), true);
   for (const s of ["queued", "running", "unknown"] as const) assert.equal(isTerminal(s), false);
+});
+
+test("jobOutcome keeps succeeded, partial, needs-more-evidence, failed and cancelled distinct", () => {
+  assert.equal(jobOutcome({ status: "succeeded" }), "succeeded");
+  assert.equal(jobOutcome({ status: "partial" }), "partial");
+  assert.equal(jobOutcome({ status: "cancelled" }), "cancelled");
+  assert.equal(jobOutcome({ status: "failed", payload: { failure_kind: "insufficient_evidence" } }), "needs_more_evidence");
+  assert.equal(jobOutcome({ status: "failed", payload: { failure_kind: "persistence" } }), "failed");
+  assert.equal(jobOutcome({ status: "failed" }), "failed");
+  assert.equal(jobOutcome({ status: "failed", payload: null }), "failed");
+});
+
+test("jobOutcome never reads a queued job as a result and never reads an unknown status as progress or success", () => {
+  assert.equal(jobOutcome({ status: "queued" }), "in_progress");
+  assert.equal(jobOutcome({ status: "running" }), "in_progress");
+  for (const bad of [{ status: "completed" }, { status: "timed_out" }, { status: undefined }, {}, null, undefined]) {
+    assert.equal(jobOutcome(bad as never), "unrecognised");
+  }
 });
 
 test("isUsableResult is true only for succeeded and partial", () => {

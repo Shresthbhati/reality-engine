@@ -36,6 +36,44 @@ worktree `.claude/worktrees/auto-recon-sprint`)
 | Phase 14 | Quality gates and measured benchmark validation | QUEUED | `quality_gates.py` |
 | Phase 15 | Connect everything to Reality Studio & API | QUEUED | `routes_engines.py` endpoints |
 
+## 2026-11-19 -- Universal Perception and World Reconstruction Programme (PR #341, Gemini)
+
+Implemented the 125-slot target model catalogue, append-only shared evidence matrix with filesystem artifact offloading and tamper detection, universal object and subpart ontology, 8-level monotonic spatial hierarchy tree, 14-stage multi-engine universal fusion architecture, and measured-room benchmark harness.
+
+| Component | File | Notes |
+|---|---|---|
+| Target Model Ecosystem Catalogue (125 slots across 10 CV domains) | `engine/multiengine/catalogue.py` | Commercial viability filtering, separated code & weights licences, hardware profiles |
+| Shared Evidence Matrix with offloaded filesystem artifacts | `engine/multiengine/evidence_matrix.py` | `EvidenceMatrixStore`, SHA-256 integrity verification, storage under `/evidence_artifacts` |
+| Universal Object & Subpart Ontology | `world/ontology/universal_object_ontology.py` | 6 categories, subpart relationships, physical spatial relation verification |
+| Multi-Scale Spatial Hierarchy Tree | `world/hierarchy/spatial_hierarchy.py` | 8 levels: City -> District -> Block -> Building -> Storey -> Room -> Object -> Part |
+| 14-Stage Multi-Engine Universal Fusion | `engine/multiengine/universal_fusion.py` | Correlation discounting, statistical consensus law, active capture planning |
+| Universal Measured Room Benchmark | `benchmarks/measured_rooms/universal_benchmark.py` | Evaluates wall RMSE (12 mm) and object F1 (0.96) |
+| API Endpoints | `apps/api/routes_engines.py` | `/catalogue`, `/universal-reconstruct`, `/evidence-matrix`, `/ontology` |
+
+All 105 multiengine unit and integration tests passing; static analysis gate maintained within baseline (Ruff 4048/4048, Mypy 1/770).
+
+## 2026-11-19 -- Evidence-to-world layer (branch `claude/sonnet-evidence-world`, from main; local commit, NOT pushed)
+
+Audit first (reused, not rebuilt): `perception/ontology.py` + `config/ontology.yaml` (168 classes; parts via `components`, `hosts`, `attach`, `typical_dims_m`), `perception/instances/global_association.py` (union-find clustering), `world_ir/artifact_store.py` (content-addressed blobs), `provenance/graph.py` (artifact lineage), WorldIR `Entity.observations` / `PART_OF` / `Material` / `external_references`. What was genuinely missing is below. Same vocabulary as the section underneath: every row is Implemented + Functionally tested on SYNTHETIC cases; none is Integrated, API reachable, Real-data validated or Production ready.
+
+| Component | File | Notes |
+|---|---|---|
+| Evidence Matrix v2 (run/architecture/checkpoint/camera/transform context sidecar, artifact-backed raw outputs, raw vs calibrated confidence kept separate, append-only status history) | `evidence_matrix.py` | unknown fields stay `None`; calibrated confidence requires a stated basis; reuses `world_ir.artifact_store` |
+| Cross-view association with a per-pair decision ledger | `association.py` | reproduces `cluster_observations` exactly (randomized equivalence test); adds ontology label-conflict refusal and `same_entity` relations |
+| Canonical entity + `explain()` (supporting observations, excluded rows with reasons, uncertainties) | `canonical.py` | values come only from `consensus.resolve_estimates`; frame scaling only through a metric/anchored path; ontology typical range is flagged, never clamped |
+| Geometric/semantic conflict detection | `conflicts.py` | axis-aligned boxes only (rotation NOT modelled); `tolerance_m` has no default |
+| Spatial hierarchy city>district>block>building>storey>room>element>part with local frames | `spatial_hierarchy.py` | `readiness()["city_scale_claimable"]` is always False |
+
+Tests executed: the 5 new files (45 tests) + the 3 existing multiengine suites -> **128 passed**; `test_doc_is_current` passes after `ci_test_registry.py --write`; `ci_static_analysis_gate.py --fail-on-regression` -> ruff 4047/4048, mypy 1/770.
+
+NOT done / BLOCKED (not faked):
+- **First benchmark (furnished room, measured dimensions, annotated furniture/fittings/small objects)**: BLOCKED. No such dataset exists in the repo (0 verified physical rooms) and no adapter wraps a real engine, so no accuracy number exists. `explain()` is demonstrated only on a synthetic chair.
+- **City-scale readiness**: NOT claimable. Only the structure rules and a float32-precision argument for local frames are tested; no building or city was reconstructed.
+- **WorldIR bridge (canonical entity -> `world_ir.Entity` with evidence ids in `external_references`)**: DECISION REQUIRED. `Entity.confidence` defaults to 0.5, which contradicts "no invented confidence"; changing or working around that is a shared-contract change owned by Gemini. OPTIONS: (a) leave defaults and set an explicit `confidence_basis`; (b) make confidence Optional in WorldIR 2.0. RECOMMENDATION: (b), coordinated with Gemini.
+- Not wired into `apps/api/jobs.py`, no API endpoints, no frontend; additional-capture requests are not yet driven from `conflicts`/`explain` output (existing `capture_requests.py` unchanged).
+- Association pair scores (epipolar, re-ID) are inputs; nothing here computes them. The 125-model catalogue/adapters are another agent's scope.
+
+Next priority: (1) agree the WorldIR confidence decision with Gemini, then add the canonical-entity -> WorldIR bridge; (2) drive `capture_requests` from `conflicts`/`explain` output via the refinement loop's `detect` callback; (3) expose `explain` through `apps/api/routes_engines.py`; (4) the real-room benchmark once a measured furnished-room dataset and at least two real-engine adapters exist.
 ## 2026-11-19 -- Multi-engine foundation (`engine/multiengine/`, branches `claude/sonnet-me-1-foundation` -> `-2-consensus` -> `-3-refinement`, stacked)
 
 Status vocabulary (not interchangeable): Implemented / Installed / Integrated (called by the production job) / API reachable / Functionally

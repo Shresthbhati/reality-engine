@@ -188,4 +188,3 @@ class ActiveCapturePlanner:
             requests.append(req)
             self._history.append(req)
         return requests
-

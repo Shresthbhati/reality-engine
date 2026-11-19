@@ -310,4 +310,5 @@ def test_single_engine_and_quality_gate_endpoints():
 def test_the_main_application_mounts_the_engines_router():
     from apps.api.main import app
 
-    assert any(getattr(r, "path", "").rstrip("/") == "/api/engines" for r in app.routes)
+    # The OpenAPI schema is the stable route table: on newer FastAPI, ``app.routes`` nests included routers without a ``.path``.
+    assert any(p.rstrip("/") == "/api/engines" for p in app.openapi()["paths"])

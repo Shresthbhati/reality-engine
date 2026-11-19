@@ -1,7 +1,8 @@
 """Confidence defaults mean "not measured", never "certain" (PROD.3).
 
-Constructor and deserialisation defaults of every WorldIR record are 0.5 / UNKNOWN, and every producer in the repo
-states its confidence explicitly, so a forgotten argument cannot read as an observed 1.0.
+Constructor and deserialisation defaults of every WorldIR record are None ("not measured") / UNKNOWN -- never a number that could
+be read as measured -- and every producer in the repo states its confidence explicitly, so a forgotten argument cannot read as an
+observed 1.0 (nor as a fabricated 0.5).
 """
 
 from __future__ import annotations
@@ -17,15 +18,16 @@ CLASSES = ("Observation", "_Observation", "Relationship", "CausalRelation")
 
 
 def test_constructor_defaults_are_not_measured_not_certain():
-    assert Observation().confidence == 0.5
+    assert Observation().confidence is None
     r = Relationship(kind=RelationshipKind.ADJACENT_TO, target_id="x")
-    assert r.confidence == 0.5 and r.provenance is Provenance.UNKNOWN
+    assert r.confidence is None and r.provenance is Provenance.UNKNOWN
 
 
 def test_deserialising_a_record_without_confidence_does_not_invent_certainty():
-    assert Observation.from_dict({}).confidence == 0.5
-    assert Relationship.from_dict({"kind": RelationshipKind.ADJACENT_TO.value, "target_id": "x"}).confidence == 0.5
-    assert CausalRelation.from_dict({}).confidence == 0.5 if hasattr(CausalRelation, "from_dict") else True
+    assert Observation.from_dict({}).confidence is None
+    assert Relationship.from_dict({"kind": RelationshipKind.ADJACENT_TO.value, "target_id": "x"}).confidence is None
+    if hasattr(CausalRelation, "from_dict"):
+        assert CausalRelation.from_dict({}).confidence is None
 
 
 def test_every_producer_states_its_confidence():

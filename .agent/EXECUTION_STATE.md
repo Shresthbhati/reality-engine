@@ -3,6 +3,23 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-19 -- Evidence-to-world COMPLETION (branch `claude/sonnet-evidence-world-completion`; local commits, NOT pushed)
+
+Done + tested: T1/T2 optional `Entity.confidence` (+`confidence_basis`; consumers/exporters audited, `tests/test_worldir_optional_confidence.py`);
+T3 rejected predictions kept raw (`RejectedPrediction`, `/rejected`); T5 real epipolar+appearance pair scorer (`pair_scoring.py`);
+T6 stable identity (`identity.py`) + same-image grouping (`detection_groups.py`); T7/T8 refinement loop with rollback, regression check,
+explicit stop reasons (`refine_flow.py`); T10 tenant/job authz (`tests/test_job_authorization.py`, evidence-world API/job tests);
+T11 `enablement_gate()` in `apps/api/evidence_world_stage.py` -- default stays OFF, gate NOT ready.
+
+T9 real run (observed): 10 South Building photos, real COLMAP + models, `RE_EVIDENCE_WORLD=1`. Job grade `partial` (not moved by the stage).
+Stage `partial`: owlvit succeeded, florence2 + grounding_dino failed, mask_rcnn unavailable; 0 detections (outdoor facade, no interior
+objects), so 0 entities. `scoring` null (no camera set reached the stage), so no cross-view scoring was exercised on real data.
+No real reprocessing exercised (production adapters have no region-targeted re-inference).
+
+BLOCKED T4: no Gemini metric-3D observation schema on main; depth adapters do not persist a depth map. DECISION REQUIRED: shared
+metric-3D observation convention. NEXT: diagnose florence2/grounding_dino failures on the real run; get an interior multi-photo set;
+benchmark detectors; calibration dataset; then re-evaluate the gate.
+
 ## 2026-11-19 -- Multi-Model Maximum Fidelity Cycle (Gemini Sole Ownership)
 
 - **Ownership:** Gemini owns the entire implementation programme. Sonnet is unavailable; no tasks are delegated or blocked on Sonnet.

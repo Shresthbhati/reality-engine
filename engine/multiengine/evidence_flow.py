@@ -52,6 +52,7 @@ from engine.multiengine.conflicts import (
     semantic_conflicts,
 )
 from engine.multiengine.contract import EngineAdapter, EngineRequest, Task
+from engine.multiengine.detection_groups import DetectionGroup, group_detections
 from engine.multiengine.evidence_matrix import EvidenceMatrix
 from engine.multiengine.executor import (
     ExecutionCancelled,
@@ -60,7 +61,6 @@ from engine.multiengine.executor import (
     ReportStatus,
     ResourceProbe,
 )
-from engine.multiengine.detection_groups import DetectionGroup, group_detections
 from engine.multiengine.identity import IdentityRegistry
 from engine.multiengine.registry import EngineRegistry
 from engine.multiengine.spatial_hierarchy import SpatialHierarchy

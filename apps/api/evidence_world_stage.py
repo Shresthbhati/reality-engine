@@ -31,6 +31,27 @@ def enabled() -> bool:
     return os.environ.get(ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+#: Production enablement gate. ``enabled()`` stays opt-in (default OFF); this table says what must hold before the DEFAULT may be turned on.
+#: ``met`` is only True where a test in this repository executes the claim; everything else is honestly unmet.
+ENABLEMENT_CRITERIA: tuple[tuple[str, bool, str], ...] = (
+    ("tenant_isolation", True, "tests/test_evidence_world_api.py, tests/test_evidence_world_job.py"),
+    ("job_authorization", True, "tests/test_job_authorization.py"),
+    ("cancellation_and_failure_isolation", True, "tests/test_evidence_world_job.py"),
+    ("real_multi_photo_job_run", False, "no recorded run of the stage on a real multi-photo job yet"),
+    ("detector_accuracy_benchmark", False, "no benchmark of the production detectors on labelled interior imagery"),
+    ("confidence_calibration", False, "observation calibration is LEGACY_UNSPECIFIED; no calibration dataset"),
+    ("metric_3d_observation_contract", False, "BLOCKED: no shared metric-3D schema from the Gemini side; depth maps not persisted"),
+    ("quality_gate_thresholds", False, "no benchmark-established thresholds; gates stay UNVERIFIED"),
+)
+
+
+def enablement_gate() -> dict[str, Any]:
+    """Whether the stage may be on BY DEFAULT. ``ready`` only when every criterion is met; the env flag is unaffected."""
+    unmet = [c for c, met, _ in ENABLEMENT_CRITERIA if not met]
+    return {"ready": not unmet, "unmet": unmet,
+            "criteria": [{"id": c, "met": met, "evidence": ev} for c, met, ev in ENABLEMENT_CRITERIA]}
+
+
 def _segment(value: str, what: str) -> str:
     if not isinstance(value, str) or not _ID_RE.match(value) or ".." in value:
         raise EvidenceWorldError(f"unsafe {what} {value!r} for a storage path")
@@ -116,7 +137,11 @@ def run_for_job(
         if len(usable) >= 2:  # a cross-view score needs registered cameras for at least two of the images
             from PIL import Image
 
-            from engine.multiengine.pair_scoring import ScorerConfig, appearance_from_images, make_pair_scorer
+            from engine.multiengine.pair_scoring import (
+                ScorerConfig,
+                appearance_from_images,
+                make_pair_scorer,
+            )
             from perception.instances.epipolar import DEFAULT_EPIPOLAR_TOLERANCE_PX
 
             cfg = ScorerConfig(epipolar_tolerance_px=DEFAULT_EPIPOLAR_TOLERANCE_PX, appearance_min=APPEARANCE_MIN)

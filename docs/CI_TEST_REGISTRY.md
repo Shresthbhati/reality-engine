@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 544
+Total: 550
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -300,6 +300,7 @@ Total: 544
 - `tests/test_evidence_quality.py`
 - `tests/test_evidence_sources.py`
 - `tests/test_evidence_world_api.py`
+- `tests/test_evidence_world_gate.py`
 - `tests/test_evidence_world_job.py`
 - `tests/test_export_parts_and_attributes.py`
 - `tests/test_export_route.py`
@@ -362,6 +363,7 @@ Total: 544
 - `tests/test_interior_invariants.py`
 - `tests/test_interior_openings.py`
 - `tests/test_interior_scene_e2e.py`
+- `tests/test_job_authorization.py`
 - `tests/test_job_dedupe.py`
 - `tests/test_job_progress.py`
 - `tests/test_job_stage_runs_model.py`
@@ -424,11 +426,14 @@ Total: 544
 - `tests/test_multiengine_calibration.py`
 - `tests/test_multiengine_canonical.py`
 - `tests/test_multiengine_conflicts.py`
+- `tests/test_multiengine_detection_groups.py`
 - `tests/test_multiengine_evidence_flow.py`
 - `tests/test_multiengine_evidence_matrix.py`
 - `tests/test_multiengine_foundation.py`
 - `tests/test_multiengine_hierarchy.py`
 - `tests/test_multiengine_matrix_executor.py`
+- `tests/test_multiengine_pair_scoring_identity.py`
+- `tests/test_multiengine_refine_flow.py`
 - `tests/test_multiengine_refinement.py`
 - `tests/test_multiengine_worldir_bridge.py`
 - `tests/test_multistorey_matrix.py`
@@ -676,6 +681,7 @@ Total: 544
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
 - `tests/test_worldir_coordinate_like_properties.py`
+- `tests/test_worldir_optional_confidence.py`
 - `tests/test_worldstore_concurrency.py`
 - `tests/test_worldstore_retention.py`
 - `tests/test_worldstore_tiles.py`

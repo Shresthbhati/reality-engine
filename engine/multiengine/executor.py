@@ -35,7 +35,12 @@ from engine.multiengine.contract import (
     EngineSpec,
     Task,
 )
-from engine.multiengine.evidence_matrix import EvidenceContext, EvidenceMatrix, RejectedPrediction, RunRecord
+from engine.multiengine.evidence_matrix import (
+    EvidenceContext,
+    EvidenceMatrix,
+    RejectedPrediction,
+    RunRecord,
+)
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.registry import EngineRegistry
 

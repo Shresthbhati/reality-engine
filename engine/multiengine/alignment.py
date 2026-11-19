@@ -12,6 +12,7 @@ from being compared.
 Bundle adjustment is NOT implemented here (COLMAP performs it inside the SfM stage); the reprojection utilities in consensus.py
 are what other modules use to judge a candidate against the original image evidence.
 """
+
 from __future__ import annotations
 
 import math
@@ -37,8 +38,8 @@ class DegenerateGeometry(AlignmentError):
 @dataclass(frozen=True)
 class Frame:
     frame_id: str
-    kind: str = "world"              # "world" | "camera" | "image" | "depth" | "model"
-    scale_state: str = "unknown"     # "metric" | "relative" | "unknown"
+    kind: str = "world"  # "world" | "camera" | "image" | "depth" | "model"
+    scale_state: str = "unknown"  # "metric" | "relative" | "unknown"
     description: str = ""
 
     def __post_init__(self):
@@ -58,7 +59,11 @@ class Sim3:
 
     @staticmethod
     def from_arrays(scale: float, rotation: np.ndarray, translation: np.ndarray) -> Sim3:
-        return Sim3(float(scale), tuple(tuple(float(v) for v in row) for row in rotation), tuple(float(v) for v in translation))
+        return Sim3(
+            float(scale),
+            tuple(tuple(float(v) for v in row) for row in rotation),
+            tuple(float(v) for v in translation),
+        )
 
     @property
     def R(self) -> np.ndarray:
@@ -79,7 +84,9 @@ class Sim3:
 
     def compose(self, then: Sim3) -> Sim3:
         """Apply ``self`` first, then ``then``."""
-        return Sim3.from_arrays(then.scale * self.scale, then.R @ self.R, then.scale * then.R @ self.t + then.t)
+        return Sim3.from_arrays(
+            then.scale * self.scale, then.R @ self.R, then.scale * then.R @ self.t + then.t
+        )
 
 
 @dataclass(frozen=True)
@@ -105,7 +112,9 @@ class FrameGraph:
         except KeyError:
             raise FrameMismatch(f"unknown coordinate frame {frame_id!r}") from None
 
-    def add_transform(self, src: str, dst: str, transform: Sim3, *, source: str, scale_anchored: bool = False) -> None:
+    def add_transform(
+        self, src: str, dst: str, transform: Sim3, *, source: str, scale_anchored: bool = False
+    ) -> None:
         """Record a KNOWN transform src -> dst. ``source`` says where it came from (a registration result, a calibration, ...)."""
         self.frame(src)
         self.frame(dst)
@@ -121,7 +130,7 @@ class FrameGraph:
         queue = deque([[src]])
         while queue:
             path = queue.popleft()
-            for (a, b) in self._edges:
+            for a, b in self._edges:
                 if a == path[-1] and b not in seen:
                     if b == dst:
                         return path + [b]
@@ -136,12 +145,19 @@ class FrameGraph:
         if path is None:
             return False, f"no known transform between frames {a!r} and {b!r}"
         if metric:
-            anchored = any(self._edges[(path[i], path[i + 1])].scale_anchored for i in range(len(path) - 1))
+            anchored = any(
+                self._edges[(path[i], path[i + 1])].scale_anchored for i in range(len(path) - 1)
+            )
             if "relative" in (fa.scale_state, fb.scale_state) and not anchored:
-                return False, (f"frames {a!r} ({fa.scale_state}) and {b!r} ({fb.scale_state}) are not on a common metric scale: "
-                               "no scale-anchored transform connects them")
+                return False, (
+                    f"frames {a!r} ({fa.scale_state}) and {b!r} ({fb.scale_state}) are not on a common metric scale: "
+                    "no scale-anchored transform connects them"
+                )
             if "unknown" in (fa.scale_state, fb.scale_state) and not anchored:
-                return False, f"the scale of frame {a!r} or {b!r} is unknown, so metric values cannot be compared"
+                return (
+                    False,
+                    f"the scale of frame {a!r} or {b!r} is unknown, so metric values cannot be compared",
+                )
         return True, ""
 
     def require_comparable(self, a: str, b: str, *, metric: bool = False) -> None:
@@ -161,6 +177,7 @@ class FrameGraph:
 
 # ------------------------------------------------------------------------------------------------ estimation
 
+
 def _check_points(src: np.ndarray, dst: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     a = np.asarray(src, dtype=float)
     b = np.asarray(dst, dtype=float)
@@ -171,14 +188,17 @@ def _check_points(src: np.ndarray, dst: np.ndarray) -> Tuple[np.ndarray, np.ndar
     return a, b
 
 
-def estimate_similarity(src: np.ndarray, dst: np.ndarray, *, with_scale: bool = True,
-                        weights: np.ndarray | None = None) -> Sim3:
+def estimate_similarity(
+    src: np.ndarray, dst: np.ndarray, *, with_scale: bool = True, weights: np.ndarray | None = None
+) -> Sim3:
     """Closed-form least-squares Sim(3) (Umeyama 1991). Raises ``DegenerateGeometry`` for < 3 points or collinear points
     (rank < 2): such a set cannot determine a rotation, and returning one would be inventing it."""
     a, b = _check_points(src, dst)
     n = len(a)
     if n < 3:
-        raise DegenerateGeometry(f"{n} correspondences; at least 3 are needed to determine a similarity transform")
+        raise DegenerateGeometry(
+            f"{n} correspondences; at least 3 are needed to determine a similarity transform"
+        )
     w = np.ones(n) if weights is None else np.asarray(weights, dtype=float)
     if w.shape != (n,) or (w < 0).any() or w.sum() <= 0:
         raise AlignmentError("weights must be a non-negative (N,) vector with a positive sum")
@@ -188,13 +208,19 @@ def estimate_similarity(src: np.ndarray, dst: np.ndarray, *, with_scale: bool = 
     cov = (bc * w[:, None]).T @ ac
     u, d, vt = np.linalg.svd(cov)
     extent = float(np.abs(ac).max())
-    if extent == 0.0 or np.linalg.matrix_rank(ac, tol=1e-9 * extent) < 2 or d[1] < 1e-12 * max(d[0], 1e-300):
-        raise DegenerateGeometry("correspondences are (near) collinear; the rotation is undetermined")
+    if (
+        extent == 0.0
+        or np.linalg.matrix_rank(ac, tol=1e-9 * extent) < 2
+        or d[1] < 1e-12 * max(d[0], 1e-300)
+    ):
+        raise DegenerateGeometry(
+            "correspondences are (near) collinear; the rotation is undetermined"
+        )
     s_mat = np.eye(3)
     if np.linalg.det(u) * np.linalg.det(vt) < 0:
         s_mat[2, 2] = -1.0
     rot = u @ s_mat @ vt
-    var_a = float((w * (ac ** 2).sum(axis=1)).sum())
+    var_a = float((w * (ac**2).sum(axis=1)).sum())
     scale = float(np.trace(np.diag(d) @ s_mat) / var_a) if with_scale else 1.0
     if scale <= 0 or not math.isfinite(scale):
         raise DegenerateGeometry(f"estimated scale {scale!r} is not positive and finite")
@@ -203,9 +229,9 @@ def estimate_similarity(src: np.ndarray, dst: np.ndarray, *, with_scale: bool = 
 
 @dataclass(frozen=True)
 class AlignmentResult:
-    status: str                       # "ok" | "degenerate" | "registration_failed"
+    status: str  # "ok" | "degenerate" | "registration_failed"
     transform: Sim3 | None
-    inliers: np.ndarray | None     # bool mask over the input correspondences
+    inliers: np.ndarray | None  # bool mask over the input correspondences
     n_points: int
     rms_inlier_residual: float | None
     inlier_threshold: float
@@ -224,20 +250,38 @@ class AlignmentResult:
         return self.status == "ok"
 
 
-def ransac_similarity(src: np.ndarray, dst: np.ndarray, *, inlier_threshold: float, with_scale: bool = True,
-                      min_inliers: int | None = None, iterations: int = 500, seed: int = 0) -> AlignmentResult:
+def ransac_similarity(
+    src: np.ndarray,
+    dst: np.ndarray,
+    *,
+    inlier_threshold: float,
+    with_scale: bool = True,
+    min_inliers: int | None = None,
+    iterations: int = 500,
+    seed: int = 0,
+) -> AlignmentResult:
     """Robust Sim(3) between two sets of corresponding points. ``inlier_threshold`` is in ``dst`` units and has no default
     (it must come from the engine's calibration). Returns an explicit failure status instead of a poor transform."""
     if not inlier_threshold > 0:
-        raise AlignmentError("inlier_threshold must be a positive tolerance in the destination frame's units")
+        raise AlignmentError(
+            "inlier_threshold must be a positive tolerance in the destination frame's units"
+        )
     a, b = _check_points(src, dst)
     n = len(a)
     need = 3 if min_inliers is None else max(3, int(min_inliers))
     if n < need:
-        return AlignmentResult("degenerate", None, None, n, None, inlier_threshold, (f"{n} correspondences < required {need}",))
+        return AlignmentResult(
+            "degenerate",
+            None,
+            None,
+            n,
+            None,
+            inlier_threshold,
+            (f"{n} correspondences < required {need}",),
+        )
     rng = np.random.default_rng(seed)
     best_mask: np.ndarray | None = None
-    best_count = -1                   # a hypothesis with zero inliers is still a hypothesis (-> registration_failed, not degenerate)
+    best_count = -1  # a hypothesis with zero inliers is still a hypothesis (-> registration_failed, not degenerate)
     for _ in range(iterations):
         idx = rng.choice(n, size=3, replace=False)
         try:
@@ -248,19 +292,45 @@ def ransac_similarity(src: np.ndarray, dst: np.ndarray, *, inlier_threshold: flo
         if int(mask.sum()) > best_count:
             best_count, best_mask = int(mask.sum()), mask
     if best_mask is None:
-        return AlignmentResult("degenerate", None, None, n, None, inlier_threshold, ("every sampled subset was degenerate",))
+        return AlignmentResult(
+            "degenerate",
+            None,
+            None,
+            n,
+            None,
+            inlier_threshold,
+            ("every sampled subset was degenerate",),
+        )
     if best_count < need:
-        return AlignmentResult("registration_failed", None, best_mask, n, None, inlier_threshold,
-                               (f"best hypothesis had {best_count} inliers < required {need} at threshold {inlier_threshold:g}",))
+        return AlignmentResult(
+            "registration_failed",
+            None,
+            best_mask,
+            n,
+            None,
+            inlier_threshold,
+            (
+                f"best hypothesis had {best_count} inliers < required {need} at threshold {inlier_threshold:g}",
+            ),
+        )
     try:
         refit = estimate_similarity(a[best_mask], b[best_mask], with_scale=with_scale)
     except DegenerateGeometry as exc:
-        return AlignmentResult("degenerate", None, best_mask, n, None, inlier_threshold, (str(exc),))
+        return AlignmentResult(
+            "degenerate", None, best_mask, n, None, inlier_threshold, (str(exc),)
+        )
     resid = np.linalg.norm(refit.apply(a) - b, axis=1)
     final = resid <= inlier_threshold
     if int(final.sum()) < need:
-        return AlignmentResult("registration_failed", None, final, n, None, inlier_threshold,
-                               ("refit on the inlier set lost inliers below the required count",))
+        return AlignmentResult(
+            "registration_failed",
+            None,
+            final,
+            n,
+            None,
+            inlier_threshold,
+            ("refit on the inlier set lost inliers below the required count",),
+        )
     rms = float(np.sqrt(np.mean(resid[final] ** 2)))
     return AlignmentResult("ok", refit, final, n, rms, inlier_threshold)
 
@@ -270,15 +340,21 @@ def scale_mismatch(result: AlignmentResult, *, expected: float, tolerance: float
     if result.transform is None:
         return "no transform to check"
     s = result.transform.scale
-    return None if abs(s - expected) <= tolerance else f"fitted scale {s:.6g} differs from the expected {expected:g} by more than {tolerance:g}"
+    return (
+        None
+        if abs(s - expected) <= tolerance
+        else f"fitted scale {s:.6g} differs from the expected {expected:g} by more than {tolerance:g}"
+    )
 
 
 # ------------------------------------------------------------------------------------------------ camera poses
 
-Pose = Tuple[np.ndarray, np.ndarray]      # (R_cam_to_world 3x3, camera centre in world coordinates)
+Pose = Tuple[np.ndarray, np.ndarray]  # (R_cam_to_world 3x3, camera centre in world coordinates)
 
 
-def pose_residuals(poses_a: Dict[str, Pose], poses_b: Dict[str, Pose], transform: Sim3) -> Dict[str, Tuple[float, float]]:
+def pose_residuals(
+    poses_a: Dict[str, Pose], poses_b: Dict[str, Pose], transform: Sim3
+) -> Dict[str, Tuple[float, float]]:
     """For every camera present in both reconstructions: (centre error in b's units, rotation error in degrees) after mapping
     reconstruction a into b's frame with ``transform``."""
     out: Dict[str, Tuple[float, float]] = {}
@@ -288,12 +364,16 @@ def pose_residuals(poses_a: Dict[str, Pose], poses_b: Dict[str, Pose], transform
         mapped_c = transform.apply(np.asarray(ca, dtype=float))[0]
         mapped_r = transform.R @ np.asarray(ra, dtype=float)
         cos = (np.trace(mapped_r.T @ np.asarray(rb, dtype=float)) - 1.0) / 2.0
-        out[cam] = (float(np.linalg.norm(mapped_c - np.asarray(cb, dtype=float))),
-                    float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))))
+        out[cam] = (
+            float(np.linalg.norm(mapped_c - np.asarray(cb, dtype=float))),
+            float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))),
+        )
     return out
 
 
-def flag_inconsistent_poses(residuals: Dict[str, Tuple[float, float]], *, mad_k: float = 3.5) -> List[str]:
+def flag_inconsistent_poses(
+    residuals: Dict[str, Tuple[float, float]], *, mad_k: float = 3.5
+) -> List[str]:
     """Cameras whose centre residual is a robust (median/MAD) outlier. ``mad_k`` is the usual modified-z-score cut (3.5, Iglewicz &
     Hoaglin); with fewer than 4 cameras no outlier can be identified and the list is empty rather than guessed."""
     if len(residuals) < 4:

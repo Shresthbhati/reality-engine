@@ -6,6 +6,7 @@ There is deliberately NO update and NO delete. Consensus and refinement add new 
 Persistence is one JSON object per line. On load every observation's content hash is re-computed; a line that is corrupt or
 whose hash does not match raises ``EvidenceStoreError`` naming the line -- evidence is never silently dropped or repaired.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,9 @@ class EvidenceStore:
         An observation whose id does not match its own content is refused (it would break traceability)."""
         expected = content_id(id_core(obs))
         if obs.observation_id != expected:
-            raise EvidenceStoreError(f"observation {obs.observation_id!r} does not match its content hash {expected!r}")
+            raise EvidenceStoreError(
+                f"observation {obs.observation_id!r} does not match its content hash {expected!r}"
+            )
         with self._lock:
             if obs.observation_id in self._obs:
                 return False
@@ -62,7 +65,9 @@ class EvidenceStore:
 
     def _link_unlocked(self, a: str, b: str, kind: str, *, persist: bool) -> bool:
         if kind not in RELATION_KINDS:
-            raise EvidenceStoreError(f"unknown relation kind {kind!r}; expected one of {sorted(RELATION_KINDS)}")
+            raise EvidenceStoreError(
+                f"unknown relation kind {kind!r}; expected one of {sorted(RELATION_KINDS)}"
+            )
         if a not in self._obs:
             raise EvidenceStoreError(f"cannot link unknown observation {a!r}")
         if b not in self._obs:
@@ -86,9 +91,16 @@ class EvidenceStore:
     def __len__(self) -> int:
         return len(self._obs)
 
-    def query(self, *, engine_id: str | None = None, task: str | None = None, quantity: str | None = None,
-              source_id: str | None = None, frame: int | None = None,
-              coordinate_system: str | None = None) -> List[EngineObservation]:
+    def query(
+        self,
+        *,
+        engine_id: str | None = None,
+        task: str | None = None,
+        quantity: str | None = None,
+        source_id: str | None = None,
+        frame: int | None = None,
+        coordinate_system: str | None = None,
+    ) -> List[EngineObservation]:
         with self._lock:
             out = []
             for oid in self._order:
@@ -121,12 +133,19 @@ class EvidenceStore:
             while frontier:
                 cur = frontier.pop(0)
                 for a, b, kind in sorted(self._relations):
-                    if a == cur and kind in ("refines", "derived_from") and b not in seen and b != observation_id:
+                    if (
+                        a == cur
+                        and kind in ("refines", "derived_from")
+                        and b not in seen
+                        and b != observation_id
+                    ):
                         seen.append(b)
                         frontier.append(b)
             return seen
 
-    def engines_for(self, quantity: str, source_id: str, frame: int | None = None) -> Dict[str, List[str]]:
+    def engines_for(
+        self, quantity: str, source_id: str, frame: int | None = None
+    ) -> Dict[str, List[str]]:
         """engine_id -> observation ids that report ``quantity`` for the source: who said what about the same thing."""
         out: Dict[str, List[str]] = {}
         for o in self.query(quantity=quantity, source_id=source_id, frame=frame):
@@ -155,21 +174,29 @@ class EvidenceStore:
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise EvidenceStoreError(f"{self._path}:{n}: corrupt evidence line ({exc})") from exc
+                raise EvidenceStoreError(
+                    f"{self._path}:{n}: corrupt evidence line ({exc})"
+                ) from exc
             if rec.get("type") == "observation":
                 try:
                     obs = EngineObservation.from_dict(rec)
                 except (KeyError, TypeError) as exc:
-                    raise EvidenceStoreError(f"{self._path}:{n}: malformed observation ({exc})") from exc
+                    raise EvidenceStoreError(
+                        f"{self._path}:{n}: malformed observation ({exc})"
+                    ) from exc
                 if obs.observation_id != content_id(id_core(obs)):
-                    raise EvidenceStoreError(f"{self._path}:{n}: observation {obs.observation_id} fails its content-hash check")
+                    raise EvidenceStoreError(
+                        f"{self._path}:{n}: observation {obs.observation_id} fails its content-hash check"
+                    )
                 if obs.observation_id not in self._obs:
                     self._obs[obs.observation_id] = obs
                     self._order.append(obs.observation_id)
             elif rec.get("type") == "relation":
                 relations.append((n, rec))
             else:
-                raise EvidenceStoreError(f"{self._path}:{n}: unknown record type {rec.get('type')!r}")
+                raise EvidenceStoreError(
+                    f"{self._path}:{n}: unknown record type {rec.get('type')!r}"
+                )
         for n, rec in relations:
             try:
                 self._link_unlocked(rec["from"], rec["to"], rec["kind"], persist=False)

@@ -3,6 +3,39 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-19 -- Multi-Model Maximum Fidelity Cycle (Gemini Sole Ownership)
+
+- **Ownership:** Gemini owns the entire implementation programme. Sonnet is unavailable; no tasks are delegated or blocked on Sonnet.
+- **Execution Policy:** Sequential Maximum Fidelity (`Policy.MAXIMUM_FIDELITY`).
+- **Target Hardware:** RTX 4050 6GB Laptop GPU (sequential model execution to prevent VRAM exhaustion).
+- **Model Lifecycle Guarantee:**
+  `LOAD → INFERENCE → SAVE RAW OUTPUT → VALIDATE → NORMALISE → RECORD ERRORS → RELEASE RESOURCES → VERIFY PERSISTENCE → NEXT MODEL`.
+- **Target Models & Families:**
+  - SfM & Geometry: COLMAP, MapAnything, VGGT, VGGT-Omega, DUSt3R (CC-BY-NC-4.0), MASt3R (CC-BY-NC-4.0).
+  - Depth: Depth Anything V3, Depth Anything V2, MiDaS DPT_Hybrid.
+  - Perception & Detection: Grounding DINO, Florence-2, OWL-ViT.
+  - Segmentation: SAM (ViT-B), SAM 2, SAM 3/3.1.
+  - Appearance & Tracking: DINOv2, multi-view tracking.
+- **Evidence Integrity:** Append-only Evidence Store (`evidence_store.py`) with content-hashed IDs. Every model retains access to original source photographs. Raw coordinates preserved in `original_coordinates`; SI-normalised outputs in `predicted`. Zero uncalibrated confidences or synthetic mockups claimed as physical truth.
+
+| Phase | Description | Status | Verification |
+|---|---|---|---|
+| Phase 1 | Audit repository state & establish environment facts | COMPLETED | Hardware & package probes executed |
+| Phase 2 | Establish shared engine adapter & evidence contracts | IN PROGRESS | `engine/multiengine/contract.py` compliance |
+| Phase 3 | Implement sequential model execution manager | IN PROGRESS | Verified persistence & memory release |
+| Phase 4 | Integrate and validate COLMAP and MapAnything | QUEUED | `pycolmap` + CLI + MapAnything |
+| Phase 5 | Integrate and validate VGGT and VGGT-Omega | QUEUED | Visual Geometry Grounded Transformer |
+| Phase 6 | Integrate and validate DUSt3R and MASt3R | QUEUED | CC-BY-NC-4.0 licence guard |
+| Phase 7 | Integrate and validate Depth Anything 3, V2, MiDaS | QUEUED | Transformers & PyTorch Hub |
+| Phase 8 | Integrate Grounding DINO, Florence-2, SAM2, SAM3 | QUEUED | Open-vocab & polygon topology |
+| Phase 9 | Integrate DINOv2 and tracking engines | QUEUED | Visual feature embedding & tracks |
+| Phase 10 | Multi-engine evidence alignment and consensus | QUEUED | `alignment.py`, `consensus.py` |
+| Phase 11 | Error diagnosis and geometric/semantic reconciliation | QUEUED | Failure detection & conflict sets |
+| Phase 12 | Iterative ML refinement | QUEUED | `refinement.py` rollback & stop reasons |
+| Phase 13 | Additional-photo requests & incremental recon | QUEUED | `capture_requests.py` |
+| Phase 14 | Quality gates and measured benchmark validation | QUEUED | `quality_gates.py` |
+| Phase 15 | Connect everything to Reality Studio & API | QUEUED | `routes_engines.py` endpoints |
+
 ## 2026-11-19 -- Multi-engine foundation (`engine/multiengine/`, branches `claude/sonnet-me-1-foundation` -> `-2-consensus` -> `-3-refinement`, stacked)
 
 Status vocabulary (not interchangeable): Implemented / Installed / Integrated (called by the production job) / API reachable / Functionally

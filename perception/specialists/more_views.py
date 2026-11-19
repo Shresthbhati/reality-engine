@@ -223,6 +223,24 @@ def more_views_specialist(
 
     unobserved_sectors = [p for p in recommended_poses if p["observations_in_sector"] == 0]
 
+    # Run raycast coverage planner for quantitative visibility & uncertainty metrics
+    from perception.planning.viewpoint_planner import ActiveViewpointPlanner
+    planner = ActiveViewpointPlanner(wall_margin_m=wall_margin)
+    if room_bounds:
+        planner.set_room_bounds(*room_bounds)
+    planner.add_entity_surfaces(
+        center=(pos[0], pos[1], pos[2]),
+        extent=(0.6, 0.6, 0.6),
+        entity_id=entity.id,
+    )
+    if existing_cams:
+        planner.register_existing_observations(existing_cams)
+    coverage_plan = planner.plan_viewpoints(
+        target_center=(pos[0], pos[1], pos[2]),
+        standoff_dist=standoff_dist,
+        top_k=num_sectors,
+    )
+
     capture_request = {
         "entity_id": entity.id,
         "entity_name": entity.name or entity.id,
@@ -230,6 +248,13 @@ def more_views_specialist(
         "recommended_standoff_m": standoff_dist,
         "recommended_poses": recommended_poses,
         "unobserved_sectors_count": len(unobserved_sectors),
+        "coverage_metrics": {
+            "initial_surface_coverage": coverage_plan.initial_surface_coverage,
+            "expected_surface_coverage": coverage_plan.expected_surface_coverage,
+            "occlusion_ratio": coverage_plan.initial_occlusion_ratio,
+            "unobserved_area_m2": coverage_plan.total_unobserved_area_m2,
+            "planning_time_ms": coverage_plan.planning_time_ms,
+        },
     }
 
     world.metadata.setdefault("capture_requests", []).append(capture_request)

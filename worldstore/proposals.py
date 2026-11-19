@@ -166,7 +166,7 @@ def _assess(base: WorldIR, cand: WorldIR, diff) -> List[ChangeAssessment]:
         cites = tuple(sorted(o.id for o in new.observations))
         if d.kind is ChangeKind.ADDED:
             ok = bool(cites) or (new.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED)
-                                 and new.confidence >= MIN_ADD_CONFIDENCE)
+                                 and new.confidence is not None and new.confidence >= MIN_ADD_CONFIDENCE)
             out.append(ChangeAssessment(
                 d.entity_id, "added", SUPPORTED if ok else NEEDS_REVIEW,
                 () if ok else ("no cited observation and not an OBSERVED/RECONSTRUCTED entity above the confidence "
@@ -190,7 +190,8 @@ def _assess(base: WorldIR, cand: WorldIR, diff) -> List[ChangeAssessment]:
         if TRUST[new.provenance] < TRUST[old.provenance] and TRUST[old.provenance] >= _TRUSTED_FLOOR:
             verdict = CONFLICT
             reasons.append(f"would replace {old.provenance.value} data with weaker {new.provenance.value} data")
-        elif geometry_moved and new.confidence < old.confidence:
+        elif (geometry_moved and new.confidence is not None and old.confidence is not None
+              and new.confidence < old.confidence):
             verdict = CONFLICT
             reasons.append(f"moves geometry/placement beyond {GEOMETRY_TOLERANCE_M} m while confidence drops "
                            f"{old.confidence:.2f} -> {new.confidence:.2f}")

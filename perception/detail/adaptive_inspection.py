@@ -342,7 +342,9 @@ def apply_adaptive_inspection_to_world(
     entity.custom_properties["effective_pitch_mm"] = report.effective_pitch_mm
 
     # Update entity confidence if inspection yields higher certainty
-    entity.confidence = max(entity.confidence, report.confidence)
+    # (an entity whose confidence is None keeps None: an inspection result is not a recorded confidence basis for it)
+    if entity.confidence is not None:
+        entity.confidence = max(entity.confidence, report.confidence)
 
     # Attach inferred attributes if available
     if report.inferred_attributes:

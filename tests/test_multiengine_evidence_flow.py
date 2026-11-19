@@ -92,7 +92,7 @@ def test_flow_persists_runs_builds_entities_and_states_its_limits(tmp_path):
     for ent in snap["entities"]:
         world = ent["world_entity"]
         assert world["geometry_ids"] == []  # 2D boxes only: no geometry is fabricated
-        assert world["confidence"] == 0.5 and "evidence" in world["custom_properties"]
+        assert world["confidence"] is None and "evidence" in world["custom_properties"]
     assert any("no geometry created" in n for n in snap["bridge_notes"])
     assert snap["matrix_problems"] == []
     assert snap["hierarchy"]["city_scale_claimable"] is False

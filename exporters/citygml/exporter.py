@@ -138,8 +138,9 @@ def _city_object_xml(entity, corners) -> str:
     attrs = (
         f'<gen:stringAttribute name="worldir_type"><gen:value>{escape(entity.type)}</gen:value></gen:stringAttribute>'
         f'<gen:stringAttribute name="worldir_provenance"><gen:value>{escape(entity.provenance.value)}</gen:value></gen:stringAttribute>'
-        f'<gen:doubleAttribute name="worldir_confidence"><gen:value>{entity.confidence}</gen:value></gen:doubleAttribute>'
     )
+    if entity.confidence is not None:  # a numeric XML attribute is emitted only for a measured confidence (never "None")
+        attrs += f'<gen:doubleAttribute name="worldir_confidence"><gen:value>{entity.confidence}</gen:value></gen:doubleAttribute>'
     name_xml = f'<gml:name>{escape(entity.name)}</gml:name>' if entity.name else ""
     if ns == "bldg":
         body = f'{name_xml}{attrs}<bldg:lod1Solid>{solid}</bldg:lod1Solid>'

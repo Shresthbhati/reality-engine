@@ -71,6 +71,7 @@ class EvidenceContext:
     artifact_refs: Mapping[str, str] = field(default_factory=dict)  # role -> artifact:// uri (masks, depth maps, ...)
     calibrated_confidence: float | None = None
     calibration_basis: str | None = None
+    validation: str | None = None  # outcome of the validation actually applied; None = none was applied (never assumed passed)
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -96,6 +97,7 @@ class EvidenceContext:
             "artifact_refs": dict(sorted(self.artifact_refs.items())),
             "calibrated_confidence": self.calibrated_confidence,
             "calibration_basis": self.calibration_basis,
+            "validation": self.validation,
         }
 
     @classmethod
@@ -110,6 +112,51 @@ class EvidenceContext:
             artifact_refs=dict(d.get("artifact_refs") or {}),
             calibrated_confidence=d.get("calibrated_confidence"),
             calibration_basis=d.get("calibration_basis"),
+            validation=d.get("validation"),
+        )
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """One engine execution, kept whether it succeeded, failed or was unavailable: a failure is evidence too."""
+
+    run_id: str
+    task: str
+    engine_id: str
+    model_version: str
+    status: str  # EngineRunStatus value: succeeded | failed | unavailable | cancelled
+    architecture_id: str | None = None
+    checkpoint_id: str | None = None
+    device: str | None = None
+    error_kind: str | None = None
+    error: str = ""
+    wall_s: float | None = None
+    peak_vram_mb: float | None = None
+    attempts: int = 1
+    fallback: Mapping[str, Any] | None = None
+    sources: tuple[str, ...] = ()
+    observation_ids: tuple[str, ...] = ()
+    output_artifact: str | None = None  # artifact:// uri of the run's complete raw output bundle
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id, "task": self.task, "engine_id": self.engine_id, "model_version": self.model_version,
+            "status": self.status, "architecture_id": self.architecture_id, "checkpoint_id": self.checkpoint_id,
+            "device": self.device, "error_kind": self.error_kind, "error": self.error, "wall_s": self.wall_s,
+            "peak_vram_mb": self.peak_vram_mb, "attempts": self.attempts,
+            "fallback": dict(self.fallback) if self.fallback else None, "sources": list(self.sources),
+            "observation_ids": list(self.observation_ids), "output_artifact": self.output_artifact,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> RunRecord:
+        return cls(
+            run_id=d["run_id"], task=d["task"], engine_id=d["engine_id"], model_version=d["model_version"],
+            status=d["status"], architecture_id=d.get("architecture_id"), checkpoint_id=d.get("checkpoint_id"),
+            device=d.get("device"), error_kind=d.get("error_kind"), error=d.get("error", ""), wall_s=d.get("wall_s"),
+            peak_vram_mb=d.get("peak_vram_mb"), attempts=d.get("attempts", 1), fallback=d.get("fallback"),
+            sources=tuple(d.get("sources") or ()), observation_ids=tuple(d.get("observation_ids") or ()),
+            output_artifact=d.get("output_artifact"),
         )
 
 
@@ -133,6 +180,7 @@ class EvidenceMatrix:
         )
         self._ctx: dict[str, EvidenceContext] = {}
         self._history: dict[str, list[StatusEvent]] = {}
+        self._runs: list[RunRecord] = []
         self._lock = threading.RLock()
         self._log = self._root / "context.jsonl" if self._root else None
         if self._log is not None and self._log.exists():
@@ -166,6 +214,19 @@ class EvidenceMatrix:
             self._history[obs.observation_id] = []
             self._append({"type": "context", **context.to_dict()})
             return True
+
+    def record_run(self, run: RunRecord) -> None:
+        """Append one engine execution (successful or not). Runs are a log: the same engine may legitimately run again."""
+        if not run.run_id or not run.engine_id:
+            raise MatrixError("a run record needs a run id and an engine id")
+        with self._lock:
+            if run.output_artifact is not None and not self._has_uri(run.output_artifact):
+                raise MatrixError(f"run output artifact {run.output_artifact!r} is not in the artifact store")
+            self._runs.append(run)
+            self._append({"type": "run", **run.to_dict()})
+
+    def runs(self, run_id: str | None = None) -> list[RunRecord]:
+        return [r for r in self._runs if run_id is None or r.run_id == run_id]
 
     def set_status(self, observation_id: str, status: str, *, reason: str, by: str) -> None:
         if status not in STATUSES:
@@ -235,6 +296,16 @@ class EvidenceMatrix:
                     continue
                 if hashlib.sha256(data).hexdigest() != self.artifacts.digest_of(uri):
                     problems.append(f"observation {oid}: artifact {uri!r} fails its content hash (corrupted or tampered)")
+        for r in self._runs:
+            if r.output_artifact is None:
+                continue
+            try:
+                data = self.artifacts.get(r.output_artifact)
+            except (KeyError, FileNotFoundError, ValueError):
+                problems.append(f"run {r.run_id}/{r.engine_id}: output artifact {r.output_artifact!r} is missing")
+                continue
+            if hashlib.sha256(data).hexdigest() != self.artifacts.digest_of(r.output_artifact):
+                problems.append(f"run {r.run_id}/{r.engine_id}: output artifact fails its content hash")
         return problems
 
     # ---- persistence
@@ -261,6 +332,8 @@ class EvidenceMatrix:
                     self.store.get(ctx.observation_id)  # raises if the observation is not in the store
                     self._ctx[ctx.observation_id] = ctx
                     self._history.setdefault(ctx.observation_id, [])
+                elif kind == "run":
+                    self._runs.append(RunRecord.from_dict(rec))
                 elif kind == "status":
                     if rec["status"] not in STATUSES or rec["observation_id"] not in self._ctx:
                         raise MatrixError("status record for an unknown row or status")

@@ -16,6 +16,7 @@ Not implemented here (stated, not faked): remote GPU workers, a cross-run model 
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -34,8 +35,23 @@ from engine.multiengine.contract import (
     EngineSpec,
     Task,
 )
+from engine.multiengine.evidence_matrix import EvidenceContext, EvidenceMatrix, RunRecord
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.registry import EngineRegistry
+
+#: what ``make_observation`` guarantees about every stored observation -- the only validation the executor can truthfully claim
+CONTRACT_VALIDATION = (
+    "observation contract validated (stated source and coordinate frame, finite numbers, confidence in [0, 1], "
+    "non-empty image region); NOT checked against ground truth"
+)
+
+
+class ExecutionCancelled(RuntimeError):
+    """The caller asked to stop between engines. Everything that finished was already persisted; ``report`` says what ran."""
+
+    def __init__(self, report: ExecutionReport) -> None:
+        super().__init__("execution cancelled between engines")
+        self.report = report
 
 
 class Policy(str, Enum):
@@ -164,7 +180,21 @@ class ExecutionManager:
         memory_wait_s: float = 0.0,
         sleep: Callable[[float], None] = time.sleep,
         allow_unestablished_licence: bool = False,
+        matrix: EvidenceMatrix | None = None,
+        run_id: str | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        camera_refs: Mapping[str, str] | None = None,
     ) -> None:
+        if matrix is not None:
+            if store is not None and store is not matrix.store:
+                raise ValueError("store and matrix.store must be the same EvidenceStore (one source of raw evidence)")
+            if not run_id:
+                raise ValueError("a run_id is required when persisting into an EvidenceMatrix")
+            store = matrix.store
+        self.matrix = matrix
+        self.run_id = run_id
+        self.should_cancel = should_cancel
+        self.camera_refs = dict(camera_refs or {})  # source id -> camera reference (intrinsics/pose record), if known
         self.registry = registry
         self.adapters = dict(adapters)
         self.store = store
@@ -256,6 +286,7 @@ class ExecutionManager:
                 "observation's execution_config, so this is not a native-resolution result"
             )
         runs: List[EngineRun] = []
+        cancelled: List[EngineSpec] = []
         for e in plan.entries:
             if e.state == "unavailable":
                 spec = self.registry.get(e.engine_id)
@@ -290,8 +321,13 @@ class ExecutionManager:
                     "VRAM requirement and a probe proving they fit; at least one condition could not be verified"
                 )
             for s in runnable:
+                if self.should_cancel is not None and self.should_cancel():
+                    cancelled.extend(runnable[runnable.index(s) :])
+                    break
                 runs.append(self._run_one(s, request))
-        if self.store is not None:
+        if self.matrix is not None:
+            self._persist_matrix(task, request, runs, cancelled)
+        elif self.store is not None:
             for r in runs:
                 if r.ok:
                     self.store.add_many(r.observations)
@@ -316,7 +352,11 @@ class ExecutionManager:
             if gpu is None
             else f"gpu_available={gpu}, free_vram_mb={'unknown' if free is None else round(free)} at plan time"
         )
-        return ExecutionReport(
+        if cancelled:
+            warnings.append(
+                f"cancelled before {', '.join(s.engine_id for s in cancelled)} ran; engines that finished were persisted"
+            )
+        report = ExecutionReport(
             task,
             self.policy,
             plan,
@@ -326,6 +366,79 @@ class ExecutionManager:
             tuple(warnings),
             mem,
         )
+        if cancelled:
+            raise ExecutionCancelled(report)
+        return report
+
+    # ------------------------------------------------------------------ evidence matrix persistence
+    def _persist_matrix(
+        self, task: Task, request: EngineRequest, runs: List[EngineRun], cancelled: List[EngineSpec]
+    ) -> None:
+        """Record EVERY run (failures and unavailable engines included) and every observation of the successful ones, with the
+        run, model revision, checkpoint, camera and validation context. The complete raw output of a run is also stored as one
+        content-addressed artifact, so the original model output stays retrievable byte-for-byte."""
+        m = self.matrix
+        assert m is not None and self.run_id is not None
+        for r in runs:
+            spec = self.registry.get(r.engine_id)
+            ckpt = _checkpoint_id(spec)
+            arch = spec.family or None
+            out_uri = None
+            if r.ok and r.observations:
+                bundle = json.dumps(
+                    [o.to_dict() for o in r.observations], sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+                out_uri, _ = m.artifacts.put(bundle)
+            for o in r.observations:
+                refs = {"run_output": out_uri} if out_uri else {}
+                m.add(
+                    o,
+                    EvidenceContext(
+                        o.observation_id,
+                        self.run_id,
+                        architecture_id=arch,
+                        checkpoint_id=ckpt,
+                        camera_ref=self.camera_refs.get(o.source_id),
+                        artifact_refs=refs,
+                        validation=CONTRACT_VALIDATION,
+                    ),
+                )
+            m.record_run(
+                RunRecord(
+                    run_id=self.run_id,
+                    task=task.value,
+                    engine_id=r.engine_id,
+                    model_version=r.model_version,
+                    status=r.status.value,
+                    architecture_id=arch,
+                    checkpoint_id=ckpt,
+                    device=r.device,
+                    error_kind=r.error_kind,
+                    error=r.error,
+                    wall_s=r.usage.wall_s if r.usage else None,
+                    peak_vram_mb=r.usage.peak_vram_mb if r.usage else None,
+                    attempts=r.attempts,
+                    fallback=r.fallback,
+                    sources=tuple(request.sources),
+                    observation_ids=tuple(o.observation_id for o in r.observations),
+                    output_artifact=out_uri,
+                )
+            )
+        for spec in cancelled:
+            m.record_run(
+                RunRecord(
+                    run_id=self.run_id,
+                    task=task.value,
+                    engine_id=spec.engine_id,
+                    model_version=spec.version,
+                    status="cancelled",
+                    architecture_id=spec.family or None,
+                    checkpoint_id=_checkpoint_id(spec),
+                    error="not started: cancellation was requested before this engine ran",
+                    attempts=0,
+                    sources=tuple(request.sources),
+                )
+            )
 
     # ------------------------------------------------------------------ one engine
     def _choose_device(self, spec: EngineSpec) -> Tuple[Device | None, dict | None, str]:
@@ -405,3 +518,13 @@ class ExecutionManager:
                     }
                     continue
             return run
+
+
+def _checkpoint_id(spec: EngineSpec) -> str | None:
+    """The checkpoint(s) the spec declares, with their pinned hash when there is one; ``None`` when the spec names none.
+    An unpinned checkpoint is labelled as such: the revision is NOT proven, only the name."""
+    if not spec.checkpoints:
+        return None
+    return "+".join(
+        f"{c.name}@sha256:{c.sha256}" if c.sha256 else f"{c.name} (revision unpinned)" for c in spec.checkpoints
+    )

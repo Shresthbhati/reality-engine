@@ -59,6 +59,7 @@ from engine.multiengine.executor import (
     ReportStatus,
     ResourceProbe,
 )
+from engine.multiengine.identity import IdentityRegistry
 from engine.multiengine.registry import EngineRegistry
 from engine.multiengine.spatial_hierarchy import SpatialHierarchy
 from engine.multiengine.worldir_bridge import BridgeResult, convert
@@ -177,6 +178,8 @@ def run_evidence_flow(
     policy: Policy = Policy.MAXIMUM_FIDELITY,
     metadata: Mapping[str, Any] | None = None,
     overlap_tolerance_m: float | None = None,
+    identity_registry: IdentityRegistry | None = None,
+    scoring_note: Mapping[str, Any] | None = None,
 ) -> EvidenceFlowResult:
     from perception.ontology import get_default_ontology
 
@@ -229,6 +232,11 @@ def run_evidence_flow(
         limitations.append("The engines ran successfully but produced no detections on these images (no entity is invented).")
     scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
     assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto), store=matrix.store)
+    identity_events: list[dict[str, Any]] = []
+    if identity_registry is not None:  # keep entity ids stable when later evidence extends, merges or splits entities
+        stable, events = identity_registry.resolve(list(assoc.entities))
+        assoc = AssociationResult(tuple(stable), assoc.decisions)
+        identity_events = [e.to_dict() for e in events]
     labels = {c.observation_id: c.label for c in cands}
     canonicals = [
         build_canonical_entity(
@@ -284,6 +292,8 @@ def run_evidence_flow(
             "actions": ["association", "canonical_fusion", "conflict_detection", "capture_requests"],
             "reprocessing": "not run: " + LIMITATIONS[2],
         }],
+        "identity_events": identity_events,
+        "scoring": dict(scoring_note) if scoring_note else None,  # which pair scorer + thresholds were used (None = no scorer)
         "bridge_notes": list(bridge.notes),
         "matrix_problems": matrix.verify(),
     }

@@ -12,7 +12,10 @@ from typing import Any, Union
 
 import cv2
 import numpy as np
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 from PIL import Image
 
 from engine.adapters.base import (
@@ -51,10 +54,11 @@ class LightGlueMatcherAdapter(BaseEngineAdapter):
         if self._matcher is not None:
             return
 
-        import torch
+        if torch is None:
+            raise DependencyMissingError("PyTorch is required for LightGlueMatcherAdapter")
         from lightglue import ALIKED, DISK, LightGlue
 
-        dev = self._custom_device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        dev = self._custom_device or ("cuda:0" if (torch is not None and torch.cuda.is_available()) else "cpu")
         try:
             if self.feature_type == "aliked":
                 self._extractor = ALIKED(max_num_keypoints=2048).to(dev).eval()
@@ -79,7 +83,7 @@ class LightGlueMatcherAdapter(BaseEngineAdapter):
     ) -> tuple[dict[str, Any], Any, dict[str, Any]]:
         from lightglue.utils import load_image
 
-        dev = self._custom_device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        dev = self._custom_device or ("cuda:0" if (torch is not None and torch.cuda.is_available()) else "cpu")
 
         tensors = []
         for inp in inputs:

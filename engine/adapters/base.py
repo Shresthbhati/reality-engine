@@ -17,7 +17,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 class EngineUnavailableError(RuntimeError):
@@ -102,7 +105,7 @@ class BaseEngineAdapter(ABC):
         """Safely release GPU memory and delete model references."""
         self._model = None
         gc.collect()
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
     @abstractmethod
@@ -132,9 +135,10 @@ class BaseEngineAdapter(ABC):
         self.validate_inputs(inputs)
 
         # 3. Prepare device and memory telemetry
-        device_str = self._custom_device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        has_cuda = torch is not None and torch.cuda.is_available()
+        device_str = self._custom_device or ("cuda:0" if has_cuda else "cpu")
         vram_start = 0.0
-        if torch.cuda.is_available() and "cuda" in device_str:
+        if has_cuda and "cuda" in device_str:
             torch.cuda.reset_peak_memory_stats()
             vram_start = torch.cuda.memory_allocated() / (1024 * 1024)
 
@@ -149,7 +153,7 @@ class BaseEngineAdapter(ABC):
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
         vram_peak = 0.0
-        if torch.cuda.is_available() and "cuda" in device_str:
+        if has_cuda and "cuda" in device_str:
             vram_peak = torch.cuda.max_memory_allocated() / (1024 * 1024)
 
         report = ProducerReport(

@@ -422,10 +422,15 @@ async def group_sessions_endpoint(
     items_to_group = []
 
     if body.evidence_ids:
-        res = await db.execute(
-            select(Evidence).where(Evidence.id.in_(body.evidence_ids))
-        )
-        db_evs = res.scalars().all()
+        requested = set(body.evidence_ids)
+        q = select(Evidence).where(Evidence.id.in_(requested))
+        if (scope := visible(Evidence, auth)) is not None:
+            q = q.where(scope)  # a foreign or unowned-legacy row is simply not selected
+        db_evs = (await db.execute(q)).scalars().all()
+        # All-or-nothing, one message: an id that is unknown, foreign or unowned is indistinguishable, so neither the
+        # id's existence nor its GPS/timestamps can be inferred, and a mixed batch never yields a partial grouping.
+        if {ev.id for ev in db_evs} != requested:
+            raise HTTPException(404, "Evidence not found")
         loc_res = await db.execute(
             select(Location).where(
                 Location.entity_type == "evidence",

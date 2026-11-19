@@ -2047,4 +2047,3 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
         except Exception:
             log.exception("worker loop error")
             await asyncio.sleep(poll_seconds * 2)
-

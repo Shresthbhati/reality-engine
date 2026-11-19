@@ -144,7 +144,12 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 w, h = 640, 480
                 raw_depth = np.linspace(1.0, 5.0, w, dtype=np.float32)
@@ -162,13 +167,14 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
                             "width": w,
                             "height": h,
                             "scale_state": "relative",
+                            "is_test_double": True,
                         },
                         original_coordinates={
                             "raw_min": 1.0,
                             "raw_max": 5.0,
                             "shape": [h, w],
                         },
-                        confidence=0.92,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -210,7 +216,7 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
                         "raw_max": d_max,
                         "shape": list(pred.shape),
                     },
-                    confidence=0.93,
+                    confidence=None,
                 )
             )
 
@@ -260,7 +266,12 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -275,9 +286,10 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                             "width": 640,
                             "height": 480,
                             "scale_state": "relative",
+                            "is_test_double": True,
                         },
                         original_coordinates={"raw_format": "inverse_depth"},
-                        confidence=0.86,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -318,7 +330,7 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                         "scale_state": "relative",
                     },
                     original_coordinates={"raw_min": d_min, "raw_max": d_max},
-                    confidence=0.88,
+                    confidence=None,
                 )
             )
 

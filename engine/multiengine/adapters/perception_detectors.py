@@ -135,7 +135,12 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             # Calibrated test double path
             for s in sources:
                 drafts.append(
@@ -150,9 +155,10 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
                             "score": 0.88,
                             "box_normalized": [0.05, 0.05, 0.20, 0.30],
                             "scale_tier": "meso",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [50, 50, 200, 300]},
-                        confidence=0.88,
+                        confidence=None,
                     )
                 )
                 drafts.append(
@@ -167,9 +173,10 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
                             "score": 0.82,
                             "box_normalized": [0.30, 0.10, 0.34, 0.14],
                             "scale_tier": "micro",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [300, 100, 340, 140]},
-                        confidence=0.82,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -257,7 +264,12 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -271,9 +283,10 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                             "score": 0.94,
                             "box_normalized": [0.10, 0.15, 0.45, 0.60],
                             "caption": "a modern three-seater fabric sofa",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [100, 150, 450, 600]},
-                        confidence=0.94,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -318,7 +331,7 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                             "box_normalized": [b[0] / w, b[1] / h, b[2] / w, b[3] / h],
                         },
                         original_coordinates={"box_xyxy_px": b},
-                        confidence=0.91,
+                        confidence=None,
                     )
                 )
 
@@ -362,7 +375,12 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -375,9 +393,10 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
                             "label": "table",
                             "score": 0.89,
                             "box_normalized": [0.12, 0.08, 0.30, 0.24],
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [120, 80, 300, 240]},
-                        confidence=0.89,
+                        confidence=None,
                     )
                 )
             return drafts

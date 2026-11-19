@@ -6,8 +6,6 @@ segmentation, and tracking disciplines.
 
 from __future__ import annotations
 
-from typing import Dict
-
 from engine.multiengine.adapters.appearance_tracking import (
     Dinov2EngineAdapter,
     TrackingEngineAdapter,
@@ -35,6 +33,7 @@ from engine.multiengine.adapters.geometry_vggt import (
     probe_vggt,
     probe_vggt_omega,
 )
+from engine.multiengine.adapters.metric_3d_lifter import Metric3DLifterAdapter
 from engine.multiengine.adapters.perception_detectors import (
     Florence2EngineAdapter,
     GroundingDinoEngineAdapter,
@@ -82,6 +81,7 @@ def create_adapters_for_registry(reg: EngineRegistry) -> Dict[str, EngineAdapter
         "dinov2": Dinov2EngineAdapter,
         "tracking": TrackingEngineAdapter,
         "open3d_tsdf": Open3DTSDFEngineAdapter,
+        "metric_3d_lifter": Metric3DLifterAdapter,
     }
 
     for spec in reg.all():
@@ -112,6 +112,7 @@ __all__ = [
     "Dinov2EngineAdapter",
     "TrackingEngineAdapter",
     "Open3DTSDFEngineAdapter",
+    "Metric3DLifterAdapter",
     "create_adapters_for_registry",
     "probe_mapanything",
     "probe_vggt",

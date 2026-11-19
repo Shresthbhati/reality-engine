@@ -98,7 +98,12 @@ class SamEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._predictor is None:
+        if not virtual_run and self._predictor is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -112,9 +117,10 @@ class SamEngineAdapter(BaseModelEngineAdapter):
                             "num_holes": 0,
                             "exterior_vertices": 48,
                             "is_convex": False,
+                            "is_test_double": True,
                         },
                         original_coordinates={"prompt_box": [50, 50, 200, 300]},
-                        confidence=0.95,
+                        confidence=None,
                     )
                 )
             return drafts

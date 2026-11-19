@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-11-19T14:13:34Z",
+  "device_name": "NVIDIA GeForce RTX 4050 Laptop GPU",
+  "cuda_version": "13.0",
+  "pytorch_version": "2.14.0+cu130",
+  "sequential_execution_policy": "MAXIMUM_FIDELITY",
+  "models_benchmarked": [
+    {
+      "model_id": "owlvit",
+      "checkpoint": "google/owlvit-base-patch32",
+      "device": "cuda:0",
+      "load_time_s": 41.271,
+      "inference_time_s": 2.141,
+      "unload_time_s": 0.817,
+      "total_time_s": 44.229,
+      "peak_vram_mb": 628.3,
+      "vram_delta_mb": 628.3,
+      "vram_after_unload_mb": 8.1,
+      "memory_released_ok": true,
+      "output_drafts_count": 0,
+      "status": "PASS"
+    },
+    {
+      "model_id": "midas",
+      "checkpoint": "intel-isl/MiDaS:DPT_Hybrid",
+      "device": "cuda:0",
+      "load_time_s": 8.495,
+      "inference_time_s": 0.635,
+      "unload_time_s": 0.473,
+      "total_time_s": 9.603,
+      "peak_vram_mb": 706.9,
+      "vram_delta_mb": 698.7,
+      "vram_after_unload_mb": 30.6,
+      "memory_released_ok": true,
+      "output_drafts_count": 1,
+      "status": "PASS"
+    },
+    {
+      "model_id": "depth_anything",
+      "checkpoint": "depth-anything/Depth-Anything-V2-Small-hf",
+      "device": "cuda:0",
+      "load_time_s": 0.676,
+      "inference_time_s": 0.147,
+      "unload_time_s": 0.489,
+      "total_time_s": 1.312,
+      "peak_vram_mb": 269.9,
+      "vram_delta_mb": 239.3,
+      "vram_after_unload_mb": 30.6,
+      "memory_released_ok": true,
+      "output_drafts_count": 1,
+      "status": "PASS"
+    }
+  ]
+}

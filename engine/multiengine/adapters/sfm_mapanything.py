@@ -69,7 +69,12 @@ class MapAnythingEngineAdapter(BaseModelEngineAdapter):
 
         # Check if virtual/test images or real images
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for i, src in enumerate(sources):
                 extrinsic_4x4 = np.eye(4, dtype=float)
                 extrinsic_4x4[0, 3] = float(i) * 0.8
@@ -90,9 +95,10 @@ class MapAnythingEngineAdapter(BaseModelEngineAdapter):
                                 "cy": 540.0,
                             },
                             "dense_coverage": 0.88,
+                            "is_test_double": True,
                         },
                         original_coordinates={"pose_index": i},
-                        confidence=0.91,
+                        confidence=None,
                     )
                 )
             drafts.append(
@@ -105,9 +111,10 @@ class MapAnythingEngineAdapter(BaseModelEngineAdapter):
                         "point_count": 25000,
                         "bounds_m": {"min": [-3.0, -3.0, 0.0], "max": [3.0, 3.0, 2.8]},
                         "resolution_m": 0.02,
+                        "is_test_double": True,
                     },
                     original_coordinates={"voxels": 25000},
-                    confidence=0.89,
+                    confidence=None,
                 )
             )
             return drafts
@@ -125,7 +132,7 @@ class MapAnythingEngineAdapter(BaseModelEngineAdapter):
                         coordinate_system="world:mapanything",
                         predicted={"extrinsic_4x4": pose.tolist()},
                         original_coordinates={"raw_pose": pose.tolist()},
-                        confidence=0.92,
+                        confidence=None,
                     )
                 )
         except Exception as e:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -78,8 +78,8 @@ def extract_mask_contour(
 def segment_specialist(
     task: RefinementTask,
     world: WorldIR,
-    segmenter: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
-) -> Optional[bool]:
+    segmenter: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+) -> bool | None:
     """Execute high-precision instance segmentation for an entity.
 
     Returns:
@@ -113,6 +113,7 @@ def segment_specialist(
     if raw_mask is not None:
         contour, area_px = extract_mask_contour(raw_mask)
         if contour:
+            evidence_id = task.metadata.get("evidence_id") or task.metadata.get("source_evidence_id")
             ef["has_mask"] = True
             ef["mask_ref"] = task.metadata.get("mask_ref", 1)
             ef["is_visual_mask"] = True
@@ -122,6 +123,7 @@ def segment_specialist(
                 "area_px": round(area_px, 2),
                 "confidence": float(task.metadata.get("confidence", 0.95)),
                 "backend": task.metadata.get("backend", "real_mask_contour_extraction"),
+                "source_evidence_id": evidence_id,
                 "is_visual_mask": True,
             }
             attrs = ef.setdefault("attributes", {})

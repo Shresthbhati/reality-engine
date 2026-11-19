@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -37,11 +37,13 @@ def check_same_camera_exclusion(
     seen_sources: set[str] = set()
     for obs in observations:
         source_id = obs.get("evidence_id") or obs.get("camera_id") or obs.get("image_id")
-        if source_id is not None:
-            src_str = str(source_id)
-            if src_str in seen_sources:
-                return False
-            seen_sources.add(src_str)
+        if source_id is None:
+            # Source ID is strictly required for multi-view reassociation provenance
+            return False
+        src_str = str(source_id)
+        if src_str in seen_sources:
+            return False
+        seen_sources.add(src_str)
     return True
 
 
@@ -83,7 +85,7 @@ def compute_geometric_consistency(
     pt_a: tuple[float, float],
     camera_b: PinholeCamera,
     pt_b: tuple[float, float],
-    world_pos: Optional[Vec3] = None,
+    world_pos: Vec3 | None = None,
     sigma_m: float = 0.25,
 ) -> float:
     """Measure geometric / epipolar ray consistency between two multi-view observations."""
@@ -106,7 +108,7 @@ def compute_geometric_consistency(
 def reassociate_specialist(
     task: RefinementTask,
     world: WorldIR,
-) -> Optional[bool]:
+) -> bool | None:
     """Execute multi-view reassociation and identity resolution for an entity.
 
     Returns:
@@ -224,7 +226,7 @@ def reassociate_specialist(
     if not ranked_votes:
         return False
 
-    winner_cls: Optional[str] = None
+    winner_cls: str | None = None
     is_tie_broken_by_context = False
 
     if len(ranked_votes) == 1 or ranked_votes[0][1] > ranked_votes[1][1]:

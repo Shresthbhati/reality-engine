@@ -173,6 +173,68 @@ def test_cancellation_keeps_what_finished_and_marks_the_rest_cancelled(tmp_path)
     assert res.snapshot["counts"]["observations"] == 3  # partial work is a durable result
 
 
+def test_a_successful_run_that_finds_nothing_is_complete_not_failed(tmp_path):
+    """REGRESSION (found on a real run): OWL-ViT ran fine on outdoor photos and detected nothing; the flow called that 'failed'."""
+
+    class Empty(FakeDetector):
+        def infer(self, request):
+            return []
+
+    reg = EngineRegistry()
+    sp = _spec("det_a", "fam-a")
+    reg.register(sp)
+    res = run_evidence_flow(tmp_path, "run-1", SOURCES, registry=reg, adapters={"det_a": Empty(sp)},
+                            stages=[StageSpec(Task.DETECTION)])
+    assert res.status == "complete" and res.snapshot["counts"]["entities"] == 0
+    assert any("no detections" in x for x in res.snapshot["limitations"])  # said plainly; no entity is invented
+
+
+def test_detector_adapters_call_the_prompter_with_its_real_signature():
+    """REGRESSION (found on a real run): the adapters passed scale_tier= to get_prompts(), which only takes scale=; every real
+    Grounding DINO / OWL-ViT run raised TypeError. The test doubles never reach this code, so guard it directly."""
+    import inspect
+
+    from engine.multiengine.adapters import perception_detectors
+    from perception.detection.extensible_prompter import ExtensiblePrompter, ScaleFilter
+
+    assert "get_prompts(scale_tier" not in inspect.getsource(perception_detectors)
+    prompts = ExtensiblePrompter().get_prompts(scale=ScaleFilter.MESO)
+    assert prompts and all(isinstance(p, str) for p in prompts)
+    with pytest.raises(TypeError):
+        ExtensiblePrompter().get_prompts(scale_tier="meso")  # type: ignore[call-arg]
+
+
+def _real_owlvit_ready():
+    from pathlib import Path
+
+    from perception.availability import real_models_by_name
+
+    try:
+        ok = real_models_by_name()["owlvit"].status == "available"
+    except Exception:  # noqa: BLE001
+        ok = False
+    return ok and Path("datasets/south_building/images/P1180141.JPG").is_file()
+
+
+@pytest.mark.skipif(not _real_owlvit_ready(), reason="real OWL-ViT checkpoint and the South Building photos are not present")
+def test_REAL_model_owlvit_runs_through_the_flow_and_is_persisted(tmp_path):
+    """REAL model execution (skipped where the checkpoint is absent): OWL-ViT on a real photo, through the real adapter."""
+    from engine.multiengine.adapters import create_adapters_for_registry
+    from engine.multiengine.executor import TorchResourceProbe
+    from engine.multiengine.registry import maximum_fidelity_registry
+
+    reg = maximum_fidelity_registry()
+    res = run_evidence_flow(
+        tmp_path, "real-1", ["datasets/south_building/images/P1180141.JPG"], registry=reg,
+        adapters=create_adapters_for_registry(reg), stages=[StageSpec(Task.DETECTION, only=("owlvit",))],
+        probe=TorchResourceProbe(),
+    )
+    run = EvidenceMatrix(tmp_path).runs()[0]
+    assert run.engine_id == "owlvit" and run.status == "succeeded" and run.device is not None and run.error == ""
+    assert res.status == "complete" and res.snapshot["matrix_problems"] == []  # zero detections on outdoor photos is not a failure
+    # no claim about accuracy or about furnished rooms: only that the real adapter executed and its evidence persisted
+
+
 # ------------------------------------------------------------------------------------------------ capture-request rules
 def _req(kind, **ev):
     return request_for_problem(problem_kind=kind, location={}, target_ids=["x"], evidence=ProblemEvidence(**ev))

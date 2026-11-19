@@ -211,8 +211,8 @@ def run_evidence_flow(
     n_obs = len(matrix)
     if cancelled:
         status = "cancelled"
-    elif n_obs == 0:
-        status = "failed"
+    elif n_obs == 0 and not any(r.status == "succeeded" for r in matrix.runs()):
+        status = "failed"  # nothing ran successfully; a successful run that found nothing is NOT a failure
     elif all(s is ReportStatus.COMPLETE for s in statuses):
         status = "complete"
     else:
@@ -225,6 +225,8 @@ def run_evidence_flow(
         if isinstance(o.predicted.get("label"), str) and matrix.status(o.observation_id) != "rejected"
     ]
     limitations = list(LIMITATIONS) + ([] if pair_scorer is not None else [PAIR_SCORER_LIMITATION])
+    if n_obs == 0 and status != "failed":
+        limitations.append("The engines ran successfully but produced no detections on these images (no entity is invented).")
     scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
     assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto), store=matrix.store)
     labels = {c.observation_id: c.label for c in cands}

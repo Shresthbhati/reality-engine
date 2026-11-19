@@ -156,3 +156,35 @@ def request_for_problem(
         instruction=instruction,
         basis=tuple(basis),
     )
+
+
+@dataclass
+class CaptureRequest:
+    """High-level capture request generated during multi-engine fusion or quality gates."""
+
+    request_id: str
+    target_region: Any
+    recommended_pose: Dict[str, Any]
+    rationale: str
+    priority: int = 1
+
+
+class ActiveCapturePlanner:
+    """Plans active capture requests based on unobserved spaces, occlusions, and conflicts."""
+
+    def __init__(self) -> None:
+        self._history: List[CaptureRequest] = []
+
+    def plan_requests(self, problems: Sequence[Dict[str, Any]]) -> List[CaptureRequest]:
+        requests = []
+        for i, p in enumerate(problems):
+            req = CaptureRequest(
+                request_id=f"cap_req_{i+1:03d}",
+                target_region=p.get("target_region", "unspecified"),
+                recommended_pose=p.get("pose", {"x": 0.0, "y": 0.0, "z": 1.0}),
+                rationale=p.get("reason", "Increase observation redundancy"),
+                priority=p.get("priority", 1),
+            )
+            requests.append(req)
+            self._history.append(req)
+        return requests

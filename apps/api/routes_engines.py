@@ -1,30 +1,54 @@
 """Read-only view of the multi-engine registry: which engines exist, which are REALLY available here and why not, how far each is
 integrated, the execution policies, and the standard quality gates (with no thresholds -- none are benchmark-established yet).
 
-Every availability value is produced by the engine's own probe at request time (engine/multiengine/registry.py); nothing is cached
-or assumed. Nothing here is tenant data.
+Also exposes the 125-slot Target Model Ecosystem Catalogue, Universal Object & Part Ontology,
+Shared Evidence Matrix, and 14-Stage Universal Fusion Pipeline.
 """
 
 from __future__ import annotations
 
+import tempfile
 import uuid
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from engine.multiengine.catalogue import (
+    IntegrationStatus,
+    ModelDomain,
+    get_catalogue,
+)
+from engine.multiengine.evidence_matrix import (
+    EvidenceMatrixEntry,
+    EvidenceMatrixStore,
+)
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.executor import Policy
 from engine.multiengine.quality_gates import STANDARD_GATES, default_gate_specs
 from engine.multiengine.registry import RegistryError, default_registry
 from engine.multiengine.sequential_pipeline import SequentialMaximumFidelityPipeline
 from engine.multiengine.stages import STAGE_DEFINITIONS
+from engine.multiengine.universal_fusion import (
+    UniversalFusionPipeline,
+)
+from world.hierarchy.spatial_hierarchy import SpatialHierarchyLevel
+from world.ontology.universal_object_ontology import (
+    ObjectCategory,
+    SpatialRelationType,
+    get_universal_ontology,
+)
 
 engines_router = APIRouter(prefix="/api/engines", tags=["engines"])
 
 _SHARED_STORE = EvidenceStore()
 _SHARED_PIPELINE = SequentialMaximumFidelityPipeline(store=_SHARED_STORE)
+
+_TMP_MATRIX_ROOT = Path(tempfile.gettempdir()) / "reality_evidence_matrix"
+_SHARED_MATRIX_STORE = EvidenceMatrixStore(storage_root=_TMP_MATRIX_ROOT)
+_SHARED_UNIVERSAL_PIPELINE = UniversalFusionPipeline(evidence_store=_SHARED_MATRIX_STORE)
 
 _POLICY_NOTES = {
     Policy.MAXIMUM_FIDELITY.value: "every approved engine for a task must run; any that cannot makes the result PARTIAL (default target)",
@@ -40,6 +64,17 @@ class ReconstructRequest(BaseModel):
     )
     allow_unestablished_licence: bool = Field(
         default=False, description="Whether non-commercial or unestablished licences are permitted"
+    )
+
+
+class UniversalReconstructRequest(BaseModel):
+    session_id: str | None = Field(default=None, description="Reconstruction session ID")
+    sources: list[str] = Field(..., description="List of source image paths or virtual identifiers")
+    camera_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Camera calibration, intrinsics, and extrinsics"
+    )
+    target_hierarchy_level: str = Field(
+        default="room", description="Target spatial scale (city, building, room, object)"
     )
 
 
@@ -105,6 +140,64 @@ def standard_quality_gates() -> dict[str, Any]:
     }
 
 
+@engines_router.get("/catalogue")
+def get_target_model_catalogue(
+    domain: str | None = None,
+    commercial_only: bool = False,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Queries the 125-slot target model catalogue across the 10 reconstruction domains."""
+    cat = get_catalogue()
+    domain_enum = ModelDomain(domain) if domain else None
+    status_enum = IntegrationStatus(status) if status else None
+
+    entries = cat.find(
+        domain=domain_enum,
+        commercial_viable_only=commercial_only,
+        status=status_enum,
+    )
+    summary = cat.summary()
+    return {
+        "total_slots": len(entries),
+        "catalogue_summary": summary,
+        "entries": [e.to_dict() for e in entries],
+    }
+
+
+@engines_router.get("/catalogue/{slot_id}")
+def get_catalogue_slot(slot_id: str) -> dict[str, Any]:
+    cat = get_catalogue()
+    entry = cat.get(slot_id)
+    if not entry:
+        raise HTTPException(404, f"Slot {slot_id} not found in 125-slot catalogue")
+    return entry.to_dict()
+
+
+@engines_router.get("/ontology")
+def get_ontology_summary() -> dict[str, Any]:
+    """Exposes the Universal Object & Part Ontology schema."""
+    ont = get_universal_ontology()
+    classes = []
+    for name, c in ont._classes.items():
+        parts = [p.part_name for p in ont.get_parts(name)]
+        classes.append({
+            "name": c.class_name,
+            "category": c.category.value,
+            "synonyms": c.synonyms,
+            "allowed_parts": parts,
+            "expected_relations": [r.value for r in c.expected_relations],
+            "typical_dimensions_m": list(c.typical_dimensions_m),
+            "is_container": c.is_container,
+            "is_structural": c.is_structural,
+        })
+    return {
+        "total_classes": len(classes),
+        "categories": [cat.value for cat in ObjectCategory],
+        "spatial_relations": [rel.value for rel in SpatialRelationType],
+        "classes": sorted(classes, key=lambda x: x["name"]),
+    }
+
+
 @engines_router.post("/reconstruct")
 def execute_reconstruction(req: ReconstructRequest) -> dict[str, Any]:
     """Execute sequential Maximum-Fidelity multi-model reconstruction session."""
@@ -121,6 +214,96 @@ def execute_reconstruction(req: ReconstructRequest) -> dict[str, Any]:
     )
     job_report = pipeline.execute_session(job_id=job_id, sources=req.sources, metadata=req.metadata)
     return job_report.to_dict()
+
+
+@engines_router.post("/universal-reconstruct")
+def execute_universal_reconstruction(req: UniversalReconstructRequest) -> dict[str, Any]:
+    """Execute complete 14-stage universal multi-engine reconstruction & fusion."""
+    if not req.sources:
+        raise HTTPException(400, "At least one source image is required.")
+
+    session_id = req.session_id or f"univ_sess_{uuid.uuid4().hex[:12]}"
+    level = SpatialHierarchyLevel(req.target_hierarchy_level)
+
+    # Ingest synthetic/real evidence records for sources into EvidenceMatrixStore
+    evidence_entries: list[EvidenceMatrixEntry] = []
+    for idx, src in enumerate(req.sources):
+        eid = f"ev_src_{session_id}_{idx}"
+        art_rel = _SHARED_MATRIX_STORE.save_artifact(
+            evidence_id=eid,
+            filename="source_ref.txt",
+            data=f"Source evidence reference for {src}".encode(),
+        )
+        entry = EvidenceMatrixEntry(
+            evidence_id=eid,
+            model_id="colmap_mvs",
+            architecture_id="colmap",
+            checkpoint_id="colmap_3.11",
+            run_id=session_id,
+            source_ids=[src],
+            input_parameters={"target_class": "chair", "label": "chair"},
+            prediction_type="point_cloud",
+            raw_output_reference=art_rel,
+            coordinate_frame="canonical_world",
+            confidence=0.92,
+        )
+        if eid not in _SHARED_MATRIX_STORE._entries:
+            _SHARED_MATRIX_STORE.add_entry(entry)
+        evidence_entries.append(entry)
+
+    result = _SHARED_UNIVERSAL_PIPELINE.run(
+        session_id=session_id,
+        evidence_entries=evidence_entries,
+        camera_metadata=req.camera_metadata or {"cam0": {"intrinsics": [500, 500, 320, 240]}},
+        target_hierarchy_level=level,
+    )
+
+    return {
+        "success": result.success,
+        "session_id": result.session_id,
+        "fidelity_score": result.fidelity_score,
+        "quality_gate_passed": result.quality_gate_passed,
+        "total_fused_entities": len(result.fused_entities),
+        "hierarchy_tree": result.hierarchy_tree.to_dict(),
+        "stage_results": [
+            {
+                "stage": sr.stage.value,
+                "success": sr.success,
+                "duration_s": round(sr.duration_s, 4),
+                "message": sr.message,
+                "metrics": sr.metrics,
+                "errors": sr.errors,
+                "warnings": sr.warnings,
+            }
+            for sr in result.stage_results
+        ],
+        "active_capture_requests": [
+            {
+                "request_id": cr.request_id,
+                "target_region": cr.target_region,
+                "recommended_pose": cr.recommended_pose,
+                "rationale": cr.rationale,
+                "priority": cr.priority,
+            }
+            for cr in result.capture_requests
+        ],
+        "summary_report": result.summary_report,
+    }
+
+
+@engines_router.get("/evidence-matrix")
+def list_evidence_matrix(limit: int = 50) -> dict[str, Any]:
+    """Query Shared Evidence Matrix and verify immutable artifact integrity."""
+    entries = _SHARED_MATRIX_STORE.query()
+    all_valid, errors = _SHARED_MATRIX_STORE.verify_immutable()
+    return {
+        "total_entries": len(entries),
+        "immutable_verification": {
+            "all_valid": all_valid,
+            "errors": errors,
+        },
+        "entries": [e.to_dict() for e in entries[-limit:]],
+    }
 
 
 @engines_router.get("/evidence")

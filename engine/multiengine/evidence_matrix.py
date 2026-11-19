@@ -192,6 +192,9 @@ class EvidenceMatrix:
         except ValueError:
             return False
 
+    def has_artifact(self, uri: str) -> bool:
+        return self._has_uri(uri)
+
     # ---- writes
     def add(self, obs: EngineObservation, context: EvidenceContext) -> bool:
         """Store the raw observation and its context. Re-adding identical evidence is a no-op; a DIFFERENT context for an

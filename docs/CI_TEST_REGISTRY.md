@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 555
+Total: 557
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -399,6 +399,7 @@ Total: 555
 - `tests/test_material_classification.py`
 - `tests/test_material_hypotheses.py`
 - `tests/test_measured_room_evaluator.py`
+- `tests/test_measured_rooms_benchmark_contract.py`
 - `tests/test_measurements.py`
 - `tests/test_media_preprocessing.py`
 - `tests/test_mesh_boolean.py`
@@ -425,6 +426,7 @@ Total: 555
 - `tests/test_multi_source_refiner.py`
 - `tests/test_multi_source_session.py`
 - `tests/test_multi_storey_validator.py`
+- `tests/test_multi_view_association.py`
 - `tests/test_multiengine_alignment_consensus.py`
 - `tests/test_multiengine_association.py`
 - `tests/test_multiengine_calibration.py`

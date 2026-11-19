@@ -19,9 +19,10 @@ Principles enforced in code:
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 from scipy.stats import chi2
@@ -40,12 +41,12 @@ class Estimate:
     group: str                                   # correlation family; use the engine id when it has no family
     frame: str                                   # coordinate frame the value is expressed in
     value: Tuple[float, ...]
-    covariance: Optional[Tuple[Tuple[float, ...], ...]] = None   # None = the engine did not state one
+    covariance: Tuple[Tuple[float, ...], ...] | None = None   # None = the engine did not state one
 
     def v(self) -> np.ndarray:
         return np.asarray(self.value, dtype=float)
 
-    def cov(self) -> Optional[np.ndarray]:
+    def cov(self) -> np.ndarray | None:
         return None if self.covariance is None else np.asarray(self.covariance, dtype=float)
 
 
@@ -53,7 +54,7 @@ class Estimate:
 class GroupEstimate:
     group: str
     value: np.ndarray
-    covariance: Optional[np.ndarray]
+    covariance: np.ndarray | None
     members: Tuple[str, ...]                     # observation ids collapsed into this one source
 
 
@@ -67,15 +68,15 @@ class Outlier:
 @dataclass(frozen=True)
 class ConsensusResult:
     status: str                                  # "resolved" | "conflict" | "insufficient"
-    value: Optional[np.ndarray]
-    uncertainty: Optional[Dict[str, object]]     # None unless derived (see module docstring)
+    value: np.ndarray | None
+    uncertainty: Dict[str, object] | None     # None unless derived (see module docstring)
     method: str
     verification: str                            # "unverified" | "geometry_supported" | "geometry_preferred_minority"
     groups: Tuple[GroupEstimate, ...]
     outliers: Tuple[Outlier, ...]
     supporting: Tuple[str, ...]                  # observation ids that support the final value
     notes: Tuple[str, ...] = ()
-    disagreement: Optional[Dict[str, float]] = None   # max pairwise distance between group estimates, in the value's units
+    disagreement: Dict[str, float] | None = None   # max pairwise distance between group estimates, in the value's units
     independence: str = ""                       # what was assumed about independence between groups
 
     @property
@@ -83,7 +84,7 @@ class ConsensusResult:
         return self.status == "resolved"
 
 
-def _chi2_disagree(a: GroupEstimate, b: GroupEstimate, alpha: float) -> Optional[bool]:
+def _chi2_disagree(a: GroupEstimate, b: GroupEstimate, alpha: float) -> bool | None:
     """True when the two estimates disagree beyond what their stated covariances allow; None if a covariance is missing."""
     if a.covariance is None or b.covariance is None:
         return None
@@ -115,9 +116,9 @@ def _collapse(estimates: Sequence[Estimate]) -> List[GroupEstimate]:
 
 
 def resolve_estimates(
-    estimates: Sequence[Estimate], *, tolerance: Optional[float] = None, alpha: float = 0.01,
+    estimates: Sequence[Estimate], *, tolerance: float | None = None, alpha: float = 0.01,
     assume_independent_groups: bool = False,
-    geometric_residual: Optional[Callable[[np.ndarray], Optional[float]]] = None, geometric_margin: float = 0.0,
+    geometric_residual: Callable[[np.ndarray], float | None] | None = None, geometric_margin: float = 0.0,
 ) -> ConsensusResult:
     """Combine estimates of one vector quantity.
 
@@ -142,7 +143,7 @@ def resolve_estimates(
     if len(groups) < len(estimates):
         notes.append(f"{len(estimates)} estimates collapsed into {len(groups)} independent source(s) by correlation group")
 
-    def disagree(a: GroupEstimate, b: GroupEstimate) -> Optional[bool]:
+    def disagree(a: GroupEstimate, b: GroupEstimate) -> bool | None:
         verdict = _chi2_disagree(a, b, alpha)
         if verdict is not None:
             return verdict
@@ -214,11 +215,11 @@ def resolve_estimates(
 
 # ------------------------------------------------------------------------------------------------ internals
 
-def _group_unc(g: GroupEstimate) -> Optional[Dict[str, object]]:
+def _group_unc(g: GroupEstimate) -> Dict[str, object] | None:
     return None if g.covariance is None else {"method": "source_covariance", "covariance": g.covariance.tolist()}
 
 
-def _fuse(groups: Sequence[GroupEstimate], independent: bool) -> Tuple[np.ndarray, Optional[Dict[str, object]], str]:
+def _fuse(groups: Sequence[GroupEstimate], independent: bool) -> Tuple[np.ndarray, Dict[str, object] | None, str]:
     vals = np.array([g.value for g in groups])
     covs = [g.covariance for g in groups]
     if all(c is not None for c in covs):
@@ -234,8 +235,8 @@ def _fuse(groups: Sequence[GroupEstimate], independent: bool) -> Tuple[np.ndarra
     return centre, {"method": "observed_spread", "half_range": ((vals.max(axis=0) - vals.min(axis=0)) / 2.0).tolist()}, "median"
 
 
-def _geometry_pick(groups: Sequence[GroupEstimate], residual: Optional[Callable[[np.ndarray], Optional[float]]], margin: float,
-                   incumbent: Optional[np.ndarray] = None) -> Optional[GroupEstimate]:
+def _geometry_pick(groups: Sequence[GroupEstimate], residual: Callable[[np.ndarray], float | None] | None, margin: float,
+                   incumbent: np.ndarray | None = None) -> GroupEstimate | None:
     """The group whose value the original-image evidence supports best, if every candidate could be evaluated and the best beats
     the next-best by more than ``margin`` (the incumbent statistical consensus competes too)."""
     if residual is None:
@@ -259,7 +260,7 @@ def _geometry_pick(groups: Sequence[GroupEstimate], residual: Optional[Callable[
 
 
 def _finish(value, method, groups, outliers, supporting, notes, spread, independence, residual, margin, *, uncertainty,
-            verification: Optional[str] = None) -> ConsensusResult:
+            verification: str | None = None) -> ConsensusResult:
     if verification is None:
         verification = "unverified"
         if residual is not None:
@@ -284,13 +285,13 @@ class LabelClaim:
 @dataclass(frozen=True)
 class LabelResult:
     status: str                                  # "agreed_unverified" | "resolved_by_evidence" | "conflict"
-    label: Optional[str]
+    label: str | None
     candidates: Tuple[str, ...]
     sources: Dict[str, Tuple[str, ...]]          # label -> independent groups claiming it
     notes: Tuple[str, ...] = ()
 
 
-def reconcile_labels(claims: Sequence[LabelClaim], *, evidence_score: Optional[Callable[[str], Optional[float]]] = None,
+def reconcile_labels(claims: Sequence[LabelClaim], *, evidence_score: Callable[[str], float | None] | None = None,
                      margin: float = 0.0) -> LabelResult:
     """No voting. Unanimity among the independent groups is reported as agreed-but-unverified; any disagreement stays a conflict
     unless ``evidence_score`` (a likelihood from the original image evidence, higher = better) separates the best candidate from
@@ -328,13 +329,13 @@ def reprojection_error(K: np.ndarray, R: np.ndarray, t: np.ndarray, X: np.ndarra
 
 
 def make_reprojection_check(cameras: Sequence[Tuple[np.ndarray, np.ndarray, np.ndarray]], observations: Sequence[np.ndarray]
-                            ) -> Callable[[np.ndarray], Optional[float]]:
+                            ) -> Callable[[np.ndarray], float | None]:
     """Residual function for ``resolve_estimates``: RMS reprojection error (pixels) of a candidate 3D point over the views that
     observed it. Needs at least two views, otherwise the candidate cannot be judged (None)."""
     if len(cameras) != len(observations):
         raise ConsensusError("one observation per camera is required")
 
-    def residual(X: np.ndarray) -> Optional[float]:
+    def residual(X: np.ndarray) -> float | None:
         if len(cameras) < 2:
             return None
         errs = [reprojection_error(K, R, t, X, uv) for (K, R, t), uv in zip(cameras, observations)]

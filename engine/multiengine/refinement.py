@@ -15,15 +15,26 @@ Rules enforced here:
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
-from engine.multiengine.capture_requests import CaptureRequestSpec, ProblemEvidence, request_for_problem
+from engine.multiengine.capture_requests import (
+    CaptureRequestSpec,
+    ProblemEvidence,
+    request_for_problem,
+)
 from engine.multiengine.contract import EngineRequest, Task
 from engine.multiengine.executor import ExecutionManager, ExecutionReport
 from engine.multiengine.quality_gates import (
-    GateSpec, GateVerdict, Measurement, Overall, QualityReport, check_regressions, evaluate,
+    GateSpec,
+    GateVerdict,
+    Measurement,
+    Overall,
+    QualityReport,
+    check_regressions,
+    evaluate,
 )
 from engine.multiengine.registry import EngineRegistry
 
@@ -86,7 +97,7 @@ class IterationRecord:
     quality_before: QualityReport
     problems: Tuple[Problem, ...]
     actions: Tuple[ActionRecord, ...]
-    quality_after: Optional[QualityReport]
+    quality_after: QualityReport | None
     improved: bool
 
 
@@ -125,12 +136,12 @@ def _score(q: QualityReport, n_problems: int) -> Tuple[int, int, int, int]:
 
 class RefinementLoop:
     def __init__(self, *, manager: ExecutionManager, registry: EngineRegistry, specs: Sequence[GateSpec],
-                 measure: Callable[[Any], Tuple[Mapping[str, Optional[Measurement]], Optional[bool]]],
+                 measure: Callable[[Any], Tuple[Mapping[str, Measurement | None], bool | None]],
                  detect: Callable[[Any, QualityReport], Sequence[Problem]],
                  apply: Callable[[Any, Problem, ExecutionReport], Any],
                  consistency: Callable[[Any], Sequence[str]],
                  features: Callable[[Any], Mapping[str, object]] = lambda s: {},
-                 regression_tolerance: Optional[Mapping[str, float]] = None,
+                 regression_tolerance: Mapping[str, float] | None = None,
                  max_iterations: int = 5, patience: int = 1) -> None:
         if max_iterations < 1:
             raise ValueError("max_iterations must be at least 1")

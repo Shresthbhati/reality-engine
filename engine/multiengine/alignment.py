@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -57,7 +57,7 @@ class Sim3:
     translation: Tuple[float, float, float]
 
     @staticmethod
-    def from_arrays(scale: float, rotation: np.ndarray, translation: np.ndarray) -> "Sim3":
+    def from_arrays(scale: float, rotation: np.ndarray, translation: np.ndarray) -> Sim3:
         return Sim3(float(scale), tuple(tuple(float(v) for v in row) for row in rotation), tuple(float(v) for v in translation))
 
     @property
@@ -72,12 +72,12 @@ class Sim3:
         p = np.atleast_2d(np.asarray(points, dtype=float))
         return self.scale * p @ self.R.T + self.t
 
-    def inverse(self) -> "Sim3":
+    def inverse(self) -> Sim3:
         Rt = self.R.T
         s = 1.0 / self.scale
         return Sim3.from_arrays(s, Rt, -s * Rt @ self.t)
 
-    def compose(self, then: "Sim3") -> "Sim3":
+    def compose(self, then: Sim3) -> Sim3:
         """Apply ``self`` first, then ``then``."""
         return Sim3.from_arrays(then.scale * self.scale, then.R @ self.R, then.scale * then.R @ self.t + then.t)
 
@@ -114,7 +114,7 @@ class FrameGraph:
         self._edges[(src, dst)] = _Edge(transform, source, scale_anchored)
         self._edges[(dst, src)] = _Edge(transform.inverse(), source + " (inverse)", scale_anchored)
 
-    def _path(self, src: str, dst: str) -> Optional[List[str]]:
+    def _path(self, src: str, dst: str) -> List[str] | None:
         if src == dst:
             return [src]
         seen = {src}
@@ -172,7 +172,7 @@ def _check_points(src: np.ndarray, dst: np.ndarray) -> Tuple[np.ndarray, np.ndar
 
 
 def estimate_similarity(src: np.ndarray, dst: np.ndarray, *, with_scale: bool = True,
-                        weights: Optional[np.ndarray] = None) -> Sim3:
+                        weights: np.ndarray | None = None) -> Sim3:
     """Closed-form least-squares Sim(3) (Umeyama 1991). Raises ``DegenerateGeometry`` for < 3 points or collinear points
     (rank < 2): such a set cannot determine a rotation, and returning one would be inventing it."""
     a, b = _check_points(src, dst)
@@ -204,10 +204,10 @@ def estimate_similarity(src: np.ndarray, dst: np.ndarray, *, with_scale: bool = 
 @dataclass(frozen=True)
 class AlignmentResult:
     status: str                       # "ok" | "degenerate" | "registration_failed"
-    transform: Optional[Sim3]
-    inliers: Optional[np.ndarray]     # bool mask over the input correspondences
+    transform: Sim3 | None
+    inliers: np.ndarray | None     # bool mask over the input correspondences
     n_points: int
-    rms_inlier_residual: Optional[float]
+    rms_inlier_residual: float | None
     inlier_threshold: float
     notes: Tuple[str, ...] = ()
 
@@ -225,7 +225,7 @@ class AlignmentResult:
 
 
 def ransac_similarity(src: np.ndarray, dst: np.ndarray, *, inlier_threshold: float, with_scale: bool = True,
-                      min_inliers: Optional[int] = None, iterations: int = 500, seed: int = 0) -> AlignmentResult:
+                      min_inliers: int | None = None, iterations: int = 500, seed: int = 0) -> AlignmentResult:
     """Robust Sim(3) between two sets of corresponding points. ``inlier_threshold`` is in ``dst`` units and has no default
     (it must come from the engine's calibration). Returns an explicit failure status instead of a poor transform."""
     if not inlier_threshold > 0:
@@ -236,7 +236,7 @@ def ransac_similarity(src: np.ndarray, dst: np.ndarray, *, inlier_threshold: flo
     if n < need:
         return AlignmentResult("degenerate", None, None, n, None, inlier_threshold, (f"{n} correspondences < required {need}",))
     rng = np.random.default_rng(seed)
-    best_mask: Optional[np.ndarray] = None
+    best_mask: np.ndarray | None = None
     best_count = -1                   # a hypothesis with zero inliers is still a hypothesis (-> registration_failed, not degenerate)
     for _ in range(iterations):
         idx = rng.choice(n, size=3, replace=False)
@@ -265,7 +265,7 @@ def ransac_similarity(src: np.ndarray, dst: np.ndarray, *, inlier_threshold: flo
     return AlignmentResult("ok", refit, final, n, rms, inlier_threshold)
 
 
-def scale_mismatch(result: AlignmentResult, *, expected: float, tolerance: float) -> Optional[str]:
+def scale_mismatch(result: AlignmentResult, *, expected: float, tolerance: float) -> str | None:
     """If both frames are supposed to be metric the fitted scale should be ~1. Returns a description of the mismatch, or None."""
     if result.transform is None:
         return "no transform to check"

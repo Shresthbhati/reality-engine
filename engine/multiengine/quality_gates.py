@@ -12,9 +12,10 @@ required gates pass, the rest could not be verified), UNVERIFIED (no required ga
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import List, Tuple
 
 
 class GateVerdict(str, Enum):
@@ -47,7 +48,7 @@ STANDARD_GATES: Tuple[Tuple[str, str, str], ...] = (
 class GateSpec:
     name: str
     direction: str                         # "lower_is_better" | "higher_is_better"
-    threshold: Optional[float] = None      # None = no benchmark-established threshold exists yet
+    threshold: float | None = None      # None = no benchmark-established threshold exists yet
     threshold_source: str = ""             # the benchmark record the threshold came from; required when threshold is set
     required: bool = True
     unit: str = ""
@@ -63,7 +64,7 @@ class GateSpec:
 class Measurement:
     value: float
     method: str                            # how it was measured (e.g. "reprojection over registered views")
-    n: Optional[int] = None                # sample size, if applicable
+    n: int | None = None                # sample size, if applicable
     source: str = ""                       # run / artifact the measurement came from
 
 
@@ -72,8 +73,8 @@ class GateResult:
     name: str
     verdict: GateVerdict
     reason: str
-    value: Optional[float] = None
-    threshold: Optional[float] = None
+    value: float | None = None
+    threshold: float | None = None
     required: bool = True
 
 
@@ -90,7 +91,7 @@ class QualityReport:
     overall: Overall
     gates: Tuple[GateResult, ...]
     regressions: Tuple[Regression, ...]
-    stages_ok: Optional[bool]
+    stages_ok: bool | None
     notes: Tuple[str, ...]
 
     def to_dict(self) -> dict:
@@ -101,7 +102,7 @@ class QualityReport:
                                 for r in self.regressions]}
 
 
-def default_gate_specs(thresholds: Optional[Mapping[str, Tuple[float, str]]] = None, *, required: Optional[Iterable[str]] = None
+def default_gate_specs(thresholds: Mapping[str, Tuple[float, str]] | None = None, *, required: Iterable[str] | None = None
                        ) -> List[GateSpec]:
     """The standard gates. ``thresholds`` maps gate name -> (threshold, benchmark record). Anything not given stays threshold-less
     (UNVERIFIED). ``required`` limits which gates are required (default: all)."""
@@ -138,7 +139,7 @@ def check_regressions(previous: Mapping[str, object], current: Mapping[str, obje
     return out
 
 
-def evaluate(specs: Sequence[GateSpec], measurements: Mapping[str, Optional[Measurement]], *, stages_ok: Optional[bool] = None,
+def evaluate(specs: Sequence[GateSpec], measurements: Mapping[str, Measurement | None], *, stages_ok: bool | None = None,
              regressions: Sequence[Regression] = ()) -> QualityReport:
     results: List[GateResult] = []
     for s in specs:

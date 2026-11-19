@@ -10,27 +10,28 @@ it through the existing contract; WorldIR remains the authoritative home of the 
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 @dataclass(frozen=True)
 class ProblemEvidence:
     """Measured facts about the place a problem is, as far as they are known (None = not measured)."""
 
-    n_registered_views: Optional[int] = None        # registered cameras that observe the location
+    n_registered_views: int | None = None        # registered cameras that observe the location
     view_ids: Tuple[str, ...] = ()                  # which images those are
-    truncated_at_frame_edge: Optional[bool] = None
-    scale_reference_present: Optional[bool] = None
-    pixels_on_target: Optional[float] = None
-    pixels_on_target_needed: Optional[float] = None  # supplied by the engine/benchmark that needs it; None = unknown
+    truncated_at_frame_edge: bool | None = None
+    scale_reference_present: bool | None = None
+    pixels_on_target: float | None = None
+    pixels_on_target_needed: float | None = None  # supplied by the engine/benchmark that needs it; None = unknown
 
 
 @dataclass(frozen=True)
 class ViewSuggestion:
     kind: str                                       # "wider_context" | "close_up" | "new_viewpoint" | "scale_reference"
     description: str
-    direction: Optional[Tuple[float, float, float]] = None   # only when it was computed from measured geometry
+    direction: Tuple[float, float, float] | None = None   # only when it was computed from measured geometry
 
 
 @dataclass(frozen=True)
@@ -44,9 +45,9 @@ class CaptureRequestSpec:
     scale_reference_needed: bool
     instruction: str
     basis: Tuple[str, ...] = ()                     # observation / measurement ids this request rests on
-    expected_gain: Optional[float] = None           # never invented
+    expected_gain: float | None = None           # never invented
 
-    def to_row(self, *, world_id: str, request_id: str, created_version: Optional[str] = None) -> Dict[str, Any]:
+    def to_row(self, *, world_id: str, request_id: str, created_version: str | None = None) -> Dict[str, Any]:
         return {
             "id": request_id, "world_id": world_id, "reason": self.reason[:300], "target_region": self.target_region,
             "target_ids": list(self.target_ids),
@@ -58,7 +59,7 @@ class CaptureRequestSpec:
 
 
 def request_for_problem(*, problem_kind: str, location: Dict[str, Any], target_ids: Sequence[str], evidence: ProblemEvidence,
-                        basis: Sequence[str] = ()) -> Optional[CaptureRequestSpec]:
+                        basis: Sequence[str] = ()) -> CaptureRequestSpec | None:
     """A structured request, or None when no measured fact shows the existing images to be insufficient (then more photos are not
     known to help and the caller should keep the problem as UNRESOLVED instead of asking for evidence it cannot justify)."""
     why: List[str] = []

@@ -128,6 +128,7 @@ def detect_split_levels(
                     Relationship(
                         kind=RelationshipKind.ADJACENT_TO,
                         target_id=upper.id,
+                        confidence=round(confidence, 4),  # the transition's own evidence-derived confidence, never a default
                     )
                 )
 

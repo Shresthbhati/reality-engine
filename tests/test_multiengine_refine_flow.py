@@ -78,6 +78,7 @@ def test_reprocessing_with_an_untried_engine_fixes_an_unclassified_object(tmp_pa
     assert ent["ontology_path"] == "furniture/seating/chair" and len(ent["members"]) == 2  # both engines' raw rows kept
     assert _hist(res)["stop_reason"] == "awaiting_evidence" and res.capture_requests  # what is left needs new photographs
     assert _hist(res)["rolled_back_observations"] == []
+    assert _hist(res)["new_inference"] is True and _hist(res)["refinement_claim"] == "refined"
     assert {r.engine_id for r in EvidenceMatrix(tmp_path).runs()} == {"det_a", "det_b"}
 
 
@@ -101,12 +102,15 @@ def test_a_reprocessing_result_that_breaks_an_established_class_is_rolled_back_b
 def test_when_every_engine_already_ran_nothing_is_reprocessed_and_the_gap_becomes_a_request(tmp_path):
     res, ad = _run(tmp_path, [(UNKNOWN, X)], [(UNKNOWN, X)], only=None)
     assert all(a["outcome"] != "applied" for a in _actions(res)) and ad["det_a"].loaded == 1 and ad["det_b"].loaded == 1
+    assert _hist(res)["new_inference"] is False and _hist(res)["refinement_claim"] == "not_refined"  # nothing ran, nothing claimed
     assert _hist(res)["stop_reason"] in ("awaiting_evidence", "no_engine_available") and res.capture_requests
 
 
 def test_a_failing_reprocess_engine_leaves_the_state_unchanged_and_is_recorded(tmp_path):
     res, _ = _run(tmp_path, [(UNKNOWN, X)], [("chair", X)], b_fail=True)
     assert any(a["outcome"] == "engine_failed" and "synthetic crash" in a["detail"] for a in _actions(res))
+    assert _hist(res)["new_inference"] is False and _hist(res)["refinement_claim"] == "not_refined"  # a failed attempt is not refinement
+    assert _hist(res)["reprocessing_attempts"] >= 1
     assert [e["ontology_path"] for e in res.snapshot["entities"]] == ["fallback/unknown_object"]
     runs = {r.engine_id: r for r in EvidenceMatrix(tmp_path).runs()}
     assert runs["det_b"].status == "failed" and "synthetic crash" in runs["det_b"].error

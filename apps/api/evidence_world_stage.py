@@ -12,6 +12,7 @@ never strings supplied by a client.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -126,6 +127,14 @@ def run_for_job(
     from engine.multiengine.evidence_flow import StageSpec, run_evidence_flow
 
     root = evidence_root(team_id, world_id, job_id, base=base)
+    recorded = root / SNAPSHOT_REL
+    if recorded.is_file():  # a job's evidence is executed ONCE: re-running would append a second copy of every observation
+        try:
+            snap = json.loads(recorded.read_text(encoding="utf-8"))
+            return {**_facts(snap, job_id, 0), "duplicate_execution": True}
+        except (OSError, ValueError, KeyError):
+            return {"status": "failed", "run_id": job_id, "duplicate_execution": True,
+                    "error": "this job already has evidence on disk but its snapshot is unreadable; it was not re-run"}
     real = [str(s) for s in sources if not str(s).startswith("virtual:") and os.path.isfile(str(s))]
     skipped = len(sources) - len(real)
     if not real:
@@ -138,8 +147,8 @@ def run_for_job(
             from PIL import Image
 
             from engine.multiengine.pair_scoring import (
-                ScorerConfig,
                 DEFAULT_EPIPOLAR_TOLERANCE_PX,
+                ScorerConfig,
                 appearance_from_images,
                 make_pair_scorer,
             )
@@ -158,9 +167,12 @@ def run_for_job(
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
-    snap = res.snapshot
+    return _facts(res.snapshot, job_id, skipped, status=res.status)
+
+
+def _facts(snap: Mapping[str, Any], job_id: str, skipped: int, *, status: str | None = None) -> dict[str, Any]:
     return {
-        "status": res.status, "run_id": job_id, "counts": snap["counts"], "limitations": snap["limitations"],
+        "status": status or snap["status"], "run_id": job_id, "counts": snap["counts"], "limitations": snap["limitations"],
         "skipped_sources": skipped, "snapshot": SNAPSHOT_REL, "scoring": snap.get("scoring"),
         "identity_events": [e["kind"] for e in snap.get("identity_events", [])],
     }

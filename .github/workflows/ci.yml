@@ -104,6 +104,7 @@ jobs:
             tests/test_backup_restore.py \
             tests/test_backup_durability.py \
             tests/test_backup_lifecycle.py \
+            tests/test_job_lease_recovery.py \
             tests/test_real_specialist_executors.py \
             tests/test_ifc_roundtrip.py \
             tests/test_robust_depth_fusion.py \

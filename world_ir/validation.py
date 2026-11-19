@@ -252,6 +252,9 @@ def _check_provenance_confidence(world: WorldIR, issues: List[ValidationIssue]) 
         entity = world.entities[entity_id]
         provenance = entity.provenance
         confidence = entity.confidence
+        # When confidence is None, it explicitly represents unmeasured confidence
+        if confidence is None:
+            continue
         # Non-numeric confidence must be an explicit ERROR, never a
         # TypeError escaping the validator (which would turn a malformed
         # world into a crashed gate instead of a refused one).

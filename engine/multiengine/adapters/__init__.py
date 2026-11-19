@@ -57,9 +57,9 @@ from engine.multiengine.contract import EngineAdapter
 from engine.multiengine.registry import EngineRegistry
 
 
-def create_adapters_for_registry(reg: EngineRegistry) -> Dict[str, EngineAdapter]:
+def create_adapters_for_registry(reg: EngineRegistry) -> dict[str, EngineAdapter]:
     """Instantiate concrete EngineAdapter objects for every registered engine specification."""
-    adapters: Dict[str, EngineAdapter] = {}
+    adapters: dict[str, EngineAdapter] = {}
 
     mapping = {
         "colmap": ColmapEngineAdapter,

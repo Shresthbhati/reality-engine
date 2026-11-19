@@ -38,7 +38,7 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
     def infer(self, request: EngineRequest) -> Sequence[ObservationDraft]:
         if self._model is None:
             raise EngineError(
-                EngineErrorKind.RUNTIME_ERROR,
+                EngineErrorKind.UNAVAILABLE,
                 f"Adapter {self.spec.engine_id} not loaded. Call load() before infer().",
             )
 
@@ -61,6 +61,12 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
             )
 
         # 2. Metric Depth map
+        if not options.get("is_metric_depth", True):
+            raise EngineError(
+                EngineErrorKind.INVALID_INPUT,
+                "Metric3DLifter requires verified metric depth; relative monocular depth without scale alignment cannot be unprojected.",
+            )
+
         depth_map = options.get("depth_map")
         if depth_map is None:
             # Check if file path is provided in sources or options
@@ -107,6 +113,9 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                 camera=camera,
                 target_frame=options.get("target_frame", "world:canonical"),
                 mask_2d=mask,
+                is_metric_depth=True,
+                depth_source=options.get("depth_source", "calibrated_metric_depth"),
+                calibration_source=options.get("calibration_source", "camera_metadata"),
                 confidence=float(conf) if conf is not None else None,
                 source_id=str(request.sources[0]) if request.sources else "camera0",
             )

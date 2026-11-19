@@ -58,7 +58,7 @@ def test_14_stage_universal_fusion_execution() -> None:
         result = pipeline.run(
             session_id="test_sess_01",
             evidence_entries=[entry_1, entry_2],
-            camera_metadata={"cam0": {"intrinsics": [500, 500, 320, 240]}},
+            camera_metadata={"cam0": {"intrinsics": [500, 500, 320, 240], "width": 640, "height": 480, "is_canonical_frame": True}},
             target_hierarchy_level=SpatialHierarchyLevel.ROOM,
         )
 
@@ -136,6 +136,8 @@ def test_actual_reprojection_pinhole_projection() -> None:
     # Camera with f=1000, cx=640, cy=360 at origin
     cam_meta = {
         "intrinsics": [1000.0, 1000.0, 640.0, 360.0],
+        "width": 1280,
+        "height": 720,
         "extrinsics": [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],

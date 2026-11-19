@@ -71,48 +71,224 @@ class ReprojectionEvaluation:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class ValidatedCameraMetadata:
+    """Rigorous camera validation record preserving provenance, status, and uncertainty."""
+
+    is_calibrated: bool
+    camera: PinholeCamera | None
+    source: str | None = None
+    method: str | None = None
+    version: str | None = None
+    coordinate_frame: str = "canonical_world"
+    uncertainty: dict[str, Any] | None = None
+    rejection_reason: str | None = None
+
+
 class VisibilityReprojectionValidator:
     """Evaluates multi-view camera visibility and geometric reprojection consistency."""
 
     @classmethod
-    def camera_from_metadata(cls, cam_meta: dict[str, Any]) -> PinholeCamera | None:
-        """Constructs a validated PinholeCamera from raw camera metadata dictionaries."""
+    def validate_camera_metadata(cls, cam_meta: dict[str, Any]) -> ValidatedCameraMetadata:
+        """Validates camera metadata without fabricating defaults.
+
+        Returns ValidatedCameraMetadata with is_calibrated=True and PinholeCamera if valid,
+        or is_calibrated=False and camera=None with explicit rejection_reason.
+        """
+        source = cam_meta.get("calibration_source") or cam_meta.get("source")
+        method = cam_meta.get("calibration_method") or cam_meta.get("method")
+        version = cam_meta.get("calibration_version") or cam_meta.get("version")
+        coord_frame = str(cam_meta.get("coordinate_frame", "canonical_world"))
+        uncertainty = cam_meta.get("uncertainty") if isinstance(cam_meta.get("uncertainty"), dict) else None
+
         intr_raw = cam_meta.get("intrinsics")
         if intr_raw is None:
-            return None
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="missing_intrinsics",
+            )
 
-        # Build CameraIntrinsics
+        # 1. Parse and validate intrinsics parameters
+        fx: float | None = None
+        fy: float | None = None
+        cx: float | None = None
+        cy: float | None = None
+        w: int | None = None
+        h: int | None = None
+        k1, k2, p1, p2, k3 = 0.0, 0.0, 0.0, 0.0, 0.0
+
         if isinstance(intr_raw, dict):
-            fx = float(intr_raw.get("fx", 500.0))
-            fy = float(intr_raw.get("fy", 500.0))
-            cx = float(intr_raw.get("cx", 320.0))
-            cy = float(intr_raw.get("cy", 240.0))
-            w = int(intr_raw.get("width", 640))
-            h = int(intr_raw.get("height", 480))
+            fx_val = intr_raw.get("fx")
+            fy_val = intr_raw.get("fy")
+            cx_val = intr_raw.get("cx")
+            cy_val = intr_raw.get("cy")
+            if None in (fx_val, fy_val, cx_val, cy_val):
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None, source=source, method=method,
+                    version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                    rejection_reason="missing_focal_or_principal_point",
+                )
+            fx = float(fx_val)
+            fy = float(fy_val)
+            cx = float(cx_val)
+            cy = float(cy_val)
+
+            w_val = intr_raw.get("width") or cam_meta.get("width")
+            h_val = intr_raw.get("height") or cam_meta.get("height")
+            if (w_val is None or h_val is None) and isinstance(cam_meta.get("resolution"), (list, tuple)) and len(cam_meta["resolution"]) >= 2:
+                w_val = cam_meta["resolution"][0]
+                h_val = cam_meta["resolution"][1]
+
+            if w_val is None or h_val is None:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None, source=source, method=method,
+                    version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                    rejection_reason="missing_image_dimensions",
+                )
+            w = int(w_val)
+            h = int(h_val)
             k1 = float(intr_raw.get("k1", 0.0))
             k2 = float(intr_raw.get("k2", 0.0))
             p1 = float(intr_raw.get("p1", 0.0))
             p2 = float(intr_raw.get("p2", 0.0))
             k3 = float(intr_raw.get("k3", 0.0))
-        elif isinstance(intr_raw, (list, tuple)) and len(intr_raw) >= 4:
-            fx, fy, cx, cy = float(intr_raw[0]), float(intr_raw[1]), float(intr_raw[2]), float(intr_raw[3])
-            w = int(cam_meta.get("width", 640))
-            h = int(cam_meta.get("height", 480))
-            k1, k2, p1, p2, k3 = 0.0, 0.0, 0.0, 0.0, 0.0
+
+        elif isinstance(intr_raw, (list, tuple)):
+            if len(intr_raw) >= 4 and not isinstance(intr_raw[0], (list, tuple)):
+                fx = float(intr_raw[0])
+                fy = float(intr_raw[1])
+                cx = float(intr_raw[2])
+                cy = float(intr_raw[3])
+            elif len(intr_raw) >= 3 and isinstance(intr_raw[0], (list, tuple)) and len(intr_raw[0]) >= 3:
+                fx = float(intr_raw[0][0])
+                fy = float(intr_raw[1][1])
+                cx = float(intr_raw[0][2])
+                cy = float(intr_raw[1][2])
+            else:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None, source=source, method=method,
+                    version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                    rejection_reason="malformed_intrinsics_sequence",
+                )
+
+            w_val = cam_meta.get("width")
+            h_val = cam_meta.get("height")
+            if (w_val is None or h_val is None) and isinstance(cam_meta.get("resolution"), (list, tuple)) and len(cam_meta["resolution"]) >= 2:
+                w_val = cam_meta["resolution"][0]
+                h_val = cam_meta["resolution"][1]
+
+            if w_val is None or h_val is None:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None, source=source, method=method,
+                    version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                    rejection_reason="missing_image_dimensions",
+                )
+            w = int(w_val)
+            h = int(h_val)
         else:
-            return None
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="unsupported_intrinsics_type",
+            )
 
-        intr = CameraIntrinsics(
-            fx=fx, fy=fy, cx=cx, cy=cy, width=w, height=h,
-            k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
-        )
+        # Validate finite values and positivity
+        intr_vals = (fx, fy, cx, cy, float(w), float(h), k1, k2, p1, p2, k3)
+        if any(not math.isfinite(v) for v in intr_vals):
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="non_finite_intrinsics_or_distortion",
+            )
+        if fx <= 0.0 or fy <= 0.0:
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="non_positive_focal_length",
+            )
+        if w <= 0 or h <= 0:
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="non_positive_image_dimensions",
+            )
 
-        # Build CameraExtrinsics
-        # Note: In world_ir.camera, CameraExtrinsics.rotation is CAMERA-TO-WORLD, position is world position
+        try:
+            intr = CameraIntrinsics(
+                fx=fx, fy=fy, cx=cx, cy=cy, width=w, height=h,
+                k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
+            )
+        except Exception as e:
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason=f"intrinsics_constructor_error: {e}",
+            )
+
+        # 2. Build and validate CameraExtrinsics
         extr_raw = cam_meta.get("extrinsics") or cam_meta.get("pose_4x4")
         if extr_raw is not None:
-            mat = np.array(extr_raw, dtype=float)
-            if mat.shape == (4, 4):
+            if isinstance(extr_raw, dict) and "position" in extr_raw and "rotation" in extr_raw:
+                try:
+                    p = extr_raw["position"]
+                    pos_x = float(p[0] if isinstance(p, (list, tuple)) else p["x"])
+                    pos_y = float(p[1] if isinstance(p, (list, tuple)) else p["y"])
+                    pos_z = float(p[2] if isinstance(p, (list, tuple)) else p["z"])
+
+                    r = extr_raw["rotation"]
+                    qw = float(r[0] if isinstance(r, (list, tuple)) else r["w"])
+                    qx = float(r[1] if isinstance(r, (list, tuple)) else r["x"])
+                    qy = float(r[2] if isinstance(r, (list, tuple)) else r["y"])
+                    qz = float(r[3] if isinstance(r, (list, tuple)) else r["z"])
+
+                    if not all(math.isfinite(v) for v in (pos_x, pos_y, pos_z, qw, qx, qy, qz)):
+                        return ValidatedCameraMetadata(
+                            is_calibrated=False, camera=None, source=source, method=method,
+                            version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                            rejection_reason="non_finite_extrinsics_values",
+                        )
+
+                    q_norm_sq = qw * qw + qx * qx + qy * qy + qz * qz
+                    if abs(q_norm_sq - 1.0) > 1e-3:
+                        return ValidatedCameraMetadata(
+                            is_calibrated=False, camera=None, source=source, method=method,
+                            version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                            rejection_reason=f"non_unit_quaternion_norm_{math.sqrt(q_norm_sq):.4f}",
+                        )
+
+                    quat = Quat(qw, qx, qy, qz).normalized()
+                    extr = CameraExtrinsics(position=Vec3(pos_x, pos_y, pos_z), rotation=quat)
+                except Exception as exc:
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason=f"extrinsics_dict_parse_error_{exc}",
+                    )
+            else:
+                try:
+                    mat = np.array(extr_raw, dtype=float)
+                except Exception:
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason="extrinsics_array_conversion_error",
+                    )
+
+                if mat.shape not in ((4, 4), (3, 4)):
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason=f"malformed_extrinsics_shape_{mat.shape}",
+                    )
+
+                if not np.all(np.isfinite(mat)):
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason="non_finite_extrinsics_matrix",
+                    )
+
                 # Check if it's world-to-cam [R|t] or cam-to-world [R_c2w | pos]
                 if cam_meta.get("is_world_to_cam", False):
                     R_w2c = mat[:3, :3]
@@ -122,6 +298,24 @@ class VisibilityReprojectionValidator:
                 else:
                     R_c2w = mat[:3, :3]
                     pos = mat[:3, 3]
+
+                # Validate rigidity of rotation matrix: det(R) == +1.0 and R^T R == I
+                det_r = float(np.linalg.det(R_c2w))
+                if abs(det_r - 1.0) > 1e-3:
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason=f"non_rigid_rotation_determinant_{det_r:.4f}",
+                    )
+
+                ortho_dev = float(np.max(np.abs(R_c2w.T @ R_c2w - np.eye(3))))
+                if ortho_dev > 1e-3:
+                    return ValidatedCameraMetadata(
+                        is_calibrated=False, camera=None, source=source, method=method,
+                        version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                        rejection_reason=f"non_orthogonal_rotation_matrix_dev_{ortho_dev:.4f}",
+                    )
+
                 rows = (
                     (float(R_c2w[0, 0]), float(R_c2w[0, 1]), float(R_c2w[0, 2])),
                     (float(R_c2w[1, 0]), float(R_c2w[1, 1]), float(R_c2w[1, 2])),
@@ -130,14 +324,37 @@ class VisibilityReprojectionValidator:
                 from reconstruction.calibration.transforms import _quat_from_matrix_rows
                 quat = _quat_from_matrix_rows(rows)
                 extr = CameraExtrinsics(position=Vec3(pos[0], pos[1], pos[2]), rotation=quat)
-            else:
-                extr = CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat.identity())
+
         elif cam_meta.get("is_canonical_frame", False):
+            # Identity pose is permitted ONLY when the source explicitly establishes canonical frame
             extr = CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat.identity())
         else:
-            return None
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None, source=source, method=method,
+                version=version, coordinate_frame=coord_frame, uncertainty=uncertainty,
+                rejection_reason="missing_extrinsics_and_not_canonical_frame",
+            )
 
-        return PinholeCamera(intrinsics=intr, extrinsics=extr)
+        pinhole = PinholeCamera(intrinsics=intr, extrinsics=extr)
+        return ValidatedCameraMetadata(
+            is_calibrated=True,
+            camera=pinhole,
+            source=source,
+            method=method,
+            version=version,
+            coordinate_frame=coord_frame,
+            uncertainty=uncertainty,
+            rejection_reason=None,
+        )
+
+    @classmethod
+    def camera_from_metadata(cls, cam_meta: dict[str, Any]) -> PinholeCamera | None:
+        """Constructs a validated PinholeCamera from raw camera metadata dictionaries.
+
+        Returns None if missing calibration or malformed. Never invents defaults.
+        """
+        validated = cls.validate_camera_metadata(cam_meta)
+        return validated.camera
 
     @classmethod
     def check_point_visibility(

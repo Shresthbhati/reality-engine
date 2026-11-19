@@ -126,7 +126,31 @@ class UniversalRoomBenchmarkRunner:
         if not photos:
             photos = list(room_dir.glob("*.jpg")) + list(room_dir.glob("*.png"))
 
-        # Physical evidence verification
+        # Physical evidence verification: missing photos or missing ground truth blocks evaluation
+        if not gt_data:
+            duration = time.perf_counter() - t0
+            return UniversalRoomBenchmarkResult(
+                room_id=room_id,
+                room_name=room_name,
+                is_holdout=is_holdout,
+                status="BLOCKED",
+                reason=f"Missing laser survey ground truth at {gt_path}. Physical reference required.",
+                data_type="physical",
+                wall_rmse_m=None,
+                max_wall_error_m=None,
+                object_precision=None,
+                object_recall=None,
+                object_f1=None,
+                part_association_accuracy=None,
+                hierarchy_depth_valid=False,
+                fusion_fidelity_score=None,
+                quality_gates_passed=False,
+                active_capture_count=0,
+                sample_count=0,
+                missing_annotations=["ground_truth_survey"],
+                duration_s=round(duration, 3),
+            )
+
         if not photos and not candidate_evidence and not synthetic_ok:
             duration = time.perf_counter() - t0
             return UniversalRoomBenchmarkResult(
@@ -151,19 +175,14 @@ class UniversalRoomBenchmarkRunner:
                 duration_s=round(duration, 3),
             )
 
-        # If candidate evidence provided or synthetic evaluation explicitly authorized
+        # If candidate evidence provided or synthetic smoke test explicitly requested
         evidence_entries = candidate_evidence or []
-        data_type = "physical" if photos else "synthetic_evaluation"
+        data_type = "physical" if photos else "synthetic_smoke_test"
 
-        # If synthetic_ok and no candidate evidence, create controlled test double evidence
-        # that does NOT simply copy ground truth labels
         if not evidence_entries and synthetic_ok:
-            # Simulated model predictions with calibrated noise
-            gt_walls = gt_data.get("walls", [])
-            for w_idx, w in enumerate(gt_walls):
-                nominal_len = float(w.get("length_m", 5.0))
-                # Add 3 mm simulated measurement error
-                measured_len = round(nominal_len + 0.003, 4)
+            # Standalone synthetic smoke test double: independent fixed test geometry
+            # Does NOT read or copy ground truth survey annotations
+            for w_idx, nom_len in enumerate([4.80, 3.20]):
                 eid = f"ev_synth_wall_{room_id}_{w_idx}"
                 entry = EvidenceMatrixEntry(
                     evidence_id=eid,
@@ -175,48 +194,81 @@ class UniversalRoomBenchmarkRunner:
                     input_parameters={
                         "label": "wall",
                         "target_class": "wall",
-                        "box_3d": {"center": [2.5, 0.0, 1.3], "size": [measured_len, 0.15, 2.65]},
+                        "box_3d": {"center": [2.4, 0.0, 1.3], "size": [nom_len, 0.15, 2.65]},
                     },
                     prediction_type="wall_segment",
                     raw_output_reference="synth_ref",
                     coordinate_frame="canonical_world",
-                    entity_association=f"wall_{w.get('id', w_idx)}",
+                    entity_association=f"wall_{w_idx}",
                     confidence=0.92,
                 )
                 evidence_entries.append(entry)
 
-            # Simulated fixture detection
-            gt_fixtures = gt_data.get("fixtures", [])
-            for f_idx, f in enumerate(gt_fixtures):
-                pos = f.get("position_m", [0.0, 0.0, 0.0])
-                noisy_pos = [round(pos[0] + 0.005, 4), round(pos[1], 4), round(pos[2] + 0.005, 4)]
-                eid = f"ev_synth_fix_{room_id}_{f_idx}"
-                f_type = f.get("fixture_type", "socket")
-                entry = EvidenceMatrixEntry(
-                    evidence_id=eid,
-                    model_id="grounding_dino",
-                    architecture_id="dino",
-                    checkpoint_id="swint",
-                    run_id=f"synth_{room_id}",
-                    source_ids=["synth_cam0"],
-                    input_parameters={
-                        "label": "electrical_socket" if f_type == "socket" else "light_switch",
-                        "target_class": "electrical_socket" if f_type == "socket" else "light_switch",
-                        "box_3d": {"center": noisy_pos, "size": [0.08, 0.03, 0.08]},
-                    },
-                    prediction_type="fixture",
-                    raw_output_reference="synth_ref",
-                    coordinate_frame="canonical_world",
-                    entity_association=f.get("id", f"fix_{f_idx}"),
-                    confidence=0.88,
-                )
-                evidence_entries.append(entry)
+            # Standalone smoke test fixture
+            entry_fix = EvidenceMatrixEntry(
+                evidence_id=f"ev_synth_fix_{room_id}_0",
+                model_id="grounding_dino",
+                architecture_id="dino",
+                checkpoint_id="swint",
+                run_id=f"synth_{room_id}",
+                source_ids=["synth_cam0"],
+                input_parameters={
+                    "label": "electrical_socket",
+                    "target_class": "electrical_socket",
+                    "box_3d": {"center": [1.2, 0.0, 0.4], "size": [0.08, 0.03, 0.08]},
+                },
+                prediction_type="fixture",
+                raw_output_reference="synth_ref",
+                coordinate_frame="canonical_world",
+                entity_association="fix_0",
+                confidence=0.88,
+            )
+            evidence_entries.append(entry_fix)
+
+        if not evidence_entries:
+            duration = time.perf_counter() - t0
+            return UniversalRoomBenchmarkResult(
+                room_id=room_id,
+                room_name=room_name,
+                is_holdout=is_holdout,
+                status="BLOCKED",
+                reason=f"No reconstruction evidence available for {room_id}. Pipeline execution required.",
+                data_type=data_type,
+                wall_rmse_m=None,
+                max_wall_error_m=None,
+                object_precision=None,
+                object_recall=None,
+                object_f1=None,
+                part_association_accuracy=None,
+                hierarchy_depth_valid=False,
+                fusion_fidelity_score=None,
+                quality_gates_passed=False,
+                active_capture_count=0,
+                sample_count=0,
+                missing_annotations=["reconstruction_evidence"],
+                duration_s=round(duration, 3),
+            )
 
         # Run 14-stage universal fusion pipeline
         fusion_result: UniversalFusionResult = self.pipeline.run(
             session_id=f"bench_{room_id}",
             evidence_entries=evidence_entries,
-            camera_metadata={"synth_cam0": {"intrinsics": [500, 500, 320, 240]}},
+            camera_metadata={
+                "synth_cam0": {
+                    "intrinsics": {
+                        "fx": 500.0,
+                        "fy": 500.0,
+                        "cx": 320.0,
+                        "cy": 240.0,
+                        "width": 640,
+                        "height": 480,
+                    },
+                    "extrinsics": {
+                        "is_canonical_frame": True,
+                        "matrix": np.eye(4).tolist(),
+                    },
+                }
+            },
             target_hierarchy_level=SpatialHierarchyLevel.ROOM,
         )
 
@@ -273,6 +325,19 @@ class UniversalRoomBenchmarkRunner:
         rec = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
         f1 = float(2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
 
+        # Compute part association accuracy if part annotations exist; otherwise None
+        part_acc: float | None = None
+        annotated_parts = [f for f in gt_data.get("fixtures", []) if "parent_id" in f]
+        if annotated_parts:
+            correct_parts = 0
+            for ap in annotated_parts:
+                pid = ap.get("parent_id")
+                ap_id = ap.get("id", "")
+                matched = next((e for eid, e in fusion_result.fused_entities.items() if ap_id and ap_id in eid), None)
+                if matched and matched.parent_entity_id and pid and pid in matched.parent_entity_id:
+                    correct_parts += 1
+            part_acc = round(float(correct_parts / len(annotated_parts)), 4)
+
         duration = time.perf_counter() - t0
         return UniversalRoomBenchmarkResult(
             room_id=room_id,
@@ -286,7 +351,7 @@ class UniversalRoomBenchmarkRunner:
             object_precision=round(prec, 4),
             object_recall=round(rec, 4),
             object_f1=round(f1, 4),
-            part_association_accuracy=1.0,
+            part_association_accuracy=part_acc,
             hierarchy_depth_valid=valid_tree,
             fusion_fidelity_score=fusion_result.fidelity_score,
             quality_gates_passed=fusion_result.quality_gate_passed,
@@ -307,7 +372,7 @@ class UniversalRoomBenchmarkRunner:
         blocked = [r for r in results if r.status == "BLOCKED"]
 
         physical_count = sum(1 for r in evaluated if r.data_type == "physical")
-        synthetic_count = sum(1 for r in evaluated if r.data_type == "synthetic_evaluation")
+        synthetic_count = sum(1 for r in evaluated if "synthetic" in r.data_type)
 
         wall_rmses = [r.wall_rmse_m for r in evaluated if r.wall_rmse_m is not None]
         f1s = [r.object_f1 for r in evaluated if r.object_f1 is not None]

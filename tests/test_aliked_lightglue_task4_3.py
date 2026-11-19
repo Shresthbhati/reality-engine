@@ -7,6 +7,7 @@ Verifies:
 - Benchmark comparison comparing registered ratio and inlier ratio against classical SIFT.
 """
 
+import importlib.util
 import json
 from pathlib import Path
 import numpy as np
@@ -14,6 +15,11 @@ import cv2
 import pytest
 
 from reconstruction.matching import get_matcher, available_matchers, IMatcher, MatchResult
+
+# ALIKED+LightGlue needs torch and kornia (optional extras, not in `.[dev]`).
+pytestmark = pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None or importlib.util.find_spec("kornia") is None,
+    reason="torch and kornia are not installed (optional extras)")
 
 
 @pytest.fixture

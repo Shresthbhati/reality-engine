@@ -116,6 +116,7 @@ def test_mast3r_probe_and_metadata(monkeypatch):
 
 def test_mast3r_matching_execution_when_flag_enabled(monkeypatch, image_pair):
     """When enabled, Mast3rMatcher satisfies IMatcher interface and verifies correspondences."""
+    pytest.importorskip("torch", reason="torch is not installed (optional extra); MASt3R's probe needs it even in mock mode")
     monkeypatch.setenv("REALITY_ALLOW_NC_MODELS", "1")
     monkeypatch.setenv("REALITY_MOCK_MASt3R", "1")
 
@@ -147,6 +148,7 @@ def test_mast3r_matching_execution_when_flag_enabled(monkeypatch, image_pair):
 
 def test_dinov2_probe_and_initialization():
     """DINOv2 probe returns available and initializes with Apache-2.0 licence."""
+    pytest.importorskip("torch", reason="torch is not installed (optional extra); the DINOv2 probe needs it")
     ok, msg = dinov2_probe()
     assert ok is True
     assert "available" in msg

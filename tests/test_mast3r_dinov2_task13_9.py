@@ -4,6 +4,7 @@ Blueprint Task 13.9:
 "MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current".
 """
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -30,6 +31,9 @@ from reconstruction.matching import (
 )
 from reconstruction.matching.interface import MatcherUnavailableError, MatchResult
 from reconstruction.matching.mast3r import Mast3rMatcher
+
+# MASt3R's probe imports torch before it honours the mock flag, so these tests need torch (optional extra, not `.[dev]`).
+requires_torch = pytest.mark.skipif(importlib.util.find_spec("torch") is None, reason="torch is not installed (optional extra)")
 
 
 @pytest.fixture
@@ -64,6 +68,7 @@ def test_mast3r_refused_without_nc_flag(monkeypatch, image_pair):
         get_matcher("mast3r", image_pair)
 
 
+@requires_torch
 def test_mast3r_unimplemented_or_missing_weights_when_nc_flag_set(monkeypatch, image_pair):
     """When REALITY_ALLOW_NC_MODELS=1, missing backend/weights raises MatcherUnavailableError with 'not implemented'."""
     monkeypatch.setenv("REALITY_ALLOW_NC_MODELS", "1")
@@ -74,6 +79,7 @@ def test_mast3r_unimplemented_or_missing_weights_when_nc_flag_set(monkeypatch, i
         get_matcher("mast3r", image_pair)
 
 
+@requires_torch
 def test_mast3r_mock_execution(monkeypatch, image_pair):
     """When REALITY_ALLOW_NC_MODELS=1 and REALITY_MOCK_MASt3R=1, probe succeeds and match produces verified MatchResult."""
     monkeypatch.setenv("REALITY_ALLOW_NC_MODELS", "1")
@@ -97,6 +103,7 @@ def test_mast3r_mock_execution(monkeypatch, image_pair):
     assert res.runtime_s > 0.0
 
 
+@requires_torch
 def test_mast3r_missing_image_raises(monkeypatch, image_pair):
     monkeypatch.setenv("REALITY_ALLOW_NC_MODELS", "1")
     monkeypatch.setenv("REALITY_MOCK_MASt3R", "1")
@@ -280,6 +287,7 @@ def test_comparative_reid_benchmark_dinov2_beats_color_histogram(monkeypatch):
     )
 
 
+@requires_torch
 def test_comparative_matcher_benchmark_licensing_and_accuracy():
     """Validate matcher properties and adoption criteria across SIFT, ALIKED+LightGlue, and MASt3R."""
     # SIFT: Classical, BSD/MIT

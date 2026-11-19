@@ -115,6 +115,7 @@ jobs:
             tests/test_activity_ownership.py \
             tests/test_token_hardening.py \
             tests/test_tenant_adversarial.py \
+            tests/test_release_claims.py \
             tests/test_body_id_tenancy.py \
             tests/test_adoption_transaction.py \
             tests/test_stage_runner.py \

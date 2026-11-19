@@ -30,8 +30,13 @@ Present in the repository, not part of the release promise, and labelled experim
 
 A box is ticked only with evidence: a passing test named here, or a recorded run.
 
+Three kinds of evidence are never mixed, and each box says which it rests on:
+- **Synthetic validation** — generated worlds and fixtures (e.g. the six synthetic rooms in `accuracy_benchmark_report.json`). Proves code and evaluator behaviour, not physical accuracy.
+- **Real-image development tests** — real photographs with no tape-measured truth (e.g. `datasets/south_building`). Proves the pipeline runs and is repeatable on real input.
+- **Physical ground truth** — photos plus laser/tape measurements under `benchmarks/measured_rooms/PROTOCOL.md`. **None exists yet**, so no dimensional-accuracy claim is made.
+
 ### Must pass
-- [ ] Core CI green on Python 3.10, 3.11, 3.12 (currently 3.11 fails, others cancelled).
+- [ ] Core CI green on Python 3.10, 3.11, 3.12, and the full-suite shards green. Not yet shown: the earlier 3.10/3.11 failures were fixed in #323/#324, but the CI run on `main` at `19d62795` had not completed when this was written. Tick this only against a completed green run, with its link.
 - [x] The six failing tests are fixed or their capability is removed from the release:
   - `tests/test_capture_quality.py::test_api_frame_picker_keeps_contract_and_falls_back` [Verified]
   - `tests/test_colmap_session.py::test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause` [Verified]
@@ -47,9 +52,9 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 ### Should pass (release goes out without them, stated as limits)
 - [x] One 10-photo run timed end to end on the 6 GB GPU and recorded (`datasets/south_building/runs/pipeline_measurement_20261118T044709.json`, COLMAP on NVIDIA GeForce RTX 4050 Laptop GPU, 115 points reconstructed in 79.5s).
 - [x] Same photos, two runs: same registered-camera count and wall count (`tests/integration/test_release_gate.py::test_release_gate_same_input_reproduces`).
-- [x] Six measured rooms captured and scored (`benchmarks/measured_rooms/` rooms 01–06 conforming to `ground_truth.schema.json` and `PROTOCOL.md`, verified by `tests/test_measured_room_dataset.py`).
+- [ ] Six measured rooms captured and scored. **Not met.** Six rooms are *configured* under `benchmarks/measured_rooms/`; none has verified physical photos: `dataset_verification_report.json` (2026-11-18) records `total_rooms_configured: 6`, `total_verified: 0`, `total_blocked: 6`, `overall_status: BLOCKED` (awaiting on-site capture with a phone and laser measure; a human task). The figures in `accuracy_benchmark_report.json` come from the synthetic rooms (`physical_count: 0`, `synthetic_count: 6`): they test the evaluator, not physical-room accuracy. No dimensional accuracy is demonstrated on a physical room.
 - [ ] The 15 test images annotated with boxes and cross-view ids (needs human review).
-- [x] Branch protection on `main` (enforced via GitHub branch protection ruleset and required CI status checks).
+- [ ] Branch protection on `main` with required CI status checks. **Not met.** Inspected 2026-11-19 with `gh api repos/Shresthbhati/reality-engine/branches/main/protection` (HTTP 404 "Branch not protected") and `.../rulesets` (`[]`): no protection and no ruleset exist. Enabling it is a repository-owner action (see `docs/engineering/BRANCH_AUDIT.md`).
 
 ## Known open facts
 

@@ -25,8 +25,9 @@ from world_ir.camera import PinholeCamera
 class MetricAnchor:
     """Independent ground-truth physical metric anchor.
 
-    Without a verified metric anchor, reconstructions derived from SfM (e.g. COLMAP)
-    remain in arbitrary gauge coordinates (COLMAP_SFM_UNITS) and MUST NOT be labeled as METRES.
+    Without a verified metric anchor with valid reference points and measured distance,
+    reconstructions derived from SfM (e.g. COLMAP) remain in arbitrary gauge coordinates
+    (COLMAP_SFM_UNITS) and MUST NOT be labeled as METRES.
     """
 
     anchor_type: str  # "known_distance", "laser_survey", "lidar_ground_truth", "synthetic_ground_truth"
@@ -34,6 +35,7 @@ class MetricAnchor:
     uncertainty_m: float = 0.01  # Measurement uncertainty in meters
     reference_point_a: tuple[float, float, float] | None = None  # 3D coordinate in unscaled world frame
     reference_point_b: tuple[float, float, float] | None = None  # 3D coordinate in unscaled world frame
+    reference_frame: str = "world:colmap"  # Coordinate frame of reference points
     notes: str = ""
 
     def to_dict(self) -> dict:
@@ -43,8 +45,76 @@ class MetricAnchor:
             "uncertainty_m": self.uncertainty_m,
             "reference_point_a": list(self.reference_point_a) if self.reference_point_a else None,
             "reference_point_b": list(self.reference_point_b) if self.reference_point_b else None,
+            "reference_frame": self.reference_frame,
             "notes": self.notes,
         }
+
+
+def validate_metric_anchor(
+    anchor: MetricAnchor | None,
+    allow_synthetic: bool = False,
+) -> tuple[bool, str | None, float | None]:
+    """Strictly validates an independent physical metric anchor.
+
+    Returns:
+        (is_valid, rejection_reason, scale_to_metres)
+    """
+    if anchor is None:
+        return True, None, None
+
+    if anchor.anchor_type == "synthetic_ground_truth" and not allow_synthetic:
+        return (
+            False,
+            "SYNTHETIC_ANCHOR_REJECTED: Synthetic ground truth cannot establish production physical accuracy",
+            None,
+        )
+
+    # Validate measured distance
+    if not isinstance(anchor.measured_distance_m, (int, float)) or not np.isfinite(anchor.measured_distance_m):
+        return False, "INVALID_METRIC_ANCHOR: measured_distance_m must be a finite number", None
+    if float(anchor.measured_distance_m) <= 1e-4:
+        return False, "INVALID_METRIC_ANCHOR: measured_distance_m must be strictly positive (> 1e-4 m)", None
+
+    # Validate measurement uncertainty
+    if not isinstance(anchor.uncertainty_m, (int, float)) or not np.isfinite(anchor.uncertainty_m):
+        return False, "INVALID_METRIC_ANCHOR: uncertainty_m must be a finite number", None
+    if float(anchor.uncertainty_m) < 0.0:
+        return False, "INVALID_METRIC_ANCHOR: uncertainty_m cannot be negative", None
+
+    # Require valid physical reference points in the reconstructed coordinate frame
+    if anchor.reference_point_a is None or anchor.reference_point_b is None:
+        return (
+            False,
+            "INVALID_METRIC_ANCHOR: Missing reference points (both reference_point_a and reference_point_b required)",
+            None,
+        )
+
+    for name, pt in (("reference_point_a", anchor.reference_point_a), ("reference_point_b", anchor.reference_point_b)):
+        if not isinstance(pt, (tuple, list)) or len(pt) != 3:
+            return False, f"INVALID_METRIC_ANCHOR: {name} must be a 3-element coordinate tuple", None
+        if not all(isinstance(c, (int, float)) and np.isfinite(c) for c in pt):
+            return False, f"INVALID_METRIC_ANCHOR: {name} contains non-finite or non-numeric values", None
+
+    p_a = np.array(anchor.reference_point_a, dtype=np.float64)
+    p_b = np.array(anchor.reference_point_b, dtype=np.float64)
+    dist_sfm = float(np.linalg.norm(p_a - p_b))
+
+    if dist_sfm <= 1e-4:
+        return (
+            False,
+            "INVALID_METRIC_ANCHOR: Distance between reference points is zero or coincident",
+            None,
+        )
+
+    scale_to_metres = float(anchor.measured_distance_m) / dist_sfm
+    if not np.isfinite(scale_to_metres) or scale_to_metres <= 0.0:
+        return (
+            False,
+            "INVALID_METRIC_ANCHOR: Derived scale factor to metres is non-finite or non-positive",
+            None,
+        )
+
+    return True, None, scale_to_metres
 
 
 @dataclass(frozen=True)
@@ -52,17 +122,22 @@ class ScaleAlignmentResult:
     """Outcome of metric depth scale alignment and validation."""
 
     is_aligned: bool
-    scale_state: str  # "METRIC_SCALE_ALIGNED", "SFM_ALIGNED_UNMETRIC", "RELATIVE_UNSCALED", "INVALID"
+    scale_state: str  # "METRIC_SCALE_ALIGNED", "SFM_ALIGNED_UNMETRIC", "SYNTHETIC_SCALE_ALIGNED", "RELATIVE_UNSCALED", "INVALID"
     units: str = "UNSPECIFIED"  # "METRES", "COLMAP_SFM_UNITS", "RELATIVE_DISPARITY", "UNSPECIFIED"
     is_physically_metric: bool = False
     aligned_depth_map: np.ndarray | None = None
     scale: float | None = None
     shift: float | None = None
+    scale_to_metres: float | None = None
     scale_uncertainty: float | None = None
     shift_uncertainty: float | None = None
-    residual_rms_error_m: float | None = None
-    held_out_rms_error_m: float | None = None
-    spatial_residual_std_m: float | None = None
+    residual_units: str = "UNSPECIFIED"  # "METRES", "COLMAP_SFM_UNITS"
+    residual_rms_error: float | None = None
+    held_out_rms_error: float | None = None
+    spatial_residual_std: float | None = None
+    residual_rms_error_m: float | None = None  # Backward-compatible alias
+    held_out_rms_error_m: float | None = None  # Backward-compatible alias
+    spatial_residual_std_m: float | None = None  # Backward-compatible alias
     r_squared: float | None = None
     scale_source: str | None = None
     calibration_method: str | None = None
@@ -80,8 +155,13 @@ class ScaleAlignmentResult:
             "is_physically_metric": self.is_physically_metric,
             "scale": self.scale,
             "shift": self.shift,
+            "scale_to_metres": self.scale_to_metres,
             "scale_uncertainty": self.scale_uncertainty,
             "shift_uncertainty": self.shift_uncertainty,
+            "residual_units": self.residual_units,
+            "residual_rms_error": self.residual_rms_error,
+            "held_out_rms_error": self.held_out_rms_error,
+            "spatial_residual_std": self.spatial_residual_std,
             "residual_rms_error_m": self.residual_rms_error_m,
             "held_out_rms_error_m": self.held_out_rms_error_m,
             "spatial_residual_std_m": self.spatial_residual_std_m,
@@ -149,16 +229,23 @@ def align_relative_depth_to_metric(
     metric_anchor: MetricAnchor | None = None,
     min_inliers: int = 15,
     train_ratio: float = 0.7,
+    allow_synthetic: bool = False,
 ) -> ScaleAlignmentResult:
     """Aligns a relative depth map to reference 3D coordinates with fit vs held-out evaluation.
 
     Strict Scale Contract:
-    - If `metric_anchor` is provided with a valid physical measurement, the output is scaled
-      to physical meters: units='METRES', scale_state='METRIC_SCALE_ALIGNED', is_physically_metric=True.
+    - If `metric_anchor` is provided with a valid physical measurement and reference points,
+      the output is scaled to physical meters: units='METRES', scale_state='METRIC_SCALE_ALIGNED',
+      is_physically_metric=True, scale_to_metres=lambda.
+    - If `metric_anchor` has missing or malformed reference points or non-positive distance,
+      the alignment is rejected with scale_state='INVALID'.
     - If `metric_anchor` is None, the output remains in arbitrary SfM gauge units:
       units='COLMAP_SFM_UNITS', scale_state='SFM_ALIGNED_UNMETRIC', is_physically_metric=False.
-    - Correspondences are split into fit (e.g. 70%) and held-out (30%) sets; held-out RMSE
-      and quadrant-level spatial residual variation are recorded.
+    - Synthetic anchors cannot establish physical metric accuracy and are rejected unless
+      allow_synthetic=True, in which case is_physically_metric remains False.
+    - Correspondences are split into fit (e.g. 70%) and held-out (30%) sets; held-out RMSE,
+      held-out R^2, and quadrant-level spatial residual variation are evaluated. Weak held-out
+      fits are rejected even if training R^2 is high.
     """
     is_valid, err = validate_depth_map(depth_map)
     if not is_valid:
@@ -170,14 +257,19 @@ def align_relative_depth_to_metric(
             rejection_reason=err,
         )
 
-    if metric_anchor is not None and metric_anchor.measured_distance_m <= 0.0:
+    # Validate metric anchor contract
+    is_anchor_valid, anchor_err, scale_to_metres = validate_metric_anchor(
+        metric_anchor,
+        allow_synthetic=allow_synthetic,
+    )
+    if not is_anchor_valid:
         return ScaleAlignmentResult(
             is_aligned=False,
             scale_state="INVALID",
             units="RELATIVE_DISPARITY",
             is_physically_metric=False,
             metric_anchor=metric_anchor,
-            rejection_reason="INVALID_METRIC_ANCHOR: measured_distance_m must be > 0",
+            rejection_reason=anchor_err,
         )
 
     h, w = depth_map.shape
@@ -319,8 +411,31 @@ def align_relative_depth_to_metric(
         else:
             z_pred_test = s_lin * d_test + t_lin
         held_out_rms = float(np.sqrt(np.mean((z_pred_test - z_test) ** 2)))
+        ss_tot_test = float(np.sum((z_test - np.mean(z_test)) ** 2))
+        ss_res_test = float(np.sum((z_test - z_pred_test) ** 2))
+        held_out_r2 = (1.0 - (ss_res_test / max(1e-6, ss_tot_test))) if len(d_test) >= 3 else 1.0
     else:
         held_out_rms = rms_val
+        held_out_r2 = best_r2
+
+    # Reject weak fits using held-out performance, not training R^2 alone
+    if len(d_test) >= 3 and (held_out_r2 < 0.10 or (held_out_rms > 2.5 * rms_val and held_out_rms > 0.5)):
+        return ScaleAlignmentResult(
+            is_aligned=False,
+            scale_state="RELATIVE_UNSCALED",
+            units="RELATIVE_DISPARITY",
+            is_physically_metric=False,
+            point_count=n_total,
+            inlier_count=inliers,
+            held_out_count=len(test_idx),
+            r_squared=round(best_r2, 4),
+            residual_rms_error=round(rms_val, 4),
+            residual_rms_error_m=round(rms_val, 4),
+            held_out_rms_error=round(held_out_rms, 4),
+            held_out_rms_error_m=round(held_out_rms, 4),
+            metric_anchor=metric_anchor,
+            rejection_reason=f"POOR_HELD_OUT_EVALUATION: Held-out R^2={held_out_r2:.3f} or held-out RMS={held_out_rms:.3f} indicates severe overfit/generalization failure",
+        )
 
     # Spatial residual variation across 4 quadrants
     quadrant_residuals: list[float] = []
@@ -343,41 +458,36 @@ def align_relative_depth_to_metric(
     spatial_std = float(np.std(quadrant_residuals)) if len(quadrant_residuals) >= 2 else 0.0
 
     # Metric Anchor Scaling Check
-    metric_scale_factor = 1.0
     if metric_anchor is not None:
-        if metric_anchor.reference_point_a is not None and metric_anchor.reference_point_b is not None:
-            p_a = np.array(metric_anchor.reference_point_a, dtype=np.float64)
-            p_b = np.array(metric_anchor.reference_point_b, dtype=np.float64)
-            dist_sfm = float(np.linalg.norm(p_a - p_b))
-            if dist_sfm <= 1e-5:
-                return ScaleAlignmentResult(
-                    is_aligned=False,
-                    scale_state="INVALID",
-                    units="RELATIVE_DISPARITY",
-                    is_physically_metric=False,
-                    metric_anchor=metric_anchor,
-                    rejection_reason="INVALID_METRIC_ANCHOR: Distance between reference points is zero",
-                )
-            metric_scale_factor = metric_anchor.measured_distance_m / dist_sfm
+        assert scale_to_metres is not None
+        metric_scale_factor = scale_to_metres
         aligned_map = (aligned_raw * metric_scale_factor).astype(np.float32)
         out_units = "METRES"
-        out_state = "METRIC_SCALE_ALIGNED"
-        is_metric = True
+        is_metric = (metric_anchor.anchor_type != "synthetic_ground_truth")
+        out_state = "METRIC_SCALE_ALIGNED" if is_metric else "SYNTHETIC_SCALE_ALIGNED"
+        res_units = "METRES"
         final_scale = round(s_val * metric_scale_factor, 6)
         final_shift = round(t_val * metric_scale_factor, 6)
         final_rms = round(rms_val * metric_scale_factor, 4)
         final_held_out = round(held_out_rms * metric_scale_factor, 4)
         final_spatial = round(spatial_std * metric_scale_factor, 4)
+        final_s_unc = round(s_unc * metric_scale_factor, 6) if s_unc is not None else None
+        final_t_unc = round(t_unc * metric_scale_factor, 6) if t_unc is not None else None
     else:
+        metric_scale_factor = 1.0
         aligned_map = aligned_raw.astype(np.float32)
         out_units = "COLMAP_SFM_UNITS"
         out_state = "SFM_ALIGNED_UNMETRIC"
         is_metric = False
+        res_units = "COLMAP_SFM_UNITS"
         final_scale = round(s_val, 6)
         final_shift = round(t_val, 6)
         final_rms = round(rms_val, 4)
         final_held_out = round(held_out_rms, 4)
         final_spatial = round(spatial_std, 4)
+        final_s_unc = round(s_unc, 6) if s_unc is not None else None
+        final_t_unc = round(t_unc, 6) if t_unc is not None else None
+        scale_to_metres = None
 
     return ScaleAlignmentResult(
         is_aligned=True,
@@ -387,8 +497,13 @@ def align_relative_depth_to_metric(
         aligned_depth_map=aligned_map,
         scale=final_scale,
         shift=final_shift,
-        scale_uncertainty=round(s_unc, 6) if s_unc is not None else None,
-        shift_uncertainty=round(t_unc, 6) if t_unc is not None else None,
+        scale_to_metres=round(scale_to_metres, 6) if scale_to_metres is not None else None,
+        scale_uncertainty=final_s_unc,
+        shift_uncertainty=final_t_unc,
+        residual_units=res_units,
+        residual_rms_error=final_rms,
+        held_out_rms_error=final_held_out,
+        spatial_residual_std=final_spatial,
         residual_rms_error_m=final_rms,
         held_out_rms_error_m=final_held_out,
         spatial_residual_std_m=final_spatial,

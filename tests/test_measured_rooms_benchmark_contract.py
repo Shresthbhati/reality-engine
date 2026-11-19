@@ -128,3 +128,30 @@ def test_room_ground_truth_parsing_and_evaluation(tmp_path: Path) -> None:
     assert report.opening_precision == 1.0  # door was correctly matched
     assert report.opening_recall == 0.5  # 1 of 2 openings matched (window was not reconstructed)
     assert report.opening_f1 is not None and abs(report.opening_f1 - 0.6667) < 1e-3
+
+
+def test_parse_interior_colmap_cameras(tmp_path: Path) -> None:
+    """Verifies parsing of pinhole camera intrinsics and extrinsics from COLMAP format."""
+    from benchmarks.measured_rooms.run_interior_benchmark import parse_interior_colmap_cameras
+
+    room_dir = tmp_path / "room_colmap"
+    room_dir.mkdir(parents=True)
+
+    cameras_file = room_dir / "cameras.txt"
+    cameras_file.write_text("1 PINHOLE 4032 3024 9874.28 9941.91 2016.0 1512.0\n", encoding="utf-8")
+
+    images_file = room_dir / "images.txt"
+    images_file.write_text(
+        "1 0.7071 0.0 0.7071 0.0 1.0 2.0 3.0 1 test_img_01.jpg\n\n",
+        encoding="utf-8",
+    )
+
+    cams = parse_interior_colmap_cameras(room_dir)
+    assert "test_img_01.jpg" in cams
+    cam = cams["test_img_01.jpg"]
+    assert cam.intrinsics.width == 4032
+    assert cam.intrinsics.height == 3024
+    assert abs(cam.intrinsics.fx - 9874.28) < 1e-2
+    assert abs(cam.intrinsics.fy - 9941.91) < 1e-2
+    assert abs(cam.intrinsics.cx - 2016.0) < 1e-2
+    assert abs(cam.intrinsics.cy - 1512.0) < 1e-2

@@ -202,46 +202,54 @@ class Metric3DLifter:
             self.last_rejection_reason = "COLLAPSED_2D_BOX"
             return None
 
-        # 4. Sample pixel coordinates and depths
-        us: list[int] = []
-        vs: list[int] = []
-        depths: list[float] = []
-        rejected_count = 0
+        # 4. Sample pixel coordinates and depths with vectorized boolean masking
+        depth_crop = depth_map[y1:y2, x1:x2]
+        valid_mask = np.isfinite(depth_crop) & (depth_crop > 0.05)
+        if mask_2d is not None:
+            valid_mask = valid_mask & mask_2d[y1:y2, x1:x2].astype(bool)
 
-        for v in range(y1, y2):
-            for u in range(x1, x2):
-                if mask_2d is not None and not mask_2d[v, u]:
-                    rejected_count += 1
-                    continue
-                d = float(depth_map[v, u])
-                if math.isfinite(d) and d > 0.05:  # Valid positive metric depth > 5 cm
-                    us.append(u)
-                    vs.append(v)
-                    depths.append(d)
-                else:
-                    rejected_count += 1
-
-        if len(depths) < min_points:
+        v_rel, u_rel = np.where(valid_mask)
+        if len(u_rel) < min_points:
             return None
 
+        u_all = u_rel + x1
+        v_all = v_rel + y1
+        d_all = depth_crop[valid_mask]
+
         # 5. Statistical outlier rejection along depth (MAD)
-        depth_arr = np.array(depths, dtype=float)
-        med_d = float(np.median(depth_arr))
-        mad_d = float(np.median(np.abs(depth_arr - med_d)))
+        med_d = float(np.median(d_all))
+        mad_d = float(np.median(np.abs(d_all - med_d)))
         tol = max(0.05, 3.0 * mad_d) if mad_d > 0.001 else 0.20 * med_d
 
+        inlier_mask = np.abs(d_all - med_d) <= tol
+        u_inliers = u_all[inlier_mask]
+        v_inliers = v_all[inlier_mask]
+        d_inliers = d_all[inlier_mask]
+
+        if len(d_inliers) < min_points:
+            return None
+
+        # Subsample only on mega-resolution regions (> 20,000 points) to prevent Moiré aliasing
+        # and preserve exact spatial distributions, eigenvalues, and percentiles
+        max_pts = 20000
+        if len(d_inliers) > max_pts:
+            rng = np.random.RandomState(42)
+            sub_idx = np.sort(rng.choice(len(d_inliers), size=max_pts, replace=False))
+            u_inliers = u_inliers[sub_idx]
+            v_inliers = v_inliers[sub_idx]
+            d_inliers = d_inliers[sub_idx]
+
         valid_pts_world: list[np.ndarray] = []
-        for u, v, d in zip(us, vs, depths):
-            if abs(d - med_d) <= tol:
-                p_world_vec = camera.unproject(float(u), float(v), float(d))
-                valid_pts_world.append(np.array([p_world_vec.x, p_world_vec.y, p_world_vec.z]))
-            else:
-                rejected_count += 1
+        for u, v, d in zip(u_inliers, v_inliers, d_inliers):
+            p_world_vec = camera.unproject(float(u), float(v), float(d))
+            valid_pts_world.append(np.array([p_world_vec.x, p_world_vec.y, p_world_vec.z]))
 
         if len(valid_pts_world) < min_points:
             return None
 
         pts = np.vstack(valid_pts_world)  # Shape (N, 3)
+        total_box_pixels = (y2 - y1) * (x2 - x1)
+        rejected_count = max(0, total_box_pixels - len(valid_pts_world))
 
         # 6. Position: robust median centroid in metres
         pos_x = float(np.median(pts[:, 0]))

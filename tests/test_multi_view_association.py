@@ -248,3 +248,162 @@ def test_empty_observations_returns_clean_empty_summary() -> None:
     assert summary.total_input_observations == 0
     assert summary.unique_physical_entities_count == 0
     assert len(decisions) == 0
+
+
+def test_missing_camera_does_not_invent_reprojection_score() -> None:
+    """When camera calibration is missing, reprojection score is NOT fabricated as 0.5."""
+    obs1 = MultiViewEntityObservation(
+        observation_id="obs_no_cam_1",
+        source_id="photo1.jpg",
+        class_name="window",
+        position=(1.0, 0.0, 5.0),
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=0.85,
+        camera=None,  # Missing camera!
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="obs_no_cam_2",
+        source_id="photo2.jpg",
+        class_name="window",
+        position=(1.05, 0.0, 5.02),
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=0.85,
+        camera=None,  # Missing camera!
+    )
+
+    ps = compute_cross_view_pair_score(obs1, obs2)
+    assert ps is not None
+    assert not ps.basis["reprojection_available"]
+    assert ps.basis["score_reproj"] is None
+    assert ps.basis["mean_reproj_px"] is None
+    # Score is purely based on 3D geometric distance without fabricated 0.5 reprojection
+    assert ps.score > 0.8
+
+
+def test_appearance_dissimilarity_prevents_merge() -> None:
+    """Observations with incompatible appearance features refuse to merge even if close in 3D."""
+    obs_red = MultiViewEntityObservation(
+        observation_id="obs_red_door",
+        source_id="photoA.jpg",
+        class_name="door",
+        position=(0.0, 0.0, 4.0),
+        dimensions=(1.0, 0.1, 2.0),
+        confidence=0.9,
+        appearance_features=[1.0, 0.0, 0.0],  # Red color vector
+    )
+    obs_blue = MultiViewEntityObservation(
+        observation_id="obs_blue_door",
+        source_id="photoB.jpg",
+        class_name="door",
+        position=(0.05, 0.0, 4.02),
+        dimensions=(1.0, 0.1, 2.0),
+        confidence=0.9,
+        appearance_features=[0.0, 0.0, 1.0],  # Blue color vector (orthogonal)
+    )
+
+    ps = compute_cross_view_pair_score(obs_red, obs_blue, min_appearance_sim=0.35)
+    assert ps is not None
+    assert ps.score == 0.0
+    assert ps.basis.get("reason") == "appearance_dissimilarity"
+
+
+def test_uncertainty_incompatible_prevents_merge() -> None:
+    """Observations whose separation exceeds 3.5 sigma Mahalanobis distance refuse to merge."""
+    obs1 = MultiViewEntityObservation(
+        observation_id="obs_u1",
+        source_id="photoA.jpg",
+        class_name="window",
+        position=(0.0, 0.0, 5.0),
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=0.9,
+        position_uncertainty=(0.01, 0.01, 0.01),  # Highly precise (1 cm)
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="obs_u2",
+        source_id="photoB.jpg",
+        class_name="window",
+        position=(0.15, 0.0, 5.0),  # 15 cm separation = 10 sigma away!
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=0.9,
+        position_uncertainty=(0.01, 0.01, 0.01),
+    )
+
+    ps = compute_cross_view_pair_score(obs1, obs2)
+    assert ps is not None
+    assert ps.score == 0.0
+    assert ps.basis.get("reason") == "uncertainty_incompatible"
+
+
+def test_unmeasured_confidence_preserved_without_fallback() -> None:
+    """Missing detector confidence (None) remains None in ReconciledPhysicalEntity."""
+    obs1 = MultiViewEntityObservation(
+        observation_id="obs_none_conf_1",
+        source_id="photo1.jpg",
+        class_name="window",
+        position=(1.0, 0.0, 5.0),
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=None,  # Missing confidence!
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="obs_none_conf_2",
+        source_id="photo2.jpg",
+        class_name="window",
+        position=(1.02, 0.0, 5.01),
+        dimensions=(1.0, 0.2, 1.5),
+        confidence=None,  # Missing confidence!
+    )
+
+    associator = MultiViewAssociator()
+    entities, summary, decisions = associator.associate_observations([obs1, obs2])
+
+    assert len(entities) == 1
+    reconciled = entities[0]
+    assert reconciled.mean_detector_confidence is None
+    assert reconciled.calibrated_confidence is None
+    assert reconciled.confidence_basis is not None and "UNMEASURED" in reconciled.confidence_basis
+
+
+def test_evaluate_association_benchmark_metrics() -> None:
+    """Evaluates multi-view identity benchmark metrics with precision, recall, F1, false merge and split rates."""
+    from engine.multiengine.multi_view_association import evaluate_association_benchmark
+
+    # Ground truth: obs1 and obs2 are the same window (win_01); obs3 is a different window (win_02)
+    obs1 = MultiViewEntityObservation(
+        observation_id="obs1", source_id="p1.jpg", class_name="window",
+        position=(0.0, 0.0, 5.0), dimensions=(1.0, 0.2, 1.5), confidence=0.85,
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="obs2", source_id="p2.jpg", class_name="window",
+        position=(0.02, 0.0, 5.01), dimensions=(1.0, 0.2, 1.5), confidence=0.88,
+    )
+    obs3 = MultiViewEntityObservation(
+        observation_id="obs3", source_id="p2.jpg", class_name="window",
+        position=(5.0, 0.0, 5.0), dimensions=(1.0, 0.2, 1.5), confidence=0.90,
+    )
+
+    associator = MultiViewAssociator()
+    entities, summary, decisions = associator.associate_observations([obs1, obs2, obs3])
+
+    gt_identities = {
+        "obs1": "physical_win_01",
+        "obs2": "physical_win_01",
+        "obs3": "physical_win_02",
+    }
+
+    report = evaluate_association_benchmark(
+        ground_truth_entities=gt_identities,
+        reconciled_entities=entities,
+        observations=[obs1, obs2, obs3],
+    )
+
+    assert report.total_pairs_evaluated > 0
+    assert report.true_positives == 1  # (obs1, obs2) correctly merged
+    assert report.false_positives == 0  # no false merges
+    assert report.false_negatives == 0  # no false splits
+    assert report.precision == 1.0
+    assert report.recall == 1.0
+    assert report.f1_score == 1.0
+    assert report.false_merge_rate == 0.0
+    assert report.false_split_rate == 0.0
+    assert "window" in report.per_class_metrics
+    assert report.per_class_metrics["window"]["f1"] == 1.0

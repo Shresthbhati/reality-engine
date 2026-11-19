@@ -1,5 +1,5 @@
 {
-  "execution_date": "2026-11-19 15:23:49 UTC",
+  "execution_date": "2026-11-19 16:13:21 UTC",
   "dataset": "datasets/south_building",
   "photos_processed": [
     "P1180141.JPG",
@@ -8,11 +8,11 @@
     "P1180153.JPG"
   ],
   "total_photos_count": 4,
-  "total_wall_time_s": 36.49,
+  "total_wall_time_s": 84.66,
   "device": "cuda:0",
   "registered_cameras_in_colmap": 32,
-  "total_lifted_entities": 0,
-  "worldir_entities_count": 0,
+  "total_lifted_entities": 57,
+  "worldir_entities_count": 57,
   "worldir_validation_errors": 0,
   "artifact_path": "artifacts\\south_building_reconstruction.worldir.json",
   "telemetry_per_photo": [
@@ -20,27 +20,62 @@
       "photo": "P1180141.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 20.848,
-          "infer_s": 0.411,
+          "load_s": 26.034,
+          "infer_s": 0.55,
+          "is_metric": true,
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale": 0.120975,
+            "shift": 0.13889,
+            "r_squared": 0.9879,
+            "residual_rms_error_m": 0.1716,
+            "inliers": 1478,
+            "total_points": 1739
+          },
           "depth_range_m": [
-            2.978121042251587,
-            2.978121042251587
+            1.1635459661483765,
+            7.199933052062988
           ]
         },
-        "owlvit": {
-          "load_s": 0.879,
-          "infer_s": 0.352,
-          "detections_count": 0
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 1.422,
+          "detections_count": 19,
+          "labels": [
+            "bench",
+            "building facade",
+            "tree",
+            "tree",
+            "tree",
+            "window",
+            "window",
+            "window",
+            "window",
+            "tree",
+            "tree",
+            "door",
+            "window",
+            "window",
+            "window",
+            "roof",
+            "facade wall",
+            "wall",
+            "window"
+          ]
         },
         "sam": {
-          "load_s": 1.305,
-          "infer_s": 0.52,
-          "masks_count": 0
+          "load_s": 1.499,
+          "infer_s": 0.869,
+          "masks_count": 19
         },
         "metric_lifting": {
-          "duration_s": 0.0,
-          "candidates_evaluated": 0,
-          "lifted_entities_count": 0
+          "duration_s": 9.917,
+          "candidates_evaluated": 19,
+          "lifted_entities_count": 19,
+          "rejections_count": 0,
+          "rejection_samples": []
         }
       }
     },
@@ -48,27 +83,58 @@
       "photo": "P1180145.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.404,
-          "infer_s": 0.064,
+          "load_s": 0.549,
+          "infer_s": 0.312,
+          "is_metric": true,
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale": 0.254043,
+            "shift": 0.092659,
+            "r_squared": 0.9834,
+            "residual_rms_error_m": 0.2977,
+            "inliers": 477,
+            "total_points": 562
+          },
           "depth_range_m": [
-            2.35650897026062,
-            2.35650897026062
+            0.7752950191497803,
+            10.792253494262695
           ]
         },
-        "owlvit": {
-          "load_s": 0.94,
-          "infer_s": 0.073,
-          "detections_count": 0
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 1.364,
+          "detections_count": 15,
+          "labels": [
+            "bench",
+            "building facade",
+            "window",
+            "window",
+            "roof",
+            "window",
+            "tree",
+            "door entrance",
+            "tree",
+            "facade wall",
+            "door entrance",
+            "window",
+            "entrance",
+            "window",
+            "roof"
+          ]
         },
         "sam": {
-          "load_s": 1.043,
-          "infer_s": 0.354,
-          "masks_count": 0
+          "load_s": 3.2,
+          "infer_s": 1.322,
+          "masks_count": 15
         },
         "metric_lifting": {
-          "duration_s": 0.0,
-          "candidates_evaluated": 0,
-          "lifted_entities_count": 0
+          "duration_s": 6.291,
+          "candidates_evaluated": 15,
+          "lifted_entities_count": 15,
+          "rejections_count": 0,
+          "rejection_samples": []
         }
       }
     },
@@ -76,27 +142,56 @@
       "photo": "P1180149.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.24,
-          "infer_s": 0.066,
+          "load_s": 0.94,
+          "infer_s": 0.354,
+          "is_metric": true,
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale": 0.159741,
+            "shift": 0.200271,
+            "r_squared": 0.9948,
+            "residual_rms_error_m": 0.0396,
+            "inliers": 837,
+            "total_points": 985
+          },
           "depth_range_m": [
-            2.7742528915405273,
-            2.7742528915405273
+            0.9210534691810608,
+            4.993234634399414
           ]
         },
-        "owlvit": {
-          "load_s": 0.786,
-          "infer_s": 0.069,
-          "detections_count": 0
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 0.874,
+          "detections_count": 13,
+          "labels": [
+            "window",
+            "building facade",
+            "tree",
+            "roof",
+            "door entrance",
+            "tree",
+            "window",
+            "window",
+            "tree",
+            "door entrance",
+            "door entrance",
+            "entrance",
+            "wall"
+          ]
         },
         "sam": {
-          "load_s": 0.808,
-          "infer_s": 0.466,
-          "masks_count": 0
+          "load_s": 1.292,
+          "infer_s": 0.749,
+          "masks_count": 13
         },
         "metric_lifting": {
-          "duration_s": 0.0,
-          "candidates_evaluated": 0,
-          "lifted_entities_count": 0
+          "duration_s": 3.73,
+          "candidates_evaluated": 13,
+          "lifted_entities_count": 13,
+          "rejections_count": 0,
+          "rejection_samples": []
         }
       }
     },
@@ -104,29 +199,67 @@
       "photo": "P1180153.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.262,
-          "infer_s": 0.058,
+          "load_s": 0.39,
+          "infer_s": 0.256,
+          "is_metric": true,
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale": 0.233784,
+            "shift": 0.151393,
+            "r_squared": 0.995,
+            "residual_rms_error_m": 0.1083,
+            "inliers": 336,
+            "total_points": 396
+          },
           "depth_range_m": [
-            2.0070106983184814,
-            2.0070106983184814
+            0.9177656173706055,
+            6.605315208435059
           ]
         },
-        "owlvit": {
-          "load_s": 0.871,
-          "infer_s": 0.085,
-          "detections_count": 0
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 0.419,
+          "detections_count": 10,
+          "labels": [
+            "door entrance",
+            "window",
+            "door",
+            "window",
+            "bench",
+            "window",
+            "building facade",
+            "tree",
+            "roof",
+            "roof"
+          ]
         },
         "sam": {
-          "load_s": 0.92,
+          "load_s": 0.771,
           "infer_s": 0.473,
-          "masks_count": 0
+          "masks_count": 10
         },
         "metric_lifting": {
-          "duration_s": 0.0,
-          "candidates_evaluated": 0,
-          "lifted_entities_count": 0
+          "duration_s": 2.123,
+          "candidates_evaluated": 10,
+          "lifted_entities_count": 10,
+          "rejections_count": 0,
+          "rejection_samples": []
         }
       }
     }
-  ]
+  ],
+  "class_counts": {
+    "bench": 3,
+    "building facade": 4,
+    "tree": 11,
+    "window": 19,
+    "door": 2,
+    "roof": 6,
+    "facade wall": 2,
+    "wall": 2,
+    "door entrance": 6,
+    "entrance": 2
+  }
 }

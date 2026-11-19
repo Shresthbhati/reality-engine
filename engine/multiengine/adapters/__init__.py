@@ -15,9 +15,11 @@ from engine.multiengine.adapters.appearance_tracking import (
 from engine.multiengine.adapters.base import BaseModelEngineAdapter
 from engine.multiengine.adapters.depth_adapters import (
     DepthAnythingV2EngineAdapter,
+    DepthAnythingV2MetricEngineAdapter,
     DepthAnythingV3EngineAdapter,
     MidasEngineAdapter,
     probe_depth_anything_v2,
+    probe_depth_anything_v2_metric,
     probe_depth_anything_v3,
     probe_midas,
 )
@@ -102,6 +104,7 @@ __all__ = [
     "Mast3rEngineAdapter",
     "DepthAnythingV3EngineAdapter",
     "DepthAnythingV2EngineAdapter",
+    "DepthAnythingV2MetricEngineAdapter",
     "MidasEngineAdapter",
     "GroundingDinoEngineAdapter",
     "Florence2EngineAdapter",
@@ -121,6 +124,7 @@ __all__ = [
     "probe_mast3r",
     "probe_depth_anything_v3",
     "probe_depth_anything_v2",
+    "probe_depth_anything_v2_metric",
     "probe_midas",
     "probe_grounding_dino",
     "probe_florence2",

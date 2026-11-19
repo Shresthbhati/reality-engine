@@ -184,7 +184,13 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
+        payload_queries = request.payload.get("queries") if request.payload else None
+        if payload_queries and isinstance(payload_queries, list):
+            prompt_text = ". ".join(str(q).strip().rstrip(".") for q in payload_queries) + "."
+        else:
+            prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
+
+        thresh = float(request.payload.get("threshold", 0.25)) if request.payload else 0.25
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:
@@ -196,15 +202,25 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
             with torch.no_grad():
                 outputs = self._model(**inputs)
 
-            results = self._processor.post_process_grounded_object_detection(
-                outputs,
-                inputs.input_ids,
-                box_threshold=0.35,
-                text_threshold=0.25,
-                target_sizes=[(h, w)],
-            )[0]
+            try:
+                results = self._processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs["input_ids"],
+                    threshold=thresh,
+                    text_threshold=0.20,
+                    target_sizes=[(h, w)],
+                )[0]
+            except TypeError:
+                results = self._processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs["input_ids"],
+                    box_threshold=thresh,
+                    text_threshold=0.20,
+                    target_sizes=[(h, w)],
+                )[0]
 
-            for box, score, label in zip(results["boxes"], results["scores"], results["labels"]):
+            labels = results.get("text_labels", results.get("labels", []))
+            for box, score, label in zip(results["boxes"], results["scores"], labels):
                 b = [float(x) for x in box]
                 norm_b = [b[0] / w, b[1] / h, b[2] / w, b[3] / h]
                 drafts.append(
@@ -409,6 +425,7 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
             prompts = [str(q) for q in payload_queries]
         else:
             prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
+        thresh = float(request.payload.get("threshold", 0.05)) if request.payload else 0.05
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:
@@ -421,7 +438,7 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
                 outputs = self._model(**inputs)
 
             results = self._processor.post_process_grounded_object_detection(
-                outputs=outputs, target_sizes=torch.tensor([[h, w]]).to(dev_str), threshold=0.15
+                outputs=outputs, target_sizes=torch.tensor([[h, w]]).to(dev_str), threshold=thresh
             )[0]
 
             for box, score, label_idx in zip(

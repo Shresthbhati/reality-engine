@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 553
+Total: 555
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -270,6 +270,7 @@ Total: 553
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
 - `tests/test_depth_scale.py`
+- `tests/test_depth_scale_alignment.py`
 - `tests/test_depth_shift_alignment.py`
 - `tests/test_depth_to_points.py`
 - `tests/test_design_style_intelligence.py`
@@ -513,6 +514,7 @@ Total: 553
 - `tests/test_quality_report_stage.py`
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
+- `tests/test_real_data_recovery_pipeline.py`
 - `tests/test_real_model_availability.py`
 - `tests/test_reality_benchmark.py`
 - `tests/test_reality_inventory.py`

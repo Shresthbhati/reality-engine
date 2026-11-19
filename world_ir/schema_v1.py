@@ -16,17 +16,14 @@ observed truth. Every field tracks its source via provenance enum.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, Union, Literal
 from uuid import uuid4
-from datetime import datetime
 
 from provenance import Provenance, Uncertainty
-from .statement_state import StatementState
 from uncertainty import Uncertain as UncertainScalar
 
+from .statement_state import StatementState
 
 # ===== Basic Types & Enums =====
 
@@ -159,7 +156,7 @@ class Vector3:
         return {"x": float(self.x), "y": float(self.y), "z": float(self.z)}
 
     @staticmethod
-    def from_dict(data: dict) -> "Vector3":
+    def from_dict(data: dict) -> Vector3:
         return Vector3(x=data["x"], y=data["y"], z=data["z"])
 
 
@@ -175,7 +172,7 @@ class Quaternion:
         return {"w": self.w, "x": self.x, "y": self.y, "z": self.z}
 
     @staticmethod
-    def from_dict(data: dict) -> "Quaternion":
+    def from_dict(data: dict) -> Quaternion:
         return Quaternion(w=data["w"], x=data["x"], y=data["y"], z=data["z"])
 
 
@@ -199,12 +196,12 @@ class Measurement:
     value: float
     unit: str  # SI units only (meter, kg, second, etc.)
     precision: float = 0.01  # Standard deviation or margin of error (legacy)
-    timestamp: Optional[float] = None
+    timestamp: float | None = None
     provenance: Provenance = Provenance.UNKNOWN
-    confidence: float = 0.5
-    precision_note: Optional[str] = None
+    confidence: float | None = None
+    precision_note: str | None = None
     # P10-02: formal uncertainty propagation (value + sigma + basis)
-    uncertain: Optional[UncertainScalar] = None
+    uncertain: UncertainScalar | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -222,7 +219,7 @@ class Measurement:
         return d
 
     @staticmethod
-    def from_dict(data: dict) -> "Measurement":
+    def from_dict(data: dict) -> Measurement:
         uncertain_data = data.get("uncertain")
         return Measurement(
             value=data["value"],
@@ -230,7 +227,7 @@ class Measurement:
             precision=data.get("precision", 0.01),
             timestamp=data.get("timestamp"),
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             precision_note=data.get("precision_note"),
             uncertain=UncertainScalar.from_dict(uncertain_data) if uncertain_data else None,
         )
@@ -246,7 +243,7 @@ class Observation:
     data_uri: str = ""  # Reference to raw data (file:// or remote URL)
     data_hash: str = ""  # SHA256 of data for integrity
     metadata: dict = field(default_factory=dict)  # Sensor-specific (focal length, etc.)
-    confidence: float = 0.5  # 0.0-1.0; 0.5 = "not measured" -- producers must pass the measured value
+    confidence: float | None = None  # None = "not measured", or calibrated float [0.0, 1.0]
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
 
     def to_dict(self) -> dict:
@@ -263,7 +260,7 @@ class Observation:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Observation":
+    def from_dict(data: dict) -> Observation:
         return Observation(
             id=data.get("id", f"obs-{uuid4()}"),
             sensor_type=data.get("sensor_type", ""),
@@ -272,7 +269,7 @@ class Observation:
             data_uri=data.get("data_uri", ""),
             data_hash=data.get("data_hash", ""),
             metadata=data.get("metadata", {}),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
         )
 
@@ -280,17 +277,17 @@ class Observation:
 @dataclass
 class PhysicalProperties:
     """Material and mechanical properties."""
-    density: Optional[Measurement] = None  # kg/m^3
-    mass: Optional[Measurement] = None  # kg
-    volume: Optional[Measurement] = None  # m^3
-    friction_coefficient: Optional[float] = None  # Unitless
-    restitution: Optional[float] = None  # Unitless (0-1)
-    young_modulus: Optional[Measurement] = None  # Pa (elasticity)
-    thermal_conductivity: Optional[Measurement] = None  # W/(m*K)
-    specific_heat: Optional[Measurement] = None  # J/(kg*K)
-    ignition_temperature: Optional[Measurement] = None  # Kelvin
-    tensile_strength: Optional[Measurement] = None  # Pa
-    shear_strength: Optional[Measurement] = None  # Pa
+    density: Measurement | None = None  # kg/m^3
+    mass: Measurement | None = None  # kg
+    volume: Measurement | None = None  # m^3
+    friction_coefficient: float | None = None  # Unitless
+    restitution: float | None = None  # Unitless (0-1)
+    young_modulus: Measurement | None = None  # Pa (elasticity)
+    thermal_conductivity: Measurement | None = None  # W/(m*K)
+    specific_heat: Measurement | None = None  # J/(kg*K)
+    ignition_temperature: Measurement | None = None  # Kelvin
+    tensile_strength: Measurement | None = None  # Pa
+    shear_strength: Measurement | None = None  # Pa
     custom_properties: dict = field(default_factory=dict)  # Domain-specific
 
     def to_dict(self) -> dict:
@@ -310,7 +307,7 @@ class PhysicalProperties:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "PhysicalProperties":
+    def from_dict(data: dict) -> PhysicalProperties:
         return PhysicalProperties(
             density=Measurement.from_dict(data["density"]) if data.get("density") else None,
             mass=Measurement.from_dict(data["mass"]) if data.get("mass") else None,
@@ -337,7 +334,7 @@ class Material:
     color_rgb: tuple[float, float, float] = (0.5, 0.5, 0.5)  # sRGB, 0-1
     properties: PhysicalProperties = field(default_factory=PhysicalProperties)
     provenance: Provenance = Provenance.UNKNOWN
-    confidence: float = 0.5
+    confidence: float | None = None
     observations: list[Observation] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -354,7 +351,7 @@ class Material:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Material":
+    def from_dict(data: dict) -> Material:
         return Material(
             id=data.get("id", f"mat-{uuid4()}"),
             name=data.get("name", ""),
@@ -363,7 +360,7 @@ class Material:
             color_rgb=tuple(data.get("color_rgb", [0.5, 0.5, 0.5])),
             properties=PhysicalProperties.from_dict(data.get("properties", {})),
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             observations=[Observation.from_dict(o) for o in data.get("observations", [])],
         )
 
@@ -374,21 +371,21 @@ class Geometry:
     id: str = field(default_factory=lambda: f"geom-{uuid4()}")
     type: GeometryType = GeometryType.UNKNOWN
     lod_level: int = 0  # Level of detail (0=coarse, higher=detail)
-    vertex_count: Optional[int] = None
-    triangle_count: Optional[int] = None
+    vertex_count: int | None = None
+    triangle_count: int | None = None
     data_uri: str = ""  # Reference to geometry file (OBJ, GLB, PLY, etc.)
     data_hash: str = ""  # SHA256 for integrity
-    bounds_min: Optional[Vector3] = None  # Bounding box
-    bounds_max: Optional[Vector3] = None
+    bounds_min: Vector3 | None = None  # Bounding box
+    bounds_max: Vector3 | None = None
     provenance: Provenance = Provenance.UNKNOWN
-    confidence: float = 0.5
+    confidence: float | None = None
     observations: list[Observation] = field(default_factory=list)
     # Quality measurements recorded at production time (e.g. a mesh
     # quality report's to_dict()), or None when none were measured.
     # Additive like Entity.statement_state: old v1 dicts load fine
     # without the key, and measurements are recorded facts, never
     # fabricated to make a geometry look validated.
-    quality_metrics: Optional[dict] = None
+    quality_metrics: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -408,7 +405,7 @@ class Geometry:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Geometry":
+    def from_dict(data: dict) -> Geometry:
         return Geometry(
             id=data.get("id", f"geom-{uuid4()}"),
             type=GeometryType(data.get("type", GeometryType.UNKNOWN.value)),
@@ -420,7 +417,7 @@ class Geometry:
             bounds_min=Vector3.from_dict(data["bounds_min"]) if data.get("bounds_min") else None,
             bounds_max=Vector3.from_dict(data["bounds_max"]) if data.get("bounds_max") else None,
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             observations=[Observation.from_dict(o) for o in data.get("observations", [])],
             quality_metrics=data.get("quality_metrics"),
         )
@@ -433,8 +430,8 @@ class Surface:
     name: str = ""
     geometry_id: str = ""  # Reference to Geometry
     material_id: str = ""  # Reference to Material
-    area: Optional[Measurement] = None
-    normal_direction: Optional[Vector3] = None
+    area: Measurement | None = None
+    normal_direction: Vector3 | None = None
     custom_attributes: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -449,7 +446,7 @@ class Surface:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Surface":
+    def from_dict(data: dict) -> Surface:
         return Surface(
             id=data.get("id", f"surf-{uuid4()}"),
             name=data.get("name", ""),
@@ -468,7 +465,7 @@ class Relationship:
     target_id: str
     # An unstated confidence/provenance must never read as "observed with certainty": the defaults say
     # "not measured, unknown origin". Producers pass the measured confidence and the true provenance.
-    confidence: float = 0.5
+    confidence: float | None = None
     provenance: Provenance = Provenance.UNKNOWN
     metadata: dict = field(default_factory=dict)
 
@@ -482,11 +479,11 @@ class Relationship:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Relationship":
+    def from_dict(data: dict) -> Relationship:
         return Relationship(
             kind=RelationshipKind(data.get("kind", RelationshipKind.UNKNOWN.value)),
             target_id=data["target_id"],
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             metadata=data.get("metadata", {}),
         )
@@ -509,7 +506,7 @@ class Component:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "Component":
+    def from_dict(data: dict) -> Component:
         return Component(
             id=data.get("id", f"comp-{uuid4()}"),
             type=data.get("type", ""),
@@ -541,7 +538,7 @@ class TemporalEvent:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "TemporalEvent":
+    def from_dict(data: dict) -> TemporalEvent:
         return TemporalEvent(
             id=data.get("id", f"evt-{uuid4()}"),
             type=TemporalEventType(data.get("type", TemporalEventType.OBSERVATION.value)),
@@ -559,7 +556,7 @@ class CausalRelation:
     cause_id: str = ""
     effect_id: str = ""
     relationship_type: str = ""  # e.g., "triggers", "enables", "prevents"
-    confidence: float = 0.5
+    confidence: float | None = None
     provenance: Provenance = Provenance.INFERRED
 
     def to_dict(self) -> dict:
@@ -572,12 +569,12 @@ class CausalRelation:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "CausalRelation":
+    def from_dict(data: dict) -> CausalRelation:
         return CausalRelation(
             cause_id=data.get("cause_id", ""),
             effect_id=data.get("effect_id", ""),
             relationship_type=data.get("relationship_type", ""),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
             provenance=Provenance(data.get("provenance", Provenance.INFERRED.value)),
         )
 
@@ -590,17 +587,17 @@ class ConfidenceVector:
     or None when that dimension was not measured. None represents 'not measured'
     -- never fabricated or defaulted to 0.5.
     """
-    classification: Optional[float] = None
-    identity: Optional[float] = None
-    position: Optional[float] = None
-    orientation: Optional[float] = None
-    dimensions: Optional[float] = None
-    geometry: Optional[float] = None
-    completeness: Optional[float] = None
-    material: Optional[float] = None
-    colour: Optional[float] = None
-    topology: Optional[float] = None
-    cross_view: Optional[float] = None
+    classification: float | None = None
+    identity: float | None = None
+    position: float | None = None
+    orientation: float | None = None
+    dimensions: float | None = None
+    geometry: float | None = None
+    completeness: float | None = None
+    material: float | None = None
+    colour: float | None = None
+    topology: float | None = None
+    cross_view: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -618,7 +615,7 @@ class ConfidenceVector:
         }
 
     @staticmethod
-    def from_dict(data: Optional[dict]) -> "ConfidenceVector":
+    def from_dict(data: dict | None) -> ConfidenceVector:
         if not data or not isinstance(data, dict):
             return ConfidenceVector()
         return ConfidenceVector(
@@ -651,7 +648,7 @@ class Entity:
     id: str = field(default_factory=lambda: f"ent-{uuid4()}")
     type: EntityType = EntityType.UNKNOWN
     name: str = ""
-    transform: Optional[dict] = None  # Externalized transform (from coordinates system)
+    transform: dict | None = None  # Externalized transform (from coordinates system)
     geometry_ids: list[str] = field(default_factory=list)
     material_ids: list[str] = field(default_factory=list)
     surface_ids: list[str] = field(default_factory=list)
@@ -662,8 +659,8 @@ class Entity:
     temporal_events: list[TemporalEvent] = field(default_factory=list)
     provenance: Provenance = Provenance.UNKNOWN
     # Optional measured confidence [0.0, 1.0]. None means "not measured", never a fabricated 0.5
-    confidence: Optional[float] = None
-    confidence_basis: Optional[str] = None
+    confidence: float | None = None
+    confidence_basis: str | None = None
     confidence_vector: ConfidenceVector = field(default_factory=ConfidenceVector)
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     custom_properties: dict = field(default_factory=dict)
@@ -672,7 +669,7 @@ class Entity:
     # PROCEDURAL distinction). None means "not classified" -- v1 worlds
     # serialized without this field must load with this as None, never a
     # fabricated guess. See world_ir/statement_state.py.
-    statement_state: Optional[StatementState] = None
+    statement_state: StatementState | None = None
     # WorldIR 2.0 (P9-01, additive): typed links to resources the world does not own (images, COLMAP models,
     # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
     external_references: tuple = ()
@@ -686,7 +683,7 @@ class Entity:
         self.custom_properties = val or {}
 
     @property
-    def material(self) -> Optional[str]:
+    def material(self) -> str | None:
         """Material classification attribute (Blueprint 11 & Task 10.2)."""
         attrs = self.custom_properties.get("attributes")
         if isinstance(attrs, dict) and attrs.get("material"):
@@ -694,7 +691,7 @@ class Entity:
         return self.custom_properties.get("material") or self.custom_properties.get("material_label")
 
     @property
-    def material_confidence(self) -> Optional[float]:
+    def material_confidence(self) -> float | None:
         """Material classification confidence [0..1] (Blueprint 11 & Task 10.2)."""
         attrs = self.custom_properties.get("attributes")
         if isinstance(attrs, dict) and attrs.get("material_confidence") is not None:
@@ -742,7 +739,7 @@ class Entity:
         return d
 
     @staticmethod
-    def from_dict(data: dict) -> "Entity":
+    def from_dict(data: dict) -> Entity:
         raw_state = data.get("statement_state")
         try:
             from .v2_extensions import ExternalReference as _ExternalReference

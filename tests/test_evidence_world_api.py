@@ -60,14 +60,15 @@ def test_entity_traces_back_to_images_and_model_predictions(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)
     runs = client.get(_url(wid), headers=A).json()["runs"]
-    assert [r["run_id"] for r in runs] == ["run-1"] and runs[0]["counts"]["entities"] == 6
+    assert [r["run_id"] for r in runs] == ["run-1"] and runs[0]["counts"]["entities"] == 3
     run = client.get(_url(wid, "run-1"), headers=A).json()
     assert run["status"] == "complete" and any("2D" in x for x in run["limitations"])
     ents = client.get(_url(wid, "run-1", "entities"), headers=A).json()["entities"]
     chair = next(e for e in ents if e["ontology_path"] == "furniture/seating/chair")
     detail = client.get(_url(wid, "run-1", "entities", chair["entity_id"]), headers=A).json()
     obs = detail["observations"]
-    assert len(obs) == 1 and obs[0]["observation"]["source_id"] in SOURCES  # the ORIGINAL image
+    assert len(obs) == 2 and {o["observation"]["engine_id"] for o in obs} == {"det_a", "det_b"}  # both engines' raw predictions
+    assert all(o["observation"]["source_id"] in SOURCES for o in obs)  # the ORIGINAL image
     assert obs[0]["observation"]["engine_id"] in ("det_a", "det_b") and obs[0]["raw_confidence"] == 0.9
     assert obs[0]["calibrated_confidence"] is None and obs[0]["context"]["run_id"] == "run-1"
     assert detail["trace_problems"] == [] and detail["entity"]["geometry_ids"] == []
@@ -88,7 +89,22 @@ def test_rows_runs_and_sections_are_exposed_with_failures_preserved(client, tmp_
         assert client.get(_url(wid, "run-1", section), headers=A).status_code == 200, section
     assert client.get(_url(wid, "run-1", "hierarchy"), headers=A).json()["hierarchy"]["city_scale_claimable"] is False
     hist = client.get(_url(wid, "run-1", "refinement"), headers=A).json()["refinement_history"]
-    assert "not run" in hist[0]["reprocessing"]
+    assert hist[0]["stop_reason"] in {"target_met", "max_iterations", "no_improvement", "no_engine_available",
+                                      "awaiting_evidence", "nothing_to_refine"}  # an explicit reason from the real loop
+    assert "iterations" in hist[0] and "rolled_back_observations" in hist[0]
+
+
+def test_rejected_predictions_are_exposed_raw_with_their_reason(client, tmp_path):
+    from apps.api.evidence_world_stage import evidence_root
+    from engine.multiengine.evidence_matrix import EvidenceMatrix, RejectedPrediction
+
+    wid = _world(client, A)
+    _seed(tmp_path, "tenant-a", wid)
+    m = EvidenceMatrix(evidence_root("tenant-a", wid, "run-1", base=tmp_path / "ws"))
+    m.record_rejected(RejectedPrediction("run-1", "detection", "det_a", "v1", 3, "non-finite number nan", {"predicted": {"v": "nan"}}))
+    rej = client.get(_url(wid, "run-1", "rejected"), headers=A).json()["rejected"]
+    assert len(rej) == 1 and rej[0]["reason"] == "non-finite number nan" and rej[0]["draft"]["predicted"] == {"v": "nan"}
+    assert client.get(_url(wid, "run-1", "rejected"), headers=B).status_code in (403, 404)
 
 
 def test_artifacts_are_served_only_when_the_run_references_them(client, tmp_path):
@@ -109,7 +125,7 @@ def test_another_tenant_cannot_see_the_world_its_runs_entities_or_artifacts(clie
     ent = client.get(_url(wid, "run-1", "entities"), headers=A).json()["entities"][0]["entity_id"]
     runs = client.get(_url(wid, "run-1", "runs"), headers=A).json()["runs"]
     digest = next(r for r in runs if r["output_artifact"])["output_artifact"].removeprefix("artifact://")
-    paths = ["", "run-1", "run-1/entities", f"run-1/entities/{ent}", "run-1/rows", "run-1/runs", "run-1/associations",
+    paths = ["", "run-1", "run-1/entities", f"run-1/entities/{ent}", "run-1/rows", "run-1/runs", "run-1/rejected", "run-1/associations",
              "run-1/conflicts", "run-1/capture-requests", "run-1/hierarchy", "run-1/refinement", f"run-1/artifacts/{digest}"]
     for path in paths:
         r = client.get(_url(wid, *([path] if path else [])), headers=B)

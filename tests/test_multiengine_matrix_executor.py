@@ -182,6 +182,53 @@ def test_repeated_run_of_the_same_engine_is_logged_not_overwritten():
     assert len(m.runs()) == 2 and len(m) == 4
 
 
+class _MixedAdapter(FakeAdapter):
+    """SYNTHETIC: returns two valid predictions and one the observation contract must refuse (a NaN value / an unknown frame)."""
+
+    def __init__(self, sp, bad="nan"):
+        super().__init__(sp)
+        self.bad = bad
+
+    def infer(self, request):
+        ok = ObservationDraft(task="depth", quantity="depth_value", source_id="img1", coordinate_system="cam:img1",
+                              predicted={"v": 1.0}, confidence=0.8)
+        nan = ObservationDraft(task="depth", quantity="depth_value", source_id="img2", coordinate_system="cam:img2",
+                               predicted={"v": float("nan")}, confidence=0.8)
+        noframe = ObservationDraft(task="depth", quantity="depth_value", source_id="img3", coordinate_system="unknown",
+                                   predicted={"v": 2.0})
+        if self.bad == "all":
+            return [nan, noframe]
+        return [ok, nan, ok, noframe][:3] if self.bad == "nan" else [ok, ok]
+
+
+def test_a_rejected_prediction_is_kept_raw_with_its_reason_and_does_not_erase_the_valid_ones(tmp_path):
+    m = EvidenceMatrix(tmp_path)
+    sp = _spec("mixed")
+    mgr = _mgr([(sp, _MixedAdapter(sp))], m)
+    report = mgr.run(Task.DEPTH, REQ)
+    assert report.status is ReportStatus.COMPLETE and any("rejected by observation validation" in w for w in report.warnings)
+    assert len(m) == 2  # the two valid predictions became observations (identical ones share a content id)
+    (rej,) = m.rejected("job-1")
+    assert rej.engine_id == "mixed" and rej.index == 1 and "non-finite" in rej.reason
+    assert rej.draft["predicted"] == {"v": "nan"} and rej.draft["source_id"] == "img2"  # the raw value, preserved as text
+    assert m.runs()[0].rejected_count == 1 and m.runs()[0].status == "succeeded"
+    again = EvidenceMatrix(tmp_path)  # restart
+    assert again.rejected() == m.rejected() and again.runs() == m.runs()
+    assert all(o.observation_id != "" for o in again.store.query())  # a rejected prediction never became an observation row
+
+
+def test_when_every_prediction_is_rejected_the_run_fails_and_nothing_is_lost():
+    m = EvidenceMatrix()
+    sp = _spec("allbad")
+    report = _mgr([(sp, _MixedAdapter(sp, bad="all"))], m).run(Task.DEPTH, REQ)
+    assert report.status is ReportStatus.FAILED
+    run = m.runs()[0]
+    assert run.status == "failed" and "all 2 prediction(s) were rejected" in run.error and run.rejected_count == 2
+    assert len(m) == 0 and len(m.rejected()) == 2  # no observation, but both raw predictions and their reasons are kept
+    reasons = " | ".join(r.reason for r in m.rejected())
+    assert "non-finite" in reasons and "coordinate system" in reasons
+
+
 def test_store_only_path_is_unchanged_when_no_matrix_is_given():
     sp = _spec("a")
     reg = EngineRegistry()

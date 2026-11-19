@@ -5,9 +5,10 @@ without inventing anything:
 
 * geometry exists only when BOTH position and dimensions were resolved (an axis-aligned box; orientation is not modelled);
 * a material exists only when the material label was resolved; competing labels / competing estimates stay in the evidence block;
-* confidence is NEVER defaulted into a measured-looking value: ``Entity.confidence`` carries WorldIR's documented "not measured"
-  sentinel (0.5), the per-dimension ``confidence_vector`` stays ``None``, and the raw model confidence is recorded SEPARATELY on each
-  referenced observation next to the calibrated one (or ``None``);
+* confidence is NEVER defaulted into a measured-looking value: ``Entity.confidence`` is ``None`` (the agreed Optional scalar) with no
+  ``confidence_basis``, the per-dimension ``confidence_vector`` stays ``None``, and the raw model confidence is recorded SEPARATELY on
+  each referenced observation next to the calibrated one (or ``None``). Geometry/Material/Relationship/Observation confidences are
+  not Optional in WorldIR, so those keep WorldIR's documented 0.5 "not measured" sentinel (``NOT_MEASURED``) and say so in metadata;
 * a part is its own entity linked ``PART_OF`` its whole; ontology-declared parts that were not observed are listed as "not observed"
   -- their absence is never claimed;
 * ontology ``attach``/``hosts`` rules are PRIORS and produce no relationship; only an evidence-backed ``SpatialRelation`` does.
@@ -319,13 +320,12 @@ def convert(
         })
         labels = [ce.ontology_path] + [x for x in (group, sub) if x]
         ce_conf = getattr(ce, "confidence", None)
-        ent_confidence = ce_conf if ce_conf is not None else NOT_MEASURED
         conf_basis = getattr(ce, "confidence_basis", None)
         out.entities[eid] = Entity(
             id=eid, type=_entity_type(node, group), name=(node.label if node else ce.ontology_path),
             transform=transform, geometry_ids=geometry_ids, material_ids=material_ids, relationships=rels,
             semantic_labels=list(dict.fromkeys(labels)), observations=observations,
-            provenance=Provenance.ESTIMATED, confidence=ent_confidence, confidence_basis=conf_basis,
+            provenance=Provenance.ESTIMATED, confidence=ce_conf, confidence_basis=conf_basis,
             confidence_vector=ConfidenceVector(),
             uncertainty=Uncertainty(confidence=0.0, note=_UNCERTAINTY_NOTE, calibrated=False),
             custom_properties={"evidence": evidence}, statement_state=StatementState.PREDICTED,

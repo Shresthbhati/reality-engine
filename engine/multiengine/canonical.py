@@ -220,6 +220,9 @@ def build_canonical_entity(
             for oid in entity.members
             if oid in labels
         ]
+        # an unclassified detection (the ontology's unknown-object fallback) is not a claim: it cannot contradict a real class
+        informative = [c for c in claims if c.label != FALLBACK_PATH]
+        claims = informative or claims
         if claims:
             lr = reconcile_labels(claims)
             class_status, class_candidates = lr.status, lr.candidates

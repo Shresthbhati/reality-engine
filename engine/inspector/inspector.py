@@ -160,7 +160,8 @@ class Inspector:
         return [e for e in self.world.entities.values() if e.provenance == provenance]
 
     def low_confidence_entities(self, threshold: float = 0.5) -> List[Entity]:
-        return [e for e in self.world.entities.values() if e.confidence < threshold]
+        # an entity whose confidence is None (not measured) is listed: its confidence is not established, so it cannot pass
+        return [e for e in self.world.entities.values() if e.confidence is None or e.confidence < threshold]
 
     # ---- events / causality ----
 

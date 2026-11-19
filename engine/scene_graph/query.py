@@ -84,9 +84,13 @@ class WorldQuery:
 
     def by_confidence(self, min_confidence: float, entities: Optional[List[Entity]] = None) -> List[Entity]:
         """Entities (optionally restricted to an already-filtered list)
-        whose confidence is >= min_confidence."""
+        whose confidence is >= min_confidence. An entity whose confidence is None (not measured) cannot be shown to meet a
+        threshold, so it is excluded unless the threshold is <= 0."""
         pool = entities if entities is not None else list(self.world.entities.values())
-        return sorted((e for e in pool if e.confidence >= min_confidence), key=lambda e: e.id)
+        return sorted(
+            (e for e in pool if (e.confidence is not None and e.confidence >= min_confidence) or min_confidence <= 0),
+            key=lambda e: e.id,
+        )
 
     def by_evidence(self, evidence_id: str) -> List[Entity]:
         """Entities with at least one Observation whose data_uri or id

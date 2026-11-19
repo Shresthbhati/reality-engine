@@ -38,7 +38,7 @@ def export_to_sdf_with_report(world, artifact_store=None):
         pose = " ".join(fmt(v) for v in b.center) + " 0 0 0"
         lines += [f"    <model name={quoteattr(_ident(b.id, used))}>",
                   "      <static>true</static>",
-                  f"      <!-- worldir: type={escape(b.type)} provenance={escape(b.provenance)} confidence={fmt(b.confidence)} -->",
+                  f"      <!-- worldir: type={escape(b.type)} provenance={escape(b.provenance)} confidence={'unmeasured' if b.confidence is None else fmt(b.confidence)} -->",
                   f"      <pose>{pose}</pose>",
                   '      <link name="link">',
                   f'        <collision name="collision"><geometry><box><size>{size}</size></box></geometry></collision>',

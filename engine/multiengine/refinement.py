@@ -178,6 +178,7 @@ class RefinementLoop:
         consistency: Callable[[Any], Sequence[str]],
         features: Callable[[Any], Mapping[str, object]] = lambda s: {},
         regression_tolerance: Mapping[str, float] | None = None,
+        tried_before: Callable[[Task], Sequence[str]] | None = None,
         max_iterations: int = 5,
         patience: int = 1,
     ) -> None:
@@ -193,6 +194,8 @@ class RefinementLoop:
         )
         self.regression_tolerance = dict(regression_tolerance or {})
         self.max_iterations, self.patience = max_iterations, max(1, patience)
+        # engines that already executed for a task OUTSIDE this loop (e.g. the flow's initial stage): never re-run for "reprocessing"
+        self.tried_before = tried_before or (lambda task: ())
 
     def _quality(self, state: Any, validated: Mapping[str, object]) -> QualityReport:
         measurements, stages_ok = self.measure(state)
@@ -278,7 +281,8 @@ class RefinementLoop:
         done = tried.setdefault(p.problem_id, set())
         candidates: List[Tuple[Task, List[str]]] = []
         for task in p.tasks:
-            ids = [s.engine_id for s in self.registry.available(task) if s.engine_id not in done]
+            earlier = set(self.tried_before(task))
+            ids = [s.engine_id for s in self.registry.available(task) if s.engine_id not in done and s.engine_id not in earlier]
             if ids:
                 candidates.append((task, ids))
         if not candidates:
@@ -290,7 +294,8 @@ class RefinementLoop:
             )
         task, ids = candidates[0]
         request = EngineRequest(
-            sources=tuple(p.target_ids) or ("region",),
+            # reprocess the original IMAGES the problem was seen in (``location["sources"]``); target_ids name what is affected
+            sources=tuple(p.location.get("sources") or p.target_ids) or ("region",),
             payload={"problem": p.problem_id, "kind": p.kind.value, "location": dict(p.location)},
         )
         report = self.manager.run(task, request, only=ids)

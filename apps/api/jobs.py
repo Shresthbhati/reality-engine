@@ -1146,7 +1146,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
 
             ew_facts = _evw.run_for_job(
                 team_id=world.team_id, world_id=world.id, job_id=job.id,  # keyed like the API authorizes: through the world
-                sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled)
+                sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled,
+                cameras=_evw.cameras_from_poses(
+                    _registered_camera_poses(prog), {ei.item.id: ei.path for ei in (run_inputs or [])},
+                    (intrinsics_record or {}).get("intrinsics"), (intrinsics_record or {}).get("image_size")))
             holder["evidence_world"] = ew_facts
             if ew_facts["status"] == "cancelled":
                 raise _JobCancelled(f"job {job.id} cancelled by operator")

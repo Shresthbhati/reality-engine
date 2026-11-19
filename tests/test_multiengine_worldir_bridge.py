@@ -115,7 +115,7 @@ def test_confidence_is_never_fabricated():
     ids_cal = b.obs(ENGINES[2], POSITION, {"value": [2.0, 1.0, 0.45]}, calibrated=0.7)
     ce = _canon(b, ids + [ids_cal], "chair")
     e = next(iter(convert([ce], b.m).entities.values()))
-    assert e.confidence == NOT_MEASURED
+    assert e.confidence is None and e.confidence_basis is None  # the agreed Optional scalar: no fabricated number
     assert all(v is None for v in e.confidence_vector.to_dict().values())  # nothing was measured per dimension
     assert e.uncertainty.confidence == 0.0 and e.uncertainty.calibrated is False and "not measured" in e.uncertainty.note
     by_id = {o.id: o for o in e.observations}

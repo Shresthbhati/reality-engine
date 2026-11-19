@@ -60,10 +60,11 @@ def provenance_breakdown(world: WorldIR) -> Dict[str, int]:
 
 
 def mean_confidence(world: WorldIR) -> Optional[float]:
-    entities = list(world.entities.values())
-    if not entities:
+    # mean over MEASURED confidences only; entities whose confidence is None (not measured) are not counted as 0 or 0.5
+    measured = [e.confidence for e in world.entities.values() if e.confidence is not None]
+    if not measured:
         return None
-    return sum(e.confidence for e in entities) / len(entities)
+    return sum(measured) / len(measured)
 
 
 def canonical_fraction(world: WorldIR) -> Optional[float]:

@@ -593,7 +593,7 @@ def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, exten
         "EntityId": str(entity.id),
         "EntityType": str(getattr(entity.type, "value", str(entity.type))),
         "Provenance": str(getattr(entity.provenance, "value", str(entity.provenance))),
-        "Confidence": float(round(entity.confidence, 3)),
+        "Confidence": None if entity.confidence is None else float(round(entity.confidence, 3)),
     })
 
     # 12. Pset_RealityEngine (BUILD_SPEC B19 / RE-ASSET-000002)
@@ -604,7 +604,7 @@ def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, exten
         "EntityId": str(entity.id),
         "EntityType": str(getattr(entity.type, "value", str(entity.type))),
         "Basis": str(getattr(entity.provenance, "value", str(entity.provenance))),
-        "Confidence": float(round(entity.confidence, 3)),
+        "Confidence": None if entity.confidence is None else float(round(entity.confidence, 3)),
     }
     attrs = (getattr(entity, "extra_fields", None) or {}).get("attributes")
     if not attrs and isinstance(getattr(entity, "custom_properties", None), dict):

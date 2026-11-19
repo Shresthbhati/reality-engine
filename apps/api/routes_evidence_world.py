@@ -158,6 +158,15 @@ async def list_engine_runs(
     return {"runs": [r.to_dict() for r in m.runs()]}
 
 
+@evidence_world_router.get("/{run_id}/rejected")
+async def list_rejected(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Predictions engines returned that failed observation validation: raw, with the reason. They never support an entity."""
+    m = _matrix(_run_dir(await _world_dir(db, world_id, auth), run_id))
+    return {"rejected": [r.to_dict() for r in m.rejected()]}
+
+
 def _section(key: str):
     async def handler(
         world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)

@@ -17,7 +17,8 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Set as AbstractSet
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,7 @@ from engine.multiengine.conflicts import (
     semantic_conflicts,
 )
 from engine.multiengine.contract import EngineAdapter, EngineRequest, Task
+from engine.multiengine.detection_groups import DetectionGroup, group_detections
 from engine.multiengine.evidence_matrix import EvidenceMatrix
 from engine.multiengine.executor import (
     ExecutionCancelled,
@@ -59,6 +61,7 @@ from engine.multiengine.executor import (
     ReportStatus,
     ResourceProbe,
 )
+from engine.multiengine.identity import IdentityRegistry
 from engine.multiengine.registry import EngineRegistry
 from engine.multiengine.spatial_hierarchy import SpatialHierarchy
 from engine.multiengine.worldir_bridge import BridgeResult, convert
@@ -121,19 +124,12 @@ def _box_area_px(matrix: EvidenceMatrix, oid: str) -> float | None:
     return None if r is None else max(0.0, (r[2] - r[0]) * (r[3] - r[1]))
 
 
-def _problem_for(
-    ce: CanonicalEntity, matrix: EvidenceMatrix, onto: Any, conflict_entities: set[str]
-) -> list[CaptureRequestSpec]:
-    """Capture requests that rest ONLY on measured facts about this entity's evidence."""
+def problem_facts(ce: CanonicalEntity, matrix: EvidenceMatrix, onto: Any) -> tuple[str, ProblemEvidence, dict[str, Any]]:
+    """(problem kind, measured evidence facts, location) for one entity: furniture/fixtures/objects whose size is not determined,
+    whose rear is unobserved (one viewpoint), or that cover too few pixels for the ontology's minimum."""
     node = onto.get(ce.ontology_path)
     sources = sorted({matrix.store.get(m).source_id for m in ce.members})
     dims = ce.determinations.get(DIMENSIONS)
-    out: list[CaptureRequestSpec] = []
-    location = {"entity_id": ce.entity_id, "ontology_path": ce.ontology_path, "frame": "unresolved"}
-    basis = tuple(sorted(ce.members))
-    group = ce.ontology_path.replace(".", "/").split("/")[0]
-
-    # furniture / fixtures / objects: size not determined, rear unobserved, too few pixels for a small fitting
     unmeasured = ("w", "d", "h") if (dims is None or dims.status != "resolved") else ()
     pixels = max((a for a in (_box_area_px(matrix, m) for m in ce.members) if a is not None), default=None)
     needed = float(node.min_pixels) if node is not None and node.min_pixels > 0 else None
@@ -147,6 +143,18 @@ def _problem_for(
     kind = "unclassified_object" if ce.ontology_path.startswith("fallback") else "incorrect_dimension"
     if node is not None and getattr(node, "small", False):
         kind = "missed_small_object"
+    return kind, ev, {"entity_id": ce.entity_id, "ontology_path": ce.ontology_path, "frame": "unresolved"}
+
+
+def _problem_for(
+    ce: CanonicalEntity, matrix: EvidenceMatrix, onto: Any, conflict_entities: set[str]
+) -> list[CaptureRequestSpec]:
+    """Capture requests that rest ONLY on measured facts about this entity's evidence."""
+    sources = sorted({matrix.store.get(m).source_id for m in ce.members})
+    out: list[CaptureRequestSpec] = []
+    kind, ev, location = problem_facts(ce, matrix, onto)
+    basis = tuple(sorted(ce.members))
+    group = ce.ontology_path.replace(".", "/").split("/")[0]
     spec = request_for_problem(problem_kind=kind, location=location, target_ids=ce.members, evidence=ev, basis=basis)
     if spec is not None:
         out.append(spec)
@@ -158,6 +166,83 @@ def _problem_for(
         if arch is not None:
             out.append(arch)
     return out
+
+
+#: Starting value, NOT tuned against any dataset; recorded in every snapshot under ``grouping``.
+SAME_IMAGE_IOU_MIN = 0.5
+
+
+@dataclass
+class Derived:
+    """Entities derived from a SELECTION of the matrix's observations (raw evidence is never modified by deriving)."""
+
+    cands: list[Candidate]  # one per image-level detection group (its representative observation)
+    groups: list[DetectionGroup]
+    assoc: AssociationResult  # entities expanded to EVERY member observation of their groups
+    canonicals: list[CanonicalEntity]
+    conflicts: list[Conflict]
+    identity_events: list[dict[str, Any]]
+    limitations: list[str]
+
+
+def derive_entities(
+    matrix: EvidenceMatrix,
+    active: AbstractSet[str] | None,
+    *,
+    registry: EngineRegistry,
+    onto: Any,
+    pair_scorer: PairScorer | None = None,
+    tolerances: Mapping[str, float] | None = None,
+    identity: IdentityRegistry | None = None,
+    overlap_tolerance_m: float | None = None,
+    same_image_iou_min: float = SAME_IMAGE_IOU_MIN,
+    record: bool = False,
+) -> Derived:
+    """detections -> image-level groups -> cross-view association -> stable ids -> canonical entities -> conflicts.
+    ``active`` selects which observations take part (None = every non-rejected detection). ``record`` writes the ``same_entity`` /
+    ``conflicts_with`` relations into the append-only store -- only the ADOPTED state should record, never a trial."""
+    obs = [
+        o for o in matrix.store.query(quantity="bbox")
+        if isinstance(o.predicted.get("label"), str) and matrix.status(o.observation_id) != "rejected"
+        and (active is None or o.observation_id in active)
+    ]
+    groups = group_detections(obs, iou_min=same_image_iou_min)
+    by_rep = {g.representative: g for g in groups}
+    label_of = {o.observation_id: str(o.predicted["label"]) for o in obs}
+    cands = [Candidate(g.representative, g.source_id, label_of[g.representative]) for g in groups]
+    limitations = list(LIMITATIONS) + ([] if pair_scorer is not None else [PAIR_SCORER_LIMITATION])
+    scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
+    assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto))
+    entities = [
+        replace(e, members=(ms := tuple(sorted(m for rep in e.members for m in by_rep[rep].members))),
+                labels=tuple(sorted({label_of[m] for m in ms})))
+        for e in assoc.entities
+    ]
+    identity_events: list[dict[str, Any]] = []
+    if identity is not None:  # keep entity ids stable when later evidence extends, merges or splits entities
+        entities, events = identity.resolve(entities)
+        identity_events = [e.to_dict() for e in events]
+    assoc = AssociationResult(tuple(entities), assoc.decisions)
+    canonicals = [
+        build_canonical_entity(
+            e, matrix, target_frame="world", tolerances=tolerances or {}, labels=label_of, registry=registry,
+            ontology=onto, association=assoc, graph=None,
+        )
+        for e in assoc.entities
+    ]
+    conflicts = semantic_conflicts(assoc)
+    boxes: list[Box] = [b for b in (box_from_entity(c) for c in canonicals) if b is not None]
+    if boxes and overlap_tolerance_m is not None:
+        conflicts += find_overlaps(boxes, tolerance_m=overlap_tolerance_m, contact_allowed=ontology_contact_allowed(onto))
+    elif boxes:
+        limitations.append("Interpenetration was not checked: no overlap tolerance was supplied (it has no default).")
+    if record:
+        for d in assoc.decisions:
+            if d.outcome == "merged":
+                matrix.store.link(d.a, d.b, "same_entity")
+        supporting = {c.entity_id: list(c.determinations[POSITION].supporting) for c in canonicals if POSITION in c.determinations}
+        record_conflicts(matrix.store, conflicts, supporting)
+    return Derived(cands, groups, assoc, canonicals, conflicts, identity_events, limitations)
 
 
 def run_evidence_flow(
@@ -177,6 +262,10 @@ def run_evidence_flow(
     policy: Policy = Policy.MAXIMUM_FIDELITY,
     metadata: Mapping[str, Any] | None = None,
     overlap_tolerance_m: float | None = None,
+    identity_registry: IdentityRegistry | None = None,
+    scoring_note: Mapping[str, Any] | None = None,
+    refine: bool = True,
+    refine_max_iterations: int = 3,
 ) -> EvidenceFlowResult:
     from perception.ontology import get_default_ontology
 
@@ -218,39 +307,43 @@ def run_evidence_flow(
     else:
         status = "partial"
 
-    # ---- evidence -> entities (whatever the evidence supports)
-    cands = [
-        Candidate(o.observation_id, o.source_id, str(o.predicted["label"]))
-        for o in matrix.store.query(quantity="bbox")
+    # ---- refinement: reprocess with untried engines where that can help, roll back what fails the checks, stop with a reason
+    refine_outcome = None
+    active: frozenset[str] | None = None
+    start_active = frozenset(
+        o.observation_id for o in matrix.store.query(quantity="bbox")
         if isinstance(o.predicted.get("label"), str) and matrix.status(o.observation_id) != "rejected"
-    ]
-    limitations = list(LIMITATIONS) + ([] if pair_scorer is not None else [PAIR_SCORER_LIMITATION])
+    )
+    if refine and not cancelled and n_obs > 0:
+        from engine.multiengine.refine_flow import FlowRefiner
+
+        try:
+            refine_outcome = FlowRefiner(
+                matrix=matrix, manager=mgr, registry=registry, onto=onto, pair_scorer=pair_scorer, tolerances=tolerances,
+                identity=identity_registry, overlap_tolerance_m=overlap_tolerance_m, max_iterations=refine_max_iterations,
+            ).run()
+            active = refine_outcome.state.active
+        except ExecutionCancelled as exc:  # cancelled mid-reprocessing: keep the pre-refinement selection; finished work is persisted
+            cancelled, status, active = True, "cancelled", start_active
+            stage_summaries.append({"task": "refinement", "status": "cancelled", "warnings": list(exc.report.warnings), "engines": {}})
+
+    # ---- evidence -> entities (whatever the evidence supports)
+    derived = derive_entities(
+        matrix, active, registry=registry, onto=onto, pair_scorer=pair_scorer, tolerances=tolerances,
+        identity=identity_registry, overlap_tolerance_m=overlap_tolerance_m, record=True,
+    )
+    cands, assoc, canonicals, conflicts = derived.cands, derived.assoc, derived.canonicals, derived.conflicts
+    identity_events, limitations = derived.identity_events, derived.limitations
     if n_obs == 0 and status != "failed":
         limitations.append("The engines ran successfully but produced no detections on these images (no entity is invented).")
-    scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
-    assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto), store=matrix.store)
-    labels = {c.observation_id: c.label for c in cands}
-    canonicals = [
-        build_canonical_entity(
-            e, matrix, target_frame="world", tolerances=tolerances or {}, labels=labels, registry=registry,
-            ontology=onto, association=assoc, graph=None,
-        )
-        for e in assoc.entities
-    ]
-
-    conflicts = semantic_conflicts(assoc)
-    boxes: list[Box] = [b for b in (box_from_entity(c) for c in canonicals) if b is not None]
-    if boxes and overlap_tolerance_m is not None:
-        conflicts += find_overlaps(boxes, tolerance_m=overlap_tolerance_m, contact_allowed=ontology_contact_allowed(onto))
-    elif boxes:
-        limitations.append("Interpenetration was not checked: no overlap tolerance was supplied (it has no default).")
-    supporting = {c.entity_id: list(c.determinations[POSITION].supporting) for c in canonicals if POSITION in c.determinations}
-    record_conflicts(matrix.store, conflicts, supporting)
     conflict_entities = {eid for cf in conflicts if cf.kind == "interpenetration" for eid in cf.entity_ids}
 
     requests: list[CaptureRequestSpec] = []
-    for ce in canonicals:
-        requests.extend(_problem_for(ce, matrix, onto, conflict_entities))
+    if refine_outcome is not None:  # requests the loop derived from measured facts (it also reprocessed whatever could be)
+        requests = list(refine_outcome.result.capture_requests)
+    else:
+        for ce in canonicals:
+            requests.extend(_problem_for(ce, matrix, onto, conflict_entities))
 
     bridge = convert(canonicals, matrix, ontology=onto)
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()
@@ -258,7 +351,7 @@ def run_evidence_flow(
     snapshot: dict[str, Any] = {
         "snapshot_version": SNAPSHOT_VERSION, "run_id": run_id, "status": status, "sources": list(sources),
         "counts": {
-            "observations": n_obs, "runs": len(matrix.runs()), "candidates": len(cands), "entities": len(canonicals),
+            "observations": len(matrix), "runs": len(matrix.runs()), "candidates": len(cands), "entities": len(canonicals),
             "conflicts": len(conflicts), "capture_requests": len(requests),
         },
         "stages": stage_summaries, "limitations": limitations,
@@ -279,11 +372,13 @@ def run_evidence_flow(
         ],
         "capture_requests": [r.to_row(world_id="", request_id=f"{run_id}-cr{i}") for i, r in enumerate(requests)],
         "hierarchy": hierarchy,
-        "refinement_history": [{
-            "iteration": 1, "problems": len(requests),
-            "actions": ["association", "canonical_fusion", "conflict_detection", "capture_requests"],
-            "reprocessing": "not run: " + LIMITATIONS[2],
-        }],
+        "refinement_history": (
+            [refine_outcome.to_dict()] if refine_outcome is not None
+            else [{"stop_reason": "not_run", "reason": "refinement was disabled, cancelled or there was no evidence"}]
+        ),
+        "grouping": {"same_image_iou_min": SAME_IMAGE_IOU_MIN, "caveat": "untuned starting value"},
+        "identity_events": identity_events,
+        "scoring": dict(scoring_note) if scoring_note else None,  # which pair scorer + thresholds were used (None = no scorer)
         "bridge_notes": list(bridge.notes),
         "matrix_problems": matrix.verify(),
     }

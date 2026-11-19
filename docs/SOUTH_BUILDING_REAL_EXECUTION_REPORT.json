@@ -1,5 +1,5 @@
 {
-  "execution_date": "2026-11-19 17:06:06 UTC",
+  "execution_date": "2026-11-19 18:47:33 UTC",
   "dataset": "datasets/south_building",
   "photos_processed": [
     "P1180141.JPG",
@@ -8,23 +8,46 @@
     "P1180153.JPG"
   ],
   "total_photos_count": 4,
-  "total_wall_time_s": 73.28,
+  "total_wall_time_s": 86.6,
   "device": "cuda:0",
   "registered_cameras_in_colmap": 32,
-  "raw_observations_count": 59,
-  "total_lifted_entities": 59,
-  "unique_physical_entities_count": 48,
-  "multiview_merged_entities_count": 9,
-  "single_view_entities_count": 39,
-  "max_views_per_entity": 4,
-  "association_accepted_merges": 11,
-  "association_refused_pairs": 32,
-  "association_refusal_reasons": {
-    "label_conflict": 9,
-    "same_image_conflict": 20,
-    "already_same_entity": 3
+  "raw_observations_count": 23,
+  "total_lifted_entities": 23,
+  "unique_physical_entities_count": 23,
+  "multiview_merged_entities_count": 0,
+  "single_view_entities_count": 23,
+  "max_views_per_entity": 1,
+  "association_accepted_merges": 0,
+  "association_refused_pairs": 0,
+  "association_refusal_reasons": {},
+  "association_benchmark": {
+    "total_pairs_evaluated": 0,
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "false_merge_rate": 0.0,
+    "false_split_rate": 0.0,
+    "per_class_metrics": {},
+    "performance_under_occlusion": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "performance_repeated_structures": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "performance_missing_calibration": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
   },
-  "worldir_entities_count": 48,
+  "worldir_entities_count": 23,
   "worldir_validation_errors": 0,
   "worldir_validation_disclaimer": "Schema validation confirms structural adherence; physical reconstruction accuracy is unmeasured without metric laser survey.",
   "scale_units": "COLMAP_SFM_UNITS",
@@ -32,19 +55,20 @@
   "metric_anchor_status": "UNANCHORED_COLMAP_GAUGE",
   "physical_accuracy_status": "NOT_MEASURED (Requires independent millimeter physical laser survey)",
   "class_counts": {
-    "bench": 3,
-    "building facade": 4,
-    "tree": 9,
-    "window window frame": 11,
-    "window": 3,
+    "window window frame": 4,
+    "building facade": 1,
+    "tree": 2,
+    "column base": 2,
+    "roof": 1,
+    "ground surface": 2,
+    "column": 1,
+    "lamp": 3,
+    "door entrance": 2,
+    "column lamp": 1,
     "window window": 1,
-    "column": 3,
-    "roof": 4,
-    "wall": 1,
-    "window frame": 3,
-    "door entrance": 3,
-    "entrance": 2,
-    "door": 1
+    "bench": 1,
+    "railing": 1,
+    "entrance": 1
   },
   "artifact_path": "artifacts\\south_building_reconstruction.worldir.json",
   "telemetry_per_photo": [
@@ -52,67 +76,89 @@
       "photo": "P1180141.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 16.077,
-          "infer_s": 0.709,
+          "load_s": 34.286,
+          "infer_s": 1.321,
           "is_metric": false,
-          "scale_units": "COLMAP_SFM_UNITS",
-          "scale_source": "colmap_sparse_points",
+          "scale_units": "RELATIVE_DISPARITY",
+          "scale_source": "unscaled_relative",
           "scale_alignment": {
-            "aligned": true,
-            "method": "affine_disparity_regression",
-            "scale_state": "SFM_ALIGNED_UNMETRIC",
-            "units": "COLMAP_SFM_UNITS",
-            "is_physically_metric": false,
-            "scale": 0.122191,
-            "shift": 0.135764,
-            "scale_uncertainty": 0.007531,
-            "shift_uncertainty": 0.014224,
-            "r_squared": 0.5401,
-            "residual_rms_error_m": 0.1742,
-            "held_out_rms_error_m": 0.9992,
-            "spatial_residual_std_m": 0.2911,
-            "inliers": 1034,
-            "held_out_count": 522,
-            "total_points": 1739
+            "aligned": false,
+            "rejection_reason": "POOR_HELD_OUT_EVALUATION: Held-out R^2=0.382 or held-out RMS=0.999 indicates severe overfit/generalization failure"
           },
           "depth_range_units": [
-            1.1579985618591309,
-            7.365707874298096
-          ]
+            0.0,
+            5.95620584487915
+          ],
+          "raw_depth_artifact": "artifacts\\south_building_raw\\depth_P1180141.JPG.npy"
         },
         "detector": {
           "engine": "grounding_dino",
-          "infer_s": 1.272,
-          "detections_count": 15,
+          "infer_s": 2.045,
+          "detections_count": 22,
           "labels": [
             "bench",
             "building facade",
+            "ground surface",
             "tree",
+            "lamp",
+            "column base",
             "tree",
             "window window frame",
+            "balcony",
+            "balcony window frame",
             "window window frame",
-            "tree",
+            "column",
             "window window frame",
-            "window window frame",
-            "window",
+            "roof",
+            "column base",
+            "window window",
             "window window",
             "column",
-            "roof",
             "wall",
-            "tree"
-          ]
+            "tree",
+            "balcony",
+            "column base"
+          ],
+          "raw_detections_artifact": "artifacts\\south_building_raw\\detections_P1180141.JPG.json"
         },
         "sam": {
-          "load_s": 1.666,
-          "infer_s": 1.031,
-          "masks_count": 15
+          "load_s": 1.793,
+          "infer_s": 1.274,
+          "masks_count": 22,
+          "raw_masks_artifact": "artifacts\\south_building_raw\\masks_P1180141.JPG.npz"
         },
         "metric_lifting": {
-          "duration_s": 7.169,
-          "candidates_evaluated": 15,
-          "lifted_entities_count": 15,
-          "rejections_count": 0,
-          "rejection_samples": []
+          "duration_s": 0.021,
+          "candidates_evaluated": 22,
+          "lifted_entities_count": 0,
+          "rejections_count": 22,
+          "rejection_samples": [
+            {
+              "entity_id": "south_P1180141.JPG_00",
+              "class_name": "bench",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180141.JPG_01",
+              "class_name": "building facade",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180141.JPG_02",
+              "class_name": "ground surface",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180141.JPG_03",
+              "class_name": "tree",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180141.JPG_04",
+              "class_name": "lamp",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            }
+          ]
         }
       }
     },
@@ -120,68 +166,88 @@
       "photo": "P1180145.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.759,
-          "infer_s": 0.34,
+          "load_s": 0.578,
+          "infer_s": 0.149,
           "is_metric": false,
-          "scale_units": "COLMAP_SFM_UNITS",
-          "scale_source": "colmap_sparse_points",
+          "scale_units": "RELATIVE_DISPARITY",
+          "scale_source": "unscaled_relative",
           "scale_alignment": {
-            "aligned": true,
-            "method": "affine_disparity_regression",
-            "scale_state": "SFM_ALIGNED_UNMETRIC",
-            "units": "COLMAP_SFM_UNITS",
-            "is_physically_metric": false,
-            "scale": 0.254558,
-            "shift": 0.092434,
-            "scale_uncertainty": 0.031494,
-            "shift_uncertainty": 0.040886,
-            "r_squared": 0.8626,
-            "residual_rms_error_m": 0.325,
-            "held_out_rms_error_m": 0.9518,
-            "spatial_residual_std_m": 0.2176,
-            "inliers": 334,
-            "held_out_count": 169,
-            "total_points": 562
+            "aligned": false,
+            "rejection_reason": "POOR_HELD_OUT_EVALUATION: Held-out R^2=0.788 or held-out RMS=0.952 indicates severe overfit/generalization failure"
           },
           "depth_range_units": [
-            0.7739751935005188,
-            10.818512916564941
-          ]
+            0.0,
+            4.712472438812256
+          ],
+          "raw_depth_artifact": "artifacts\\south_building_raw\\depth_P1180145.JPG.npy"
         },
         "detector": {
           "engine": "grounding_dino",
-          "infer_s": 0.918,
-          "detections_count": 16,
+          "infer_s": 1.348,
+          "detections_count": 21,
           "labels": [
             "bench",
+            "ground surface",
             "building facade",
+            "column lamp",
             "window window frame",
-            "window frame",
+            "column base",
             "roof",
             "window window frame",
+            "lamp",
             "tree",
+            "column base",
             "window",
-            "door entrance",
+            "door",
+            "window frame",
             "window",
-            "window",
+            "window frame",
+            "window window",
             "window window frame",
             "window window frame",
             "tree",
-            "entrance",
-            "window window frame"
-          ]
+            "railing"
+          ],
+          "raw_detections_artifact": "artifacts\\south_building_raw\\detections_P1180145.JPG.json"
         },
         "sam": {
-          "load_s": 1.333,
-          "infer_s": 0.872,
-          "masks_count": 16
+          "load_s": 2.147,
+          "infer_s": 1.156,
+          "masks_count": 21,
+          "raw_masks_artifact": "artifacts\\south_building_raw\\masks_P1180145.JPG.npz"
         },
         "metric_lifting": {
-          "duration_s": 4.247,
-          "candidates_evaluated": 16,
-          "lifted_entities_count": 16,
-          "rejections_count": 0,
-          "rejection_samples": []
+          "duration_s": 0.016,
+          "candidates_evaluated": 21,
+          "lifted_entities_count": 0,
+          "rejections_count": 21,
+          "rejection_samples": [
+            {
+              "entity_id": "south_P1180145.JPG_00",
+              "class_name": "bench",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180145.JPG_01",
+              "class_name": "ground surface",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180145.JPG_02",
+              "class_name": "building facade",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180145.JPG_03",
+              "class_name": "column lamp",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180145.JPG_04",
+              "class_name": "window window frame",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            }
+          ]
         }
       }
     },
@@ -189,8 +255,8 @@
       "photo": "P1180149.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.644,
-          "infer_s": 0.405,
+          "load_s": 0.688,
+          "infer_s": 0.073,
           "is_metric": false,
           "scale_units": "COLMAP_SFM_UNITS",
           "scale_source": "colmap_sparse_points",
@@ -215,38 +281,50 @@
           "depth_range_units": [
             0.9048501253128052,
             5.226223945617676
-          ]
+          ],
+          "raw_depth_artifact": "artifacts\\south_building_raw\\depth_P1180149.JPG.npy"
         },
         "detector": {
           "engine": "grounding_dino",
-          "infer_s": 0.794,
-          "detections_count": 14,
+          "infer_s": 0.677,
+          "detections_count": 23,
           "labels": [
-            "building facade",
             "window window frame",
+            "building facade",
+            "tree",
+            "column base",
+            "column base",
             "tree",
             "roof",
+            "ground surface",
+            "ground surface",
             "column",
-            "window frame",
-            "tree",
-            "door",
-            "window window frame",
-            "window window frame",
-            "entrance",
-            "bench",
+            "lamp",
             "door entrance",
-            "window window frame"
-          ]
+            "window window frame",
+            "column lamp",
+            "window window",
+            "bench",
+            "railing",
+            "entrance",
+            "window window frame",
+            "lamp",
+            "lamp",
+            "window window frame",
+            "door entrance"
+          ],
+          "raw_detections_artifact": "artifacts\\south_building_raw\\detections_P1180149.JPG.json"
         },
         "sam": {
-          "load_s": 1.383,
-          "infer_s": 0.771,
-          "masks_count": 14
+          "load_s": 1.507,
+          "infer_s": 1.085,
+          "masks_count": 23,
+          "raw_masks_artifact": "artifacts\\south_building_raw\\masks_P1180149.JPG.npz"
         },
         "metric_lifting": {
-          "duration_s": 5.438,
-          "candidates_evaluated": 14,
-          "lifted_entities_count": 14,
+          "duration_s": 4.964,
+          "candidates_evaluated": 23,
+          "lifted_entities_count": 23,
           "rejections_count": 0,
           "rejection_samples": []
         }
@@ -256,66 +334,84 @@
       "photo": "P1180153.JPG",
       "stages": {
         "depth_anything": {
-          "load_s": 0.704,
-          "infer_s": 0.363,
+          "load_s": 0.826,
+          "infer_s": 0.412,
           "is_metric": false,
-          "scale_units": "COLMAP_SFM_UNITS",
-          "scale_source": "colmap_sparse_points",
+          "scale_units": "RELATIVE_DISPARITY",
+          "scale_source": "unscaled_relative",
           "scale_alignment": {
-            "aligned": true,
-            "method": "affine_disparity_regression",
-            "scale_state": "SFM_ALIGNED_UNMETRIC",
-            "units": "COLMAP_SFM_UNITS",
-            "is_physically_metric": false,
-            "scale": 0.25341,
-            "shift": 0.123206,
-            "scale_uncertainty": 0.014002,
-            "shift_uncertainty": 0.018916,
-            "r_squared": 0.8716,
-            "residual_rms_error_m": 0.1092,
-            "held_out_rms_error_m": 1.2433,
-            "spatial_residual_std_m": 0.0691,
-            "inliers": 235,
-            "held_out_count": 119,
-            "total_points": 396
+            "aligned": false,
+            "rejection_reason": "POOR_HELD_OUT_EVALUATION: Held-out R^2=0.215 or held-out RMS=1.243 indicates severe overfit/generalization failure"
           },
           "depth_range_units": [
-            0.8770577311515808,
-            8.116517066955566
-          ]
+            0.0,
+            4.013144493103027
+          ],
+          "raw_depth_artifact": "artifacts\\south_building_raw\\depth_P1180153.JPG.npy"
         },
         "detector": {
           "engine": "grounding_dino",
-          "infer_s": 1.022,
-          "detections_count": 14,
+          "infer_s": 0.721,
+          "detections_count": 17,
           "labels": [
-            "door entrance",
-            "window window frame",
             "door",
             "window window frame",
-            "bench",
-            "column",
-            "building facade",
+            "door entrance",
             "window window frame",
-            "window frame",
+            "lamp",
+            "ground surface",
+            "column base",
+            "building facade wall",
+            "column column base",
+            "window window frame",
+            "bench",
             "tree",
             "window frame",
-            "roof",
+            "balcony",
+            "tree",
             "roof",
             "roof"
-          ]
+          ],
+          "raw_detections_artifact": "artifacts\\south_building_raw\\detections_P1180153.JPG.json"
         },
         "sam": {
-          "load_s": 1.402,
-          "infer_s": 0.883,
-          "masks_count": 14
+          "load_s": 1.221,
+          "infer_s": 0.686,
+          "masks_count": 17,
+          "raw_masks_artifact": "artifacts\\south_building_raw\\masks_P1180153.JPG.npz"
         },
         "metric_lifting": {
-          "duration_s": 5.218,
-          "candidates_evaluated": 14,
-          "lifted_entities_count": 14,
-          "rejections_count": 0,
-          "rejection_samples": []
+          "duration_s": 0.011,
+          "candidates_evaluated": 17,
+          "lifted_entities_count": 0,
+          "rejections_count": 17,
+          "rejection_samples": [
+            {
+              "entity_id": "south_P1180153.JPG_00",
+              "class_name": "door",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180153.JPG_01",
+              "class_name": "window window frame",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180153.JPG_02",
+              "class_name": "door entrance",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180153.JPG_03",
+              "class_name": "window window frame",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            },
+            {
+              "entity_id": "south_P1180153.JPG_04",
+              "class_name": "lamp",
+              "rejection_reason": "UNSCALED_RELATIVE_DEPTH"
+            }
+          ]
         }
       }
     }

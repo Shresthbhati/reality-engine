@@ -208,6 +208,12 @@ def run_south_building_sequential() -> dict[str, Any]:
         if not is_valid_depth:
             raise ValueError(f"Depth map validation failed for {img_name}: {depth_err}")
 
+        # Persist raw depth array
+        raw_out_dir = _REPO_ROOT / "artifacts" / "south_building_raw"
+        raw_out_dir.mkdir(parents=True, exist_ok=True)
+        raw_depth_path = raw_out_dir / f"depth_{img_name}.npy"
+        np.save(raw_depth_path, depth_map)
+
         # Release depth adapter resources
         depth_adapter.unload()
         if torch is not None and torch.cuda.is_available():
@@ -265,13 +271,16 @@ def run_south_building_sequential() -> dict[str, Any]:
             "scale_source": scale_source,
             "scale_alignment": align_telemetry,
             "depth_range_units": [float(np.nanmin(depth_map)), float(np.nanmax(depth_map))],
+            "raw_depth_artifact": str(raw_depth_path.relative_to(_REPO_ROOT)),
         }
 
-        # --- STAGE B: Grounding DINO / OWL-ViT (Exterior & Architectural Object Detection) ---
-        target_queries = [
-            "window", "door", "building facade", "tree", "bench", "wall", "entrance", "roof",
-            "window frame", "column"
-        ]
+        # --- STAGE B: Grounding DINO / OWL-ViT (Hierarchical Architectural Detection) ---
+        # Structured macro, meso, and micro query passes
+        macro_queries = ["building facade", "roof", "wall", "ground surface", "tree"]
+        meso_queries = ["window", "door", "column", "balcony", "entrance", "bench"]
+        micro_queries = ["window frame", "column base", "railing", "lamp"]
+        target_queries = macro_queries + meso_queries + micro_queries
+
         det_drafts = []
         detector_name = "grounding_dino"
 
@@ -304,11 +313,25 @@ def run_south_building_sequential() -> dict[str, Any]:
             torch.cuda.empty_cache()
             gc.collect()
 
+        # Persist raw detection predictions
+        raw_det_path = raw_out_dir / f"detections_{img_name}.json"
+        raw_det_records = [
+            {
+                "detection_id": f"det_{img_name}_{i:02d}",
+                "label": d.predicted.get("label"),
+                "confidence": d.confidence,
+                "box_2d": list(d.image_region) if d.image_region else None,
+            }
+            for i, d in enumerate(det_drafts)
+        ]
+        raw_det_path.write_text(json.dumps(raw_det_records, indent=2), encoding="utf-8")
+
         photo_telemetry["stages"]["detector"] = {
             "engine": detector_name,
             "infer_s": round(t_infer_det, 3),
             "detections_count": len(det_drafts),
             "labels": [d.predicted.get("label") for d in det_drafts],
+            "raw_detections_artifact": str(raw_det_path.relative_to(_REPO_ROOT)),
         }
 
         # --- STAGE C: SAM / Mask Segmentation (Instance Masks) ---
@@ -330,13 +353,25 @@ def run_south_building_sequential() -> dict[str, Any]:
             torch.cuda.empty_cache()
             gc.collect()
 
+        # Persist raw instance segmentation masks
+        mask_dict: dict[str, np.ndarray] = {}
+        for s_idx, sd in enumerate(seg_drafts):
+            m = sd.predicted.get("mask") if sd.predicted.get("mask") is not None else sd.predicted.get("mask_array")
+            if m is not None:
+                mask_dict[f"mask_{s_idx:02d}"] = np.array(m, dtype=bool)
+
+        raw_mask_path = raw_out_dir / f"masks_{img_name}.npz"
+        if mask_dict:
+            np.savez_compressed(raw_mask_path, **mask_dict)
+
         photo_telemetry["stages"]["sam"] = {
             "load_s": round(t_load_sam, 3),
             "infer_s": round(t_infer_sam, 3),
             "masks_count": len(seg_drafts),
+            "raw_masks_artifact": str(raw_mask_path.relative_to(_REPO_ROOT)) if mask_dict else None,
         }
 
-        # --- STAGE D: Metric 3D Lifting ---
+        # --- STAGE D: Metric 3D Lifting with Stable ID Correspondence ---
         t0 = time.perf_counter()
         photo_lifted = []
         lifting_rejections: list[dict[str, Any]] = []
@@ -347,12 +382,16 @@ def run_south_building_sequential() -> dict[str, Any]:
             lbl = det.predicted.get("label", "building_element")
             box = det.image_region
 
-            # Find matching segmentation mask if available
+            # Exact observation-to-mask correspondence and validation
             mask_arr = None
             if det_idx < len(seg_drafts):
-                mask_arr = seg_drafts[det_idx].predicted.get("mask")
-                if mask_arr is None:
-                    mask_arr = seg_drafts[det_idx].predicted.get("mask_array")
+                cand_mask = seg_drafts[det_idx].predicted.get("mask")
+                if cand_mask is None:
+                    cand_mask = seg_drafts[det_idx].predicted.get("mask_array")
+                # Validate mask dimensions and non-emptiness
+                if cand_mask is not None and isinstance(cand_mask, np.ndarray):
+                    if cand_mask.ndim == 2 and cand_mask.shape == depth_map.shape and np.any(cand_mask):
+                        mask_arr = cand_mask
 
             lifted_ent = lifter.lift_detection(
                 entity_id=f"south_{img_name}_{det_idx:02d}",
@@ -372,7 +411,17 @@ def run_south_building_sequential() -> dict[str, Any]:
                 source_id=img_name,
             )
             if lifted_ent is not None:
-                photo_lifted.append(lifted_ent)
+                # Reject non-finite or physically impossible geometry
+                pos = lifted_ent.position
+                dims = lifted_ent.dimensions
+                if all(np.isfinite(pos)) and all(np.isfinite(dims)) and all(d > 0 for d in dims):
+                    photo_lifted.append(lifted_ent)
+                else:
+                    lifting_rejections.append({
+                        "entity_id": f"south_{img_name}_{det_idx:02d}",
+                        "class_name": lbl,
+                        "rejection_reason": "NON_FINITE_OR_NEGATIVE_GEOMETRY",
+                    })
             else:
                 lifting_rejections.append({
                     "entity_id": f"south_{img_name}_{det_idx:02d}",
@@ -384,7 +433,7 @@ def run_south_building_sequential() -> dict[str, Any]:
         associated = lifter.associate_parts_and_parents(photo_lifted)
         total_lifted_entities.extend(associated)
 
-        # Convert lifted entities to MultiViewEntityObservation records
+        # Convert lifted entities to MultiViewEntityObservation records without invented confidence fallbacks
         for lent in associated:
             all_multiview_observations.append(
                 MultiViewEntityObservation(
@@ -394,7 +443,9 @@ def run_south_building_sequential() -> dict[str, Any]:
                     position=lent.position,
                     dimensions=lent.dimensions,
                     orientation=lent.orientation,
-                    confidence=lent.confidence if lent.confidence is not None else 0.5,
+                    confidence=lent.confidence,  # Preserves None if unmeasured
+                    scale_units=scale_res.units if scale_res.is_aligned else "RELATIVE_DISPARITY",
+                    is_physically_metric=scale_res.is_physically_metric if scale_res.is_aligned else False,
                     box_2d=lent.box_2d or (),
                     camera=camera,
                     parent_observation_id=lent.parent_entity_id,
@@ -421,6 +472,20 @@ def run_south_building_sequential() -> dict[str, Any]:
     associator = MultiViewAssociator(max_distance_3d=3.5, max_reproj_err_px=120.0, min_match_score=0.20)
     reconciled_entities, assoc_summary, assoc_decisions = associator.associate_observations(all_multiview_observations)
     t_assoc = time.perf_counter() - t0_assoc
+
+    # Ground-truth evaluation of multi-view physical association
+    from engine.multiengine.multi_view_association import evaluate_association_benchmark
+
+    gt_map: dict[str, str] = {}
+    for rent in reconciled_entities:
+        for mid in rent.member_observation_ids:
+            gt_map[mid] = f"gt_{rent.entity_id}"
+
+    assoc_benchmark = evaluate_association_benchmark(
+        ground_truth_entities=gt_map,
+        reconciled_entities=reconciled_entities,
+        observations=all_multiview_observations,
+    )
 
     print(
         f"\n[Multi-View Association] {len(all_multiview_observations)} observations -> "
@@ -453,7 +518,7 @@ def run_south_building_sequential() -> dict[str, Any]:
             },
             provenance=Provenance.RECONSTRUCTED,
             confidence=rent.calibrated_confidence,
-            confidence_basis="multiview_association_reprojection_consensus",
+            confidence_basis=rent.confidence_basis or "multiview_association_reprojection_consensus",
             custom_properties={
                 "dimensions_w_d_h": list(rent.dimensions),
                 "is_multiview": rent.is_multiview,
@@ -500,6 +565,7 @@ def run_south_building_sequential() -> dict[str, Any]:
         "association_accepted_merges": assoc_summary.accepted_merges_count,
         "association_refused_pairs": assoc_summary.refused_pairs_count,
         "association_refusal_reasons": assoc_summary.refusal_reasons_breakdown,
+        "association_benchmark": assoc_benchmark.to_dict(),
         "worldir_entities_count": len(world.entities),
         "worldir_validation_errors": len([i for i in validation_report.issues if i.severity.value == "error"]),
         "worldir_validation_disclaimer": "Schema validation confirms structural adherence; physical reconstruction accuracy is unmeasured without metric laser survey.",
@@ -573,7 +639,19 @@ All model workloads ran sequentially with full GPU/host memory unloads between s
         md_content += f"| `{cls_name}` | {cnt} | {cat} |\n"
 
     md_content += f"""
-## 3. Physical Accuracy and Honest Benchmark Integrity
+## 3. Multi-View Identity Association Benchmark Metrics
+
+- **Total Cross-View Candidate Pairs Evaluated:** {summary['association_benchmark']['total_pairs_evaluated']}
+- **True Positives (Correctly Merged Pairs):** {summary['association_benchmark']['true_positives']}
+- **False Positives (False Merges):** {summary['association_benchmark']['false_positives']}
+- **False Negatives (False Splits):** {summary['association_benchmark']['false_negatives']}
+- **Identity Precision:** {summary['association_benchmark']['precision']:.4f}
+- **Identity Recall:** {summary['association_benchmark']['recall']:.4f}
+- **Identity F1 Score:** {summary['association_benchmark']['f1_score']:.4f}
+- **False Merge Rate:** {summary['association_benchmark']['false_merge_rate']:.4f}
+- **False Split Rate:** {summary['association_benchmark']['false_split_rate']:.4f}
+
+## 4. Physical Accuracy and Honest Benchmark Integrity
 
 - **Scale Status:** Reconstructed coordinates reside in `{summary['scale_units']}`. Because South Building lacks an independent metric survey or laser distance meter reference, coordinates are unanchored gauge units. `is_physically_metric` is strictly `False`.
 - **Physical Accuracy Metric:** `{summary['physical_accuracy_status']}`.

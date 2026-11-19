@@ -98,6 +98,9 @@ class Regression:
     current: object
 
 
+QualityGateResult = GateResult
+
+
 @dataclass(frozen=True)
 class QualityReport:
     overall: Overall
@@ -251,3 +254,25 @@ def evaluate(
         overall = Overall.UNVERIFIED
         notes.append("no required gate could be verified")
     return QualityReport(overall, tuple(results), tuple(regressions), stages_ok, tuple(notes))
+
+
+class QualityGateManager:
+    """Convenience manager for evaluating quality gates across stages."""
+
+    def __init__(self, specs: Sequence[GateSpec] | None = None) -> None:
+        self.specs = tuple(specs) if specs is not None else tuple(default_gate_specs())
+
+    def evaluate(
+        self,
+        measurements: Mapping[str, Measurement | float],
+        *,
+        stages_ok: bool = True,
+    ) -> QualityReport:
+        norm_meas: dict[str, Measurement] = {}
+        for k, v in measurements.items():
+            if isinstance(v, Measurement):
+                norm_meas[k] = v
+            else:
+                norm_meas[k] = Measurement(value=float(v), method="pipeline_direct")
+        return evaluate(self.specs, norm_meas, stages_ok=stages_ok)
+

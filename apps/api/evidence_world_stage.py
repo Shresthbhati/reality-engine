@@ -34,23 +34,33 @@ def enabled() -> bool:
 
 #: Production enablement gate. ``enabled()`` stays opt-in (default OFF); this table says what must hold before the DEFAULT may be turned on.
 #: ``met`` is only True where a test in this repository executes the claim; everything else is honestly unmet.
-ENABLEMENT_CRITERIA: tuple[tuple[str, bool, str], ...] = (
-    ("tenant_isolation", True, "tests/test_evidence_world_api.py, tests/test_evidence_world_job.py"),
-    ("job_authorization", True, "tests/test_job_authorization.py"),
-    ("cancellation_and_failure_isolation", True, "tests/test_evidence_world_job.py"),
-    ("real_multi_photo_job_run", False, "no recorded run of the stage on a real multi-photo job yet"),
-    ("detector_accuracy_benchmark", False, "no benchmark of the production detectors on labelled interior imagery"),
-    ("confidence_calibration", False, "observation calibration is LEGACY_UNSPECIFIED; no calibration dataset"),
-    ("metric_3d_observation_contract", False, "BLOCKED: no shared metric-3D schema from the Gemini side; depth maps not persisted"),
-    ("quality_gate_thresholds", False, "no benchmark-established thresholds; gates stay UNVERIFIED"),
+#: (id, claimed met, evidence test files, note). A claimed-met criterion is only counted when EVERY evidence file exists in the checkout:
+#: deleting the test demotes the claim. File existence is a floor, not proof the tests pass -- CI running them is the proof.
+ENABLEMENT_CRITERIA: tuple[tuple[str, bool, tuple[str, ...], str], ...] = (
+    ("tenant_isolation", True, ("tests/test_evidence_world_api.py", "tests/test_evidence_world_job.py"), ""),
+    ("job_authorization", True, ("tests/test_job_authorization.py",), ""),
+    ("cancellation_and_failure_semantics", True, ("tests/test_evidence_world_job.py", "tests/test_evidence_world_failure_semantics.py"), ""),
+    ("metric3d_contract_published", True, ("tests/test_metric3d_contract.py",), "contract + ingest exist; see the producers criterion"),
+    ("covariance_propagation", True, ("tests/test_canonical_covariance_propagation.py", "tests/test_worldir_bridge_uncertainty_roundtrip.py"), ""),
+    ("metric3d_producers_emit_contract", False, (), "depth/lifting producers do not yet emit metric3d.v1 records or persist depth maps (Gemini)"),
+    ("real_multi_photo_job_run", False, (), "one outdoor run produced 0 detections; no furnished-interior multi-photo run exists"),
+    ("detector_accuracy_benchmark", False, (), "no benchmark of the production detectors on labelled interior imagery"),
+    ("confidence_calibration", False, (), "observation calibration is LEGACY_UNSPECIFIED; no calibration dataset"),
+    ("quality_gate_thresholds", False, (), "no benchmark-established thresholds; gates stay UNVERIFIED"),
 )
 
 
-def enablement_gate() -> dict[str, Any]:
+def enablement_gate(repo_root: Path | None = None) -> dict[str, Any]:
     """Whether the stage may be on BY DEFAULT. ``ready`` only when every criterion is met; the env flag is unaffected."""
-    unmet = [c for c, met, _ in ENABLEMENT_CRITERIA if not met]
-    return {"ready": not unmet, "unmet": unmet,
-            "criteria": [{"id": c, "met": met, "evidence": ev} for c, met, ev in ENABLEMENT_CRITERIA]}
+    root = repo_root or Path(__file__).resolve().parents[2]
+    rows = []
+    for cid, claimed, files, note in ENABLEMENT_CRITERIA:
+        missing = [f for f in files if not (root / f).is_file()]
+        met = claimed and bool(files) and not missing
+        rows.append({"id": cid, "met": met, "evidence": list(files), "missing_evidence": missing,
+                     "note": note or ("evidence file(s) missing" if claimed and missing else "")})
+    unmet = [r["id"] for r in rows if not r["met"]]
+    return {"ready": not unmet, "unmet": unmet, "criteria": rows}
 
 
 def _segment(value: str, what: str) -> str:

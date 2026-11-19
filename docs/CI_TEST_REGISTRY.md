@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 563
+Total: 567
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -205,6 +205,7 @@ Total: 563
 - `tests/test_camera_calibration.py`
 - `tests/test_camera_calibration_integrity.py`
 - `tests/test_candidate_selection.py`
+- `tests/test_canonical_covariance_propagation.py`
 - `tests/test_canonical_interior.py`
 - `tests/test_capability_audit.py`
 - `tests/test_capture_feedback_wiring.py`
@@ -303,6 +304,7 @@ Total: 563
 - `tests/test_evidence_quality.py`
 - `tests/test_evidence_sources.py`
 - `tests/test_evidence_world_api.py`
+- `tests/test_evidence_world_failure_semantics.py`
 - `tests/test_evidence_world_gate.py`
 - `tests/test_evidence_world_job.py`
 - `tests/test_export_parts_and_attributes.py`
@@ -411,6 +413,7 @@ Total: 563
 - `tests/test_mesh_validation.py`
 - `tests/test_meshing_pipeline.py`
 - `tests/test_meshopt_simplifier.py`
+- `tests/test_metric3d_contract.py`
 - `tests/test_metric_3d_lifting.py`
 - `tests/test_metric_3d_lifting_rigorous.py`
 - `tests/test_metric_anchor_determinism.py`
@@ -692,6 +695,7 @@ Total: 563
 - `tests/test_world_runtime.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
+- `tests/test_worldir_bridge_uncertainty_roundtrip.py`
 - `tests/test_worldir_confidence_contract.py`
 - `tests/test_worldir_coordinate_like_properties.py`
 - `tests/test_worldir_optional_confidence.py`

@@ -3,7 +3,22 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
-## 2026-11-19 -- Evidence-to-world COMPLETION (branch `claude/sonnet-evidence-world-completion`; local commits, NOT pushed)
+## 2026-11-19 -- Two-agent cycle, PART B (Sonnet): metric-3D contract, covariance, failure semantics (branch `claude/sonnet-metric3d-contract`)
+
+Done + tested (synthetic doubles unless stated): `engine/multiengine/metric3d.py` shared contract `metric3d.v1` + `ingest()` (relative depth /
+SfM gauge / metric-anchored kept distinct; refused records and missing raw artifacts land in the rejected log; unknown versions refused);
+covariance propagated through frame transforms (J S J^T, `canonical.determine`; unavailable when it cannot be propagated); bridge carries
+propagated geometry uncertainty and it round-trips through WorldStore; duplicate job execution no longer doubles the world (`duplicate_execution`
+flag, recorded result returned); refinement reports `new_inference` / `refinement_claim`; damaged snapshot = 500 / `unreadable`, never an empty
+success; enablement gate criteria are file-backed evidence records (still NOT READY, flag still OFF by default); `apps.api` -> `perception`
+boundary violation from #348 re-fixed (it merged before that fix landed).
+
+NOT done / blockers: Gemini producers do not yet emit `metric3d.v1` or persist depth maps (gate: `metric3d_producers_emit_contract`); no furnished
+interior photo run exists; no real region-targeted re-inference in production adapters so no REAL reprocessing has ever run; worker restart,
+timeout and world-version adoption/rollback through the production job not tested here; frontend contract not audited; main CI is red on tests
+that predate this work (None-confidence-default tests, catalogue counts, COLMAP-less runners).
+
+## 2026-11-19 -- Evidence-to-world COMPLETION (branch `claude/sonnet-evidence-world-completion`; merged as #348)
 
 Done + tested: T1/T2 optional `Entity.confidence` (+`confidence_basis`; consumers/exporters audited, `tests/test_worldir_optional_confidence.py`);
 T3 rejected predictions kept raw (`RejectedPrediction`, `/rejected`); T5 real epipolar+appearance pair scorer (`pair_scoring.py`);

@@ -36,6 +36,21 @@ worktree `.claude/worktrees/auto-recon-sprint`)
 | Phase 14 | Quality gates and measured benchmark validation | QUEUED | `quality_gates.py` |
 | Phase 15 | Connect everything to Reality Studio & API | QUEUED | `routes_engines.py` endpoints |
 
+## 2026-11-19 -- Evidence-Driven Universal Fusion, Honest Benchmarking & Catalogue Audit (Gemini)
+
+Resolved all defects in `UniversalFusionPipeline`, removed synthetic generation from `/api/engines/universal-reconstruct`, established an honest 8-dimension audit for the 125-slot catalogue, expanded fine-grained ontology categories, eliminated hardcoded physical benchmark numbers, and coordinated WorldIR contracts with Sonnet.
+
+| Priority | Component | File | Status & Notes |
+|---|---|---|---|
+| Priority 1: UniversalFusion Pipeline Fixes | 14-Stage Multi-Engine Fusion | `engine/multiengine/universal_fusion.py` | Stage 5: unobserved 3D geometry leaves `bounding_box_3d = None` (no fabricated boxes); Stage 6: real pinhole reprojection error, uncalibrated is `None`; Stage 7: preserved `"unidentified"` (no chair default); Stage 8 & 10: correlation-discounted uncertainty and confidence pooling with conflict penalty; Stage 13: quality gates measure actual reprojection error; Stage 14: active capture requests for unobserved 3D geometry and conflicts |
+| Priority 2: Real Reconstruction Endpoint | `/api/engines/universal-reconstruct` | `apps/api/routes_engines.py` | Eliminated synthetic chair / colmap / 0.92 confidence fabrication. Ingests real evidence matrices or executes sequential sessions. Returns honest states: `COMPLETE`, `PARTIAL`, `BLOCKED`, `FAILED` |
+| Priority 3: 125-Slot Catalogue Audit | Target Model Catalogue | `engine/multiengine/catalogue.py` | Added `audit()`: 125 total slots, 94 planned, 26 installed architectures, 6 verified local checkpoints, 21 verified adapters, 4 production-wired engines, 5 blocked engines, 15 licence-restricted, 0 real-data validated |
+| Priority 4: Fine-Grained Ontology Expansion | Universal Object Ontology | `world/ontology/universal_object_ontology.py` | Added fixtures (radiator, thermostat, faucet), architectural elements (column), landscaping (tree, bush), urban infrastructure (fire hydrant, traffic sign, bench), and small items (mug, book) |
+| Priority 5: Physical Room Benchmark Truth | Universal Room Benchmark | `benchmarks/measured_rooms/universal_benchmark.py` | Removed hardcoded 0.012 m RMSE and 0.96 F1. Reports honest `BLOCKED` status when physical photos are missing. Computes real wall RMSE and object F1 when candidate evidence is supplied against `ground_truth.json` without cheating |
+| Priority 6: Coordination with Sonnet | Shared Contract Agreement | `docs/COORDINATION_SONNET_GEMINI.md` | Agreed on Option (B) for WorldIR: `confidence: float | None = None` with explicit `confidence_basis`. Canonical entities preserve supporting observations and reasons. Active capture driven by measured conflicts |
+
+Tests executed: all 150 multiengine and perception unit tests passing (`tests/test_model_catalogue_125.py`, `tests/test_universal_fusion_14_stages.py`, `tests/test_universal_object_ontology.py`, `tests/test_shared_evidence_matrix.py`, etc.); static analysis gate maintained within baseline (Ruff: 4047/4048, Mypy: 1/770); CI test registry in sync.
+
 ## 2026-11-19 -- Universal Perception and World Reconstruction Programme (PR #341, Gemini)
 
 Implemented the 125-slot target model catalogue, append-only shared evidence matrix with filesystem artifact offloading and tamper detection, universal object and subpart ontology, 8-level monotonic spatial hierarchy tree, 14-stage multi-engine universal fusion architecture, and measured-room benchmark harness.

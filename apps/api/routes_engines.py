@@ -76,6 +76,12 @@ class UniversalReconstructRequest(BaseModel):
     target_hierarchy_level: str = Field(
         default="room", description="Target spatial scale (city, building, room, object)"
     )
+    evidence_ids: list[str] = Field(
+        default_factory=list, description="Specific pre-ingested evidence IDs in Evidence Matrix to fuse"
+    )
+    run_sequential_engines: bool = Field(
+        default=True, description="Whether to execute available sequential engines to produce real observations"
+    )
 
 
 @engines_router.get("")
@@ -218,47 +224,98 @@ def execute_reconstruction(req: ReconstructRequest) -> dict[str, Any]:
 
 @engines_router.post("/universal-reconstruct")
 def execute_universal_reconstruction(req: UniversalReconstructRequest) -> dict[str, Any]:
-    """Execute complete 14-stage universal multi-engine reconstruction & fusion."""
-    if not req.sources:
-        raise HTTPException(400, "At least one source image is required.")
+    """Execute complete 14-stage universal multi-engine reconstruction & fusion on real evidence."""
+    if not req.sources and not req.evidence_ids:
+        raise HTTPException(400, "At least one source image or pre-ingested evidence ID is required.")
 
     session_id = req.session_id or f"univ_sess_{uuid.uuid4().hex[:12]}"
     level = SpatialHierarchyLevel(req.target_hierarchy_level)
 
-    # Ingest synthetic/real evidence records for sources into EvidenceMatrixStore
     evidence_entries: list[EvidenceMatrixEntry] = []
-    for idx, src in enumerate(req.sources):
-        eid = f"ev_src_{session_id}_{idx}"
-        art_rel = _SHARED_MATRIX_STORE.save_artifact(
-            evidence_id=eid,
-            filename="source_ref.txt",
-            data=f"Source evidence reference for {src}".encode(),
-        )
-        entry = EvidenceMatrixEntry(
-            evidence_id=eid,
-            model_id="colmap_mvs",
-            architecture_id="colmap",
-            checkpoint_id="colmap_3.11",
-            run_id=session_id,
-            source_ids=[src],
-            input_parameters={"target_class": "chair", "label": "chair"},
-            prediction_type="point_cloud",
-            raw_output_reference=art_rel,
-            coordinate_frame="canonical_world",
-            confidence=0.92,
-        )
-        if eid not in _SHARED_MATRIX_STORE._entries:
-            _SHARED_MATRIX_STORE.add_entry(entry)
-        evidence_entries.append(entry)
 
+    # 1. Gather explicitly requested pre-ingested evidence
+    if req.evidence_ids:
+        for eid in req.evidence_ids:
+            entry = _SHARED_MATRIX_STORE.get_entry(eid)
+            if entry:
+                evidence_entries.append(entry)
+
+    # 2. Gather existing entries for this session or sources
+    existing = _SHARED_MATRIX_STORE.query(run_id=session_id)
+    for entry in existing:
+        if entry not in evidence_entries:
+            evidence_entries.append(entry)
+
+    # 3. If requested and sources provided, run sequential pipeline to obtain real observations
+    if req.run_sequential_engines and req.sources and not evidence_entries:
+        try:
+            _SHARED_PIPELINE.execute_session(
+                job_id=session_id,
+                sources=req.sources,
+                metadata=req.camera_metadata,
+            )
+            # Ingest observations produced by the real pipeline into EvidenceMatrixStore
+            new_obs = _SHARED_STORE.query()
+            for obs in new_obs:
+                if obs.source_id in req.sources or any(s in req.sources for s in obs.source_id.split(",")):
+                    eid = f"ev_obs_{obs.observation_id}"
+                    entry = EvidenceMatrixEntry(
+                        evidence_id=eid,
+                        model_id=obs.engine_id,
+                        architecture_id=obs.engine_id,
+                        checkpoint_id=obs.engine_id,
+                        run_id=session_id,
+                        source_ids=[obs.source_id],
+                        input_parameters=dict(obs.predicted),
+                        prediction_type=obs.quantity,
+                        raw_output_reference=obs.observation_id,
+                        coordinate_frame=obs.coordinate_system,
+                        confidence=obs.confidence,
+                    )
+                    if eid not in _SHARED_MATRIX_STORE._entries:
+                        _SHARED_MATRIX_STORE.add_entry(entry)
+                    evidence_entries.append(entry)
+        except Exception:
+            # Fall through if engines fail or are unavailable
+            pass
+
+    # 4. If no real evidence could be retrieved or produced, report honest BLOCKED state
+    if not evidence_entries:
+        return {
+            "status": "BLOCKED",
+            "success": False,
+            "session_id": session_id,
+            "message": "No evidence entries available for reconstruction. Provide valid pre-ingested evidence_ids or ensure approved engines are installed and available to process source images.",
+            "fidelity_score": 0.0,
+            "quality_gate_passed": False,
+            "total_fused_entities": 0,
+            "hierarchy_tree": {},
+            "stage_results": [],
+            "active_capture_requests": [],
+            "summary_report": {
+                "reason": "Missing evidence; sequential engine execution produced 0 observations or required checkpoints are blocked",
+                "status": "BLOCKED",
+            },
+        }
+
+    # 5. Run the 14-stage universal fusion pipeline
     result = _SHARED_UNIVERSAL_PIPELINE.run(
         session_id=session_id,
         evidence_entries=evidence_entries,
-        camera_metadata=req.camera_metadata or {"cam0": {"intrinsics": [500, 500, 320, 240]}},
+        camera_metadata=req.camera_metadata,
         target_hierarchy_level=level,
     )
 
+    # Determine honest status
+    if not result.success:
+        status = "FAILED"
+    elif result.quality_gate_passed and all(ent.bounding_box_3d is not None for ent in result.fused_entities.values()):
+        status = "COMPLETE"
+    else:
+        status = "PARTIAL"
+
     return {
+        "status": status,
         "success": result.success,
         "session_id": result.session_id,
         "fidelity_score": result.fidelity_score,

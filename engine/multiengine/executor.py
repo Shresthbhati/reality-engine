@@ -35,7 +35,7 @@ from engine.multiengine.contract import (
     EngineSpec,
     Task,
 )
-from engine.multiengine.evidence_matrix import EvidenceContext, EvidenceMatrix, RunRecord
+from engine.multiengine.evidence_matrix import EvidenceContext, EvidenceMatrix, RejectedPrediction, RunRecord
 from engine.multiengine.evidence_store import EvidenceStore
 from engine.multiengine.registry import EngineRegistry
 
@@ -352,6 +352,12 @@ class ExecutionManager:
             if gpu is None
             else f"gpu_available={gpu}, free_vram_mb={'unknown' if free is None else round(free)} at plan time"
         )
+        for r in runs:
+            if r.rejected:
+                warnings.append(
+                    f"{r.engine_id}: {len(r.rejected)} prediction(s) were rejected by observation validation and kept raw "
+                    f"(first: {r.rejected[0]['reason']})"
+                )
         if cancelled:
             warnings.append(
                 f"cancelled before {', '.join(s.engine_id for s in cancelled)} ran; engines that finished were persisted"
@@ -422,8 +428,16 @@ class ExecutionManager:
                     sources=tuple(request.sources),
                     observation_ids=tuple(o.observation_id for o in r.observations),
                     output_artifact=out_uri,
+                    rejected_count=len(r.rejected),
                 )
             )
+            for rj in r.rejected:  # raw rejected predictions are evidence too: kept with the reason, never supporting an entity
+                m.record_rejected(
+                    RejectedPrediction(
+                        run_id=self.run_id, task=task.value, engine_id=r.engine_id, model_version=r.model_version,
+                        index=int(rj["index"]), reason=str(rj["reason"]), draft=rj["draft"], sources=tuple(request.sources),
+                    )
+                )
         for spec in cancelled:
             m.record_run(
                 RunRecord(

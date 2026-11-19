@@ -91,6 +91,19 @@ def test_rows_runs_and_sections_are_exposed_with_failures_preserved(client, tmp_
     assert "not run" in hist[0]["reprocessing"]
 
 
+def test_rejected_predictions_are_exposed_raw_with_their_reason(client, tmp_path):
+    from apps.api.evidence_world_stage import evidence_root
+    from engine.multiengine.evidence_matrix import EvidenceMatrix, RejectedPrediction
+
+    wid = _world(client, A)
+    _seed(tmp_path, "tenant-a", wid)
+    m = EvidenceMatrix(evidence_root("tenant-a", wid, "run-1", base=tmp_path / "ws"))
+    m.record_rejected(RejectedPrediction("run-1", "detection", "det_a", "v1", 3, "non-finite number nan", {"predicted": {"v": "nan"}}))
+    rej = client.get(_url(wid, "run-1", "rejected"), headers=A).json()["rejected"]
+    assert len(rej) == 1 and rej[0]["reason"] == "non-finite number nan" and rej[0]["draft"]["predicted"] == {"v": "nan"}
+    assert client.get(_url(wid, "run-1", "rejected"), headers=B).status_code in (403, 404)
+
+
 def test_artifacts_are_served_only_when_the_run_references_them(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)
@@ -109,7 +122,7 @@ def test_another_tenant_cannot_see_the_world_its_runs_entities_or_artifacts(clie
     ent = client.get(_url(wid, "run-1", "entities"), headers=A).json()["entities"][0]["entity_id"]
     runs = client.get(_url(wid, "run-1", "runs"), headers=A).json()["runs"]
     digest = next(r for r in runs if r["output_artifact"])["output_artifact"].removeprefix("artifact://")
-    paths = ["", "run-1", "run-1/entities", f"run-1/entities/{ent}", "run-1/rows", "run-1/runs", "run-1/associations",
+    paths = ["", "run-1", "run-1/entities", f"run-1/entities/{ent}", "run-1/rows", "run-1/runs", "run-1/rejected", "run-1/associations",
              "run-1/conflicts", "run-1/capture-requests", "run-1/hierarchy", "run-1/refinement", f"run-1/artifacts/{digest}"]
     for path in paths:
         r = client.get(_url(wid, *([path] if path else [])), headers=B)

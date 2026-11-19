@@ -17,7 +17,30 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, FrozenSet, Tuple
 
-from engine.multiengine.observation import EngineObservation, ObservationDraft, make_observation
+from engine.multiengine.observation import (
+    EngineObservation,
+    ObservationDraft,
+    ObservationError,
+    make_observation,
+)
+
+
+def _safe_draft(d: Any) -> dict:
+    """A JSON-safe copy of a raw prediction, preserved as faithfully as possible: non-finite floats become their text
+    ('nan', 'inf') and unsupported values their repr, so the very thing that got a prediction rejected can still be stored."""
+
+    def safe(v: Any) -> Any:
+        if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+            return repr(v)
+        if isinstance(v, (str, int, bool, float)) or v is None:
+            return v
+        if isinstance(v, Mapping):
+            return {str(k): safe(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [safe(x) for x in v]
+        return repr(v)
+
+    return {k: safe(getattr(d, k, None)) for k in getattr(d, "__dataclass_fields__", {})}
 
 
 class Task(str, Enum):
@@ -161,8 +184,11 @@ class EngineErrorKind(str, Enum):
 
 
 class EngineError(Exception):
-    def __init__(self, kind: EngineErrorKind, message: str, *, transient: bool = False):
+    def __init__(
+        self, kind: EngineErrorKind, message: str, *, transient: bool = False, rejected: Tuple[Mapping[str, Any], ...] = ()
+    ):
         super().__init__(message)
+        self.rejected = rejected  # raw rejected predictions that explain this failure (kept, not dropped)
         self.kind = kind
         self.transient = transient or kind is EngineErrorKind.TRANSIENT
 
@@ -212,6 +238,8 @@ class EngineRun:
     fallback: Mapping[str, Any] | None = None
     reproducibility: Mapping[str, Any] = field(default_factory=dict)
     attempts: int = 1
+    # predictions the engine returned that failed observation validation: kept RAW with the reason, never silently dropped
+    rejected: Tuple[Mapping[str, Any], ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -299,16 +327,28 @@ class EngineAdapter(ABC):
                 "max_resolution": request.max_resolution,
                 "seed": request.seed,
             }
-            obs = tuple(
-                make_observation(
-                    d,
-                    engine_id=s.engine_id,
-                    model_version=s.version,
-                    execution_config=cfg,
-                    fallback=fallback,
+            valid: list = []
+            rejected: list = []
+            for i, d in enumerate(drafts):
+                try:
+                    valid.append(
+                        make_observation(
+                            d,
+                            engine_id=s.engine_id,
+                            model_version=s.version,
+                            execution_config=cfg,
+                            fallback=fallback,
+                        )
+                    )
+                except ObservationError as exc:  # one bad prediction must not erase the engine's other predictions
+                    rejected.append({"index": i, "reason": str(exc), "draft": _safe_draft(d)})
+            obs = tuple(valid)
+            if rejected and not obs:
+                raise EngineError(
+                    EngineErrorKind.MODEL_ERROR,
+                    f"all {len(rejected)} prediction(s) were rejected by observation validation; first: {rejected[0]['reason']}",
+                    rejected=tuple(rejected),
                 )
-                for d in drafts
-            )
             vram, ram = self.measured_usage()
             return EngineRun(
                 s.engine_id,
@@ -320,6 +360,7 @@ class EngineAdapter(ABC):
                 fallback=fallback,
                 reproducibility=self.reproducibility(request),
                 attempts=attempts,
+                rejected=tuple(rejected),
             )
         except EngineError as exc:
             return EngineRun(
@@ -332,6 +373,7 @@ class EngineAdapter(ABC):
                 usage=ResourceUsage(time.monotonic() - t0),
                 fallback=fallback,
                 attempts=attempts,
+                rejected=exc.rejected,
             )
         except MemoryError as exc:
             return EngineRun(

@@ -166,9 +166,11 @@ class RunRecord:
     sources: tuple[str, ...] = ()
     observation_ids: tuple[str, ...] = ()
     output_artifact: str | None = None  # artifact:// uri of the run's complete raw output bundle
+    rejected_count: int = 0  # predictions refused by observation validation (kept as RejectedPrediction records)
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "rejected_count": self.rejected_count,
             "run_id": self.run_id, "task": self.task, "engine_id": self.engine_id, "model_version": self.model_version,
             "status": self.status, "architecture_id": self.architecture_id, "checkpoint_id": self.checkpoint_id,
             "device": self.device, "error_kind": self.error_kind, "error": self.error, "wall_s": self.wall_s,
@@ -185,8 +187,35 @@ class RunRecord:
             device=d.get("device"), error_kind=d.get("error_kind"), error=d.get("error", ""), wall_s=d.get("wall_s"),
             peak_vram_mb=d.get("peak_vram_mb"), attempts=d.get("attempts", 1), fallback=d.get("fallback"),
             sources=tuple(d.get("sources") or ()), observation_ids=tuple(d.get("observation_ids") or ()),
-            output_artifact=d.get("output_artifact"),
+            output_artifact=d.get("output_artifact"), rejected_count=d.get("rejected_count", 0),
         )
+
+
+@dataclass(frozen=True)
+class RejectedPrediction:
+    """A prediction an engine returned that failed observation validation (non-finite number, missing frame, bad region, ...).
+    It is not an observation, so it can never support an entity -- but it is evidence of what the engine said and why it was refused,
+    so it is kept raw and append-only."""
+
+    run_id: str
+    task: str
+    engine_id: str
+    model_version: str
+    index: int  # position among the engine's returned predictions
+    reason: str
+    draft: Mapping[str, Any]  # the raw prediction, JSON-safe (non-finite numbers as text)
+    sources: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id, "task": self.task, "engine_id": self.engine_id, "model_version": self.model_version,
+            "index": self.index, "reason": self.reason, "draft": dict(self.draft), "sources": list(self.sources),
+        }
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> RejectedPrediction:
+        return cls(d["run_id"], d["task"], d["engine_id"], d["model_version"], d["index"], d["reason"],
+                   d.get("draft") or {}, tuple(d.get("sources") or ()))
 
 
 @dataclass(frozen=True)
@@ -210,6 +239,7 @@ class EvidenceMatrix:
         self._ctx: dict[str, EvidenceContext] = {}
         self._history: dict[str, list[StatusEvent]] = {}
         self._runs: list[RunRecord] = []
+        self._rejected: list[RejectedPrediction] = []
         self._lock = threading.RLock()
         self._log = self._root / "context.jsonl" if self._root else None
         if self._log is not None and self._log.exists():
@@ -256,6 +286,14 @@ class EvidenceMatrix:
                 raise MatrixError(f"run output artifact {run.output_artifact!r} is not in the artifact store")
             self._runs.append(run)
             self._append({"type": "run", **run.to_dict()})
+
+    def record_rejected(self, rej: RejectedPrediction) -> None:
+        with self._lock:
+            self._rejected.append(rej)
+            self._append({"type": "rejected", **rej.to_dict()})
+
+    def rejected(self, run_id: str | None = None) -> list[RejectedPrediction]:
+        return [r for r in self._rejected if run_id is None or r.run_id == run_id]
 
     def runs(self, run_id: str | None = None) -> list[RunRecord]:
         return [r for r in self._runs if run_id is None or r.run_id == run_id]
@@ -366,6 +404,8 @@ class EvidenceMatrix:
                     self._history.setdefault(ctx.observation_id, [])
                 elif kind == "run":
                     self._runs.append(RunRecord.from_dict(rec))
+                elif kind == "rejected":
+                    self._rejected.append(RejectedPrediction.from_dict(rec))
                 elif kind == "status":
                     if rec["status"] not in STATUSES or rec["observation_id"] not in self._ctx:
                         raise MatrixError("status record for an unknown row or status")

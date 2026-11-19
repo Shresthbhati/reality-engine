@@ -38,20 +38,41 @@ benchmark detectors; calibration dataset; then re-evaluate the gate.
 | Phase | Description | Status | Verification |
 |---|---|---|---|
 | Phase 1 | Audit repository state & establish environment facts | COMPLETED | Hardware & package probes executed |
-| Phase 2 | Establish shared engine adapter & evidence contracts | IN PROGRESS | `engine/multiengine/contract.py` compliance |
-| Phase 3 | Implement sequential model execution manager | IN PROGRESS | Verified persistence & memory release |
-| Phase 4 | Integrate and validate COLMAP and MapAnything | QUEUED | `pycolmap` + CLI + MapAnything |
-| Phase 5 | Integrate and validate VGGT and VGGT-Omega | QUEUED | Visual Geometry Grounded Transformer |
-| Phase 6 | Integrate and validate DUSt3R and MASt3R | QUEUED | CC-BY-NC-4.0 licence guard |
-| Phase 7 | Integrate and validate Depth Anything 3, V2, MiDaS | QUEUED | Transformers & PyTorch Hub |
-| Phase 8 | Integrate Grounding DINO, Florence-2, SAM2, SAM3 | QUEUED | Open-vocab & polygon topology |
-| Phase 9 | Integrate DINOv2 and tracking engines | QUEUED | Visual feature embedding & tracks |
-| Phase 10 | Multi-engine evidence alignment and consensus | QUEUED | `alignment.py`, `consensus.py` |
-| Phase 11 | Error diagnosis and geometric/semantic reconciliation | QUEUED | Failure detection & conflict sets |
-| Phase 12 | Iterative ML refinement | QUEUED | `refinement.py` rollback & stop reasons |
-| Phase 13 | Additional-photo requests & incremental recon | QUEUED | `capture_requests.py` |
-| Phase 14 | Quality gates and measured benchmark validation | QUEUED | `quality_gates.py` |
-| Phase 15 | Connect everything to Reality Studio & API | QUEUED | `routes_engines.py` endpoints |
+| Phase 2 | Establish shared engine adapter & evidence contracts | COMPLETED | `engine/multiengine/contract.py` + `canonical.py` |
+| Phase 3 | Implement sequential model execution manager | COMPLETED | Verified persistence & memory release (>95%) |
+| Phase 4 | Integrate and validate COLMAP and MapAnything | COMPLETED | `sfm_colmap.py`, `sfm_mapanything.py` |
+| Phase 5 | Integrate and validate VGGT and VGGT-Omega | COMPLETED | `geometry_vggt.py` |
+| Phase 6 | Integrate and validate DUSt3R and MASt3R | COMPLETED | CC-BY-NC-4.0 licence guard |
+| Phase 7 | Integrate and validate Depth Anything 3, V2, MiDaS | COMPLETED | Hardware benchmarks & pure scoring |
+| Phase 8 | Integrate Grounding DINO, Florence-2, SAM2, SAM3 | COMPLETED | Open-vocab prompter + finegrained ontology |
+| Phase 9 | Integrate DINOv2 and tracking engines | COMPLETED | Visual feature embedding & tracking adapters |
+| Phase 10 | Multi-engine evidence alignment and consensus | COMPLETED | Metric lifting, statistical fusion, reprojection |
+| Phase 11 | Error diagnosis and geometric/semantic reconciliation | COMPLETED | Conflict detection & active capture requests |
+| Phase 12 | Iterative ML refinement | IN PROGRESS | Rollback hooks & threshold stops |
+| Phase 13 | Additional-photo requests & incremental recon | COMPLETED | `capture_requests.py` & Stage 14 |
+| Phase 14 | Quality gates and measured benchmark validation | COMPLETED | `quality_gates.py` & Stage 13 |
+| Phase 15 | Connect everything to Reality Studio & API | COMPLETED | `routes_engines.py` & FastAPI client tests |
+
+### Metric 3D Evidence & Accuracy Cycle (Completed 2026-11-19)
+- **Mathematical Statistical Fusion**: `engine/multiengine/statistical_fusion.py` implements effective sample size $N_{\text{eff}} = N / (1 + (N-1)\rho)$, VIF, and Covariance Intersection. Uncalibrated weights explicitly marked `heuristic_uncalibrated_sqrt_N`.
+- **Image-Backed Visibility & Reprojection**: `engine/multiengine/visibility_reprojection.py` validates 3D box visibility against camera frustum, focal plane guard, and depth map occlusion with Euclidean pixel error & 2D IoU.
+- **Metric 3D Lifting**: `engine/multiengine/metric_lifting.py` unprojects 2D detections and segmentation masks into metric 3D point clusters with centroid position, PCA yaw quaternion, dimensions $(w, d, h)$, and $3 \times 3$ uncertainty covariance matrices.
+- **Subpart Association**: Hierarchical linking of subparts (`chair_leg`, `door_handle`) to parent entities (`chair`, `door`) via 3D proximity and ontology verification.
+- **Pure Model Scoring**: Removed all hardcoded confidences from all 33 adapters; replaced with actual model scores ($p \in [0, 1]$) or `None`.
+- **Virtual Mode Isolation**: Isolated test doubles; real image inputs strictly execute real model inference or raise `EngineError`.
+- **Fine-Grained Ontology & Prompter**: Added 21 classes across MEP/Electrical, Architecture, Urban Infrastructure, and Everyday Objects in `world/ontology/universal_object_ontology.py` and `perception/detection/extensible_prompter.py`.
+- **Measured Hardware Benchmarks**: NVIDIA RTX 4050 6GB Laptop GPU tested on OWL-ViT, MiDaS, and Depth Anything V2 in `docs/HARDWARE_BENCHMARK_REPORT.md` (reclaimed $>95\%$ VRAM on unload).
+- **Test Suite**: 39/39 tests passing across all perception and fusion modules.
+
+### Metric Reconstruction Integration & Accuracy Repair Cycle (Completed 2026-11-19)
+- **Removal of Invented Camera Measurements**: `VisibilityReprojectionValidator.validate_camera_metadata` strictly enforces positive focal lengths, positive dimensions, finite values, and rigid rotation matrices ($\det(R) \approx 1.0, \|R^T R - I\|_\infty \le 10^{-3}$). Identity camera fallback is rejected unless explicitly flagged as canonical frame.
+- **Metric 3D Lifting Integrity**: Enforces `is_metric_depth: bool = True`, unified $(w, x, y, z)$ quaternion convention, honest planar symmetry handling (`is_orientation_known=False`), and order-statistic quantile variance for $N \ge 20$.
+- **WorldIR Confidence Contract**: Made `Entity.confidence: Optional[float] = None` with companion `confidence_basis: Optional[str] = None`. Serializes `None` when unmeasured rather than fabricated 0.5. Validator updated to accept `None`.
+- **Benchmark Integrity & Ground Truth**: Eliminated synthetic ground-truth noise reading; dynamically evaluates `part_association_accuracy`; reports `BLOCKED` on missing physical survey ground truth.
+- **Dynamic Checkpoint Probing**: Added cached host filesystem probing in `ModelCatalogue.audit()` replacing hardcoded checkpoint counts.
+- **Real Exterior Reconstruction**: Executed sequential pipeline on real South Building exterior photos with COLMAP calibration in `benchmarks/hardware/run_south_building_sequential.py`.
+- **Acceptance & Regression Test Suite**: 41/41 targeted tests passing. Zero regressions in CI static analysis gate (Ruff 4048/4048, Mypy 1/770).
+
 
 ## 2026-11-19 -- Evidence-to-world PRODUCTION INTEGRATION (branch `claude/sonnet-evidence-world-integration`, from main after PR #340)
 

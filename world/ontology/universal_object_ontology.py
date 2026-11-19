@@ -552,6 +552,247 @@ class UniversalObjectOntology:
                 default_material="wood_or_metal",
             )
         )
+        # 7. Additional MEP, Electrical & Plumbing Fixtures
+        self.register_class(
+            OntologyClass(
+                class_name="fuse_box",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["breaker panel", "electrical panel", "distribution board"],
+                allowed_parts=["enclosure", "door", "breaker_switch", "bus_bar"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.40, 0.15, 0.60),
+                default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="conduit",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["electrical conduit", "cable raceway", "wire duct"],
+                allowed_parts=["pipe_body", "connector", "hanger"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.05, 2.00, 0.05),
+                default_material="pvc_or_metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="junction_box",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["electrical junction box", "terminal box"],
+                allowed_parts=["box_cover", "mounting_screw"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.12, 0.08, 0.12),
+                default_material="plastic_or_metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="smoke_detector",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["fire alarm", "smoke alarm"],
+                allowed_parts=["sensor_housing", "test_button", "indicator_led"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.14, 0.05, 0.14),
+                default_material="plastic",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="water_meter",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["flow meter", "water flow meter"],
+                allowed_parts=["meter_dial", "pipe_inlet", "pipe_outlet"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.20, 0.15, 0.20),
+                default_material="brass_or_metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="shutoff_valve",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["ball valve", "stopcock", "gate valve"],
+                allowed_parts=["valve_handle", "valve_body"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.10, 0.08, 0.12),
+                default_material="brass",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="plumbing_pipe",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["water pipe", "drain pipe"],
+                allowed_parts=["pipe_segment", "elbow_joint", "tee_joint"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.06, 2.50, 0.06),
+                default_material="copper_or_pvc",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="hvac_duct",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["air duct", "ventilation duct"],
+                allowed_parts=["duct_trunk", "duct_hanger", "damper"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.40, 2.00, 0.30),
+                default_material="galvanized_steel",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="air_diffuser",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["vent grille", "ac vent", "air register"],
+                allowed_parts=["louver_slats", "frame"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.30, 0.05, 0.30),
+                default_material="aluminum",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="drain",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["floor drain", "waste drain"],
+                allowed_parts=["grate", "strainer"],
+                expected_relations=[SpatialRelationType.HOSTED_BY],
+                typical_dimensions_m=(0.15, 0.15, 0.05),
+                default_material="chrome_or_pvc",
+            )
+        )
+
+        # 8. Architectural Details & Infrastructure
+        self.register_class(
+            OntologyClass(
+                class_name="beam",
+                category=ObjectCategory.BUILDING_ELEMENT,
+                synonyms=["structural beam", "ceiling beam", "joist", "girder"],
+                allowed_parts=["flange", "web"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.30, 4.00, 0.40),
+                default_material="steel_or_timber",
+                is_structural=True,
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="door_handle",
+                category=ObjectCategory.BUILDING_ELEMENT,
+                synonyms=["doorknob", "door lever", "lever handle"],
+                allowed_parts=["escutcheon", "lever"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.15, 0.08, 0.06),
+                default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="door_frame",
+                category=ObjectCategory.BUILDING_ELEMENT,
+                synonyms=["door casing", "door jamb"],
+                allowed_parts=["jamb", "header", "casing"],
+                expected_relations=[SpatialRelationType.HOSTED_BY, SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.95, 0.12, 2.15),
+                default_material="wood_or_metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="skirting_board",
+                category=ObjectCategory.BUILDING_ELEMENT,
+                synonyms=["baseboard", "mopboard"],
+                allowed_parts=["profile"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.02, 3.00, 0.10),
+                default_material="wood",
+            )
+        )
+
+        # 9. Street & Outdoor Infrastructure
+        self.register_class(
+            OntologyClass(
+                class_name="bollard",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["traffic bollard", "security post"],
+                allowed_parts=["post_body", "cap", "reflector"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.20, 0.20, 0.90),
+                default_material="steel_or_concrete",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="manhole_cover",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["sewer cover", "drain cover", "utility hole"],
+                allowed_parts=["cover_plate", "frame_ring"],
+                expected_relations=[SpatialRelationType.HOSTED_BY],
+                typical_dimensions_m=(0.65, 0.65, 0.08),
+                default_material="cast_iron",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="trash_can",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["garbage bin", "waste bin", "litter bin"],
+                allowed_parts=["bin_body", "lid", "liner"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(0.45, 0.45, 0.85),
+                default_material="metal_or_plastic",
+                is_container=True,
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="curb",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["road curb", "pavement kerb"],
+                allowed_parts=["curb_stone"],
+                expected_relations=[SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(0.15, 1.00, 0.25),
+                default_material="concrete_or_granite",
+            )
+        )
+
+        # 10. Everyday Tech & Personal Objects
+        self.register_class(
+            OntologyClass(
+                class_name="smartphone",
+                category=ObjectCategory.EVERYDAY_OBJECT,
+                synonyms=["mobile phone", "cell phone", "iphone", "android phone"],
+                allowed_parts=["screen", "body", "camera_bump"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.HOSTED_BY],
+                typical_dimensions_m=(0.075, 0.01, 0.15),
+                default_material="glass_and_aluminum",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="laptop",
+                category=ObjectCategory.EVERYDAY_OBJECT,
+                synonyms=["notebook", "macbook", "laptop computer"],
+                allowed_parts=["screen", "keyboard", "trackpad", "lid"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.HOSTED_BY],
+                typical_dimensions_m=(0.32, 0.22, 0.02),
+                default_material="aluminum",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="water_bottle",
+                category=ObjectCategory.EVERYDAY_OBJECT,
+                synonyms=["flask", "drink bottle"],
+                allowed_parts=["bottle_body", "cap"],
+                expected_relations=[SpatialRelationType.SUPPORTS],
+                typical_dimensions_m=(0.08, 0.08, 0.25),
+                default_material="stainless_steel_or_plastic",
+                is_container=True,
+            )
+        )
 
     def register_class(self, cls: OntologyClass) -> None:
         name = cls.class_name.lower()
@@ -579,7 +820,17 @@ class UniversalObjectOntology:
         canonical = self.resolve_class_name(parent_class)
         if not canonical:
             return False
-        return (canonical, part_name.lower()) in self._parts
+        p_name = part_name.lower().strip()
+        if p_name.startswith(f"{canonical}_"):
+            p_name = p_name[len(canonical) + 1:]
+        if (canonical, p_name) in self._parts:
+            return True
+        # Check singular/plural
+        if p_name.endswith("s") and (canonical, p_name[:-1]) in self._parts:
+            return True
+        if not p_name.endswith("s") and (canonical, p_name + "s") in self._parts:
+            return True
+        return False
 
     def get_parts(self, parent_class: str) -> list[OntologyPart]:
         canonical = self.resolve_class_name(parent_class)

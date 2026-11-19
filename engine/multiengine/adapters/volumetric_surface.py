@@ -78,7 +78,12 @@ class Open3DTSDFEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._volume is None:
+        if not virtual_run and self._volume is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             drafts.append(
                 ObservationDraft(
                     task="mvs",
@@ -90,9 +95,10 @@ class Open3DTSDFEngineAdapter(BaseModelEngineAdapter):
                         "num_faces": 28100,
                         "is_watertight": True,
                         "voxel_size_m": self.voxel_length_m,
+                        "is_test_double": True,
                     },
                     original_coordinates={"volume": "scalable_tsdf"},
-                    confidence=0.94,
+                    confidence=None,
                 )
             )
             return drafts
@@ -156,7 +162,7 @@ class Open3DTSDFEngineAdapter(BaseModelEngineAdapter):
                     "vertices": len(mesh.vertices),
                     "triangles": len(mesh.triangles),
                 },
-                confidence=0.95,
+                confidence=None,
             )
         )
 

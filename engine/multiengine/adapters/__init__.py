@@ -6,8 +6,6 @@ segmentation, and tracking disciplines.
 
 from __future__ import annotations
 
-from typing import Dict
-
 from engine.multiengine.adapters.appearance_tracking import (
     Dinov2EngineAdapter,
     TrackingEngineAdapter,
@@ -17,9 +15,11 @@ from engine.multiengine.adapters.appearance_tracking import (
 from engine.multiengine.adapters.base import BaseModelEngineAdapter
 from engine.multiengine.adapters.depth_adapters import (
     DepthAnythingV2EngineAdapter,
+    DepthAnythingV2MetricEngineAdapter,
     DepthAnythingV3EngineAdapter,
     MidasEngineAdapter,
     probe_depth_anything_v2,
+    probe_depth_anything_v2_metric,
     probe_depth_anything_v3,
     probe_midas,
 )
@@ -35,6 +35,7 @@ from engine.multiengine.adapters.geometry_vggt import (
     probe_vggt,
     probe_vggt_omega,
 )
+from engine.multiengine.adapters.metric_3d_lifter import Metric3DLifterAdapter
 from engine.multiengine.adapters.perception_detectors import (
     Florence2EngineAdapter,
     GroundingDinoEngineAdapter,
@@ -58,9 +59,9 @@ from engine.multiengine.contract import EngineAdapter
 from engine.multiengine.registry import EngineRegistry
 
 
-def create_adapters_for_registry(reg: EngineRegistry) -> Dict[str, EngineAdapter]:
+def create_adapters_for_registry(reg: EngineRegistry) -> dict[str, EngineAdapter]:
     """Instantiate concrete EngineAdapter objects for every registered engine specification."""
-    adapters: Dict[str, EngineAdapter] = {}
+    adapters: dict[str, EngineAdapter] = {}
 
     mapping = {
         "colmap": ColmapEngineAdapter,
@@ -82,6 +83,7 @@ def create_adapters_for_registry(reg: EngineRegistry) -> Dict[str, EngineAdapter
         "dinov2": Dinov2EngineAdapter,
         "tracking": TrackingEngineAdapter,
         "open3d_tsdf": Open3DTSDFEngineAdapter,
+        "metric_3d_lifter": Metric3DLifterAdapter,
     }
 
     for spec in reg.all():
@@ -102,6 +104,7 @@ __all__ = [
     "Mast3rEngineAdapter",
     "DepthAnythingV3EngineAdapter",
     "DepthAnythingV2EngineAdapter",
+    "DepthAnythingV2MetricEngineAdapter",
     "MidasEngineAdapter",
     "GroundingDinoEngineAdapter",
     "Florence2EngineAdapter",
@@ -112,6 +115,7 @@ __all__ = [
     "Dinov2EngineAdapter",
     "TrackingEngineAdapter",
     "Open3DTSDFEngineAdapter",
+    "Metric3DLifterAdapter",
     "create_adapters_for_registry",
     "probe_mapanything",
     "probe_vggt",
@@ -120,6 +124,7 @@ __all__ = [
     "probe_mast3r",
     "probe_depth_anything_v3",
     "probe_depth_anything_v2",
+    "probe_depth_anything_v2_metric",
     "probe_midas",
     "probe_grounding_dino",
     "probe_florence2",

@@ -20,7 +20,7 @@ from world_ir.validation import validate_world_ir
 from world_ir.world_v1 import WorldIR
 from worldstore.store import WorldStore
 
-BASIS = {"kind": "calibrated", "dataset": "synthetic-v1", "method": "isotonic", "version": "1.0"}
+BASIS = "calibrated:synthetic-v1:isotonic:1.0"
 
 
 def _bridge_world() -> WorldIR:
@@ -34,10 +34,10 @@ def _bridge_world() -> WorldIR:
 
 
 def _with_others(w: WorldIR) -> WorldIR:
-    w.entities["ent-legacy"] = Entity(id="ent-legacy", type=EntityType.FURNITURE, provenance=Provenance.OBSERVED)  # default 0.5
+    w.entities["ent-legacy"] = Entity(id="ent-legacy", type=EntityType.FURNITURE, provenance=Provenance.OBSERVED, confidence=0.5)
     w.entities["ent-measured"] = Entity(
         id="ent-measured", type=EntityType.FURNITURE, provenance=Provenance.OBSERVED, confidence=0.8,
-        confidence_basis=dict(BASIS),
+        confidence_basis=BASIS,
     )
     return w
 
@@ -60,11 +60,11 @@ def test_none_and_basis_round_trip_and_legacy_worlds_load_unchanged():
 
 def test_migration_a_world_saved_before_the_field_existed_still_loads():
     legacy = Entity(id="e", type=EntityType.FURNITURE).to_dict()
-    assert Entity.from_dict(legacy).confidence == 0.5 and Entity.from_dict(legacy).confidence_basis is None
+    assert Entity.from_dict(legacy).confidence is None and Entity.from_dict(legacy).confidence_basis is None
     no_key = dict(legacy)
     del no_key["confidence"]  # an even older record with no confidence key at all
-    assert Entity.from_dict(no_key).confidence == 0.5  # a MISSING key keeps the old default...
-    assert Entity.from_dict(dict(legacy, confidence=None)).confidence is None  # ...an explicit null means "not measured"
+    assert Entity.from_dict(no_key).confidence is None  # missing or null both mean "not measured" under the merged contract
+    assert Entity.from_dict(dict(legacy, confidence=0.7)).confidence == 0.7
 
 
 def test_world_store_saves_verifies_and_reloads_none_confidence(tmp_path):

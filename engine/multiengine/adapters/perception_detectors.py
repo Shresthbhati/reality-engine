@@ -135,7 +135,12 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             # Calibrated test double path
             for s in sources:
                 drafts.append(
@@ -150,9 +155,10 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
                             "score": 0.88,
                             "box_normalized": [0.05, 0.05, 0.20, 0.30],
                             "scale_tier": "meso",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [50, 50, 200, 300]},
-                        confidence=0.88,
+                        confidence=None,
                     )
                 )
                 drafts.append(
@@ -167,9 +173,10 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
                             "score": 0.82,
                             "box_normalized": [0.30, 0.10, 0.34, 0.14],
                             "scale_tier": "micro",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [300, 100, 340, 140]},
-                        confidence=0.82,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -177,7 +184,13 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
+        payload_queries = request.payload.get("queries") if request.payload else None
+        if payload_queries and isinstance(payload_queries, list):
+            prompt_text = ". ".join(str(q).strip().rstrip(".") for q in payload_queries) + "."
+        else:
+            prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
+
+        thresh = float(request.payload.get("threshold", 0.25)) if request.payload else 0.25
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:
@@ -189,15 +202,25 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
             with torch.no_grad():
                 outputs = self._model(**inputs)
 
-            results = self._processor.post_process_grounded_object_detection(
-                outputs,
-                inputs.input_ids,
-                box_threshold=0.35,
-                text_threshold=0.25,
-                target_sizes=[(h, w)],
-            )[0]
+            try:
+                results = self._processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs["input_ids"],
+                    threshold=thresh,
+                    text_threshold=0.20,
+                    target_sizes=[(h, w)],
+                )[0]
+            except TypeError:
+                results = self._processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs["input_ids"],
+                    box_threshold=thresh,
+                    text_threshold=0.20,
+                    target_sizes=[(h, w)],
+                )[0]
 
-            for box, score, label in zip(results["boxes"], results["scores"], results["labels"]):
+            labels = results.get("text_labels", results.get("labels", []))
+            for box, score, label in zip(results["boxes"], results["scores"], labels):
                 b = [float(x) for x in box]
                 norm_b = [b[0] / w, b[1] / h, b[2] / w, b[3] / h]
                 drafts.append(
@@ -257,7 +280,12 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -271,9 +299,10 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                             "score": 0.94,
                             "box_normalized": [0.10, 0.15, 0.45, 0.60],
                             "caption": "a modern three-seater fabric sofa",
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [100, 150, 450, 600]},
-                        confidence=0.94,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -318,7 +347,7 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                             "box_normalized": [b[0] / w, b[1] / h, b[2] / w, b[3] / h],
                         },
                         original_coordinates={"box_xyxy_px": b},
-                        confidence=0.91,
+                        confidence=None,
                     )
                 )
 
@@ -362,7 +391,12 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -375,9 +409,10 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
                             "label": "table",
                             "score": 0.89,
                             "box_normalized": [0.12, 0.08, 0.30, 0.24],
+                            "is_test_double": True,
                         },
                         original_coordinates={"box_xyxy_px": [120, 80, 300, 240]},
-                        confidence=0.89,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -385,7 +420,12 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
+        payload_queries = request.payload.get("queries") if request.payload else None
+        if payload_queries and isinstance(payload_queries, list):
+            prompts = [str(q) for q in payload_queries]
+        else:
+            prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
+        thresh = float(request.payload.get("threshold", 0.05)) if request.payload else 0.05
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:
@@ -398,7 +438,7 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
                 outputs = self._model(**inputs)
 
             results = self._processor.post_process_grounded_object_detection(
-                outputs=outputs, target_sizes=torch.tensor([[h, w]]).to(dev_str), threshold=0.15
+                outputs=outputs, target_sizes=torch.tensor([[h, w]]).to(dev_str), threshold=thresh
             )[0]
 
             for box, score, label_idx in zip(

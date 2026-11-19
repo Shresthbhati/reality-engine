@@ -89,6 +89,30 @@ def probe_depth_anything_v2() -> Availability:
     )
 
 
+def probe_depth_anything_v2_metric() -> Availability:
+    """Honest availability probe for Depth Anything V2 Metric."""
+    if (
+        importlib.util.find_spec("transformers") is None
+        or importlib.util.find_spec("torch") is None
+    ):
+        return Availability(
+            AvailabilityStatus.BLOCKED,
+            "transformers and torch are required for Depth Anything V2 Metric",
+            "install torch and transformers",
+        )
+    if not _is_hf_cached("depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"):
+        return Availability(
+            AvailabilityStatus.BLOCKED,
+            "dependencies present, but Depth Anything V2 Metric weights are not cached in Hugging Face cache",
+            "huggingface-cli download depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
+        )
+    return Availability(
+        AvailabilityStatus.AVAILABLE,
+        "transformers and cached weights verified for Depth Anything V2 Metric",
+        evidence=("Depth-Anything-V2-Metric-Indoor-Small-hf cached",),
+    )
+
+
 def probe_midas() -> Availability:
     """Honest availability probe for MiDaS."""
     from perception.availability import real_models_by_name
@@ -144,11 +168,16 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 w, h = 640, 480
                 raw_depth = np.linspace(1.0, 5.0, w, dtype=np.float32)
-                np.tile(raw_depth, (h, 1))
+                arr = np.tile(raw_depth, (h, 1))
                 drafts.append(
                     ObservationDraft(
                         task="depth",
@@ -156,19 +185,22 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
                         source_id=str(s),
                         coordinate_system=f"cam:{Path(str(s)).stem}",
                         predicted={
+                            "array": arr,
                             "depth_min_m": 1.0,
                             "depth_max_m": 5.0,
                             "depth_mean_m": 3.0,
                             "width": w,
                             "height": h,
-                            "scale_state": "relative",
+                            "scale_state": "RELATIVE_UNSCALED",
+                            "is_metric_depth": False,
+                            "is_test_double": True,
                         },
                         original_coordinates={
                             "raw_min": 1.0,
                             "raw_max": 5.0,
                             "shape": [h, w],
                         },
-                        confidence=0.92,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -176,21 +208,35 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
+        is_metric = "metric" in self.checkpoint.lower()
+        scale_state = "METRIC_CALIBRATED" if is_metric else "RELATIVE_UNSCALED"
+        is_metric_depth = bool(is_metric)
+
         for s in sources:
             img = Image.open(s).convert("RGB")
             if request.max_resolution:
                 img.thumbnail((request.max_resolution, request.max_resolution))
 
+            orig_w, orig_h = img.size
             inputs = self._processor(images=img, return_tensors="pt")
             dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}
 
             with torch.no_grad():
                 outputs = self._model(**inputs)
-                pred = outputs.predicted_depth.squeeze().cpu().numpy()
+                pred_t = outputs.predicted_depth
+                if pred_t.ndim == 2:
+                    pred_t = pred_t.unsqueeze(0).unsqueeze(0)
+                elif pred_t.ndim == 3:
+                    pred_t = pred_t.unsqueeze(1)
+                pred_interp = torch.nn.functional.interpolate(
+                    pred_t, size=(orig_h, orig_w), mode="bilinear", align_corners=False
+                ).squeeze().cpu().numpy()
 
-            d_min = float(np.min(pred))
-            d_max = float(np.max(pred))
+            d_min = float(np.min(pred_interp))
+            d_max = float(np.max(pred_interp))
+            d_mean = float(np.mean(pred_interp))
+
             drafts.append(
                 ObservationDraft(
                     task="depth",
@@ -198,23 +244,35 @@ class DepthAnythingV2EngineAdapter(BaseModelEngineAdapter):
                     source_id=str(s),
                     coordinate_system=f"cam:{Path(str(s)).stem}",
                     predicted={
+                        "array": pred_interp,
                         "depth_min_m": d_min,
                         "depth_max_m": d_max,
-                        "depth_mean_m": float(np.mean(pred)),
-                        "width": int(pred.shape[1]),
-                        "height": int(pred.shape[0]),
-                        "scale_state": "relative",
+                        "depth_mean_m": d_mean,
+                        "width": orig_w,
+                        "height": orig_h,
+                        "scale_state": scale_state,
+                        "is_metric_depth": is_metric_depth,
                     },
                     original_coordinates={
                         "raw_min": d_min,
                         "raw_max": d_max,
-                        "shape": list(pred.shape),
+                        "shape": [orig_h, orig_w],
+                        "raw_feature_shape": list(outputs.predicted_depth.shape),
                     },
-                    confidence=0.93,
+                    confidence=None,
                 )
             )
 
         return drafts
+
+
+class DepthAnythingV2MetricEngineAdapter(DepthAnythingV2EngineAdapter):
+    """Adapter for Depth Anything V2 Indoor Metric depth estimation."""
+
+    DEFAULT_CHECKPOINT = "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"
+
+    def __init__(self, spec: EngineSpec) -> None:
+        super().__init__(spec, checkpoint=self.DEFAULT_CHECKPOINT)
 
 
 class DepthAnythingV3EngineAdapter(DepthAnythingV2EngineAdapter):
@@ -260,7 +318,12 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -275,9 +338,10 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                             "width": 640,
                             "height": 480,
                             "scale_state": "relative",
+                            "is_test_double": True,
                         },
                         original_coordinates={"raw_format": "inverse_depth"},
-                        confidence=0.86,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -318,7 +382,7 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                         "scale_state": "relative",
                     },
                     original_coordinates={"raw_min": d_min, "raw_max": d_max},
-                    confidence=0.88,
+                    confidence=None,
                 )
             )
 

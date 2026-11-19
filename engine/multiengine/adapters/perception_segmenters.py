@@ -82,15 +82,22 @@ class SamEngineAdapter(BaseModelEngineAdapter):
         from segment_anything import SamPredictor, sam_model_registry
 
         dev_str = "cuda:0" if device.kind == "cuda" else "cpu"
+        ckpt_path = self.checkpoint
+        if not Path(ckpt_path).exists():
+            # Check standard torch hub cache
+            cached = Path.home() / ".cache" / "torch" / "hub" / "checkpoints" / "sam_vit_b_01ec64.pth"
+            if cached.exists():
+                ckpt_path = str(cached)
+
         try:
-            sam = sam_model_registry["vit_b"](checkpoint=self.checkpoint)
+            sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
             sam.to(dev_str).eval()
             self._predictor = SamPredictor(sam)
             self._model = sam
         except Exception as e:
             raise EngineError(
                 EngineErrorKind.MISSING_CHECKPOINT,
-                f"Failed to load SAM weights {self.checkpoint}: {e}",
+                f"Failed to load SAM weights {ckpt_path}: {e}",
             ) from e
 
     def infer(self, request: EngineRequest) -> Sequence[ObservationDraft]:
@@ -98,7 +105,12 @@ class SamEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._predictor is None:
+        if not virtual_run and self._predictor is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 drafts.append(
                     ObservationDraft(
@@ -112,9 +124,10 @@ class SamEngineAdapter(BaseModelEngineAdapter):
                             "num_holes": 0,
                             "exterior_vertices": 48,
                             "is_convex": False,
+                            "is_test_double": True,
                         },
                         original_coordinates={"prompt_box": [50, 50, 200, 300]},
-                        confidence=0.95,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -130,11 +143,14 @@ class SamEngineAdapter(BaseModelEngineAdapter):
 
             # Query boxes from request payload if available, else center box
             h, w = image.shape[:2]
-            boxes = request.payload.get(
-                "boxes", [[int(w * 0.2), int(h * 0.2), int(w * 0.8), int(h * 0.8)]]
-            )
+            if "boxes" in request.payload:
+                boxes = request.payload["boxes"]
+            else:
+                boxes = [[int(w * 0.2), int(h * 0.2), int(w * 0.8), int(h * 0.8)]]
 
             for b in boxes:
+                if len(b) < 4:
+                    continue
                 box_np = np.array(b)
                 masks, scores, _ = self._predictor.predict(box=box_np, multimask_output=False)
                 mask = masks[0].astype(np.uint8)
@@ -148,6 +164,7 @@ class SamEngineAdapter(BaseModelEngineAdapter):
                     num_holes = int(np.sum(hierarchy[0, :, 3] >= 0))
 
                 area = float(np.sum(mask))
+                is_valid_area = bool(16 <= area <= 0.98 * w * h)
                 drafts.append(
                     ObservationDraft(
                         task="segmentation",
@@ -156,10 +173,12 @@ class SamEngineAdapter(BaseModelEngineAdapter):
                         coordinate_system=f"image:{Path(str(s)).stem}",
                         image_region=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
                         predicted={
+                            "mask": mask,
                             "net_area_px": area,
                             "num_holes": num_holes,
                             "exterior_vertices": len(contours[0]) if contours else 0,
                             "mask_score": float(scores[0]),
+                            "is_valid_area": is_valid_area,
                         },
                         original_coordinates={"box": b, "mask_shape": list(mask.shape)},
                         confidence=float(scores[0]),

@@ -87,7 +87,12 @@ class Dust3rEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for i, src in enumerate(sources):
                 extrinsic_4x4 = np.eye(4, dtype=float)
                 extrinsic_4x4[0, 3] = float(i) * 0.6
@@ -100,9 +105,10 @@ class Dust3rEngineAdapter(BaseModelEngineAdapter):
                         predicted={
                             "extrinsic_4x4": extrinsic_4x4.tolist(),
                             "pointmap_shape": [512, 512, 3],
+                            "is_test_double": True,
                         },
                         original_coordinates={"pointmap_index": i},
-                        confidence=0.88,
+                        confidence=None,
                     )
                 )
             drafts.append(
@@ -114,9 +120,10 @@ class Dust3rEngineAdapter(BaseModelEngineAdapter):
                     predicted={
                         "point_count": 32000,
                         "confidence_mean": 0.87,
+                        "is_test_double": True,
                     },
                     original_coordinates={"pointmap_pts": 32000},
-                    confidence=0.87,
+                    confidence=None,
                 )
             )
             return drafts
@@ -124,6 +131,7 @@ class Dust3rEngineAdapter(BaseModelEngineAdapter):
         try:
             res = self._model.inference(list(sources), device=str(self._device))
             for i, src in enumerate(sources):
+                conf_val = float(res["conf"][0]) if "conf" in res and res["conf"] is not None else None
                 drafts.append(
                     ObservationDraft(
                         task="depth",
@@ -132,7 +140,7 @@ class Dust3rEngineAdapter(BaseModelEngineAdapter):
                         coordinate_system="world:dust3r",
                         predicted={"point_count": len(res["pts3d"][i])},
                         original_coordinates={"raw_pts": res["pts3d"][i]},
-                        confidence=float(res.get("conf", [0.85])[0]),
+                        confidence=conf_val,
                     )
                 )
         except Exception as e:

@@ -68,7 +68,12 @@ class ColmapEngineAdapter(BaseModelEngineAdapter):
 
         # Check if virtual/test images or real images
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._pycolmap is None:
+        if not virtual_run and self._pycolmap is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded or pycolmap missing. Call load() before infer().",
+            )
+        if virtual_run:
             # Synthetic / calibrated test double path
             for i, src in enumerate(sources):
                 # Identity / known pose for tests
@@ -95,9 +100,10 @@ class ColmapEngineAdapter(BaseModelEngineAdapter):
                                 "cy": 540.0,
                             },
                             "reprojection_error_px": 0.42,
+                            "is_test_double": True,
                         },
                         original_coordinates=raw_pose,
-                        confidence=0.95,
+                        confidence=None,
                     )
                 )
             # Add sparse point cloud draft
@@ -111,9 +117,10 @@ class ColmapEngineAdapter(BaseModelEngineAdapter):
                         "num_points": 120,
                         "mean_reprojection_error": 0.45,
                         "bounding_box_m": {"min": [-2.0, -2.0, 0.0], "max": [2.0, 2.0, 3.0]},
+                        "is_test_double": True,
                     },
                     original_coordinates={"point_format": "xyz_rgb_error"},
-                    confidence=0.90,
+                    confidence=None,
                 )
             )
             return drafts
@@ -174,7 +181,7 @@ class ColmapEngineAdapter(BaseModelEngineAdapter):
                             "registered": True,
                         },
                         original_coordinates=raw_pose,
-                        confidence=0.95,
+                        confidence=None,
                     )
                 )
 
@@ -193,7 +200,7 @@ class ColmapEngineAdapter(BaseModelEngineAdapter):
                         else 0.0,
                     },
                     original_coordinates={"num_points3D": len(rec.points3D)},
-                    confidence=0.90,
+                    confidence=None,
                 )
             )
 

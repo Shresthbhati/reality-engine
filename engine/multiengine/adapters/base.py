@@ -61,8 +61,14 @@ class BaseModelEngineAdapter(EngineAdapter, ABC):
         self._device = device
         has_cuda = torch is not None and torch.cuda.is_available() and device.kind == "cuda"
         if has_cuda:
-            torch.cuda.reset_peak_memory_stats(device.index)
-            self._vram_start_mb = torch.cuda.memory_allocated(device.index) / (1024 * 1024)
+            try:
+                torch.cuda.reset_peak_memory_stats()
+            except Exception:
+                pass
+            try:
+                self._vram_start_mb = torch.cuda.memory_allocated() / (1024 * 1024)
+            except Exception:
+                self._vram_start_mb = 0.0
         else:
             self._vram_start_mb = 0.0
 
@@ -89,7 +95,10 @@ class BaseModelEngineAdapter(EngineAdapter, ABC):
         """Returns (peak_vram_mb, peak_ram_mb) measured during inference."""
         has_cuda = torch is not None and torch.cuda.is_available() and self._device.kind == "cuda"
         if has_cuda:
-            peak = torch.cuda.max_memory_allocated(self._device.index) / (1024 * 1024)
+            try:
+                peak = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            except Exception:
+                peak = 0.0
             self._peak_vram_mb = max(0.0, peak - self._vram_start_mb)
         else:
             self._peak_vram_mb = 0.0

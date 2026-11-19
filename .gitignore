@@ -60,6 +60,7 @@ security_audit_report.json
 /pr_body_*.md
 *.base
 /'
+/artifacts/
 
 # Editor / agent tool state
 .obsidian/

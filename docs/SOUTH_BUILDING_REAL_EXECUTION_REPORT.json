@@ -1,0 +1,323 @@
+{
+  "execution_date": "2026-11-19 17:06:06 UTC",
+  "dataset": "datasets/south_building",
+  "photos_processed": [
+    "P1180141.JPG",
+    "P1180145.JPG",
+    "P1180149.JPG",
+    "P1180153.JPG"
+  ],
+  "total_photos_count": 4,
+  "total_wall_time_s": 73.28,
+  "device": "cuda:0",
+  "registered_cameras_in_colmap": 32,
+  "raw_observations_count": 59,
+  "total_lifted_entities": 59,
+  "unique_physical_entities_count": 48,
+  "multiview_merged_entities_count": 9,
+  "single_view_entities_count": 39,
+  "max_views_per_entity": 4,
+  "association_accepted_merges": 11,
+  "association_refused_pairs": 32,
+  "association_refusal_reasons": {
+    "label_conflict": 9,
+    "same_image_conflict": 20,
+    "already_same_entity": 3
+  },
+  "worldir_entities_count": 48,
+  "worldir_validation_errors": 0,
+  "worldir_validation_disclaimer": "Schema validation confirms structural adherence; physical reconstruction accuracy is unmeasured without metric laser survey.",
+  "scale_units": "COLMAP_SFM_UNITS",
+  "is_physically_metric": false,
+  "metric_anchor_status": "UNANCHORED_COLMAP_GAUGE",
+  "physical_accuracy_status": "NOT_MEASURED (Requires independent millimeter physical laser survey)",
+  "class_counts": {
+    "bench": 3,
+    "building facade": 4,
+    "tree": 9,
+    "window window frame": 11,
+    "window": 3,
+    "window window": 1,
+    "column": 3,
+    "roof": 4,
+    "wall": 1,
+    "window frame": 3,
+    "door entrance": 3,
+    "entrance": 2,
+    "door": 1
+  },
+  "artifact_path": "artifacts\\south_building_reconstruction.worldir.json",
+  "telemetry_per_photo": [
+    {
+      "photo": "P1180141.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 16.077,
+          "infer_s": 0.709,
+          "is_metric": false,
+          "scale_units": "COLMAP_SFM_UNITS",
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale_state": "SFM_ALIGNED_UNMETRIC",
+            "units": "COLMAP_SFM_UNITS",
+            "is_physically_metric": false,
+            "scale": 0.122191,
+            "shift": 0.135764,
+            "scale_uncertainty": 0.007531,
+            "shift_uncertainty": 0.014224,
+            "r_squared": 0.5401,
+            "residual_rms_error_m": 0.1742,
+            "held_out_rms_error_m": 0.9992,
+            "spatial_residual_std_m": 0.2911,
+            "inliers": 1034,
+            "held_out_count": 522,
+            "total_points": 1739
+          },
+          "depth_range_units": [
+            1.1579985618591309,
+            7.365707874298096
+          ]
+        },
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 1.272,
+          "detections_count": 15,
+          "labels": [
+            "bench",
+            "building facade",
+            "tree",
+            "tree",
+            "window window frame",
+            "window window frame",
+            "tree",
+            "window window frame",
+            "window window frame",
+            "window",
+            "window window",
+            "column",
+            "roof",
+            "wall",
+            "tree"
+          ]
+        },
+        "sam": {
+          "load_s": 1.666,
+          "infer_s": 1.031,
+          "masks_count": 15
+        },
+        "metric_lifting": {
+          "duration_s": 7.169,
+          "candidates_evaluated": 15,
+          "lifted_entities_count": 15,
+          "rejections_count": 0,
+          "rejection_samples": []
+        }
+      }
+    },
+    {
+      "photo": "P1180145.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.759,
+          "infer_s": 0.34,
+          "is_metric": false,
+          "scale_units": "COLMAP_SFM_UNITS",
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale_state": "SFM_ALIGNED_UNMETRIC",
+            "units": "COLMAP_SFM_UNITS",
+            "is_physically_metric": false,
+            "scale": 0.254558,
+            "shift": 0.092434,
+            "scale_uncertainty": 0.031494,
+            "shift_uncertainty": 0.040886,
+            "r_squared": 0.8626,
+            "residual_rms_error_m": 0.325,
+            "held_out_rms_error_m": 0.9518,
+            "spatial_residual_std_m": 0.2176,
+            "inliers": 334,
+            "held_out_count": 169,
+            "total_points": 562
+          },
+          "depth_range_units": [
+            0.7739751935005188,
+            10.818512916564941
+          ]
+        },
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 0.918,
+          "detections_count": 16,
+          "labels": [
+            "bench",
+            "building facade",
+            "window window frame",
+            "window frame",
+            "roof",
+            "window window frame",
+            "tree",
+            "window",
+            "door entrance",
+            "window",
+            "window",
+            "window window frame",
+            "window window frame",
+            "tree",
+            "entrance",
+            "window window frame"
+          ]
+        },
+        "sam": {
+          "load_s": 1.333,
+          "infer_s": 0.872,
+          "masks_count": 16
+        },
+        "metric_lifting": {
+          "duration_s": 4.247,
+          "candidates_evaluated": 16,
+          "lifted_entities_count": 16,
+          "rejections_count": 0,
+          "rejection_samples": []
+        }
+      }
+    },
+    {
+      "photo": "P1180149.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.644,
+          "infer_s": 0.405,
+          "is_metric": false,
+          "scale_units": "COLMAP_SFM_UNITS",
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale_state": "SFM_ALIGNED_UNMETRIC",
+            "units": "COLMAP_SFM_UNITS",
+            "is_physically_metric": false,
+            "scale": 0.16486,
+            "shift": 0.191343,
+            "scale_uncertainty": 0.004028,
+            "shift_uncertainty": 0.006211,
+            "r_squared": 0.476,
+            "residual_rms_error_m": 0.0369,
+            "held_out_rms_error_m": 0.4768,
+            "spatial_residual_std_m": 0.0559,
+            "inliers": 586,
+            "held_out_count": 295,
+            "total_points": 985
+          },
+          "depth_range_units": [
+            0.9048501253128052,
+            5.226223945617676
+          ]
+        },
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 0.794,
+          "detections_count": 14,
+          "labels": [
+            "building facade",
+            "window window frame",
+            "tree",
+            "roof",
+            "column",
+            "window frame",
+            "tree",
+            "door",
+            "window window frame",
+            "window window frame",
+            "entrance",
+            "bench",
+            "door entrance",
+            "window window frame"
+          ]
+        },
+        "sam": {
+          "load_s": 1.383,
+          "infer_s": 0.771,
+          "masks_count": 14
+        },
+        "metric_lifting": {
+          "duration_s": 5.438,
+          "candidates_evaluated": 14,
+          "lifted_entities_count": 14,
+          "rejections_count": 0,
+          "rejection_samples": []
+        }
+      }
+    },
+    {
+      "photo": "P1180153.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.704,
+          "infer_s": 0.363,
+          "is_metric": false,
+          "scale_units": "COLMAP_SFM_UNITS",
+          "scale_source": "colmap_sparse_points",
+          "scale_alignment": {
+            "aligned": true,
+            "method": "affine_disparity_regression",
+            "scale_state": "SFM_ALIGNED_UNMETRIC",
+            "units": "COLMAP_SFM_UNITS",
+            "is_physically_metric": false,
+            "scale": 0.25341,
+            "shift": 0.123206,
+            "scale_uncertainty": 0.014002,
+            "shift_uncertainty": 0.018916,
+            "r_squared": 0.8716,
+            "residual_rms_error_m": 0.1092,
+            "held_out_rms_error_m": 1.2433,
+            "spatial_residual_std_m": 0.0691,
+            "inliers": 235,
+            "held_out_count": 119,
+            "total_points": 396
+          },
+          "depth_range_units": [
+            0.8770577311515808,
+            8.116517066955566
+          ]
+        },
+        "detector": {
+          "engine": "grounding_dino",
+          "infer_s": 1.022,
+          "detections_count": 14,
+          "labels": [
+            "door entrance",
+            "window window frame",
+            "door",
+            "window window frame",
+            "bench",
+            "column",
+            "building facade",
+            "window window frame",
+            "window frame",
+            "tree",
+            "window frame",
+            "roof",
+            "roof",
+            "roof"
+          ]
+        },
+        "sam": {
+          "load_s": 1.402,
+          "infer_s": 0.883,
+          "masks_count": 14
+        },
+        "metric_lifting": {
+          "duration_s": 5.218,
+          "candidates_evaluated": 14,
+          "lifted_entities_count": 14,
+          "rejections_count": 0,
+          "rejection_samples": []
+        }
+      }
+    }
+  ]
+}

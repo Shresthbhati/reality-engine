@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 550
+Total: 563
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -193,6 +193,7 @@ Total: 550
 - `tests/test_autonomous_quality_loop_rule9.py`
 - `tests/test_backend_selection_policy.py`
 - `tests/test_bad_evidence_real.py`
+- `tests/test_benchmark_integrity.py`
 - `tests/test_benchmark_suite.py`
 - `tests/test_billing_stripe_task7_2.py`
 - `tests/test_blob_gc.py`
@@ -202,6 +203,7 @@ Total: 550
 - `tests/test_building_grammar.py`
 - `tests/test_cad_importer.py`
 - `tests/test_camera_calibration.py`
+- `tests/test_camera_calibration_integrity.py`
 - `tests/test_candidate_selection.py`
 - `tests/test_canonical_interior.py`
 - `tests/test_capability_audit.py`
@@ -268,6 +270,7 @@ Total: 550
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
 - `tests/test_depth_scale.py`
+- `tests/test_depth_scale_alignment.py`
 - `tests/test_depth_shift_alignment.py`
 - `tests/test_depth_to_points.py`
 - `tests/test_design_style_intelligence.py`
@@ -304,6 +307,7 @@ Total: 550
 - `tests/test_evidence_world_job.py`
 - `tests/test_export_parts_and_attributes.py`
 - `tests/test_export_route.py`
+- `tests/test_extensible_prompter_finegrained.py`
 - `tests/test_factor_graph_optimizer.py`
 - `tests/test_failure_modes_colmap.py`
 - `tests/test_failure_modes_worldstore.py`
@@ -397,6 +401,7 @@ Total: 550
 - `tests/test_material_classification.py`
 - `tests/test_material_hypotheses.py`
 - `tests/test_measured_room_evaluator.py`
+- `tests/test_measured_rooms_benchmark_contract.py`
 - `tests/test_measurements.py`
 - `tests/test_media_preprocessing.py`
 - `tests/test_mesh_boolean.py`
@@ -406,6 +411,8 @@ Total: 550
 - `tests/test_mesh_validation.py`
 - `tests/test_meshing_pipeline.py`
 - `tests/test_meshopt_simplifier.py`
+- `tests/test_metric_3d_lifting.py`
+- `tests/test_metric_3d_lifting_rigorous.py`
 - `tests/test_metric_anchor_determinism.py`
 - `tests/test_metric_depth_task4_4.py`
 - `tests/test_metric_scale_fusion.py`
@@ -421,6 +428,7 @@ Total: 550
 - `tests/test_multi_source_refiner.py`
 - `tests/test_multi_source_session.py`
 - `tests/test_multi_storey_validator.py`
+- `tests/test_multi_view_association.py`
 - `tests/test_multiengine_alignment_consensus.py`
 - `tests/test_multiengine_association.py`
 - `tests/test_multiengine_calibration.py`
@@ -513,10 +521,12 @@ Total: 550
 - `tests/test_quality_report_stage.py`
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
+- `tests/test_real_data_recovery_pipeline.py`
 - `tests/test_real_model_availability.py`
 - `tests/test_reality_benchmark.py`
 - `tests/test_reality_inventory.py`
 - `tests/test_reality_studio_primary_journey.py`
+- `tests/test_reconstruction_acceptance_e2e.py`
 - `tests/test_reconstruction_batch.py`
 - `tests/test_reconstruction_benchmark_rule3.py`
 - `tests/test_reconstruction_completeness.py`
@@ -597,6 +607,7 @@ Total: 550
 - `tests/test_stage_perception.py`
 - `tests/test_stage_pose_scale.py`
 - `tests/test_stair_detector.py`
+- `tests/test_statistical_fusion_validation.py`
 - `tests/test_status_ledger.py`
 - `tests/test_structural_network.py`
 - `tests/test_structure_points.py`
@@ -653,6 +664,7 @@ Total: 550
 - `tests/test_video_ingest_task9_2.py`
 - `tests/test_video_keyframe_extraction.py`
 - `tests/test_viewport.py`
+- `tests/test_visibility_and_reprojection.py`
 - `tests/test_voxel_cloud.py`
 - `tests/test_vram_release.py`
 - `tests/test_walkthrough_and_navigation.py`
@@ -680,6 +692,7 @@ Total: 550
 - `tests/test_world_runtime.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
+- `tests/test_worldir_confidence_contract.py`
 - `tests/test_worldir_coordinate_like_properties.py`
 - `tests/test_worldir_optional_confidence.py`
 - `tests/test_worldstore_concurrency.py`

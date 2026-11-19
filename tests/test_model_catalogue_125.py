@@ -66,7 +66,8 @@ def test_catalogue_honest_audit() -> None:
     assert audit["total_slots"] == 125
     assert audit["planned_slots"] == 94
     assert audit["installed_architectures"] == 26
-    assert audit["available_checkpoints"] == 6
+    assert audit["available_checkpoints"] >= 6  # Dynamically probed in local environment
+    assert "checkpoint_probe_details" in audit
     assert audit["verified_adapters"] == 21
     assert audit["production_wired_engines"] == 4
     assert audit["blocked_engines"] == 5
@@ -76,4 +77,16 @@ def test_catalogue_honest_audit() -> None:
     summary = cat.summary()
     assert "audit" in summary
     assert summary["audit"] == audit
+
+
+def test_catalogue_13_integration_levels() -> None:
+    cat = get_catalogue()
+    audit = cat.audit()
+    assert "integration_levels_13" in audit
+    levels = audit["integration_levels_13"]
+    assert len(levels) == 13
+    assert levels["1_architecture_declared"] == 125
+    assert levels["6_commercial_viability_determined"] == 125
+    assert levels["13_physically_validated"] == 0  # No laser ground truth survey yet
+    assert levels["11_real_input_executed"] >= 0
 

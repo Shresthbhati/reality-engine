@@ -93,7 +93,12 @@ class VggtEngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for i, src in enumerate(sources):
                 extrinsic_4x4 = np.eye(4, dtype=float)
                 extrinsic_4x4[0, 3] = float(i) * 0.5
@@ -106,9 +111,10 @@ class VggtEngineAdapter(BaseModelEngineAdapter):
                         predicted={
                             "extrinsic_4x4": extrinsic_4x4.tolist(),
                             "feedforward_depth_mean_m": 2.45,
+                            "is_test_double": True,
                         },
                         original_coordinates={"vggt_token_id": i},
-                        confidence=0.93,
+                        confidence=None,
                     )
                 )
             drafts.append(
@@ -120,9 +126,10 @@ class VggtEngineAdapter(BaseModelEngineAdapter):
                     predicted={
                         "point_count": 18500,
                         "metric_scale_factor": 1.0,
+                        "is_test_double": True,
                     },
                     original_coordinates={"point_tokens": 18500},
-                    confidence=0.91,
+                    confidence=None,
                 )
             )
             return drafts
@@ -139,7 +146,7 @@ class VggtEngineAdapter(BaseModelEngineAdapter):
                         coordinate_system="world:vggt",
                         predicted={"extrinsic_4x4": pose.tolist()},
                         original_coordinates={"tokens": outputs["tokens"][i]},
-                        confidence=0.94,
+                        confidence=None,
                     )
                 )
         except Exception as e:

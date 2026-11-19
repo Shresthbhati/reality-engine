@@ -1,0 +1,97 @@
+"""Job-side glue for the evidence-to-world flow.
+
+Runs INSIDE the production reconstruction job (``apps/api/jobs.py``), opt-in via ``RE_EVIDENCE_WORLD=1``. It never changes the job's
+grade: the outcome is recorded in the job report under ``stages.evidence_world`` and the durable evidence lives under the tenant's
+directory, so a failure here is visible but cannot turn a healthy reconstruction into a failed one. An operator cancel does stop the
+job (the flow checks the cancel flag between engines; whatever finished stays persisted).
+
+Tenant isolation: the evidence directory is ``<WORLDSTORE_ROOT>/evidence-world/<team>/<world>/<job>/``. Every id is validated
+against a strict pattern before it becomes a path segment, and sources are only the server-resolved evidence files of the job --
+never strings supplied by a client.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import Any
+
+ENV_FLAG = "RE_EVIDENCE_WORLD"
+SNAPSHOT_REL = "snapshot.json"
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+class EvidenceWorldError(ValueError):
+    pass
+
+
+def enabled() -> bool:
+    return os.environ.get(ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _segment(value: str, what: str) -> str:
+    if not isinstance(value, str) or not _ID_RE.match(value) or ".." in value:
+        raise EvidenceWorldError(f"unsafe {what} {value!r} for a storage path")
+    return value
+
+
+def world_root(team_id: str | None, world_id: str, *, base: Path | None = None) -> Path:
+    """Tenant-scoped, traversal-safe directory holding all of one world's evidence runs."""
+    if base is None:
+        from apps.api import worldstore_service
+
+        base = worldstore_service.worldstore_root()
+    return Path(base) / "evidence-world" / _segment(team_id or "default", "team id") / _segment(world_id, "world id")
+
+
+def evidence_root(team_id: str | None, world_id: str, job_id: str, *, base: Path | None = None) -> Path:
+    return world_root(team_id, world_id, base=base) / _segment(job_id, "job id")
+
+
+def _default_flow_inputs():
+    from engine.multiengine.adapters import create_adapters_for_registry
+    from engine.multiengine.executor import TorchResourceProbe
+    from engine.multiengine.registry import maximum_fidelity_registry
+
+    reg = maximum_fidelity_registry()
+    return reg, create_adapters_for_registry(reg), TorchResourceProbe()
+
+
+def run_for_job(
+    *,
+    team_id: str | None,
+    world_id: str,
+    job_id: str,
+    sources: Sequence[str],
+    should_cancel: Callable[[], bool] | None = None,
+    base: Path | None = None,
+    flow_inputs: Callable[[], tuple[Any, Any, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run the flow on the job's evidence files and return the compact facts for the job report.
+
+    Never raises for a flow failure (the facts say ``failed`` with the error); raises ``EvidenceWorldError`` only for an unsafe id.
+    ``status == "cancelled"`` means the operator cancelled and the caller should stop the job.
+    """
+    from engine.multiengine.contract import Task
+    from engine.multiengine.evidence_flow import StageSpec, run_evidence_flow
+
+    root = evidence_root(team_id, world_id, job_id, base=base)
+    real = [str(s) for s in sources if not str(s).startswith("virtual:") and os.path.isfile(str(s))]
+    skipped = len(sources) - len(real)
+    if not real:
+        return {"status": "skipped", "reason": "no readable evidence image files", "skipped_sources": skipped, "run_id": job_id}
+    try:
+        registry, adapters, probe = (flow_inputs or _default_flow_inputs)()
+        res = run_evidence_flow(
+            root, job_id, real, registry=registry, adapters=adapters, stages=[StageSpec(Task.DETECTION)],
+            should_cancel=should_cancel, probe=probe,
+        )
+    except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
+    snap = res.snapshot
+    return {
+        "status": res.status, "run_id": job_id, "counts": snap["counts"], "limitations": snap["limitations"],
+        "skipped_sources": skipped, "snapshot": SNAPSHOT_REL,
+    }

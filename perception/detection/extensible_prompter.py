@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from perception.ontology import get_default_ontology
 
@@ -59,6 +60,7 @@ class ExtensiblePrompter:
         self._prompt_to_target: dict[str, PromptTarget] = {}
         self._custom_targets: dict[str, PromptTarget] = {}
         self._build_targets()
+        self.register_universal_object_ontology()
 
     def _build_targets(self) -> None:
         """Indexes all nodes from the canonical ontology."""
@@ -91,6 +93,61 @@ class ExtensiblePrompter:
         self._prompt_to_target[target.primary_prompt.lower().strip()] = target
         for v in target.prompt_variants:
             self._prompt_to_target[v.lower().strip()] = target
+
+    def register_universal_object_ontology(self, universal_ontology: Any | None = None) -> int:
+        """Indexes classes and subparts from UniversalObjectOntology into open-vocabulary prompt targets."""
+        if universal_ontology is None:
+            from world.ontology.universal_object_ontology import get_universal_ontology
+            universal_ontology = get_universal_ontology()
+
+        registered_count = 0
+        for cls_name, cls_obj in universal_ontology._classes.items():
+            path = f"{cls_obj.category.value}.{cls_name}"
+            if path in self._targets or path in self._custom_targets:
+                continue
+
+            primary = cls_name.replace("_", " ")
+            variants = [p.replace("_", " ") for p in cls_obj.allowed_parts]
+            dims = getattr(cls_obj, "typical_dimensions_m", (1.0, 1.0, 1.0))
+            max_dim = max(dims) if dims else 1.0
+            is_small = max_dim < 0.3
+
+            target = PromptTarget(
+                path=path,
+                canonical_label=cls_name,
+                primary_prompt=primary,
+                prompt_variants=tuple(variants),
+                min_pixels=50 if is_small else 200,
+                is_small=is_small,
+                group=cls_obj.category.value,
+                hosts=(),
+                typical_dims_m={
+                    "width": (dims[0] * 0.5, dims[0] * 2.0),
+                    "depth": (dims[1] * 0.5, dims[1] * 2.0),
+                    "height": (dims[2] * 0.5, dims[2] * 2.0),
+                } if dims else None,
+            )
+            self.register_custom_target(target)
+            registered_count += 1
+
+            for part in cls_obj.allowed_parts:
+                part_path = f"{cls_obj.category.value}.{cls_name}.{part}"
+                if part_path in self._targets or part_path in self._custom_targets:
+                    continue
+                part_target = PromptTarget(
+                    path=part_path,
+                    canonical_label=f"{cls_name}_{part}",
+                    primary_prompt=part.replace("_", " "),
+                    prompt_variants=(f"{primary} {part.replace('_', ' ')}",),
+                    min_pixels=30,
+                    is_small=True,
+                    group=cls_obj.category.value,
+                    hosts=(cls_name,),
+                )
+                self.register_custom_target(part_target)
+                registered_count += 1
+
+        return registered_count
 
     def get_prompts(
         self,

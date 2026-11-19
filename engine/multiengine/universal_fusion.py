@@ -35,6 +35,8 @@ from engine.multiengine.alignment import Frame, FrameGraph
 from engine.multiengine.capture_requests import ActiveCapturePlanner, CaptureRequest
 from engine.multiengine.evidence_matrix import EvidenceMatrixEntry, EvidenceMatrixStore
 from engine.multiengine.quality_gates import QualityGateManager
+from engine.multiengine.statistical_fusion import StatisticalFusionValidator
+from engine.multiengine.visibility_reprojection import VisibilityReprojectionValidator
 from world.hierarchy.spatial_hierarchy import (
     SpatialHierarchyLevel,
     SpatialHierarchyNode,
@@ -250,6 +252,7 @@ class UniversalFusionPipeline:
                 "total_entities_fused": len(context["fused_entities"]),
                 "conflicts_count": len(context["conflicts"]),
                 "stages_executed": len(stage_results),
+                "uncertainty_basis": context.get("uncertainty_basis", "heuristic_uncalibrated"),
             },
         )
 
@@ -429,11 +432,18 @@ class UniversalFusionPipeline:
                     if not cam_meta:
                         continue
 
-                    proj = project_3d_to_pixel(center_3d, cam_meta)
-                    if proj is not None:
-                        proj_u, proj_v = proj
-                        err_px = math.hypot(proj_u - obs_u, proj_v - obs_v)
-                        observed_errors.append(err_px)
+                    camera = VisibilityReprojectionValidator.camera_from_metadata(cam_meta)
+                    if camera is not None:
+                        vis = VisibilityReprojectionValidator.check_point_visibility(camera, tuple(center_3d[:3]))
+                        if vis.pixel_coord is not None:
+                            err_px = math.hypot(vis.pixel_coord[0] - obs_u, vis.pixel_coord[1] - obs_v)
+                            observed_errors.append(err_px)
+                    else:
+                        proj = project_3d_to_pixel(center_3d, cam_meta)
+                        if proj is not None:
+                            proj_u, proj_v = proj
+                            err_px = math.hypot(proj_u - obs_u, proj_v - obs_v)
+                            observed_errors.append(err_px)
 
             if observed_errors:
                 reprojection_errors[entity_id] = float(np.mean(observed_errors))
@@ -529,25 +539,37 @@ class UniversalFusionPipeline:
         )
 
     def _stage_08_uncertainty_calibration(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Group engines by model family and calculate correlation discount weights: 1 / sqrt(N_fam)
+        # Group engines by model family and calculate correlation discount weights
         evidence = ctx.get("aligned_evidence", [])
         family_counts: dict[str, int] = {}
         for e in evidence:
             family = e.architecture_id or e.model_id or "generic"
             family_counts[family] = family_counts.get(family, 0) + 1
 
-        calibrated = {}
-        for fam, count in family_counts.items():
-            # Correlation discount: 1 / sqrt(N_fam) rather than linear count
-            calibrated[fam] = 1.0 / math.sqrt(count)
+        # Mathematically validated correlation-aware discounting
+        discount_res = StatisticalFusionValidator.calculate_family_discounts(
+            family_counts=family_counts,
+            calibrated=False,  # Uncalibrated heuristic weights unless empirical correlation matrix is validated
+        )
+        ctx["calibrated_weights"] = discount_res.family_weights
+        ctx["uncertainty_basis"] = discount_res.uncertainty_basis
+        ctx["effective_sample_sizes"] = discount_res.effective_sample_sizes
+        ctx["assumed_correlations"] = discount_res.assumed_correlations
 
-        ctx["calibrated_weights"] = calibrated
         return StageExecutionResult(
             stage=UniversalFusionStage.STAGE_08_UNCERTAINTY_CALIBRATION,
             success=True,
             duration_s=0.0,
-            message=f"Calibrated uncertainty across {len(family_counts)} engine families (correlation discounting 1/sqrt(N))",
-            metrics={"families_count": len(family_counts), "weights": calibrated},
+            message=(
+                f"Statistical uncertainty discounted across {len(family_counts)} engine families "
+                f"(basis: {discount_res.uncertainty_basis}, models: {sum(family_counts.values())})"
+            ),
+            metrics={
+                "families_count": len(family_counts),
+                "weights": discount_res.family_weights,
+                "uncertainty_basis": discount_res.uncertainty_basis,
+                "effective_sample_sizes": discount_res.effective_sample_sizes,
+            },
         )
 
     def _stage_09_conflict_detection(self, ctx: dict[str, Any]) -> StageExecutionResult:

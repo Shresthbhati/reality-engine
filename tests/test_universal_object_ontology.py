@@ -49,6 +49,33 @@ def test_ontology_category_and_class_population() -> None:
     assert mug.category == ObjectCategory.EVERYDAY_OBJECT
     assert mug.is_container is True
 
+    # Fine-grained MEP, Electrical, Architecture & Infrastructure
+    fuse_box = ont.get_class("fuse_box")
+    assert fuse_box is not None
+    assert fuse_box.category == ObjectCategory.FIXTURE
+    assert "breaker_switch" in fuse_box.allowed_parts
+
+    smoke_detector = ont.get_class("smoke_detector")
+    assert smoke_detector is not None
+    assert smoke_detector.category == ObjectCategory.FIXTURE
+
+    water_meter = ont.get_class("water_meter")
+    assert water_meter is not None
+    assert water_meter.category == ObjectCategory.FIXTURE
+
+    beam = ont.get_class("beam")
+    assert beam is not None
+    assert beam.category == ObjectCategory.BUILDING_ELEMENT
+    assert beam.is_structural is True
+
+    bollard = ont.get_class("bollard")
+    assert bollard is not None
+    assert bollard.category == ObjectCategory.URBAN_INFRASTRUCTURE
+
+    laptop = ont.get_class("laptop")
+    assert laptop is not None
+    assert laptop.category == ObjectCategory.EVERYDAY_OBJECT
+
 
 def test_ontology_synonym_resolution() -> None:
     ont = get_universal_ontology()

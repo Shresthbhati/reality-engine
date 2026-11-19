@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 544
+Total: 548
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -303,6 +303,7 @@ Total: 544
 - `tests/test_evidence_world_job.py`
 - `tests/test_export_parts_and_attributes.py`
 - `tests/test_export_route.py`
+- `tests/test_extensible_prompter_finegrained.py`
 - `tests/test_factor_graph_optimizer.py`
 - `tests/test_failure_modes_colmap.py`
 - `tests/test_failure_modes_worldstore.py`
@@ -404,6 +405,7 @@ Total: 544
 - `tests/test_mesh_validation.py`
 - `tests/test_meshing_pipeline.py`
 - `tests/test_meshopt_simplifier.py`
+- `tests/test_metric_3d_lifting.py`
 - `tests/test_metric_anchor_determinism.py`
 - `tests/test_metric_depth_task4_4.py`
 - `tests/test_metric_scale_fusion.py`
@@ -592,6 +594,7 @@ Total: 544
 - `tests/test_stage_perception.py`
 - `tests/test_stage_pose_scale.py`
 - `tests/test_stair_detector.py`
+- `tests/test_statistical_fusion_validation.py`
 - `tests/test_status_ledger.py`
 - `tests/test_structural_network.py`
 - `tests/test_structure_points.py`
@@ -648,6 +651,7 @@ Total: 544
 - `tests/test_video_ingest_task9_2.py`
 - `tests/test_video_keyframe_extraction.py`
 - `tests/test_viewport.py`
+- `tests/test_visibility_and_reprojection.py`
 - `tests/test_voxel_cloud.py`
 - `tests/test_vram_release.py`
 - `tests/test_walkthrough_and_navigation.py`

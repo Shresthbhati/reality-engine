@@ -112,7 +112,12 @@ class Dinov2EngineAdapter(BaseModelEngineAdapter):
         sources = request.sources
 
         virtual_run = all(str(s).startswith("virtual:") for s in sources)
-        if virtual_run or self._model is None:
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
             for s in sources:
                 # 768-dim normalized embedding synthetic test double
                 rng = np.random.RandomState(abs(hash(str(s))) % (2**31))
@@ -128,9 +133,10 @@ class Dinov2EngineAdapter(BaseModelEngineAdapter):
                             "embedding_dim": 768,
                             "vector": vec[:32].tolist(),  # compact summary in json
                             "l2_norm": 1.0,
+                            "is_test_double": True,
                         },
                         original_coordinates={"embedding_full_dim": 768},
-                        confidence=0.96,
+                        confidence=None,
                     )
                 )
             return drafts
@@ -162,7 +168,7 @@ class Dinov2EngineAdapter(BaseModelEngineAdapter):
                         "l2_norm": 1.0,
                     },
                     original_coordinates={"raw_norm": norm},
-                    confidence=0.97,
+                    confidence=None,
                 )
             )
 
@@ -206,7 +212,7 @@ class TrackingEngineAdapter(BaseModelEngineAdapter):
                         "track_inlier_ratio": 0.92,
                     },
                     original_coordinates={"pair": [i, i + 1]},
-                    confidence=0.92,
+                    confidence=None,
                 )
             )
 

@@ -199,7 +199,7 @@ jobs:
     name: Full Suite (shard ${{ matrix.shard }}/8)
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30       # a shard takes 2-6 minutes; a hung one used to burn ~47 minutes and then lose the runner (logs lost)
     strategy:
       fail-fast: false
       matrix:
@@ -214,10 +214,13 @@ jobs:
       - name: Install package (editable)
         run: pip install -e ".[dev]"
       - name: Run this shard (every test file in it, slow tests excluded)
+        timeout-minutes: 20   # ends the step cleanly (logs uploaded, skip report runs) instead of losing the whole runner
         run: |
           python scripts/ci_shard_tests.py --shard ${{ matrix.shard }} --of 8 > shard_files.txt
           echo "shard ${{ matrix.shard }}: $(wc -l < shard_files.txt) test files"
-          pytest $(cat shard_files.txt) -m "not slow" -ra --tb=short --junitxml=junit.xml
+          # faulthandler_timeout: if any single test runs past 5 minutes, every thread's stack is dumped into the log, so a
+          # hang names the test instead of leaving "runner lost communication"
+          pytest $(cat shard_files.txt) -m "not slow" -ra --tb=short --junitxml=junit.xml -o faulthandler_timeout=300 -v
       - name: Skip report (skips are not passes)
         if: always()
         run: python scripts/ci_skip_report.py junit.xml --max-skip-share 0.30

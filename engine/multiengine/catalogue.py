@@ -24,8 +24,12 @@ input/output schemas, known limitations, and honest integration status.
 
 from __future__ import annotations
 
+import functools
+import platform
+import time
 from dataclasses import asdict, dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -305,6 +309,26 @@ def build_125_slot_catalogue() -> tuple[CatalogueEntry, ...]:
     return tuple(slots)
 
 
+@functools.lru_cache(maxsize=1)
+def probe_local_checkpoints() -> dict[str, Any]:
+    """Probes host filesystem for cached deep learning checkpoints."""
+    torch_dir = Path.home() / ".cache" / "torch" / "hub" / "checkpoints"
+    hf_dir = Path.home() / ".cache" / "huggingface" / "hub"
+
+    torch_files = [f.name for f in torch_dir.glob("*") if f.is_file()] if torch_dir.exists() else []
+    hf_models = [d.name.replace("models--", "") for d in hf_dir.glob("models--*") if d.is_dir()] if hf_dir.exists() else []
+
+    return {
+        "timestamp": time.time(),
+        "platform": platform.platform(),
+        "torch_checkpoint_count": len(torch_files),
+        "hf_model_count": len(hf_models),
+        "total_cached_weights": len(torch_files) + len(hf_models),
+        "torch_checkpoints": sorted(torch_files),
+        "hf_models": sorted(hf_models),
+    }
+
+
 class ModelCatalogue:
     """Central registry and discovery query interface for the 125-slot ecosystem."""
 
@@ -337,6 +361,7 @@ class ModelCatalogue:
 
     def audit(self) -> dict[str, Any]:
         """Provides an honest, multi-dimensional audit of all 125 catalogue entries."""
+        probed = probe_local_checkpoints()
         return {
             "total_slots": len(self._entries),
             "planned_slots": sum(1 for e in self._entries.values() if e.integration_status == IntegrationStatus.PLANNED_SLOT),
@@ -344,7 +369,8 @@ class ModelCatalogue:
                 1 for e in self._entries.values()
                 if e.integration_status in (IntegrationStatus.WIRED_PRODUCTION, IntegrationStatus.ADAPTER_VERIFIED, IntegrationStatus.PROBED_AVAILABLE)
             ),
-            "available_checkpoints": 6,  # Verified locally in this environment (colmap, depth_anything, mask_rcnn, midas, owlvit, sam)
+            "available_checkpoints": probed["total_cached_weights"],
+            "checkpoint_probe_details": probed,
             "verified_adapters": sum(1 for e in self._entries.values() if e.adapter_class is not None),
             "production_wired_engines": sum(1 for e in self._entries.values() if e.integration_status == IntegrationStatus.WIRED_PRODUCTION),
             "blocked_engines": sum(1 for e in self._entries.values() if e.integration_status == IntegrationStatus.PROBED_BLOCKED),

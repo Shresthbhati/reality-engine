@@ -113,3 +113,27 @@ The 125-slot Target Model Catalogue (`engine/multiengine/catalogue.py`) is audit
 - **Depth Anything**: Load 0.68s, Inference 0.15s (147 ms), Unload 0.49s, Peak VRAM 269.9 MB $\rightarrow$ Purged to 30.6 MB.
 - Verified $>95\%$ VRAM reclamation between sequential executions.
 
+---
+
+## 9. Metric Reconstruction Integration & Accuracy Repair Contract
+
+### 9.1 Camera Calibration & Pose Rigidity Validation
+- `VisibilityReprojectionValidator.validate_camera_metadata` strictly validates camera intrinsics and extrinsics before any lifting or reprojection:
+  - Intrinsics: $fx > 0, fy > 0, cx \in (0, w), cy \in (0, h), w > 0, h > 0$.
+  - Extrinsics: All values must be finite. Rigid rotation matrix enforced: $|\det(R) - 1.0| \le 10^{-3}$ and $\|R^T R - I\|_\infty \le 10^{-3}$.
+  - Quaternions: Unit norm $\|q\| = 1 \pm 10^{-3}$.
+  - Missing calibration produces an explicit `ValidatedCameraMetadata` refusal or uncalibrated error, never silent default intrinsics ($500, 320, 240, 640\times 480$). Identity extrinsics are allowed only when explicitly flagged as canonical reference frame.
+
+### 9.2 Metric 3D Lifting Integrity
+- Enforces `is_metric_depth: bool = True`. Relative or unscaled depth maps (e.g. raw MiDaS inverse depth) cannot be directly unprojected without registered metric scale.
+- Single quaternion convention $(w, x, y, z)$ matching WorldIR `Quat`.
+- Degeneracy & symmetry: When planar eigenvalues indicate rotational/circular symmetry, `orientation` is honestly set to `None` with `is_orientation_known=False`, avoiding spurious yaw angles.
+- True extent calculation: Thickness is reported honestly from quantile spreads without faking a 1 cm minimum thickness.
+- Order-statistic quantile variance computed for $N \ge 20$ points; otherwise returns `None` with an explicit reason.
+
+### 9.3 WorldIR Confidence Contract Alignment
+- In `world_ir/schema_v1.py`, `Entity.confidence` is `Optional[float] = None`.
+- Legacy worlds deserializing explicit confidence values preserve them without mutation.
+- When confidence is not measured through calibrated consensus, it is saved as `None` with `confidence_basis: None`.
+
+

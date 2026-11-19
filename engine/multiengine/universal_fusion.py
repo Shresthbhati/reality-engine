@@ -108,55 +108,19 @@ def project_3d_to_pixel(
 ) -> tuple[float, float] | None:
     """Projects a 3D world coordinate point into 2D camera pixel coordinates using pinhole model.
 
-    Returns (u, v) in pixels, or None if behind camera or uncalibrated.
+    Returns (u, v) in pixels, or None if behind camera, uncalibrated, non-finite, or malformed.
+    Never invents default camera parameters or fallback identity poses.
     """
-    intrinsics = camera_meta.get("intrinsics")
-    if intrinsics is None:
+    if len(point_3d) < 3 or not all(math.isfinite(x) for x in point_3d[:3]):
         return None
 
-    if isinstance(intrinsics, (list, tuple)) and len(intrinsics) == 4:
-        fx, fy, cx, cy = float(intrinsics[0]), float(intrinsics[1]), float(intrinsics[2]), float(intrinsics[3])
-    elif isinstance(intrinsics, dict):
-        fx = float(intrinsics.get("fx", 500.0))
-        fy = float(intrinsics.get("fy", 500.0))
-        cx = float(intrinsics.get("cx", 320.0))
-        cy = float(intrinsics.get("cy", 240.0))
-    elif isinstance(intrinsics, (list, tuple)) and len(intrinsics) == 3 and len(intrinsics[0]) == 3:
-        fx, fy, cx, cy = float(intrinsics[0][0]), float(intrinsics[1][1]), float(intrinsics[0][2]), float(intrinsics[1][2])
-    else:
+    camera = VisibilityReprojectionValidator.camera_from_metadata(camera_meta)
+    if camera is None:
         return None
 
-    # Camera extrinsics [R | t]
-    extrinsics = camera_meta.get("extrinsics") or camera_meta.get("pose_4x4")
-    if extrinsics is not None:
-        ext_mat = np.array(extrinsics, dtype=float)
-        if ext_mat.shape == (4, 4):
-            R = ext_mat[:3, :3]
-            t = ext_mat[:3, 3]
-        elif ext_mat.shape == (3, 4):
-            R = ext_mat[:3, :3]
-            t = ext_mat[:3, 3]
-        else:
-            R = np.eye(3, dtype=float)
-            t = np.zeros(3, dtype=float)
-    else:
-        # If camera has no explicit extrinsics, default to identity world frame only if specified
-        if camera_meta.get("is_canonical_frame", False):
-            R = np.eye(3, dtype=float)
-            t = np.zeros(3, dtype=float)
-        else:
-            return None
-
-    X_w = np.array(point_3d[:3], dtype=float)
-    X_c = R @ X_w + t
-
-    Z_c = float(X_c[2])
-    if Z_c <= 0.001:  # Point behind or on focal plane
-        return None
-
-    u = fx * (float(X_c[0]) / Z_c) + cx
-    v = fy * (float(X_c[1]) / Z_c) + cy
-    return u, v
+    from engine.math import Vec3
+    p_vec = Vec3(float(point_3d[0]), float(point_3d[1]), float(point_3d[2]))
+    return camera.project(p_vec)
 
 
 class UniversalFusionPipeline:

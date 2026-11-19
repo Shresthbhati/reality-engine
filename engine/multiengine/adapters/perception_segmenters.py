@@ -82,15 +82,22 @@ class SamEngineAdapter(BaseModelEngineAdapter):
         from segment_anything import SamPredictor, sam_model_registry
 
         dev_str = "cuda:0" if device.kind == "cuda" else "cpu"
+        ckpt_path = self.checkpoint
+        if not Path(ckpt_path).exists():
+            # Check standard torch hub cache
+            cached = Path.home() / ".cache" / "torch" / "hub" / "checkpoints" / "sam_vit_b_01ec64.pth"
+            if cached.exists():
+                ckpt_path = str(cached)
+
         try:
-            sam = sam_model_registry["vit_b"](checkpoint=self.checkpoint)
+            sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
             sam.to(dev_str).eval()
             self._predictor = SamPredictor(sam)
             self._model = sam
         except Exception as e:
             raise EngineError(
                 EngineErrorKind.MISSING_CHECKPOINT,
-                f"Failed to load SAM weights {self.checkpoint}: {e}",
+                f"Failed to load SAM weights {ckpt_path}: {e}",
             ) from e
 
     def infer(self, request: EngineRequest) -> Sequence[ObservationDraft]:

@@ -661,7 +661,9 @@ class Entity:
     observations: list[Observation] = field(default_factory=list)
     temporal_events: list[TemporalEvent] = field(default_factory=list)
     provenance: Provenance = Provenance.UNKNOWN
-    confidence: float = 0.5
+    # Optional measured confidence [0.0, 1.0]. None means "not measured", never a fabricated 0.5
+    confidence: Optional[float] = None
+    confidence_basis: Optional[str] = None
     confidence_vector: ConfidenceVector = field(default_factory=ConfidenceVector)
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     custom_properties: dict = field(default_factory=dict)
@@ -729,6 +731,8 @@ class Entity:
             "custom_properties": self.custom_properties,
             "statement_state": self.statement_state.value if self.statement_state else None,
         }
+        if self.confidence_basis is not None:
+            d["confidence_basis"] = self.confidence_basis
         # Additive field: an entirely unmeasured vector is omitted so pre-7.1 worlds round-trip unchanged.
         cv = self.confidence_vector.to_dict() if self.confidence_vector else None
         if cv and any(v is not None for v in cv.values()):
@@ -758,7 +762,8 @@ class Entity:
             observations=[Observation.from_dict(o) for o in data.get("observations", [])],
             temporal_events=[TemporalEvent.from_dict(e) for e in data.get("temporal_events", [])],
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
-            confidence=data.get("confidence", 0.5),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else None,
+            confidence_basis=data.get("confidence_basis"),
             confidence_vector=ConfidenceVector.from_dict(data.get("confidence_vector")),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),

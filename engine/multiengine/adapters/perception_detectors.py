@@ -404,7 +404,11 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
+        payload_queries = request.payload.get("queries") if request.payload else None
+        if payload_queries and isinstance(payload_queries, list):
+            prompts = [str(q) for q in payload_queries]
+        else:
+            prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:

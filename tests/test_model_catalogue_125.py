@@ -66,7 +66,8 @@ def test_catalogue_honest_audit() -> None:
     assert audit["total_slots"] == 125
     assert audit["planned_slots"] == 94
     assert audit["installed_architectures"] == 26
-    assert audit["available_checkpoints"] == 6
+    assert audit["available_checkpoints"] >= 6  # Dynamically probed in local environment
+    assert "checkpoint_probe_details" in audit
     assert audit["verified_adapters"] == 21
     assert audit["production_wired_engines"] == 4
     assert audit["blocked_engines"] == 5

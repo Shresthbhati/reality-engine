@@ -47,6 +47,15 @@ worktree `.claude/worktrees/auto-recon-sprint`)
 - **Measured Hardware Benchmarks**: NVIDIA RTX 4050 6GB Laptop GPU tested on OWL-ViT, MiDaS, and Depth Anything V2 in `docs/HARDWARE_BENCHMARK_REPORT.md` (reclaimed $>95\%$ VRAM on unload).
 - **Test Suite**: 39/39 tests passing across all perception and fusion modules.
 
+### Metric Reconstruction Integration & Accuracy Repair Cycle (Completed 2026-11-19)
+- **Removal of Invented Camera Measurements**: `VisibilityReprojectionValidator.validate_camera_metadata` strictly enforces positive focal lengths, positive dimensions, finite values, and rigid rotation matrices ($\det(R) \approx 1.0, \|R^T R - I\|_\infty \le 10^{-3}$). Identity camera fallback is rejected unless explicitly flagged as canonical frame.
+- **Metric 3D Lifting Integrity**: Enforces `is_metric_depth: bool = True`, unified $(w, x, y, z)$ quaternion convention, honest planar symmetry handling (`is_orientation_known=False`), and order-statistic quantile variance for $N \ge 20$.
+- **WorldIR Confidence Contract**: Made `Entity.confidence: Optional[float] = None` with companion `confidence_basis: Optional[str] = None`. Serializes `None` when unmeasured rather than fabricated 0.5. Validator updated to accept `None`.
+- **Benchmark Integrity & Ground Truth**: Eliminated synthetic ground-truth noise reading; dynamically evaluates `part_association_accuracy`; reports `BLOCKED` on missing physical survey ground truth.
+- **Dynamic Checkpoint Probing**: Added cached host filesystem probing in `ModelCatalogue.audit()` replacing hardcoded checkpoint counts.
+- **Real Exterior Reconstruction**: Executed sequential pipeline on real South Building exterior photos with COLMAP calibration in `benchmarks/hardware/run_south_building_sequential.py`.
+- **Acceptance & Regression Test Suite**: 41/41 targeted tests passing. Zero regressions in CI static analysis gate (Ruff 4048/4048, Mypy 1/770).
+
 
 ## 2026-11-19 -- Evidence-to-world PRODUCTION INTEGRATION (branch `claude/sonnet-evidence-world-integration`, from main after PR #340)
 

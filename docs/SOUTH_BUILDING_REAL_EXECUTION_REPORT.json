@@ -1,0 +1,132 @@
+{
+  "execution_date": "2026-11-19 15:23:49 UTC",
+  "dataset": "datasets/south_building",
+  "photos_processed": [
+    "P1180141.JPG",
+    "P1180145.JPG",
+    "P1180149.JPG",
+    "P1180153.JPG"
+  ],
+  "total_photos_count": 4,
+  "total_wall_time_s": 36.49,
+  "device": "cuda:0",
+  "registered_cameras_in_colmap": 32,
+  "total_lifted_entities": 0,
+  "worldir_entities_count": 0,
+  "worldir_validation_errors": 0,
+  "artifact_path": "artifacts\\south_building_reconstruction.worldir.json",
+  "telemetry_per_photo": [
+    {
+      "photo": "P1180141.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 20.848,
+          "infer_s": 0.411,
+          "depth_range_m": [
+            2.978121042251587,
+            2.978121042251587
+          ]
+        },
+        "owlvit": {
+          "load_s": 0.879,
+          "infer_s": 0.352,
+          "detections_count": 0
+        },
+        "sam": {
+          "load_s": 1.305,
+          "infer_s": 0.52,
+          "masks_count": 0
+        },
+        "metric_lifting": {
+          "duration_s": 0.0,
+          "candidates_evaluated": 0,
+          "lifted_entities_count": 0
+        }
+      }
+    },
+    {
+      "photo": "P1180145.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.404,
+          "infer_s": 0.064,
+          "depth_range_m": [
+            2.35650897026062,
+            2.35650897026062
+          ]
+        },
+        "owlvit": {
+          "load_s": 0.94,
+          "infer_s": 0.073,
+          "detections_count": 0
+        },
+        "sam": {
+          "load_s": 1.043,
+          "infer_s": 0.354,
+          "masks_count": 0
+        },
+        "metric_lifting": {
+          "duration_s": 0.0,
+          "candidates_evaluated": 0,
+          "lifted_entities_count": 0
+        }
+      }
+    },
+    {
+      "photo": "P1180149.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.24,
+          "infer_s": 0.066,
+          "depth_range_m": [
+            2.7742528915405273,
+            2.7742528915405273
+          ]
+        },
+        "owlvit": {
+          "load_s": 0.786,
+          "infer_s": 0.069,
+          "detections_count": 0
+        },
+        "sam": {
+          "load_s": 0.808,
+          "infer_s": 0.466,
+          "masks_count": 0
+        },
+        "metric_lifting": {
+          "duration_s": 0.0,
+          "candidates_evaluated": 0,
+          "lifted_entities_count": 0
+        }
+      }
+    },
+    {
+      "photo": "P1180153.JPG",
+      "stages": {
+        "depth_anything": {
+          "load_s": 0.262,
+          "infer_s": 0.058,
+          "depth_range_m": [
+            2.0070106983184814,
+            2.0070106983184814
+          ]
+        },
+        "owlvit": {
+          "load_s": 0.871,
+          "infer_s": 0.085,
+          "detections_count": 0
+        },
+        "sam": {
+          "load_s": 0.92,
+          "infer_s": 0.473,
+          "masks_count": 0
+        },
+        "metric_lifting": {
+          "duration_s": 0.0,
+          "candidates_evaluated": 0,
+          "lifted_entities_count": 0
+        }
+      }
+    }
+  ]
+}

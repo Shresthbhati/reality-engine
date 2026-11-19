@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 548
+Total: 553
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -193,6 +193,7 @@ Total: 548
 - `tests/test_autonomous_quality_loop_rule9.py`
 - `tests/test_backend_selection_policy.py`
 - `tests/test_bad_evidence_real.py`
+- `tests/test_benchmark_integrity.py`
 - `tests/test_benchmark_suite.py`
 - `tests/test_billing_stripe_task7_2.py`
 - `tests/test_blob_gc.py`
@@ -202,6 +203,7 @@ Total: 548
 - `tests/test_building_grammar.py`
 - `tests/test_cad_importer.py`
 - `tests/test_camera_calibration.py`
+- `tests/test_camera_calibration_integrity.py`
 - `tests/test_candidate_selection.py`
 - `tests/test_canonical_interior.py`
 - `tests/test_capability_audit.py`
@@ -406,6 +408,7 @@ Total: 548
 - `tests/test_meshing_pipeline.py`
 - `tests/test_meshopt_simplifier.py`
 - `tests/test_metric_3d_lifting.py`
+- `tests/test_metric_3d_lifting_rigorous.py`
 - `tests/test_metric_anchor_determinism.py`
 - `tests/test_metric_depth_task4_4.py`
 - `tests/test_metric_scale_fusion.py`
@@ -514,6 +517,7 @@ Total: 548
 - `tests/test_reality_benchmark.py`
 - `tests/test_reality_inventory.py`
 - `tests/test_reality_studio_primary_journey.py`
+- `tests/test_reconstruction_acceptance_e2e.py`
 - `tests/test_reconstruction_batch.py`
 - `tests/test_reconstruction_benchmark_rule3.py`
 - `tests/test_reconstruction_completeness.py`
@@ -679,6 +683,7 @@ Total: 548
 - `tests/test_world_runtime.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
+- `tests/test_worldir_confidence_contract.py`
 - `tests/test_worldir_coordinate_like_properties.py`
 - `tests/test_worldstore_concurrency.py`
 - `tests/test_worldstore_retention.py`

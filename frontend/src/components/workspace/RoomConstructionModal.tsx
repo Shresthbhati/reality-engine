@@ -15,6 +15,8 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { jobOutcome } from "@/lib/api/job-status";
+
 /** A session attached to this world, as offered in the selector. */
 export interface ConstructionSessionOption {
   id: string;
@@ -82,6 +84,7 @@ export type ReconstructionJobStatus =
   | "partial"
   | "succeeded"
   | "failed"
+  | "needs_more_evidence"
   | "cancelled";
 
 export default function RoomConstructionModal({
@@ -192,13 +195,39 @@ export default function RoomConstructionModal({
         const jobRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
 
         if (!jobRes.ok) {
-          // A transient read failure is not a job failure; keep polling until
-          // the budget is spent, then report honestly.
+          // 401/403/404 will not heal by waiting: the job cannot be observed, so say so instead of polling for two
+          // minutes and then claiming it "may still finish". Other failures (5xx, timeouts) are transient: keep
+          // polling until the budget is spent, then report honestly.
+          if (jobRes.status === 401 || jobRes.status === 403 || jobRes.status === 404) {
+            setRunning(false);
+            setActiveStage(null);
+            setJobStatus("failed");
+            setError(`Job ${jobId} cannot be read (HTTP ${jobRes.status}); its outcome is unknown.`);
+            return;
+          }
           pollCount++;
           continue;
         }
 
         const job = await jobRes.json();
+
+        // A status this client does not know is neither progress nor success: stop and say so.
+        if (jobOutcome(job) === "unrecognised") {
+          setRunning(false);
+          setActiveStage(null);
+          setJobStatus("failed");
+          setError(`Job ${jobId} reported an unrecognised status (${String(job?.status)}); its outcome cannot be shown.`);
+          return;
+        }
+
+        // Not enough usable evidence is a different outcome from a crash: the fix is more photos, not a retry.
+        if (jobOutcome(job) === "needs_more_evidence") {
+          setRunning(false);
+          setActiveStage(null);
+          setJobStatus("needs_more_evidence");
+          setError(job.error || "The photo set does not contain enough usable evidence. Add more overlapping photos.");
+          return;
+        }
 
         if (job.status === "running" || job.status === "queued") {
           setJobStatus(job.status);

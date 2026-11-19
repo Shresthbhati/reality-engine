@@ -13,25 +13,26 @@ export async function GET(
       signal: AbortSignal.timeout(5000),
     });
     
-    if (!response.ok) {
-      if (response.status === 404) {
-        return NextResponse.json(
-          { error: "Job not found" },
-          { status: 404 }
-        );
-      }
-      return NextResponse.json(
-        { error: `Backend error: ${response.statusText}` },
-        { status: response.status }
-      );
+    // Forward the backend's own body and status: FastAPI errors are `{detail}`, and the API client reads `detail`.
+    // Rewriting them to a private `{error}` shape threw away the real reason (e.g. a foreign job's 404 vs a 403).
+    const text = await response.text();
+    let data: unknown = null;
+    try {
+      data = text ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      data = null;
     }
-    
-    const data = await response.json();
+    if (!response.ok) {
+      return NextResponse.json(data ?? { detail: `Job lookup failed with HTTP ${response.status}` }, { status: response.status });
+    }
+    if (data === null) {
+      return NextResponse.json({ detail: "The Reality Engine API returned an empty or invalid body for this job." }, { status: 502 });
+    }
     return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: `Failed to connect to backend: ${message}` },
+      { detail: `Failed to reach the Reality Engine API for this job: ${message}`, available: false },
       { status: 503 }
     );
   }

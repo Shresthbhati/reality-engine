@@ -93,7 +93,9 @@ def test_redetect_crop_with_real_image_and_honest_provenance():
     )
     world.entities[ent.id] = ent
 
+    # Create an image with real visual features (high contrast handle pattern)
     img = np.full((480, 640, 3), 120, dtype=np.uint8)
+    img[200:260, 280:360] = 230
     cam = _create_test_camera(position=(0.0, 0.0, 0.0))
 
     task = RefinementTask(

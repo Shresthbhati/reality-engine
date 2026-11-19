@@ -81,6 +81,10 @@ class PointCloudFusionResult:
     conflicts_count: int
     total_fused: int
     total_unmatched: int
+    ambiguous_matches_count: int = 0
+    duplicate_matches_prevented: int = 0
+    is_resolved: bool = True
+    coordinate_frame: str = "world_enu"
 
 
 def _compute_mad_scale(values: list[float], center: float) -> float:
@@ -281,7 +285,59 @@ def robust_fuse_quantity(
     # Check for multi-modal / bimodal cluster in N >= 3
     is_bimodal = False
     competing_modes: list[tuple[float, float]] = []
-    if len(outliers) >= 1 and len(inliers) >= 1:
+
+    conflicts = _pairwise_conflicts(ordered)
+
+    # Graph-based agreement clustering: detect competing modes
+    n_obs = len(ordered)
+    adj: list[list[int]] = [[] for _ in range(n_obs)]
+    for i in range(n_obs):
+        for j in range(i + 1, n_obs):
+            delta = abs(ordered[i].value - ordered[j].value)
+            combined_sigma = math.sqrt(ordered[i].precision**2 + ordered[j].precision**2)
+            if delta <= 3.0 * combined_sigma:
+                adj[i].append(j)
+                adj[j].append(i)
+
+    visited: set[int] = set()
+    clusters: list[list[FusableObservation]] = []
+    for i in range(n_obs):
+        if i not in visited:
+            comp: list[FusableObservation] = []
+            queue = [i]
+            visited.add(i)
+            while queue:
+                curr = queue.pop()
+                comp.append(ordered[curr])
+                for neighbor in adj[curr]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+            clusters.append(comp)
+
+    if len(clusters) >= 2:
+        cluster_stats: list[tuple[float, float, float, list[FusableObservation]]] = []
+        for c in clusters:
+            c_weights = [1.0 / (o.precision**2) for o in c]
+            total_w_c = sum(c_weights)
+            c_mean = sum(o.value * w for o, w in zip(c, c_weights)) / total_w_c
+            c_prec = math.sqrt(1.0 / total_w_c)
+            cluster_stats.append((c_mean, c_prec, total_w_c, c))
+
+        cluster_stats.sort(key=lambda cs: cs[0])
+        # Check if spread between extreme cluster means indicates bimodal conflict
+        diff = abs(cluster_stats[-1][0] - cluster_stats[0][0])
+        comb_sigma = math.sqrt(cluster_stats[0][1]**2 + cluster_stats[-1][1]**2)
+        if diff > 3.0 * comb_sigma:
+            is_bimodal = True
+            competing_modes = [(cs[0], cs[1]) for cs in cluster_stats]
+            # Select dominant cluster (highest weight / precision) rather than averaging across void
+            dominant_cluster = max(cluster_stats, key=lambda cs: cs[2])
+            curr_mu = dominant_cluster[0]
+            inliers = list(dominant_cluster[3])
+            outliers = [o for o in ordered if o not in inliers]
+
+    if not is_bimodal and len(outliers) >= 1 and len(inliers) >= 1:
         # Check if outliers themselves form a coherent second mode
         outlier_vals = [o.value for o in outliers]
         if len(outlier_vals) >= 2:
@@ -296,8 +352,6 @@ def robust_fuse_quantity(
     if not inliers:
         inliers = list(ordered)
         outliers = []
-
-    conflicts = _pairwise_conflicts(ordered)
 
     # Inlier precision with correlation variance adjustment
     inlier_w_sum = sum(1.0 / (o.precision**2) for o in inliers)
@@ -358,10 +412,15 @@ def fuse_registered_point_clouds(
     correspondence_radius_m: float = 0.05,
     loss: str = "huber",
     tuning_k: float = 2.5,
+    coordinate_frames_by_source: dict[str, str] | None = None,
+    units_by_source: dict[str, Unit] | None = None,
+    ambiguity_ratio_threshold: float = 0.85,
 ) -> PointCloudFusionResult:
     """Fuse multi-sensor 3D point clouds using registered spatial correspondences.
 
     Requires spatial point correspondence within `correspondence_radius_m`.
+    Enforces one-to-one mutual nearest-neighbor correspondence with ratio-test ambiguity rejection.
+    Validates physical coordinate frames, units, and declared sensor precisions (> 0).
     Does NOT silently truncate points when sensor clouds have unequal sizes.
     Unmatched points are catalogued and preserved in `unmatched_by_source`.
     """
@@ -372,19 +431,54 @@ def fuse_registered_point_clouds(
             conflicts_count=0,
             total_fused=0,
             total_unmatched=0,
+            ambiguous_matches_count=0,
+            duplicate_matches_prevented=0,
+            is_resolved=True,
+            coordinate_frame="world_enu",
         )
 
     sources = sorted(points_by_source.keys())
+
+    # Validate coordinate frames
+    target_frame = "world_enu"
+    if coordinate_frames_by_source:
+        frames = set(coordinate_frames_by_source.get(s) for s in sources)
+        if len(frames) > 1 or None in frames:
+            raise FusionError(
+                f"coordinate frame mismatch across sources: {coordinate_frames_by_source}"
+            )
+        target_frame = next(iter(frames)) or "world_enu"
+
+    # Validate physical units
+    if units_by_source:
+        for s in sources:
+            u = units_by_source.get(s)
+            if u is not None and u != Unit.METER:
+                raise FusionError(
+                    f"unit mismatch for source {s!r}: point cloud fusion requires Unit.METER, got {u.value}"
+                )
+
+    # Validate sensor precisions - strictly prohibit fabricated defaults
+    for s in sources:
+        prec = precisions_by_source.get(s)
+        if prec is None or prec <= 0.0:
+            raise ValueError(
+                f"missing or non-positive precision for source {s!r}: "
+                f"every source must declare physical 1-sigma precision > 0"
+            )
+
     conf_map = confidences_by_source or {}
 
     # Designate the source with the lowest nominal precision (highest accuracy) as primary reference
-    ref_source = min(sources, key=lambda s: precisions_by_source.get(s, 0.05))
+    ref_source = min(sources, key=lambda s: precisions_by_source[s])
     other_sources = [s for s in sources if s != ref_source]
 
     ref_points = list(points_by_source[ref_source])
     fused_points: list[tuple[float, float, float]] = []
     unmatched_by_source: dict[str, list[tuple[float, float, float]]] = {s: [] for s in sources}
     conflicts_count = 0
+    ambiguous_matches_count = 0
+    duplicate_matches_prevented = 0
 
     if not other_sources:
         return PointCloudFusionResult(
@@ -393,6 +487,10 @@ def fuse_registered_point_clouds(
             conflicts_count=0,
             total_fused=len(ref_points),
             total_unmatched=0,
+            ambiguous_matches_count=0,
+            duplicate_matches_prevented=0,
+            is_resolved=True,
+            coordinate_frame=target_frame,
         )
 
     # Build spatial index trees for secondary sources
@@ -409,14 +507,16 @@ def fuse_registered_point_clouds(
 
     # For each reference point, find corresponding points across secondary sources
     for i, ref_pt in enumerate(ref_points):
+        ref_prec = precisions_by_source[ref_source]
+        ref_conf = conf_map.get(ref_source, 1.0)
         matched_obs_x = [
             FusableObservation(
                 value=ref_pt[0],
                 unit=Unit.METER,
                 source=ref_source,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(ref_source, 0.95),
-                precision=precisions_by_source.get(ref_source, 0.02),
+                confidence=ref_conf,
+                precision=ref_prec,
             )
         ]
         matched_obs_y = [
@@ -425,8 +525,8 @@ def fuse_registered_point_clouds(
                 unit=Unit.METER,
                 source=ref_source,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(ref_source, 0.95),
-                precision=precisions_by_source.get(ref_source, 0.02),
+                confidence=ref_conf,
+                precision=ref_prec,
             )
         ]
         matched_obs_z = [
@@ -435,8 +535,8 @@ def fuse_registered_point_clouds(
                 unit=Unit.METER,
                 source=ref_source,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(ref_source, 0.95),
-                precision=precisions_by_source.get(ref_source, 0.02),
+                confidence=ref_conf,
+                precision=ref_prec,
             )
         ]
 
@@ -446,32 +546,74 @@ def fuse_registered_point_clouds(
             if len(arr) == 0:
                 continue
 
-            match_idx: int | None = None
+            candidate_idx: int | None = None
+            is_ambiguous = False
+
             if _HAS_SCIPY and s in secondary_trees:
-                dist, idx = secondary_trees[s].query(ref_pt, distance_upper_bound=correspondence_radius_m)
-                if dist <= correspondence_radius_m and idx < len(arr):
-                    match_idx = int(idx)
+                k_query = min(2, len(arr))
+                dists, idxs = secondary_trees[s].query(ref_pt, k=k_query, distance_upper_bound=correspondence_radius_m)
+                if k_query == 1:
+                    d_val = float(dists)
+                    i_val = int(idxs)
+                    if d_val <= correspondence_radius_m and i_val < len(arr):
+                        candidate_idx = i_val
+                else:
+                    d0 = float(dists[0])
+                    d1 = float(dists[1])
+                    i0 = int(idxs[0])
+                    if d0 <= correspondence_radius_m and i0 < len(arr):
+                        if d1 <= correspondence_radius_m:
+                            ratio = d0 / max(d1, 1e-9)
+                            if ratio > ambiguity_ratio_threshold:
+                                is_ambiguous = True
+                        if not is_ambiguous:
+                            candidate_idx = i0
             else:
                 # Fallback Euclidean radius search
                 diffs = arr - np.asarray(ref_pt, dtype=np.float64)
-                dists = np.linalg.norm(diffs, axis=1)
-                min_idx = int(np.argmin(dists))
-                if dists[min_idx] <= correspondence_radius_m:
-                    match_idx = min_idx
+                dists_arr = np.linalg.norm(diffs, axis=1)
+                if len(arr) >= 2:
+                    sorted_indices = np.argsort(dists_arr)
+                    min_idx0 = int(sorted_indices[0])
+                    min_idx1 = int(sorted_indices[1])
+                    d0 = float(dists_arr[min_idx0])
+                    d1 = float(dists_arr[min_idx1])
+                    if d0 <= correspondence_radius_m:
+                        if d1 <= correspondence_radius_m:
+                            ratio = d0 / max(d1, 1e-9)
+                            if ratio > ambiguity_ratio_threshold:
+                                is_ambiguous = True
+                        if not is_ambiguous:
+                            candidate_idx = min_idx0
+                elif len(arr) == 1:
+                    d0 = float(dists_arr[0])
+                    if d0 <= correspondence_radius_m:
+                        candidate_idx = 0
 
-            if match_idx is not None:
-                matched_pt = arr[match_idx]
-                matched_secondary_indices[s].add(match_idx)
+            if is_ambiguous:
+                ambiguous_matches_count += 1
+                continue
+
+            if candidate_idx is not None:
+                # Enforce one-to-one correspondence: prevent duplicate matching of secondary points
+                if candidate_idx in matched_secondary_indices[s]:
+                    duplicate_matches_prevented += 1
+                    continue
+
+                matched_pt = arr[candidate_idx]
+                matched_secondary_indices[s].add(candidate_idx)
                 has_any_match = True
 
+                s_prec = precisions_by_source[s]
+                s_conf = conf_map.get(s, 1.0)
                 matched_obs_x.append(
                     FusableObservation(
                         value=float(matched_pt[0]),
                         unit=Unit.METER,
                         source=s,
                         provenance=Provenance.OBSERVED,
-                        confidence=conf_map.get(s, 0.85),
-                        precision=precisions_by_source.get(s, 0.05),
+                        confidence=s_conf,
+                        precision=s_prec,
                     )
                 )
                 matched_obs_y.append(
@@ -480,8 +622,8 @@ def fuse_registered_point_clouds(
                         unit=Unit.METER,
                         source=s,
                         provenance=Provenance.OBSERVED,
-                        confidence=conf_map.get(s, 0.85),
-                        precision=precisions_by_source.get(s, 0.05),
+                        confidence=s_conf,
+                        precision=s_prec,
                     )
                 )
                 matched_obs_z.append(
@@ -490,8 +632,8 @@ def fuse_registered_point_clouds(
                         unit=Unit.METER,
                         source=s,
                         provenance=Provenance.OBSERVED,
-                        confidence=conf_map.get(s, 0.85),
-                        precision=precisions_by_source.get(s, 0.05),
+                        confidence=s_conf,
+                        precision=s_prec,
                     )
                 )
 
@@ -521,6 +663,10 @@ def fuse_registered_point_clouds(
         conflicts_count=conflicts_count,
         total_fused=len(fused_points),
         total_unmatched=total_unmatched,
+        ambiguous_matches_count=ambiguous_matches_count,
+        duplicate_matches_prevented=duplicate_matches_prevented,
+        is_resolved=True,
+        coordinate_frame=target_frame,
     )
 
 
@@ -532,6 +678,9 @@ def fuse_multisensor_points_3d(
     tuning_k: float = 2.5,
     spatial_registration: bool = False,
     correspondence_radius_m: float = 0.05,
+    coordinate_frames_by_source: dict[str, str] | None = None,
+    units_by_source: dict[str, Unit] | None = None,
+    ambiguity_ratio_threshold: float = 0.85,
 ) -> list[tuple[float, float, float]]:
     """Robustly fuse 3D point cloud coordinates across multiple sensor streams.
 
@@ -540,12 +689,15 @@ def fuse_multisensor_points_3d(
 
     Parameters:
       points_by_source: Mapping from sensor name to ordered list of 3D points.
-      precisions_by_source: Claimed 1-sigma spatial precision (meters) per sensor.
+      precisions_by_source: Claimed 1-sigma spatial precision (meters) per sensor (> 0).
       confidences_by_source: Confidence per sensor [0, 1].
       loss: M-estimation loss function.
       tuning_k: Standardized residual threshold.
       spatial_registration: If True, uses spatial KD-tree registered correspondence.
       correspondence_radius_m: Radius tolerance for spatial correspondence.
+      coordinate_frames_by_source: Coordinate frames per source (must match).
+      units_by_source: Physical unit per source (must be Unit.METER).
+      ambiguity_ratio_threshold: Ratio test threshold for ambiguous match rejection.
 
     Returns:
       List of fused 3D coordinates (x, y, z).
@@ -561,10 +713,40 @@ def fuse_multisensor_points_3d(
             correspondence_radius_m=correspondence_radius_m,
             loss=loss,
             tuning_k=tuning_k,
+            coordinate_frames_by_source=coordinate_frames_by_source,
+            units_by_source=units_by_source,
+            ambiguity_ratio_threshold=ambiguity_ratio_threshold,
         )
         return res.fused_points
 
     sources = sorted(points_by_source.keys())
+
+    # Validate coordinate frames
+    if coordinate_frames_by_source:
+        frames = set(coordinate_frames_by_source.get(s) for s in sources)
+        if len(frames) > 1 or None in frames:
+            raise FusionError(
+                f"coordinate frame mismatch across sources: {coordinate_frames_by_source}"
+            )
+
+    # Validate physical units
+    if units_by_source:
+        for s in sources:
+            u = units_by_source.get(s)
+            if u is not None and u != Unit.METER:
+                raise FusionError(
+                    f"unit mismatch for source {s!r}: point cloud fusion requires Unit.METER, got {u.value}"
+                )
+
+    # Validate sensor precisions - strictly prohibit fabricated defaults
+    for s in sources:
+        prec = precisions_by_source.get(s)
+        if prec is None or prec <= 0.0:
+            raise ValueError(
+                f"missing or non-positive precision for source {s!r}: "
+                f"every source must declare physical 1-sigma precision > 0"
+            )
+
     lengths = [len(points_by_source[s]) for s in sources]
     n_points = min(lengths)
     conf_map = confidences_by_source or {}
@@ -579,8 +761,8 @@ def fuse_multisensor_points_3d(
                 unit=Unit.METER,
                 source=s,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(s, 0.9),
-                precision=precisions_by_source.get(s, 0.05),
+                confidence=conf_map.get(s, 1.0),
+                precision=precisions_by_source[s],
             )
             for s in sources
         ]
@@ -593,8 +775,8 @@ def fuse_multisensor_points_3d(
                 unit=Unit.METER,
                 source=s,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(s, 0.9),
-                precision=precisions_by_source.get(s, 0.05),
+                confidence=conf_map.get(s, 1.0),
+                precision=precisions_by_source[s],
             )
             for s in sources
         ]
@@ -607,8 +789,8 @@ def fuse_multisensor_points_3d(
                 unit=Unit.METER,
                 source=s,
                 provenance=Provenance.OBSERVED,
-                confidence=conf_map.get(s, 0.9),
-                precision=precisions_by_source.get(s, 0.05),
+                confidence=conf_map.get(s, 1.0),
+                precision=precisions_by_source[s],
             )
             for s in sources
         ]

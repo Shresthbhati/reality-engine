@@ -139,10 +139,10 @@ def run_for_job(
 
             from engine.multiengine.pair_scoring import (
                 ScorerConfig,
+                DEFAULT_EPIPOLAR_TOLERANCE_PX,
                 appearance_from_images,
                 make_pair_scorer,
             )
-            from perception.instances.epipolar import DEFAULT_EPIPOLAR_TOLERANCE_PX
 
             cfg = ScorerConfig(epipolar_tolerance_px=DEFAULT_EPIPOLAR_TOLERANCE_PX, appearance_min=APPEARANCE_MIN)
             scorer = make_pair_scorer(usable, cfg, appearance=appearance_from_images(Image.open))

@@ -38,7 +38,7 @@ def test_registry_picks_first_available(monkeypatch):
 
 
 def test_backends_unavailable_without_weights(monkeypatch):
-    import huggingface_hub
+    huggingface_hub = pytest.importorskip("huggingface_hub", reason="huggingface_hub is not installed (optional extra)")
     monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda *a, **k: None)
     ok, reason = OwlVitDetector().available()
     assert not ok and "huggingface-cli download google/owlvit-base-patch32" in reason

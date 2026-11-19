@@ -23,8 +23,8 @@ Deterministic: pure float math, no clocks, no RNG.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence, Tuple
 
 from perception.architecture.classify import (
     HORIZONTAL_MIN_UP_DOT,
@@ -34,7 +34,7 @@ from perception.architecture.classify import (
 )
 from perception.architecture.parametric import FitRefused
 
-Vec3 = Tuple[float, float, float]
+Vec3 = tuple[float, float, float]
 
 #: Minimum lateral extent (both axes) for a horizontal plane to count as
 #: a roof surface rather than a cap/skylight. Deliberately modest.
@@ -55,7 +55,7 @@ class RoofFit:
     #: Plane id of the highest measured sheet.
     plane_id: str
     #: Supporting sheet plane ids (all coplanar members of the top band).
-    supporting_plane_ids: Tuple[str, ...]
+    supporting_plane_ids: tuple[str, ...]
     position: Vec3
     width_m: float
     depth_m: float
@@ -64,7 +64,7 @@ class RoofFit:
     up_dot: float
     n_planes: int
     confidence: float
-    evidence_ids: Tuple[str, ...]
+    evidence_ids: tuple[str, ...]
     kind: str = "roof"
 
     def to_dict(self) -> dict:
@@ -180,3 +180,84 @@ def detect_roof(
         confidence=confidence,
         evidence_ids=evidence_ids,
     )
+
+
+@dataclass(frozen=True)
+class SlopedCeilingFit:
+    """A measured sloped ceiling or pitched roof surface (Cycle 3 architectural extension)."""
+
+    plane_id: str
+    pitch_deg: float
+    normal: Vec3
+    ridge_height_m: float
+    eave_height_m: float
+    width_m: float
+    depth_m: float
+    confidence: float
+    supporting_plane_ids: tuple[str, ...]
+    is_sloped: bool = True
+
+    def to_dict(self) -> dict:
+        return {
+            "plane_id": self.plane_id,
+            "pitch_deg": round(self.pitch_deg, 2),
+            "normal": [round(c, 4) for c in self.normal],
+            "ridge_height_m": round(self.ridge_height_m, 3),
+            "eave_height_m": round(self.eave_height_m, 3),
+            "width_m": round(self.width_m, 3),
+            "depth_m": round(self.depth_m, 3),
+            "confidence": round(self.confidence, 4),
+            "supporting_plane_ids": list(self.supporting_plane_ids),
+            "is_sloped": True,
+        }
+
+
+def detect_sloped_ceiling(
+    planes: Sequence[PlaneInput],
+    up: Vec3 = (0.0, 0.0, 1.0),
+    min_pitch_deg: float = 10.0,
+    max_pitch_deg: float = 75.0,
+) -> list[SlopedCeilingFit]:
+    """Detect non-horizontal sloped ceiling planes (e.g. pitched roof, vaulted ceiling).
+
+    Measures pitch angle, ridge height, eave height, and lateral spans.
+    """
+    if not planes:
+        return []
+
+    up_u = _normalize(up)
+    fits: list[SlopedCeilingFit] = []
+
+    for p in planes:
+        n_norm = _normalize(p.normal)
+        up_dot = abs(_dot(n_norm, up_u))
+        # Clamp up_dot to [-1.0, 1.0] for math.acos
+        clamped_dot = max(0.0, min(1.0, up_dot))
+        pitch_deg = math.degrees(math.acos(clamped_dot))
+
+        if min_pitch_deg <= pitch_deg <= max_pitch_deg:
+            # Sloped plane
+            h_lo = min(_dot(p.bounds_min, up_u), _dot(p.bounds_max, up_u))
+            h_hi = max(_dot(p.bounds_min, up_u), _dot(p.bounds_max, up_u))
+
+            # Lateral extent
+            dx = abs(p.bounds_max[0] - p.bounds_min[0])
+            dy = abs(p.bounds_max[1] - p.bounds_min[1])
+
+            conf = max(0.60, min(0.98, 0.90 + 0.1 * math.sin(math.radians(pitch_deg))))
+
+            fits.append(
+                SlopedCeilingFit(
+                    plane_id=p.plane_id,
+                    pitch_deg=pitch_deg,
+                    normal=n_norm,
+                    ridge_height_m=h_hi,
+                    eave_height_m=h_lo,
+                    width_m=dx,
+                    depth_m=dy,
+                    confidence=conf,
+                    supporting_plane_ids=(p.plane_id,),
+                )
+            )
+
+    return fits

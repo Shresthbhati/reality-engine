@@ -331,7 +331,10 @@ class WorkerSandbox:
     def resolve_path(self, rel_path: str) -> Path:
         """Safely resolve path within sandbox; raises ValueError if path escapes."""
         from pathlib import Path
-        candidate = (self.sandbox_dir / rel_path).resolve()
+        # A backslash is a path separator on Windows but an ordinary filename character on POSIX, so "..\\..\\x" would
+        # escape on one OS and stay inside on the other. Treat it as a separator everywhere: the same input is refused
+        # on every platform (and a path that later reaches a Windows consumer cannot smuggle a traversal).
+        candidate = (self.sandbox_dir / rel_path.replace("\\", "/")).resolve()
         try:
             candidate.relative_to(self.sandbox_dir)
         except ValueError:

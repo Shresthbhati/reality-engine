@@ -1,6 +1,7 @@
-"""Specialist Active Capture Guidance Engine (Universal Spatial Intelligence Directive Phase 7 / Cycle 2).
+"""Specialist Active Capture Guidance Engine (Universal Spatial Intelligence Directive Phase 7 / Cycle 3).
 
 Computes unobserved viewpoints and generates active capture guidance:
+- Real visibility-aware viewpoint planning: considers surface normals, viewing incidence, camera FOV.
 - Analyzes entity spatial location and existing camera observation angles.
 - Computes unobserved azimuth sectors based on existing camera rays and expected information gain.
 - Constrains recommended camera poses to remain strictly within room floor boundaries (clamping poses >= 0.3m away from walls).
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 from engine.quality.autonomous_correction_loop import RefinementKind, RefinementTask
 from world_ir import EntityType, WorldIR
@@ -20,21 +21,25 @@ from world_ir.camera import PinholeCamera
 
 def compute_viewpoint_guidance(
     entity_pos: Sequence[float],
-    existing_cameras: Optional[Sequence[Any]] = None,
-    room_bounds: Optional[tuple[float, float, float, float]] = None,
+    existing_cameras: Sequence[Any] | None = None,
+    room_bounds: tuple[float, float, float, float] | None = None,
+    surface_normal: tuple[float, float, float] | None = None,
     standoff_dist: float = 1.5,
     wall_margin: float = 0.3,
     num_sectors: int = 4,
+    camera_fov_deg: float = 65.0,
 ) -> list[dict[str, Any]]:
-    """Compute recommended viewpoints targeting unobserved azimuth sectors, constrained to room boundaries.
+    """Compute visibility-aware recommended viewpoints targeting unobserved azimuth sectors.
 
     Args:
         entity_pos: 3D coordinates [x, y, z] of the target entity.
         existing_cameras: Collection of existing cameras (PinholeCamera, position tuples/lists, or dicts).
         room_bounds: Optional (x_min, y_min, x_max, y_max) bounding box of the room.
+        surface_normal: Optional 3D surface normal vector [nx, ny, nz] representing the entity's primary face.
         standoff_dist: Desired camera standoff distance from the entity in meters.
         wall_margin: Minimum clearance required from room boundary walls in meters (>= 0.3m).
-        num_sectors: Number of radial azimuth sectors to partition (default 8: 45-degree bins).
+        num_sectors: Number of radial azimuth sectors to partition (default 4: 90-degree bins).
+        camera_fov_deg: Camera lens horizontal field of view in degrees.
 
     Returns:
         List of recommended viewpoints sorted by descending expected information gain.
@@ -48,7 +53,7 @@ def compute_viewpoint_guidance(
     # Analyze existing camera observation angles relative to entity
     if existing_cameras:
         for cam in existing_cameras:
-            cam_pos: Optional[list[float]] = None
+            cam_pos: list[float] | None = None
             if isinstance(cam, PinholeCamera):
                 p = cam.extrinsics.position
                 cam_pos = [p.x, p.y, p.z]
@@ -69,11 +74,18 @@ def compute_viewpoint_guidance(
 
     recommendations: list[dict[str, Any]] = []
 
+    norm_vec: tuple[float, float, float] | None = None
+    if surface_normal is not None and len(surface_normal) >= 3:
+        nx, ny, nz = float(surface_normal[0]), float(surface_normal[1]), float(surface_normal[2])
+        norm_len = math.hypot(nx, ny, nz)
+        if norm_len > 1e-5:
+            norm_vec = (nx / norm_len, ny / norm_len, nz / norm_len)
+
     for b in range(num_sectors):
         angle_deg = b * sector_width
         obs_count = sector_obs_counts[b]
-        # Information gain inversely proportional to existing observations
-        expected_gain = 1.0 if obs_count == 0 else 1.0 / (1.0 + float(obs_count))
+        # Base information gain inversely proportional to existing observations
+        obs_gain = 1.0 if obs_count == 0 else 1.0 / (1.0 + float(obs_count))
 
         rad = math.radians(angle_deg)
         cand_x = x_e + standoff_dist * math.cos(rad)
@@ -100,15 +112,35 @@ def compute_viewpoint_guidance(
                     cand_y = clamped_y
                     was_clamped = True
 
+        actual_standoff = math.hypot(cand_x - x_e, cand_y - y_e)
+
+        # Visibility factor: if surface normal is known, angle between camera view direction and surface normal
+        visibility_factor = 1.0
+        if norm_vec is not None:
+            # Camera look vector points from camera to entity: (x_e - cand_x, y_e - cand_y, z_e - cand_z)
+            # Inward view vector v = - (cand - entity) / dist
+            v_x = (x_e - cand_x) / max(1e-4, actual_standoff)
+            v_y = (y_e - cand_y) / max(1e-4, actual_standoff)
+            v_z = -0.35 / max(1e-4, math.hypot(actual_standoff, 0.35))
+            # Dot product with surface normal (positive when camera is facing the front surface)
+            cos_inc = -(v_x * norm_vec[0] + v_y * norm_vec[1] + v_z * norm_vec[2])
+            visibility_factor = max(0.1, min(1.0, cos_inc))
+
+        # Standoff quality penalty if pushed too close to wall (< 0.5m)
+        standoff_quality = min(1.0, actual_standoff / 0.8)
+
+        expected_gain = obs_gain * visibility_factor * standoff_quality
+
         recommendations.append({
             "azimuth_deg": round(angle_deg, 1),
             "position": [round(cand_x, 3), round(cand_y, 3), round(cand_z, 3)],
             "look_at": [round(x_e, 3), round(y_e, 3), round(z_e, 3)],
-            "standoff_m": round(math.hypot(cand_x - x_e, cand_y - y_e), 3),
+            "standoff_m": round(actual_standoff, 3),
             "expected_gain": round(expected_gain, 3),
             "clamped_to_room": was_clamped,
             "observations_in_sector": obs_count,
-            "recommended_lens_fov_deg": 65.0,
+            "recommended_lens_fov_deg": camera_fov_deg,
+            "visibility_factor": round(visibility_factor, 3),
         })
 
     # Sort viewpoints descending by expected gain
@@ -119,7 +151,7 @@ def compute_viewpoint_guidance(
 def more_views_specialist(
     task: RefinementTask,
     world: WorldIR,
-) -> Optional[bool]:
+) -> bool | None:
     """Execute active capture guidance planning for an under-observed entity.
 
     Returns:
@@ -177,11 +209,13 @@ def more_views_specialist(
     standoff_dist = float(task.metadata.get("standoff_dist", 1.5))
     wall_margin = float(task.metadata.get("wall_margin", 0.3))
     num_sectors = int(task.metadata.get("num_sectors", 4))
+    surface_normal = task.metadata.get("surface_normal")
 
     recommended_poses = compute_viewpoint_guidance(
         entity_pos=pos,
         existing_cameras=existing_cams,
         room_bounds=room_bounds,
+        surface_normal=surface_normal,
         standoff_dist=standoff_dist,
         wall_margin=wall_margin,
         num_sectors=num_sectors,

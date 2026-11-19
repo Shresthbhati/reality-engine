@@ -524,7 +524,7 @@ class TestDepthParsing:
         np = pytest.importorskip("numpy")
 
         arr = np.array([[0, 1000, 5000, 65535], [100, 200, 300, 400]], dtype=np.uint16)
-        img = pil_image.fromarray(arr, mode="I;16")
+        img = pil_image.fromarray(arr)  # uint16 infers I;16; the explicit mode= argument is gone in current Pillow
         png_path = tmp_path / "pillow_depth.png"
         img.save(str(png_path))
         descriptor = self._write_descriptor(tmp_path, image_name="pillow_depth.png")

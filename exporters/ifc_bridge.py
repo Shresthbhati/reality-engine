@@ -632,8 +632,8 @@ def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, exten
     ifc_api.run("pset.edit_pset", model, pset=pset_re, properties=props_re)
 
 
-def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
-    """Write `world`'s architectural entities to a real IFC4 file.
+def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[str, Any]:
+    """Write `world`'s architectural entities to a real IFC4 or IFC2X3 file.
 
     Returns a report: {"skipped": {entity_id: reason}, "written":
     [entity_id, ...]}. Raises IFCBridgeError when nothing was
@@ -646,7 +646,18 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
     except ImportError as exc:
         raise ImportError(_IMPORT_ERROR_MESSAGE) from exc
 
-    model = ifc_api.run("project.create_file", version="IFC4")
+    schema_ver = str(schema).upper()
+    if schema_ver not in ("IFC4", "IFC2X3"):
+        raise IFCBridgeError(f"unsupported IFC schema version {schema!r}; expected 'IFC4' or 'IFC2X3'")
+
+    model = ifc_api.run("project.create_file", version=schema_ver)
+    if schema_ver == "IFC2X3":
+        # IFC2X3 schema requires explicit OwnerHistory for root entities
+        p = ifc_api.run("owner.add_person", model, family_name="Engineer")
+        o = ifc_api.run("owner.add_organisation", model, name="RealityEngine")
+        ifc_api.run("owner.add_person_and_organisation", model, person=p, organisation=o)
+        ifc_api.run("owner.add_application", model)
+
     project = ifc_api.run("root.create_entity", model, ifc_class="IfcProject",
                           name=f"Reality Engine {world.id}")
     ifc_api.run("unit.assign_unit", model)
@@ -1131,6 +1142,7 @@ def import_ifc_to_world(path: str | Path) -> WorldIR:
                 relationships.append(Relationship(
                     target_id=storey_map[struct.id()],
                     kind=RelationshipKind.INSIDE,
+                    confidence=confidence,
                 ))
 
         for rel in getattr(elem, "Decomposes", ()):
@@ -1139,6 +1151,7 @@ def import_ifc_to_world(path: str | Path) -> WorldIR:
                 relationships.append(Relationship(
                     target_id=storey_map[parent.id()],
                     kind=RelationshipKind.INSIDE,
+                    confidence=confidence,
                 ))
 
         entity = Entity(

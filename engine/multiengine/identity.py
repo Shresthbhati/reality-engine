@@ -54,6 +54,12 @@ class IdentityRegistry:
             self._retired = dict(data["retired"])
             self._events = list(data["events"])
 
+    def clone(self) -> IdentityRegistry:
+        """An in-memory copy that never writes to disk: used to evaluate TRIAL states without recording identity events for them."""
+        c = IdentityRegistry(None)
+        c._entities, c._retired, c._events = dict(self._entities), dict(self._retired), list(self._events)
+        return c
+
     # ---- reads
     def members(self, stable_id: str) -> frozenset[str]:
         return self._entities[stable_id]

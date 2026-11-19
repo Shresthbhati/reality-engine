@@ -89,7 +89,9 @@ def test_rows_runs_and_sections_are_exposed_with_failures_preserved(client, tmp_
         assert client.get(_url(wid, "run-1", section), headers=A).status_code == 200, section
     assert client.get(_url(wid, "run-1", "hierarchy"), headers=A).json()["hierarchy"]["city_scale_claimable"] is False
     hist = client.get(_url(wid, "run-1", "refinement"), headers=A).json()["refinement_history"]
-    assert "not run" in hist[0]["reprocessing"]
+    assert hist[0]["stop_reason"] in {"target_met", "max_iterations", "no_improvement", "no_engine_available",
+                                      "awaiting_evidence", "nothing_to_refine"}  # an explicit reason from the real loop
+    assert "iterations" in hist[0] and "rolled_back_observations" in hist[0]
 
 
 def test_rejected_predictions_are_exposed_raw_with_their_reason(client, tmp_path):

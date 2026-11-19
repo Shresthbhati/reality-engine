@@ -81,7 +81,7 @@ def test_flag_on_records_the_stage_without_changing_the_job_grade(client, tmp_pa
     assert job["status"] == baseline["status"] == "succeeded"  # the evidence stage did not move the grade
     assert job["payload"]["outcome"] == baseline["payload"]["outcome"]
     ew = job["payload"]["evidence_world"]
-    assert ew["status"] == "complete" and ew["counts"]["entities"] == 6 and ew["counts"]["observations"] == 6
+    assert ew["status"] == "complete" and ew["counts"]["entities"] == 3 and ew["counts"]["observations"] == 6
     assert any("2D" in x for x in ew["limitations"])
     (d,) = _evidence_dirs(tmp_path)
     assert d.name == job["id"] and d.parent.name == wid2 and (d / "snapshot.json").is_file()  # tenant/world/job layout

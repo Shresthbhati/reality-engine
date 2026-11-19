@@ -87,7 +87,9 @@ def test_flow_persists_runs_builds_entities_and_states_its_limits(tmp_path):
     res, _ = _run(tmp_path)
     snap = res.snapshot
     assert res.status == "complete" and snap["counts"]["observations"] == 6 and snap["counts"]["runs"] == 2
-    assert snap["counts"]["candidates"] == 6 and snap["counts"]["entities"] == 6  # no pair scorer: no cross-view fusion
+    # two engines boxed the same 3 objects: 6 observations -> 3 image-level detections -> 3 entities (no pair scorer: no cross-view fusion)
+    assert snap["counts"]["candidates"] == 3 and snap["counts"]["entities"] == 3
+    assert all(len(e["members"]) == 2 for e in snap["entities"])  # each entity keeps BOTH engines' raw observations
     assert set(snap["limitations"]) >= set(LIMITATIONS) and any("pair scorer" in x for x in snap["limitations"])
     for ent in snap["entities"]:
         world = ent["world_entity"]
@@ -135,7 +137,7 @@ def test_cross_view_association_removes_the_reverse_view_request_but_not_the_mis
         return [PairScore(a.observation_id, b.observation_id, 0.9, {"note": "synthetic scorer"})]
 
     res, _ = _run(tmp_path, pair_scorer=scorer)
-    merged = next(e for e in res.canonicals if len(e.members) == 2)
+    merged = next(e for e in res.canonicals if len(e.members) == 4)  # the chair seen in two views by two engines each
     reqs = [r for r in res.capture_requests if r.target_ids == merged.members]
     kinds = {v.kind for r in reqs for v in r.suggested_views}
     assert "side_view" in kinds and "reverse_view" not in kinds  # two viewpoints: rear not known to be unobserved

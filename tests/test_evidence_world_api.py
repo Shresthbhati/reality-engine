@@ -60,14 +60,15 @@ def test_entity_traces_back_to_images_and_model_predictions(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)
     runs = client.get(_url(wid), headers=A).json()["runs"]
-    assert [r["run_id"] for r in runs] == ["run-1"] and runs[0]["counts"]["entities"] == 6
+    assert [r["run_id"] for r in runs] == ["run-1"] and runs[0]["counts"]["entities"] == 3
     run = client.get(_url(wid, "run-1"), headers=A).json()
     assert run["status"] == "complete" and any("2D" in x for x in run["limitations"])
     ents = client.get(_url(wid, "run-1", "entities"), headers=A).json()["entities"]
     chair = next(e for e in ents if e["ontology_path"] == "furniture/seating/chair")
     detail = client.get(_url(wid, "run-1", "entities", chair["entity_id"]), headers=A).json()
     obs = detail["observations"]
-    assert len(obs) == 1 and obs[0]["observation"]["source_id"] in SOURCES  # the ORIGINAL image
+    assert len(obs) == 2 and {o["observation"]["engine_id"] for o in obs} == {"det_a", "det_b"}  # both engines' raw predictions
+    assert all(o["observation"]["source_id"] in SOURCES for o in obs)  # the ORIGINAL image
     assert obs[0]["observation"]["engine_id"] in ("det_a", "det_b") and obs[0]["raw_confidence"] == 0.9
     assert obs[0]["calibrated_confidence"] is None and obs[0]["context"]["run_id"] == "run-1"
     assert detail["trace_problems"] == [] and detail["entity"]["geometry_ids"] == []

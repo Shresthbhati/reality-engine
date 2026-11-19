@@ -16,7 +16,7 @@ Not implemented here (stated, not faked): remote GPU workers, a cross-run model 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
@@ -151,10 +151,13 @@ class ExecutionManager:
         self.allow_unestablished_licence = allow_unestablished_licence
 
     # ------------------------------------------------------------------ planning
-    def plan(self, task: Task) -> ExecutionPlan:
+    def plan(self, task: Task, only: Collection[str] | None = None) -> ExecutionPlan:
+        """``only`` restricts the plan to the named engines (used by targeted refinement); an engine outside it is not reported."""
         entries: List[PlanEntry] = []
         approved: List[Tuple[EngineSpec, Availability]] = []
         for spec, avail in self.registry.candidates(task):
+            if only is not None and spec.engine_id not in only:
+                continue
             if spec.commercial_ok is False:
                 entries.append(PlanEntry(spec.engine_id, "not_approved",
                                          f"licence {spec.licence or 'unknown'} is not approved for production use"))
@@ -185,8 +188,8 @@ class ExecutionManager:
         return ExecutionPlan(task, self.policy, tuple(sorted(entries, key=lambda e: e.engine_id)), required, claim)
 
     # ------------------------------------------------------------------ execution
-    def run(self, task: Task, request: EngineRequest) -> ExecutionReport:
-        plan = self.plan(task)
+    def run(self, task: Task, request: EngineRequest, *, only: Collection[str] | None = None) -> ExecutionReport:
+        plan = self.plan(task, only)
         warnings: List[str] = []
         if self.policy is Policy.FAST:
             warnings.append(plan.quality_claim)

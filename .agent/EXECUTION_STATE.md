@@ -3,6 +3,34 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-19 -- Multi-engine foundation (`engine/multiengine/`, branches `claude/sonnet-me-1-foundation` -> `-2-consensus` -> `-3-refinement`, stacked)
+
+Status vocabulary (not interchangeable): Implemented / Installed / Integrated (called by the production job) / API reachable / Functionally
+tested / Real-data validated / Production ready. Every row below is **Implemented + Functionally tested on synthetic cases only**, and **NOT
+Integrated** into `apps/api/jobs.py` unless stated. None is Real-data validated or Production ready.
+
+| Component | File | Implemented | Functionally tested (synthetic / test doubles) | API reachable | Integrated in the job | Real-data validated |
+|---|---|---|---|---|---|---|
+| Engine registry + real availability probes | `registry.py`, `contract.py` | yes (6 engines: colmap, midas, depth_anything, owlvit, sam, mask_rcnn) | yes + checked against `perception.availability` on this machine | `GET /api/engines` | no | no |
+| Adapter contract (`EngineAdapter.run` lifecycle) | `contract.py` | yes | yes (test doubles) | n/a | no -- **no adapter wraps any real engine yet** | no |
+| Execution manager (FAST / ACCURATE / MAXIMUM_FIDELITY, sequential, memory-aware, CPU fallback recorded, retries) | `executor.py` | yes | yes | policies listed | no | no |
+| Evidence store (append-only, content-hash ids, tamper detection, relations, lineage) | `evidence_store.py`, `observation.py` | yes | yes | no endpoint | no | no |
+| Coordinate alignment (frame graph, Sim(3), RANSAC, degeneracy/scale/registration-failure statuses, pose-inconsistency flags) | `alignment.py` | yes | yes, known-truth synthetic | no | no | no |
+| Consensus (correlation groups, consensus sets, covariance chi-square, image-evidence override, label reconciliation) | `consensus.py` | yes | yes, incl. biased-majority case | no | no | no |
+| Quality gates (no built-in thresholds) | `quality_gates.py` | yes | yes | `GET /api/engines/quality-gates` | no | no (**no threshold is benchmark-established: every gate is UNVERIFIED**) |
+| Capture requests (from measured facts, maps onto `capture_requests` columns) | `capture_requests.py` | yes | yes | no | no (the job's existing `generate_world_capture_requests` is untouched) | no |
+| Iterative refinement loop (targeted, rollback on inconsistency/regression, explicit stop reasons) | `refinement.py` | yes (orchestration only; domain callbacks are injected) | yes | no | no | no |
+
+Tests executed (this machine, Windows, Python 3.14): `python -m pytest tests/test_multiengine_foundation.py tests/test_multiengine_alignment_consensus.py tests/test_multiengine_refinement.py` -> **83 passed**; `tests/test_tenant_adversarial.py tests/test_ci_full_coverage.py tests/test_application_api.py` -> 92 passed after the new route was mounted. Not run: Python 3.10/3.11 locally (the full-suite CI job picks the new files up automatically).
+
+Defects found and fixed while testing (so the tests are not vacuous): RANSAC reported "degenerate" instead of "registration_failed" when no hypothesis had an inlier; a 3-source MAD/Tukey outlier rejection silently rejected nothing when two distances tied (replaced by largest-mutually-consistent-set selection).
+
+NOT implemented (stated, not faked): adapters for real engines; remote GPU workers; cross-run model cache; request batching; bundle adjustment (COLMAP does it inside SfM); wiring any of this into `_run_reconstruct_session`; an API for the evidence store, refinement runs and per-world quality reports; frontend views; incremental registration of new photos through this layer (the existing `progressive`/adoption path still does it).
+
+Blocked: **real-image benchmark report** -- needs at least two real engines behind adapters and physical ground truth; neither exists (0 verified physical rooms, see `RELEASE.md`). **Gate thresholds** -- need documented benchmark datasets. **Engine VRAM figures** -- `perception/model_registry.measured_vram_mb` has no cited measurement (SAM ViT-B registry 950 MB vs ~2.8 GB measured on 2026-11-06), so `min_vram_mb` is left unset.
+
+Overlap flags for Gemini (nothing shared was changed): `alignment.py` and `consensus.py` overlap Gemini-owned spatial work (`registration/`, `reconstruction/scale/`, `reconstruction/fusion/robust_fusion.py`); the new modules import none of them. `Entity/Geometry.confidence` defaults to 0.5 in WorldIR and was not touched.
+
 ## 2026-11-16 -- SAM 2 masks, open-source registry, DINOv2 (opt-in), clean-baseline fixes (branch claude/e202-and-further-374554; local commits, NOT pushed)
 
 Commits: `a7b3da90` sofas kept + visible GLB; `4c53f485` prompt variants + licence-verified open-source registry; `2978bd27` SAM 2 instance

@@ -46,7 +46,8 @@ def test_a_complete_gauge_observation_is_valid():
     (dict(frame="unknown"), "coordinate frame"),
     (dict(frame=""), "coordinate frame"),
     (dict(value=(1.0, float("nan"), 3.0)), "finite"),
-    (dict(value=()), "finite"),
+    (dict(value=()), "non-empty value"),  # a valid observation must carry a value
+    (dict(value=(), validation_status="rejected", rejection_reason="r", raw_artifact_ref=None, covariance=((1.0,),)), "0x0"),
     (dict(confidence=1.4), "outside"),
     (dict(confidence_basis=None), "basis"),
     (dict(confidence=None), "without a confidence"),
@@ -72,6 +73,11 @@ def test_relative_depth_is_its_own_kind_and_never_metres():
     r = rec(quantity="depth_relative", scale_state=ScaleState.RELATIVE_DEPTH, units="relative", value=(0.42,), frame="cam1_image")
     assert r.problems() == []
     assert dataclasses.replace(r, units="m").problems()  # relative depth cannot claim metres
+
+
+def test_a_rejected_record_may_carry_no_value_and_no_placeholder_is_invented():
+    r = rec(value=(), validation_status="rejected", rejection_reason="no pixels", raw_artifact_ref=None)
+    assert r.problems() == [] and r.value == ()
 
 
 def test_anchored_metres_need_the_anchor_reference():

@@ -32,6 +32,51 @@ def _run(tmp_path, files, *, fail=(), cancel=None, job="job-1", inputs=None, bas
                           base=base or tmp_path / "ws", flow_inputs=inputs or default)
 
 
+def _with_depth(adapter):
+    def inputs():
+        reg, adapters = _setup(())
+        adapters["fake_depth"] = adapter
+        return reg, adapters, None
+
+    return inputs
+
+
+def test_depth_engines_are_off_by_default(tmp_path, files, monkeypatch):
+    monkeypatch.delenv(ew.ENV_DEPTH_ENGINES, raising=False)
+    assert "depth" not in _run(tmp_path, files)
+
+
+def test_a_depth_engine_runs_after_detection_and_its_records_and_raw_array_persist(tmp_path, files):
+    import numpy as np
+
+    from engine.multiengine.evidence_matrix import EvidenceMatrix
+    from tests.test_metric3d_producers import _FakeDepthAdapter
+
+    arr = np.linspace(0.5, 4.0, 20, dtype=np.float32).reshape(4, 5)
+    a = _FakeDepthAdapter(arr)
+    r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=files, base=tmp_path / "ws",
+                       flow_inputs=_with_depth(a), depth_engines=["fake_depth"])
+    assert r["status"] == "complete" and r["depth"][0]["status"] == "succeeded" and r["depth"][0]["accepted"] == 1
+    assert a.loaded == 1 and a.unloaded == 1
+    root = tmp_path / "ws" / "evidence-world" / "t1" / "w1" / "job-1"
+    assert (root / "depth_report.json").is_file()
+    m = EvidenceMatrix(root)  # reloaded from disk
+    (o,) = m.store.query(task="metric3d")
+    assert o.predicted["scale_state"] == "relative_depth" and m.context(o.observation_id).artifact_refs["raw_output"]
+
+
+def test_a_missing_or_failing_depth_engine_is_reported_never_skipped_silently_and_never_fails_the_job(tmp_path, files):
+    from tests.test_metric3d_producers import _FakeDepthAdapter
+
+    bad = _FakeDepthAdapter(fail=True)
+    r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=files, base=tmp_path / "ws",
+                       flow_inputs=_with_depth(bad), depth_engines=["no_such_engine", "fake_depth"])
+    by = {d["engine_id"]: d for d in r["depth"]}
+    assert r["status"] == "complete"  # detection result is unaffected
+    assert by["no_such_engine"]["status"] == "failed" and "not available" in by["no_such_engine"]["error"]
+    assert by["fake_depth"]["status"] == "failed" and "synthetic crash" in by["fake_depth"]["error"] and bad.unloaded == 1
+
+
 def test_all_engines_succeeding_is_complete(tmp_path, files):
     r = _run(tmp_path, files)
     assert r["status"] == "complete" and r["counts"]["observations"] > 0

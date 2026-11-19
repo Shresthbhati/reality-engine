@@ -43,7 +43,7 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
             )
 
         drafts: list[ObservationDraft] = []
-        options = request.options or {}
+        options = request.payload or {}  # EngineRequest carries ``payload``; it has never had an ``options`` attribute
 
         # 1. Camera parameters
         camera_meta = options.get("camera")

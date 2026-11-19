@@ -18,7 +18,8 @@ def test_gate_is_not_ready_while_any_criterion_is_unmet():
     assert g["ready"] is False and g["unmet"]
     assert {c["id"] for c in g["criteria"]} >= {"real_multi_photo_job_run", "detector_accuracy_benchmark", "confidence_calibration"}
     assert all(c["evidence"] or c["note"] for c in g["criteria"])  # every criterion says what proves it, or why it is unmet
-    assert "metric3d_producers_emit_contract" in g["unmet"]  # the contract existing is not the same as producers emitting it
+    assert "metric3d_producers_emit_contract" not in g["unmet"]  # producers now emit it, with test evidence on disk
+    assert {"real_multi_photo_job_run", "detector_accuracy_benchmark", "confidence_calibration", "quality_gate_thresholds"} <= set(g["unmet"])
 
 
 def test_a_claimed_criterion_is_demoted_when_its_evidence_file_is_missing(tmp_path):

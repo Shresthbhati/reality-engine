@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 567
+Total: 569
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -194,6 +194,7 @@ Total: 567
 - `tests/test_backend_selection_policy.py`
 - `tests/test_bad_evidence_real.py`
 - `tests/test_benchmark_integrity.py`
+- `tests/test_benchmark_manifest.py`
 - `tests/test_benchmark_suite.py`
 - `tests/test_billing_stripe_task7_2.py`
 - `tests/test_blob_gc.py`
@@ -414,6 +415,7 @@ Total: 567
 - `tests/test_meshing_pipeline.py`
 - `tests/test_meshopt_simplifier.py`
 - `tests/test_metric3d_contract.py`
+- `tests/test_metric3d_producers.py`
 - `tests/test_metric_3d_lifting.py`
 - `tests/test_metric_3d_lifting_rigorous.py`
 - `tests/test_metric_anchor_determinism.py`

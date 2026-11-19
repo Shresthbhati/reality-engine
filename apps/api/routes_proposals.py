@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.auth import AuthContext, enforce_project_isolation, get_auth_context
-from apps.api.tenancy import team_stamp, world_scope
-from apps.api.models import World, WorldVersion
+from apps.api.tenancy import assert_visible, team_stamp, world_scope
+from apps.api.models import Session, World, WorldVersion
 from world_ir.world_v1 import WorldIR
 from worldstore.proposals import (
     ProposalError, ProposalStateError, UnknownProposalError, get_proposal, list_proposals, prepare_acceptance,
@@ -65,7 +65,10 @@ async def _owned(db: AsyncSession, world_id: str, proposal_id: str):
 
 
 @proposals.post("", status_code=201)
-async def create_proposal(world_id: str, body: ProposeIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def create_proposal(world_id: str, body: ProposeIn, db: AsyncSession = Depends(get_db),
+                          auth: AuthContext = Depends(get_auth_context)) -> dict:
+    for sid in body.source_session_ids:  # body-supplied ids get the same tenant check as path ids
+        await assert_visible(db, Session, sid, auth)
     w = await _head(db, world_id)
     if not w.current_version_id:
         raise HTTPException(409, "World has no version to compare against")

@@ -63,6 +63,7 @@ Total: 97
 - `tests/test_backup_durability.py`
 - `tests/test_backup_lifecycle.py`
 - `tests/test_job_lease_recovery.py`
+- `tests/test_dead_worker_recovery.py`
 - `tests/test_real_specialist_executors.py`
 - `tests/test_ifc_roundtrip.py`
 - `tests/test_robust_depth_fusion.py`
@@ -72,6 +73,7 @@ Total: 97
 - `tests/test_token_hardening.py`
 - `tests/test_tenant_adversarial.py`
 - `tests/test_release_claims.py`
+- `tests/test_body_id_tenancy.py`
 - `tests/test_adoption_transaction.py`
 - `tests/test_stage_runner.py`
 - `tests/test_auth_hardening.py`

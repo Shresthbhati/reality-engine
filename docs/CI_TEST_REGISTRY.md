@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 522
+Total: 527
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -289,6 +289,7 @@ Total: 522
 - `tests/test_district_grammar.py`
 - `tests/test_doctor.py`
 - `tests/test_embedding_store.py`
+- `tests/test_engine_failure_detector.py`
 - `tests/test_entity_evidence_provenance_task3_5.py`
 - `tests/test_entity_perception.py`
 - `tests/test_entity_reid.py`
@@ -409,7 +410,10 @@ Total: 522
 - `tests/test_model_pool.py`
 - `tests/test_model_registry_task4_1.py`
 - `tests/test_model_scheduler_task4_2.py`
+- `tests/test_multi_engine_adapters.py`
+- `tests/test_multi_engine_comparator.py`
 - `tests/test_multi_session_alignment.py`
+- `tests/test_multi_source_refiner.py`
 - `tests/test_multi_source_session.py`
 - `tests/test_multi_storey_validator.py`
 - `tests/test_multiengine_alignment_consensus.py`
@@ -549,6 +553,7 @@ Total: 522
 - `tests/test_single_image_furniture.py`
 - `tests/test_single_image_layout_bridge.py`
 - `tests/test_small_fittings_stage.py`
+- `tests/test_small_object_benchmark.py`
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
 - `tests/test_spatial_continuity.py`

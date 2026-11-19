@@ -57,3 +57,23 @@ def test_catalogue_entry_retrieval_and_fields() -> None:
     assert dust3r.domain == ModelDomain.GEOMETRY_3D
     assert dust3r.weights_license == "CC-BY-NC-4.0"
     assert dust3r.is_commercial_viable is False
+
+
+def test_catalogue_honest_audit() -> None:
+    cat = get_catalogue()
+    audit = cat.audit()
+
+    assert audit["total_slots"] == 125
+    assert audit["planned_slots"] == 94
+    assert audit["installed_architectures"] == 26
+    assert audit["available_checkpoints"] == 6
+    assert audit["verified_adapters"] == 21
+    assert audit["production_wired_engines"] == 4
+    assert audit["blocked_engines"] == 5
+    assert audit["licence_restricted_engines"] == 15
+    assert audit["real_data_validated_engines"] == 0
+
+    summary = cat.summary()
+    assert "audit" in summary
+    assert summary["audit"] == audit
+

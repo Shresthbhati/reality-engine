@@ -33,6 +33,22 @@ def test_ontology_category_and_class_population() -> None:
     assert wall.category == ObjectCategory.BUILDING_ELEMENT
     assert wall.is_structural is True
 
+    # Priority 4 fine-grained classes
+    radiator = ont.get_class("radiator")
+    assert radiator is not None
+    assert radiator.category == ObjectCategory.FIXTURE
+    assert "fins" in radiator.allowed_parts
+
+    tree = ont.get_class("tree")
+    assert tree is not None
+    assert tree.category == ObjectCategory.URBAN_INFRASTRUCTURE
+    assert "trunk" in tree.allowed_parts
+
+    mug = ont.get_class("mug")
+    assert mug is not None
+    assert mug.category == ObjectCategory.EVERYDAY_OBJECT
+    assert mug.is_container is True
+
 
 def test_ontology_synonym_resolution() -> None:
     ont = get_universal_ontology()

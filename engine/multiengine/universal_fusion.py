@@ -18,7 +18,7 @@ Implements the end-to-end 14-stage fusion process for Universal Perception and R
 
 Enforces strict statistical laws: disparate modalities are never averaged, and
 only statistically compatible measurements of the same quantity are fused with
-correlation discounting.
+correlation discounting. No fabricated geometry, classifications, measurements, or confidences.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class FusedEntityRecord:
     parent_id: str | None
     is_part: bool
     bounding_box_3d: dict[str, Any] | None
-    confidence: float
+    confidence: float | None
     supporting_evidence_ids: list[str]
     conflicts: list[str] = field(default_factory=list)
 
@@ -98,6 +98,63 @@ class UniversalFusionResult:
     fidelity_score: float
     capture_requests: list[CaptureRequest]
     summary_report: dict[str, Any]
+
+
+def project_3d_to_pixel(
+    point_3d: list[float] | tuple[float, float, float] | np.ndarray,
+    camera_meta: dict[str, Any],
+) -> tuple[float, float] | None:
+    """Projects a 3D world coordinate point into 2D camera pixel coordinates using pinhole model.
+
+    Returns (u, v) in pixels, or None if behind camera or uncalibrated.
+    """
+    intrinsics = camera_meta.get("intrinsics")
+    if intrinsics is None:
+        return None
+
+    if isinstance(intrinsics, (list, tuple)) and len(intrinsics) == 4:
+        fx, fy, cx, cy = float(intrinsics[0]), float(intrinsics[1]), float(intrinsics[2]), float(intrinsics[3])
+    elif isinstance(intrinsics, dict):
+        fx = float(intrinsics.get("fx", 500.0))
+        fy = float(intrinsics.get("fy", 500.0))
+        cx = float(intrinsics.get("cx", 320.0))
+        cy = float(intrinsics.get("cy", 240.0))
+    elif isinstance(intrinsics, (list, tuple)) and len(intrinsics) == 3 and len(intrinsics[0]) == 3:
+        fx, fy, cx, cy = float(intrinsics[0][0]), float(intrinsics[1][1]), float(intrinsics[0][2]), float(intrinsics[1][2])
+    else:
+        return None
+
+    # Camera extrinsics [R | t]
+    extrinsics = camera_meta.get("extrinsics") or camera_meta.get("pose_4x4")
+    if extrinsics is not None:
+        ext_mat = np.array(extrinsics, dtype=float)
+        if ext_mat.shape == (4, 4):
+            R = ext_mat[:3, :3]
+            t = ext_mat[:3, 3]
+        elif ext_mat.shape == (3, 4):
+            R = ext_mat[:3, :3]
+            t = ext_mat[:3, 3]
+        else:
+            R = np.eye(3, dtype=float)
+            t = np.zeros(3, dtype=float)
+    else:
+        # If camera has no explicit extrinsics, default to identity world frame only if specified
+        if camera_meta.get("is_canonical_frame", False):
+            R = np.eye(3, dtype=float)
+            t = np.zeros(3, dtype=float)
+        else:
+            return None
+
+    X_w = np.array(point_3d[:3], dtype=float)
+    X_c = R @ X_w + t
+
+    Z_c = float(X_c[2])
+    if Z_c <= 0.001:  # Point behind or on focal plane
+        return None
+
+    u = fx * (float(X_c[0]) / Z_c) + cx
+    v = fy * (float(X_c[1]) / Z_c) + cy
+    return u, v
 
 
 class UniversalFusionPipeline:
@@ -289,43 +346,130 @@ class UniversalFusionPipeline:
         )
 
     def _stage_05_geometric_consistency(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Verify multi-view depth and point clouds for geometric stability
+        # Verify 3D geometry from multi-view depth and point clouds.
+        # Defect fix: Never fabricate default boxes when no geometry is supplied.
         clusters = ctx.get("entity_clusters", {})
         geometric_models = {}
+        warnings = []
+        observed_count = 0
+        unobserved_count = 0
+
         for k, entries in clusters.items():
-            # Check if any entry has bounding box or 3D geometry
-            boxes = [e.input_parameters.get("box_3d") for e in entries if e.input_parameters and "box_3d" in e.input_parameters]
-            if boxes:
-                geometric_models[k] = boxes[0]
+            boxes = [
+                e.input_parameters.get("box_3d") or e.input_parameters.get("bounding_box_3d")
+                for e in entries
+                if e.input_parameters and ("box_3d" in e.input_parameters or "bounding_box_3d" in e.input_parameters)
+            ]
+            if boxes and boxes[0] is not None:
+                box_cand = boxes[0]
+                # Validate finite numbers
+                size = box_cand.get("size") if isinstance(box_cand, dict) else None
+                if size and all(math.isfinite(x) and x > 0 for x in size):
+                    geometric_models[k] = box_cand
+                    observed_count += 1
+                else:
+                    geometric_models[k] = None
+                    unobserved_count += 1
+                    warnings.append(f"Entity '{k}' has invalid non-physical 3D box dimensions: {size}")
             else:
-                geometric_models[k] = {"center": [0.0, 0.0, 0.0], "size": [1.0, 1.0, 1.0]}
+                # No fabricated default geometry! Must remain explicitly unobserved.
+                geometric_models[k] = None
+                unobserved_count += 1
+                warnings.append(f"Entity '{k}' has no 3D geometry provided in evidence (unobserved geometry).")
 
         ctx["geometric_models"] = geometric_models
         return StageExecutionResult(
             stage=UniversalFusionStage.STAGE_05_GEOMETRIC_CONSISTENCY,
             success=True,
             duration_s=0.0,
-            message=f"Verified geometric consistency for {len(geometric_models)} entities",
-            metrics={"geometric_entities": len(geometric_models)},
+            message=f"Geometric consistency evaluated: {observed_count} observed, {unobserved_count} unobserved",
+            metrics={"observed_3d_count": observed_count, "unobserved_3d_count": unobserved_count},
+            warnings=warnings,
         )
 
     def _stage_06_reprojection_checking(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Check 3D candidate projection into 2D camera views
+        # Check 3D candidate projection into 2D camera views with actual pinhole projection.
+        # Defect fix: Never use a hardcoded 0.85 px error.
         geom = ctx.get("geometric_models", {})
-        errors = {}
-        for k in geom:
-            errors[k] = 0.85  # Reprojection RMSE < 1.0 px nominal
-        ctx["reprojection_errors"] = errors
+        cameras = ctx.get("camera_metadata", {})
+        clusters = ctx.get("entity_clusters", {})
+        reprojection_errors: dict[str, float | None] = {}
+        warnings = []
+
+        for entity_id, model_3d in geom.items():
+            if model_3d is None:
+                reprojection_errors[entity_id] = None
+                continue
+
+            center_3d = model_3d.get("center")
+            if not center_3d or len(center_3d) < 3:
+                reprojection_errors[entity_id] = None
+                continue
+
+            entries = clusters.get(entity_id, [])
+            observed_errors = []
+
+            for entry in entries:
+                # Check if entry has observed 2D coordinates (box_2d or center_2d or image_region)
+                box_2d = entry.input_parameters.get("box_2d") or entry.input_parameters.get("center_2d")
+                if not box_2d:
+                    continue
+
+                if len(box_2d) == 2:
+                    obs_u, obs_v = float(box_2d[0]), float(box_2d[1])
+                elif len(box_2d) == 4:
+                    obs_u = float(box_2d[0] + box_2d[2]) / 2.0
+                    obs_v = float(box_2d[1] + box_2d[3]) / 2.0
+                else:
+                    continue
+
+                # Project against associated cameras
+                for cam_name in entry.source_ids:
+                    cam_meta = cameras.get(cam_name) or cameras.get("cam0")
+                    if not cam_meta:
+                        continue
+
+                    proj = project_3d_to_pixel(center_3d, cam_meta)
+                    if proj is not None:
+                        proj_u, proj_v = proj
+                        err_px = math.hypot(proj_u - obs_u, proj_v - obs_v)
+                        observed_errors.append(err_px)
+
+            if observed_errors:
+                reprojection_errors[entity_id] = float(np.mean(observed_errors))
+            else:
+                reprojection_errors[entity_id] = None
+
+        ctx["reprojection_errors"] = reprojection_errors
+        valid_errors = [e for e in reprojection_errors.values() if e is not None]
+
+        if valid_errors:
+            mean_reproj = float(np.mean(valid_errors))
+            max_reproj = float(np.max(valid_errors))
+            msg = f"Reprojection verified across {len(valid_errors)} entities (mean error: {mean_reproj:.2f} px, max: {max_reproj:.2f} px)"
+        else:
+            mean_reproj = None
+            max_reproj = None
+            msg = "Reprojection could not be verified: no entities had matching 3D geometry, 2D detections, and calibrated camera parameters."
+            warnings.append(msg)
+
         return StageExecutionResult(
             stage=UniversalFusionStage.STAGE_06_REPROJECTION_CHECKING,
             success=True,
             duration_s=0.0,
-            message=f"Reprojection checked across {len(geom)} entities (mean error 0.85 px)",
-            metrics={"mean_reprojection_px": 0.85},
+            message=msg,
+            metrics={
+                "mean_reprojection_px": mean_reproj,
+                "max_reprojection_px": max_reproj,
+                "evaluated_entities_count": len(valid_errors),
+                "unmeasured_entities_count": len(reprojection_errors) - len(valid_errors),
+            },
+            warnings=warnings,
         )
 
     def _stage_07_semantic_ontology_mapping(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Map raw candidate strings into universal ontology classes
+        # Map raw candidate strings into universal ontology classes.
+        # Defect fix: Never default unidentified entities to "chair".
         clusters = ctx.get("entity_clusters", {})
         semantic_labels = {}
         warnings = []
@@ -333,11 +477,20 @@ class UniversalFusionPipeline:
         for entity_id, entries in clusters.items():
             raw_labels = []
             for e in entries:
-                lbl = e.input_parameters.get("label") or e.input_parameters.get("target_class") or e.input_parameters.get("class_name")
-                if lbl:
-                    raw_labels.append(lbl)
+                if e.input_parameters:
+                    lbl = (
+                        e.input_parameters.get("label")
+                        or e.input_parameters.get("target_class")
+                        or e.input_parameters.get("class_name")
+                    )
+                    if lbl:
+                        raw_labels.append(str(lbl).strip())
+
             if not raw_labels:
-                raw_labels = ["chair"]  # default fallback
+                # No default "chair"! Keep explicitly unclassified
+                semantic_labels[entity_id] = "unidentified"
+                warnings.append(f"Entity '{entity_id}' has no candidate semantic labels; marked unidentified.")
+                continue
 
             resolved = None
             for candidate in raw_labels:
@@ -347,8 +500,18 @@ class UniversalFusionPipeline:
                     break
 
             if not resolved:
-                # Might be an individual part name like "seat" or "legs"
-                resolved = raw_labels[0].lower()
+                # Check if it is a registered subpart of any known class
+                for cand in raw_labels:
+                    cand_lower = cand.lower().strip()
+                    for cls_obj in self.ontology._classes.values():
+                        if any(p.lower() == cand_lower for p in cls_obj.allowed_parts):
+                            resolved = cand_lower
+                            break
+                    if resolved:
+                        break
+
+            if not resolved:
+                resolved = raw_labels[0].lower().strip()
 
             semantic_labels[entity_id] = resolved
 
@@ -358,21 +521,24 @@ class UniversalFusionPipeline:
             success=True,
             duration_s=0.0,
             message=f"Mapped semantics for {len(semantic_labels)} entities into Universal Ontology",
-            metrics={"mapped_entities": len(semantic_labels)},
+            metrics={
+                "mapped_entities": len(semantic_labels),
+                "unidentified_count": sum(1 for v in semantic_labels.values() if v == "unidentified"),
+            },
             warnings=warnings,
         )
 
     def _stage_08_uncertainty_calibration(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Group engines by model family and calculate calibration weights
+        # Group engines by model family and calculate correlation discount weights: 1 / sqrt(N_fam)
         evidence = ctx.get("aligned_evidence", [])
         family_counts: dict[str, int] = {}
         for e in evidence:
-            family = e.architecture_id or e.model_id
+            family = e.architecture_id or e.model_id or "generic"
             family_counts[family] = family_counts.get(family, 0) + 1
 
         calibrated = {}
         for fam, count in family_counts.items():
-            # Correlation discount: count^0.5 rather than linear count
+            # Correlation discount: 1 / sqrt(N_fam) rather than linear count
             calibrated[fam] = 1.0 / math.sqrt(count)
 
         ctx["calibrated_weights"] = calibrated
@@ -380,22 +546,42 @@ class UniversalFusionPipeline:
             stage=UniversalFusionStage.STAGE_08_UNCERTAINTY_CALIBRATION,
             success=True,
             duration_s=0.0,
-            message=f"Calibrated uncertainty across {len(family_counts)} engine families",
-            metrics={"families_count": len(family_counts)},
+            message=f"Calibrated uncertainty across {len(family_counts)} engine families (correlation discounting 1/sqrt(N))",
+            metrics={"families_count": len(family_counts), "weights": calibrated},
         )
 
     def _stage_09_conflict_detection(self, ctx: dict[str, Any]) -> StageExecutionResult:
         # Detect physical collisions, conflicting dimensions, or conflicting classes
         clusters = ctx.get("entity_clusters", {})
         conflicts = []
+
         for entity_id, entries in clusters.items():
             labels = set()
+            boxes_3d = []
             for e in entries:
-                lbl = e.input_parameters.get("label")
-                if lbl:
-                    labels.add(lbl.lower())
-            if len(labels) > 1:
-                conflicts.append(f"Label disagreement on {entity_id}: {labels}")
+                if e.input_parameters:
+                    lbl = e.input_parameters.get("label") or e.input_parameters.get("target_class")
+                    if lbl:
+                        labels.add(str(lbl).lower())
+                    b = e.input_parameters.get("box_3d") or e.input_parameters.get("bounding_box_3d")
+                    if b and isinstance(b, dict) and "center" in b:
+                        boxes_3d.append(b["center"])
+
+            # 1. Semantic label conflict
+            resolved_labels = {self.ontology.resolve_class_name(lbl) or lbl for lbl in labels}
+            if len(resolved_labels) > 1:
+                conflicts.append(f"Semantic label conflict on entity '{entity_id}': contradictory classes {resolved_labels}")
+
+            # 2. Geometric conflict between multiple observations of same entity
+            if len(boxes_3d) > 1:
+                for i in range(len(boxes_3d)):
+                    for j in range(i + 1, len(boxes_3d)):
+                        dist = float(np.linalg.norm(np.array(boxes_3d[i][:3]) - np.array(boxes_3d[j][:3])))
+                        if dist > 0.25:  # Tolerance: 25 cm discrepancy for same entity
+                            conflicts.append(
+                                f"Geometric position conflict on entity '{entity_id}': "
+                                f"distance {dist:.3f} m exceeds tolerance 0.25 m"
+                            )
 
         ctx["conflicts"] = conflicts
         return StageExecutionResult(
@@ -407,16 +593,19 @@ class UniversalFusionPipeline:
         )
 
     def _stage_10_correlation_aware_fusion(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Fuse like quantities using correlation discounting
+        # Fuse like quantities using correlation discounting.
+        # Defect fix: Use calibrated weights to pool confidence and resolve canonical properties without naive averaging.
         clusters = ctx.get("entity_clusters", {})
         semantic_labels = ctx.get("semantic_labels", {})
         geom_models = ctx.get("geometric_models", {})
+        calibrated_weights = ctx.get("calibrated_weights", {})
+        conflicts = ctx.get("conflicts", [])
         fused_entities: dict[str, FusedEntityRecord] = {}
 
         for entity_id, entries in clusters.items():
-            cls_name = semantic_labels.get(entity_id, "chair")
+            cls_name = semantic_labels.get(entity_id, "unidentified")
             ont_cls = self.ontology.get_class(cls_name)
-            category = ont_cls.category if ont_cls else ObjectCategory.FURNITURE
+            category = ont_cls.category if ont_cls else ObjectCategory.EVERYDAY_OBJECT
             is_part = False
             parent_id = None
 
@@ -427,9 +616,26 @@ class UniversalFusionPipeline:
                     parent_id = other_id
                     break
 
-            # Fuse confidences with correlation discounting
-            weights = [e.confidence for e in entries]
-            avg_conf = float(np.mean(weights)) if weights else 0.8
+            # Correlation-aware confidence fusion
+            weighted_conf_sum = 0.0
+            total_weight = 0.0
+            for e in entries:
+                if e.confidence is not None:
+                    fam = e.architecture_id or e.model_id or "generic"
+                    w = calibrated_weights.get(fam, 1.0)
+                    weighted_conf_sum += float(e.confidence) * w
+                    total_weight += w
+
+            if total_weight > 0.0:
+                fused_conf = weighted_conf_sum / total_weight
+                # Apply penalty for active conflicts on this entity
+                entity_conflicts = [c for c in conflicts if entity_id in c]
+                if entity_conflicts:
+                    fused_conf *= max(0.2, 1.0 - 0.2 * len(entity_conflicts))
+                fused_conf = round(float(fused_conf), 4)
+            else:
+                # No confidence supplied: leave explicitly uncalibrated/None
+                fused_conf = None
 
             fused_entities[entity_id] = FusedEntityRecord(
                 entity_id=entity_id,
@@ -438,8 +644,9 @@ class UniversalFusionPipeline:
                 parent_id=parent_id,
                 is_part=is_part,
                 bounding_box_3d=geom_models.get(entity_id),
-                confidence=avg_conf,
+                confidence=fused_conf,
                 supporting_evidence_ids=[e.evidence_id for e in entries],
+                conflicts=[c for c in conflicts if entity_id in c],
             )
 
         ctx["fused_entities"] = fused_entities
@@ -447,7 +654,7 @@ class UniversalFusionPipeline:
             stage=UniversalFusionStage.STAGE_10_CORRELATION_AWARE_FUSION,
             success=True,
             duration_s=0.0,
-            message=f"Fused {len(fused_entities)} canonical entities",
+            message=f"Fused {len(fused_entities)} canonical entities using correlation discounting",
             metrics={"fused_count": len(fused_entities)},
         )
 
@@ -513,35 +720,76 @@ class UniversalFusionPipeline:
         )
 
     def _stage_13_quality_gates(self, ctx: dict[str, Any]) -> StageExecutionResult:
-        # Check completeness, reprojection, and confidence
+        # Evaluate quality gates against actual measurements.
+        # Defect fix: Never use a hardcoded reprojection value.
         fused = ctx.get("fused_entities", {})
-        confidences = [e.confidence for e in fused.values()]
-        mean_conf = float(np.mean(confidences)) if confidences else 0.5
-        reproj_px = 0.85
-        passed = mean_conf >= 0.6 and reproj_px < 2.0
+        confidences = [e.confidence for e in fused.values() if e.confidence is not None]
+        mean_conf = float(np.mean(confidences)) if confidences else 0.0
+
+        reproj_errors = ctx.get("reprojection_errors", {})
+        valid_reproj = [v for v in reproj_errors.values() if v is not None]
+
+        warnings = []
+        if valid_reproj:
+            mean_reproj_px = float(np.mean(valid_reproj))
+            reproj_gate_passed = mean_reproj_px < 2.0
+        else:
+            mean_reproj_px = None
+            reproj_gate_passed = False
+            warnings.append("Reprojection quality gate unverified: no physical projections were measurable.")
+
+        conf_gate_passed = mean_conf >= 0.6
+        conflicts_count = len(ctx.get("conflicts", []))
+        conflicts_gate_passed = conflicts_count == 0
+
+        # Quality gate passes only if measured and compliant
+        overall_passed = conf_gate_passed and (reproj_gate_passed or len(fused) == 0) and conflicts_gate_passed
 
         ctx["fidelity_score"] = mean_conf
-        ctx["quality_gate_passed"] = passed
+        ctx["quality_gate_passed"] = overall_passed
 
         return StageExecutionResult(
             stage=UniversalFusionStage.STAGE_13_QUALITY_GATES,
-            success=passed,
+            success=True,  # Evaluation stage itself executed cleanly
             duration_s=0.0,
-            message=f"Quality gate evaluation: passed={passed}, fidelity_score={mean_conf:.3f}",
-            metrics={"fidelity_score": mean_conf, "passed": passed},
+            message=f"Quality gates evaluated: passed={overall_passed}, fidelity={mean_conf:.3f}, reproj={mean_reproj_px}",
+            metrics={
+                "fidelity_score": mean_conf,
+                "measured_mean_reprojection_px": mean_reproj_px,
+                "reprojection_gate_passed": reproj_gate_passed,
+                "confidence_gate_passed": conf_gate_passed,
+                "conflicts_count": conflicts_count,
+                "quality_gate_passed": overall_passed,
+            },
+            warnings=warnings,
         )
 
     def _stage_14_active_capture_requests(self, ctx: dict[str, Any]) -> StageExecutionResult:
         # Generate targeted requests if there are conflicts or unobserved regions
         conflicts = ctx.get("conflicts", [])
+        fused = ctx.get("fused_entities", {})
         capture_requests = []
-        if conflicts:
+
+        # 1. Unresolved conflicts require disambiguation views
+        for i, conflict in enumerate(conflicts):
             req = CaptureRequest(
-                request_id="req_conflict_resolve_01",
+                request_id=f"req_conflict_{i+1:03d}",
                 target_region="conflict_zone",
                 recommended_pose={"x": 1.5, "y": 2.0, "z": 1.2},
-                rationale=f"Resolve {len(conflicts)} multi-engine conflicts",
+                rationale=f"Disambiguate conflict: {conflict}",
                 priority=1,
+            )
+            capture_requests.append(req)
+
+        # 2. Unobserved 3D geometry requires additional stereoscopic/depth views
+        unobserved = [ent for ent in fused.values() if ent.bounding_box_3d is None]
+        for ent in unobserved:
+            req = CaptureRequest(
+                request_id=f"req_geom_{ent.entity_id[:8]}",
+                target_region=ent.entity_id,
+                recommended_pose={"x": 0.0, "y": 1.5, "z": 1.0},
+                rationale=f"Entity '{ent.entity_id}' ({ent.canonical_class}) has 2D evidence but lacks 3D metric geometry.",
+                priority=2,
             )
             capture_requests.append(req)
 
@@ -551,5 +799,9 @@ class UniversalFusionPipeline:
             success=True,
             duration_s=0.0,
             message=f"Generated {len(capture_requests)} active capture requests",
-            metrics={"capture_requests_count": len(capture_requests)},
+            metrics={
+                "capture_requests_count": len(capture_requests),
+                "conflict_requests": len(conflicts),
+                "unobserved_geometry_requests": len(unobserved),
+            },
         )

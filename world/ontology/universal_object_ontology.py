@@ -256,11 +256,44 @@ class UniversalObjectOntology:
             OntologyClass(
                 class_name="hvac_vent",
                 category=ObjectCategory.FIXTURE,
-                synonyms=["air register", "diffuser", "exhaust grille", "radiator"],
+                synonyms=["air register", "diffuser", "exhaust grille"],
                 allowed_parts=["grille", "damper", "frame"],
                 expected_relations=[SpatialRelationType.ATTACHED_TO],
                 typical_dimensions_m=(0.30, 0.05, 0.30),
                 default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="radiator",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["heater", "convector", "heating radiator"],
+                allowed_parts=["fins", "valve", "pipe", "bracket"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(1.00, 0.15, 0.60),
+                default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="thermostat",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["temperature controller", "climate control"],
+                allowed_parts=["display", "dial", "faceplate"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.12, 0.04, 0.12),
+                default_material="plastic",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="faucet",
+                category=ObjectCategory.FIXTURE,
+                synonyms=["tap", "water tap", "mixer"],
+                allowed_parts=["spout", "handle", "aerator", "base"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO, SpatialRelationType.HOSTED_BY],
+                typical_dimensions_m=(0.20, 0.15, 0.30),
+                default_material="chrome_metal",
             )
         )
 
@@ -335,6 +368,18 @@ class UniversalObjectOntology:
                 is_structural=True,
             )
         )
+        self.register_class(
+            OntologyClass(
+                class_name="column",
+                category=ObjectCategory.BUILDING_ELEMENT,
+                synonyms=["pillar", "post", "support column"],
+                allowed_parts=["capital", "shaft", "base"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.CONNECTS],
+                typical_dimensions_m=(0.40, 0.40, 2.70),
+                default_material="concrete_or_steel",
+                is_structural=True,
+            )
+        )
 
         # 5. Everyday Objects
         self.register_class(
@@ -369,6 +414,29 @@ class UniversalObjectOntology:
                 typical_dimensions_m=(0.08, 0.08, 0.25),
                 default_material="glass_or_plastic",
                 is_container=True,
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="mug",
+                category=ObjectCategory.EVERYDAY_OBJECT,
+                synonyms=["coffee mug", "cup", "teacup"],
+                allowed_parts=["handle", "rim", "body"],
+                expected_relations=[SpatialRelationType.CONTAINED_IN, SpatialRelationType.SUPPORTS],
+                typical_dimensions_m=(0.12, 0.09, 0.10),
+                default_material="ceramic",
+                is_container=True,
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="book",
+                category=ObjectCategory.EVERYDAY_OBJECT,
+                synonyms=["tome", "hardcover", "paperback"],
+                allowed_parts=["cover", "spine", "pages"],
+                expected_relations=[SpatialRelationType.CONTAINED_IN, SpatialRelationType.SUPPORTS],
+                typical_dimensions_m=(0.22, 0.15, 0.03),
+                default_material="paper",
             )
         )
 
@@ -427,6 +495,61 @@ class UniversalObjectOntology:
                 expected_relations=[SpatialRelationType.ATTACHED_TO],
                 typical_dimensions_m=(0.60, 0.40, 4.50),
                 default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="tree",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["street tree", "deciduous tree", "conifer"],
+                allowed_parts=["trunk", "crown", "branches", "foliage"],
+                expected_relations=[SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(4.0, 4.0, 8.0),
+                default_material="vegetation",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="bush",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["shrub", "hedge"],
+                allowed_parts=["branches", "foliage"],
+                expected_relations=[SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(1.5, 1.5, 1.2),
+                default_material="vegetation",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="fire_hydrant",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["hydrant", "water hydrant"],
+                allowed_parts=["body", "nozzle_cap", "operating_nut"],
+                expected_relations=[SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(0.40, 0.40, 0.85),
+                default_material="cast_iron",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="traffic_sign",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["road sign", "street sign", "stop sign"],
+                allowed_parts=["post", "signboard", "mount"],
+                expected_relations=[SpatialRelationType.ATTACHED_TO],
+                typical_dimensions_m=(0.60, 0.10, 2.40),
+                default_material="metal",
+            )
+        )
+        self.register_class(
+            OntologyClass(
+                class_name="bench",
+                category=ObjectCategory.URBAN_INFRASTRUCTURE,
+                synonyms=["park bench", "street bench"],
+                allowed_parts=["seat", "backrest", "legs", "armrests"],
+                expected_relations=[SpatialRelationType.SUPPORTS, SpatialRelationType.ADJACENT_TO],
+                typical_dimensions_m=(1.80, 0.65, 0.85),
+                default_material="wood_or_metal",
             )
         )
 

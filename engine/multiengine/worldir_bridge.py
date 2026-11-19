@@ -46,7 +46,7 @@ from world_ir.v2_extensions import ExternalReference
 from world_ir.world_v1 import WorldIR
 
 BRIDGE_VERSION = "evidence-world-bridge/1"
-NOT_MEASURED = 0.5  # WorldIR's documented sentinel for "confidence not measured" (see Observation.confidence)
+NOT_MEASURED: float | None = None  # None represents unmeasured confidence; never a fabricated 0.5 sentinel
 _UNCERTAINTY_NOTE = (
     "confidence not measured: no calibration dataset exists for these engines; raw model confidences are recorded "
     "per observation, uncalibrated"
@@ -318,11 +318,15 @@ def convert(
             "parent_entity_id": ce.parent_entity_id, "notes": list(ce.notes),
         })
         labels = [ce.ontology_path] + [x for x in (group, sub) if x]
+        ce_conf = getattr(ce, "confidence", None)
+        ent_confidence = ce_conf if ce_conf is not None else NOT_MEASURED
+        conf_basis = getattr(ce, "confidence_basis", None)
         out.entities[eid] = Entity(
             id=eid, type=_entity_type(node, group), name=(node.label if node else ce.ontology_path),
             transform=transform, geometry_ids=geometry_ids, material_ids=material_ids, relationships=rels,
             semantic_labels=list(dict.fromkeys(labels)), observations=observations,
-            provenance=Provenance.ESTIMATED, confidence=NOT_MEASURED, confidence_vector=ConfidenceVector(),
+            provenance=Provenance.ESTIMATED, confidence=ent_confidence, confidence_basis=conf_basis,
+            confidence_vector=ConfidenceVector(),
             uncertainty=Uncertainty(confidence=0.0, note=_UNCERTAINTY_NOTE, calibrated=False),
             custom_properties={"evidence": evidence}, statement_state=StatementState.PREDICTED,
             external_references=tuple(refs),

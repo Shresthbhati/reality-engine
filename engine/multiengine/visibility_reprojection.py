@@ -84,17 +84,57 @@ class ValidatedCameraMetadata:
     uncertainty: dict[str, Any] | None = None
     rejection_reason: str | None = None
 
+    @property
+    def is_valid(self) -> bool:
+        return self.is_calibrated and self.camera is not None
+
 
 class VisibilityReprojectionValidator:
     """Evaluates multi-view camera visibility and geometric reprojection consistency."""
 
     @classmethod
-    def validate_camera_metadata(cls, cam_meta: dict[str, Any]) -> ValidatedCameraMetadata:
+    def validate_camera_metadata(cls, cam_meta: dict[str, Any] | PinholeCamera) -> ValidatedCameraMetadata:
         """Validates camera metadata without fabricating defaults.
 
         Returns ValidatedCameraMetadata with is_calibrated=True and PinholeCamera if valid,
         or is_calibrated=False and camera=None with explicit rejection_reason.
         """
+        if isinstance(cam_meta, PinholeCamera):
+            intr = cam_meta.intrinsics
+            extr = cam_meta.extrinsics
+            if intr is None:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None,
+                    rejection_reason="missing_intrinsics",
+                )
+            if intr.fx <= 0 or intr.fy <= 0 or intr.width <= 0 or intr.height <= 0:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None,
+                    rejection_reason="invalid_intrinsics_dimensions_or_focal",
+                )
+            if extr is None or extr.position is None or extr.rotation is None:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None,
+                    rejection_reason="missing_extrinsics",
+                )
+            norm_q = math.sqrt(extr.rotation.w**2 + extr.rotation.x**2 + extr.rotation.y**2 + extr.rotation.z**2)
+            if abs(norm_q - 1.0) > 1e-3:
+                return ValidatedCameraMetadata(
+                    is_calibrated=False, camera=None,
+                    rejection_reason="non_rigid_rotation_quaternion",
+                )
+            return ValidatedCameraMetadata(
+                is_calibrated=True,
+                camera=cam_meta,
+                source="pinhole_camera_instance",
+            )
+
+        if not isinstance(cam_meta, dict):
+            return ValidatedCameraMetadata(
+                is_calibrated=False, camera=None,
+                rejection_reason="invalid_camera_metadata_type",
+            )
+
         source = cam_meta.get("calibration_source") or cam_meta.get("source")
         method = cam_meta.get("calibration_method") or cam_meta.get("method")
         version = cam_meta.get("calibration_version") or cam_meta.get("version")

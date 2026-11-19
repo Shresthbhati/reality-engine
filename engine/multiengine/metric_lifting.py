@@ -48,6 +48,10 @@ class LiftedEntity3D:
     rejected_point_count: int = 0
     depth_source: str = "calibrated_metric_depth"
     calibration_source: str = "camera_metadata"
+    scale_source: str = ""
+    model_id: str = ""
+    checkpoint_id: str = ""
+    raw_artifact_ref: str = ""
     fitting_method: str = "pca_horizontal_quantile"
     is_orientation_known: bool = True
     orientation_reason: str | None = None
@@ -86,6 +90,10 @@ class LiftedEntity3D:
             "rejected_point_count": self.rejected_point_count,
             "depth_source": self.depth_source,
             "calibration_source": self.calibration_source,
+            "scale_source": self.scale_source,
+            "model_id": self.model_id,
+            "checkpoint_id": self.checkpoint_id,
+            "raw_artifact_ref": self.raw_artifact_ref,
             "fitting_method": self.fitting_method,
             "covariance_position": self.covariance_position,
             "covariance_dimensions": self.covariance_dimensions,
@@ -102,6 +110,7 @@ class Metric3DLifter:
 
     def __init__(self, ontology: UniversalObjectOntology | None = None) -> None:
         self.ontology = ontology or get_universal_ontology()
+        self.last_rejection_reason: str | None = None
 
     def lift_detection(
         self,
@@ -117,6 +126,10 @@ class Metric3DLifter:
         is_metric_depth: bool = True,
         depth_source: str = "calibrated_metric_depth",
         calibration_source: str = "camera_metadata",
+        scale_source: str = "",
+        model_id: str = "",
+        checkpoint_id: str = "",
+        raw_artifact_ref: str = "",
         confidence: float | None = None,
         source_id: str = "camera0",
     ) -> LiftedEntity3D | None:
@@ -125,27 +138,49 @@ class Metric3DLifter:
         Returns None if depth is relative/unscaled, masks are incompatible,
         points are unobserved, or geometry is degenerate. Zero geometry is fabricated.
         """
+        self.last_rejection_reason = None
+
         # 1. Enforce verified metric depth contract
         if not is_metric_depth:
-            # Relative monocular depth cannot be unprojected into metric metres without scale alignment
+            self.last_rejection_reason = "UNSCALED_RELATIVE_DEPTH"
             return None
 
-        # 2. Validate mask dimensions and integrity against depth map
+        # 2. Validate camera calibration and pose rigidity
+        from engine.multiengine.visibility_reprojection import VisibilityReprojectionValidator
+        val_cam = VisibilityReprojectionValidator.validate_camera_metadata(camera)
+        if not val_cam.is_valid:
+            self.last_rejection_reason = f"INVALID_CAMERA: {val_cam.rejection_reason}"
+            return None
+
+        # 3. Validate depth map array
+        from engine.multiengine.depth_scale_alignment import validate_depth_map
+        min_std = 0.0 if ("synthetic" in depth_source.lower() or depth_source in ("calibrated_metric_depth", "camera_metadata", "calibrated_sensor_depth")) else 1e-4
+        is_depth_valid, depth_err = validate_depth_map(depth_map, allow_nan=True, min_std=min_std)
+        if not is_depth_valid:
+            self.last_rejection_reason = f"INVALID_DEPTH_MAP: {depth_err}"
+            return None
+
+        # 4. Validate mask dimensions and integrity against depth map
         dh, dw = depth_map.shape[:2]
         if mask_2d is not None:
             if mask_2d.ndim != 2:
+                self.last_rejection_reason = "INVALID_MASK_NDIM"
                 return None
             mh, mw = mask_2d.shape[:2]
             if (mh, mw) != (dh, dw):
+                self.last_rejection_reason = f"MASK_SHAPE_MISMATCH: mask ({mh}, {mw}) != depth ({dh}, {dw})"
                 return None
             if not np.any(mask_2d):
+                self.last_rejection_reason = "EMPTY_MASK"
                 return None
 
-        # 3. Validate bounding box coordinates
+        # 5. Validate bounding box coordinates
         if len(box_2d) < 4:
+            self.last_rejection_reason = "MALFORMED_BOX_2D"
             return None
         x1_raw, y1_raw, x2_raw, y2_raw = float(box_2d[0]), float(box_2d[1]), float(box_2d[2]), float(box_2d[3])
         if any(not math.isfinite(v) for v in (x1_raw, y1_raw, x2_raw, y2_raw)):
+            self.last_rejection_reason = "NON_FINITE_BOX_2D"
             return None
 
         x1 = max(0, min(dw - 1, int(round(x1_raw))))
@@ -154,6 +189,7 @@ class Metric3DLifter:
         y2 = max(0, min(dh, int(round(y2_raw))))
 
         if x2 <= x1 or y2 <= y1:
+            self.last_rejection_reason = "COLLAPSED_2D_BOX"
             return None
 
         # 4. Sample pixel coordinates and depths
@@ -308,6 +344,10 @@ class Metric3DLifter:
             rejected_point_count=rejected_count,
             depth_source=depth_source,
             calibration_source=calibration_source,
+            scale_source=scale_source,
+            model_id=model_id,
+            checkpoint_id=checkpoint_id,
+            raw_artifact_ref=raw_artifact_ref,
             fitting_method="pca_horizontal_quantile",
             is_orientation_known=is_orientation_known,
             orientation_reason=orientation_reason,

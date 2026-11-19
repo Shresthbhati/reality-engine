@@ -15,6 +15,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+_ARCHITECTURAL_KINDS = frozenset(
+    {"incomplete_wall", "missing_corner", "missing_surface", "missing_architectural_feature", "poor_registration"}
+)
+
 
 @dataclass(frozen=True)
 class ProblemEvidence:
@@ -28,6 +32,13 @@ class ProblemEvidence:
     pixels_on_target_needed: float | None = (
         None  # supplied by the engine/benchmark that needs it; None = unknown
     )
+    # dimension axes (w/d/h) with NO usable measurement; () = none known to be missing
+    unmeasured_dimension_axes: Tuple[str, ...] = ()
+    # True/False only when the number of independent viewpoints is known; "rear unobserved" is a statement about the EVIDENCE,
+    # never that the rear is absent
+    rear_observed: bool | None = None
+    # True when independent estimates of the same architectural element disagree and nothing separates them
+    inconsistent_estimates: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +150,34 @@ def request_for_problem(
             )
         )
         scale_needed = True
+    if evidence.unmeasured_dimension_axes:
+        axes = ", ".join(evidence.unmeasured_dimension_axes)
+        why.append(f"no usable measurement exists for dimension axis/axes {axes}, so the object's size is not determined")
+        views.append(
+            ViewSuggestion(
+                "side_view",
+                "a photo taken from the side of the object, level with it, so its depth and height are visible "
+                "together with a surface or object of known size",
+            )
+        )
+    if evidence.rear_observed is False:
+        why.append(
+            "no view observes the rear of the object; its rear geometry is UNOBSERVED (this does not mean it is absent)"
+        )
+        views.append(
+            ViewSuggestion(
+                "reverse_view",
+                "a photo from the opposite side, showing the back of the object with some of the surrounding room in frame",
+            )
+        )
+    if evidence.inconsistent_estimates and problem_kind in _ARCHITECTURAL_KINDS:
+        why.append("independent estimates of this architectural element disagree and the existing views do not separate them")
+        views.append(
+            ViewSuggestion(
+                "architectural_view",
+                "another photo of the wall or opening from a different angle, with its corners and the adjoining wall visible",
+            )
+        )
     if not why:
         return None
     overlap = tuple(evidence.view_ids)

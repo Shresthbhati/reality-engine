@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 538
+Total: 544
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -299,6 +299,8 @@ Total: 538
 - `tests/test_evidence_fusion.py`
 - `tests/test_evidence_quality.py`
 - `tests/test_evidence_sources.py`
+- `tests/test_evidence_world_api.py`
+- `tests/test_evidence_world_job.py`
 - `tests/test_export_parts_and_attributes.py`
 - `tests/test_export_route.py`
 - `tests/test_factor_graph_optimizer.py`
@@ -419,12 +421,16 @@ Total: 538
 - `tests/test_multi_storey_validator.py`
 - `tests/test_multiengine_alignment_consensus.py`
 - `tests/test_multiengine_association.py`
+- `tests/test_multiengine_calibration.py`
 - `tests/test_multiengine_canonical.py`
 - `tests/test_multiengine_conflicts.py`
+- `tests/test_multiengine_evidence_flow.py`
 - `tests/test_multiengine_evidence_matrix.py`
 - `tests/test_multiengine_foundation.py`
 - `tests/test_multiengine_hierarchy.py`
+- `tests/test_multiengine_matrix_executor.py`
 - `tests/test_multiengine_refinement.py`
+- `tests/test_multiengine_worldir_bridge.py`
 - `tests/test_multistorey_matrix.py`
 - `tests/test_multistorey_plane_support.py`
 - `tests/test_multiview_identity_appearance.py`

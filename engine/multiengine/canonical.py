@@ -49,6 +49,20 @@ class Determination:
     uncertainty: Mapping[str, Any] | None = None
     independence: str = ""
     notes: tuple[str, ...] = ()
+    # the competing independent estimates when status == "conflict": kept, never merged or discarded
+    candidates: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class LabelDetermination:
+    """A categorical attribute (e.g. material) reconciled across engines WITHOUT voting; competing labels are all kept."""
+
+    name: str
+    status: str  # LabelResult.status: agreed_unverified | resolved_by_evidence | conflict
+    label: str | None
+    candidates: tuple[str, ...]
+    supporting: tuple[str, ...]  # observation ids behind the label claims
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -62,6 +76,8 @@ class CanonicalEntity:
     determinations: Mapping[str, Determination]
     decisions: tuple[Decision, ...] = ()  # association decisions that formed (or refused to extend) this entity
     notes: tuple[str, ...] = field(default_factory=tuple)
+    parent_entity_id: str | None = None  # set when this entity is a PART of another canonical entity
+    attributes: Mapping[str, LabelDetermination] = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------------------------------------ building
@@ -162,6 +178,12 @@ def determine(
         uncertainty=res.uncertainty,
         independence=res.independence,
         notes=tuple(notes) + tuple(res.notes),
+        candidates=tuple(
+            {"group": g.group, "value": [float(x) for x in g.value], "observation_ids": list(g.members)}
+            for g in res.groups
+        )
+        if res.status == "conflict"
+        else (),
     )
 
 
@@ -178,6 +200,8 @@ def build_canonical_entity(
     association: AssociationResult | None = None,
     quantities: Sequence[str] = (POSITION, DIMENSIONS),
     assume_independent_groups: bool = False,
+    parent_entity_id: str | None = None,
+    attribute_quantities: Sequence[str] = ("material",),
 ) -> CanonicalEntity:
     from perception.ontology import FALLBACK_PATH, get_default_ontology
 
@@ -210,6 +234,20 @@ def build_canonical_entity(
         )
         for q in quantities
     }
+    attrs: dict[str, LabelDetermination] = {}
+    for name in attribute_quantities:
+        claims, supporting = [], []
+        for oid in entity.members:
+            o = matrix.store.get(oid)
+            lab = o.predicted.get("label") if o.quantity == name else None
+            if isinstance(lab, str) and lab and matrix.status(oid) != "rejected":
+                claims.append(LabelClaim(o.engine_id, oid, _group_of(registry, o.engine_id), lab.strip().lower()))
+                supporting.append(oid)
+        if claims:
+            lr = reconcile_labels(claims)
+            attrs[name] = LabelDetermination(
+                name, lr.status, lr.label, lr.candidates, tuple(sorted(supporting)), tuple(lr.notes)
+            )
     decisions: tuple[Decision, ...] = ()
     if association is not None:
         seen: dict[tuple[str, str, str, str], Decision] = {}
@@ -221,6 +259,7 @@ def build_canonical_entity(
         entity_id=entity.entity_key, ontology_path=path, ontology_version=getattr(onto, "version", ""),
         class_status=class_status, class_candidates=class_candidates, members=entity.members,
         determinations=dets, decisions=decisions, notes=tuple(notes),
+        parent_entity_id=parent_entity_id, attributes=attrs,
     )
 
 
@@ -232,6 +271,7 @@ def _obs_row(matrix: EvidenceMatrix, oid: str) -> dict[str, Any]:
         "observation_id": oid, "engine_id": o.engine_id, "model_version": o.model_version, "source_id": o.source_id,
         "frame": o.coordinate_system, "image_region": list(o.image_region) if o.image_region else None,
         "raw_confidence": o.confidence, "calibrated_confidence": c.calibrated_confidence,
+        "calibration": None if c.calibration is None else c.calibration.to_dict(),
         "fallback": dict(o.fallback) if o.fallback else None, "run_id": c.run_id, "checkpoint_id": c.checkpoint_id,
         "status": matrix.status(oid),
     }
@@ -270,6 +310,11 @@ def explain(entity: CanonicalEntity, matrix: EvidenceMatrix, *, ontology: Any | 
             row = _obs_row(matrix, oid)
             if row["calibrated_confidence"] is None:
                 uncertain.append(f"{q}: confidence of {oid} ({row['engine_id']}) is uncalibrated")
+            elif row["calibration"] and not row["calibration"]["complete"]:
+                uncertain.append(
+                    f"{q}: calibration of {oid} is incomplete (legacy record: method/version unspecified, dataset "
+                    f"{row['calibration']['dataset']!r})"
+                )
             if row["fallback"]:
                 uncertain.append(f"{q}: {oid} came from a fallback run ({row['fallback']})")
         if d.excluded:

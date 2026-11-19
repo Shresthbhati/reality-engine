@@ -55,6 +55,30 @@ def _artifact_uris_in(value: Any) -> Iterator[str]:
             yield from _artifact_uris_in(v)
 
 
+LEGACY_UNSPECIFIED = "unspecified (legacy record)"
+
+
+@dataclass(frozen=True)
+class CalibrationRef:
+    """What a calibrated confidence was calibrated WITH: the dataset, the method and its version. All three are required.
+    A legacy record that only carried a free-text basis is kept readable but marked incomplete (``complete`` is False)."""
+
+    dataset: str
+    method: str
+    version: str
+
+    def __post_init__(self) -> None:
+        if not (self.dataset and self.method and self.version):
+            raise MatrixError("a calibration must name its dataset, method and version")
+
+    @property
+    def complete(self) -> bool:
+        return LEGACY_UNSPECIFIED not in (self.method, self.version)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"dataset": self.dataset, "method": self.method, "version": self.version, "complete": self.complete}
+
+
 # ------------------------------------------------------------------------------------------------ context record
 @dataclass(frozen=True)
 class EvidenceContext:
@@ -66,7 +90,9 @@ class EvidenceContext:
     world_transform: str | None = None  # id/description of the frame-graph edge used to express the value in the world frame
     artifact_refs: Mapping[str, str] = field(default_factory=dict)  # role -> artifact:// uri (masks, depth maps, ...)
     calibrated_confidence: float | None = None
-    calibration_basis: str | None = None
+    calibration_basis: str | None = None  # legacy free text; new records give ``calibration`` instead
+    validation: str | None = None  # outcome of the validation actually applied; None = none was applied (never assumed passed)
+    calibration: CalibrationRef | None = None  # dataset + method + version behind ``calibrated_confidence``
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -74,12 +100,18 @@ class EvidenceContext:
         if self.calibrated_confidence is not None:
             if not (0.0 <= float(self.calibrated_confidence) <= 1.0):
                 raise MatrixError(f"calibrated_confidence {self.calibrated_confidence!r} is outside [0, 1]")
-            if not self.calibration_basis:
-                raise MatrixError(
-                    "calibrated_confidence needs calibration_basis: what the confidence was calibrated against"
+            if self.calibration is None:
+                if not self.calibration_basis:
+                    raise MatrixError(
+                        "calibrated_confidence needs calibration=CalibrationRef(dataset, method, version) "
+                        "(or, for a legacy record, a calibration_basis)"
+                    )
+                # a legacy free-text basis stays readable; it is marked incomplete rather than pretending to be complete
+                object.__setattr__(
+                    self, "calibration", CalibrationRef(self.calibration_basis, LEGACY_UNSPECIFIED, LEGACY_UNSPECIFIED)
                 )
-        elif self.calibration_basis:
-            raise MatrixError("calibration_basis was given without a calibrated_confidence")
+        elif self.calibration_basis or self.calibration is not None:
+            raise MatrixError("a calibration was given without a calibrated_confidence")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +124,8 @@ class EvidenceContext:
             "artifact_refs": dict(sorted(self.artifact_refs.items())),
             "calibrated_confidence": self.calibrated_confidence,
             "calibration_basis": self.calibration_basis,
+            "calibration": None if self.calibration is None else self.calibration.to_dict(),
+            "validation": self.validation,
         }
 
     @classmethod
@@ -106,6 +140,52 @@ class EvidenceContext:
             artifact_refs=dict(d.get("artifact_refs") or {}),
             calibrated_confidence=d.get("calibrated_confidence"),
             calibration_basis=d.get("calibration_basis"),
+            validation=d.get("validation"),
+            calibration=CalibrationRef(c["dataset"], c["method"], c["version"]) if (c := d.get("calibration")) else None,
+        )
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """One engine execution, kept whether it succeeded, failed or was unavailable: a failure is evidence too."""
+
+    run_id: str
+    task: str
+    engine_id: str
+    model_version: str
+    status: str  # EngineRunStatus value: succeeded | failed | unavailable | cancelled
+    architecture_id: str | None = None
+    checkpoint_id: str | None = None
+    device: str | None = None
+    error_kind: str | None = None
+    error: str = ""
+    wall_s: float | None = None
+    peak_vram_mb: float | None = None
+    attempts: int = 1
+    fallback: Mapping[str, Any] | None = None
+    sources: tuple[str, ...] = ()
+    observation_ids: tuple[str, ...] = ()
+    output_artifact: str | None = None  # artifact:// uri of the run's complete raw output bundle
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id, "task": self.task, "engine_id": self.engine_id, "model_version": self.model_version,
+            "status": self.status, "architecture_id": self.architecture_id, "checkpoint_id": self.checkpoint_id,
+            "device": self.device, "error_kind": self.error_kind, "error": self.error, "wall_s": self.wall_s,
+            "peak_vram_mb": self.peak_vram_mb, "attempts": self.attempts,
+            "fallback": dict(self.fallback) if self.fallback else None, "sources": list(self.sources),
+            "observation_ids": list(self.observation_ids), "output_artifact": self.output_artifact,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> RunRecord:
+        return cls(
+            run_id=d["run_id"], task=d["task"], engine_id=d["engine_id"], model_version=d["model_version"],
+            status=d["status"], architecture_id=d.get("architecture_id"), checkpoint_id=d.get("checkpoint_id"),
+            device=d.get("device"), error_kind=d.get("error_kind"), error=d.get("error", ""), wall_s=d.get("wall_s"),
+            peak_vram_mb=d.get("peak_vram_mb"), attempts=d.get("attempts", 1), fallback=d.get("fallback"),
+            sources=tuple(d.get("sources") or ()), observation_ids=tuple(d.get("observation_ids") or ()),
+            output_artifact=d.get("output_artifact"),
         )
 
 
@@ -129,6 +209,7 @@ class EvidenceMatrix:
         )
         self._ctx: dict[str, EvidenceContext] = {}
         self._history: dict[str, list[StatusEvent]] = {}
+        self._runs: list[RunRecord] = []
         self._lock = threading.RLock()
         self._log = self._root / "context.jsonl" if self._root else None
         if self._log is not None and self._log.exists():
@@ -139,6 +220,9 @@ class EvidenceMatrix:
             return self.artifacts.has(self.artifacts.digest_of(uri))
         except ValueError:
             return False
+
+    def has_artifact(self, uri: str) -> bool:
+        return self._has_uri(uri)
 
     # ---- writes
     def add(self, obs: EngineObservation, context: EvidenceContext) -> bool:
@@ -162,6 +246,19 @@ class EvidenceMatrix:
             self._history[obs.observation_id] = []
             self._append({"type": "context", **context.to_dict()})
             return True
+
+    def record_run(self, run: RunRecord) -> None:
+        """Append one engine execution (successful or not). Runs are a log: the same engine may legitimately run again."""
+        if not run.run_id or not run.engine_id:
+            raise MatrixError("a run record needs a run id and an engine id")
+        with self._lock:
+            if run.output_artifact is not None and not self._has_uri(run.output_artifact):
+                raise MatrixError(f"run output artifact {run.output_artifact!r} is not in the artifact store")
+            self._runs.append(run)
+            self._append({"type": "run", **run.to_dict()})
+
+    def runs(self, run_id: str | None = None) -> list[RunRecord]:
+        return [r for r in self._runs if run_id is None or r.run_id == run_id]
 
     def set_status(self, observation_id: str, status: str, *, reason: str, by: str) -> None:
         if status not in STATUSES:
@@ -231,6 +328,16 @@ class EvidenceMatrix:
                     continue
                 if hashlib.sha256(data).hexdigest() != self.artifacts.digest_of(uri):
                     problems.append(f"observation {oid}: artifact {uri!r} fails its content hash (corrupted or tampered)")
+        for r in self._runs:
+            if r.output_artifact is None:
+                continue
+            try:
+                data = self.artifacts.get(r.output_artifact)
+            except (KeyError, FileNotFoundError, ValueError):
+                problems.append(f"run {r.run_id}/{r.engine_id}: output artifact {r.output_artifact!r} is missing")
+                continue
+            if hashlib.sha256(data).hexdigest() != self.artifacts.digest_of(r.output_artifact):
+                problems.append(f"run {r.run_id}/{r.engine_id}: output artifact fails its content hash")
         return problems
 
     # ---- persistence
@@ -257,6 +364,8 @@ class EvidenceMatrix:
                     self.store.get(ctx.observation_id)  # raises if the observation is not in the store
                     self._ctx[ctx.observation_id] = ctx
                     self._history.setdefault(ctx.observation_id, [])
+                elif kind == "run":
+                    self._runs.append(RunRecord.from_dict(rec))
                 elif kind == "status":
                     if rec["status"] not in STATUSES or rec["observation_id"] not in self._ctx:
                         raise MatrixError("status record for an unknown row or status")

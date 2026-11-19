@@ -1134,6 +1134,22 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         job.stage = "committing_version"
         job.heartbeat_at = utcnow()
         aw(db.commit())
+        # Opt-in evidence-to-world stage (RE_EVIDENCE_WORLD=1): real engines -> Evidence Matrix -> canonical entities. It records
+        # its facts under stages.evidence_world and NEVER changes the job's grade; only an operator cancel stops the job.
+        ew_facts = None
+        from apps.api import evidence_world_stage as _evw
+
+        if _evw.enabled():
+            def _evw_cancelled() -> bool:
+                aw(db.refresh(job, attribute_names=["cancel_requested"]))
+                return bool(job.cancel_requested)
+
+            ew_facts = _evw.run_for_job(
+                team_id=world.team_id, world_id=world.id, job_id=job.id,  # keyed like the API authorizes: through the world
+                sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled)
+            holder["evidence_world"] = ew_facts
+            if ew_facts["status"] == "cancelled":
+                raise _JobCancelled(f"job {job.id} cancelled by operator")
         report = {
             "status": "SUCCESS" if (prog.level >= 2 and prog.registration_status == "success") else "PARTIAL_SUCCESS",
             "session_id": session.id,
@@ -1205,6 +1221,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 "dense_mvs": prog.stage_facts.get("dense_mvs"),
                 "dense_structure": prog.stage_facts.get("dense_structure"),
                 "timings_s": prog.stage_facts.get("timings_s"),
+                **({"evidence_world": ew_facts} if ew_facts is not None else {}),
                 "device_depth_scale": prog.stage_facts.get("device_depth_scale"),
                 "compile": {
                     "entities": prog.counts.get("entities", len(world_ir.entities)),
@@ -1411,6 +1428,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "cameras_bytes": len(cameras_bytes),
         "skipped_evidence": skipped_evidence,
         "scene_identity": scene_info,
+        **({"evidence_world": holder["evidence_world"]} if holder.get("evidence_world") else {}),
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)

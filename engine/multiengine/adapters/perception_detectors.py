@@ -22,7 +22,7 @@ from engine.multiengine.contract import (
     EngineSpec,
 )
 from engine.multiengine.observation import ObservationDraft
-from perception.detection.extensible_prompter import ExtensiblePrompter
+from perception.detection.extensible_prompter import ExtensiblePrompter, ScaleFilter
 
 
 def _hf_hub_cache() -> Path:
@@ -177,7 +177,7 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompt_text = ". ".join(self._prompter.get_prompts(scale_tier="meso")[:10]) + "."
+        prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:
@@ -385,7 +385,7 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         import torch
         from PIL import Image
 
-        prompts = self._prompter.get_prompts(scale_tier="meso")[:16]
+        prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
         for s in sources:

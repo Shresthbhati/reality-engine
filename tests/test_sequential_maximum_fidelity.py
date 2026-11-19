@@ -214,6 +214,7 @@ def test_api_routes_engines_endpoints():
                 "metadata": {"room_name": "living_room"},
                 "allow_unestablished_licence": True,
             },
+            headers={"x-tenant-id": "root"},  # /reconstruct runs on server paths: global administrators only
         )
         assert resp_recon.status_code == 200
         recon_data = resp_recon.json()
@@ -223,7 +224,7 @@ def test_api_routes_engines_endpoints():
         assert "consensus_summary" in recon_data
 
         # 4. GET /api/engines/evidence
-        resp_ev = client.get("/api/engines/evidence")
+        resp_ev = client.get("/api/engines/evidence", headers={"x-tenant-id": "root"})  # shared store: global admins only
         assert resp_ev.status_code == 200
         ev_data = resp_ev.json()
         assert ev_data["total"] >= recon_data["persisted_observations_count"]

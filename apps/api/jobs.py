@@ -1640,6 +1640,7 @@ async def _finalize_fenced(db: AsyncSession, job: Job, lease: tuple[str | None, 
     values = {c: getattr(job, c) for c in ("status", "stage", "progress", "error", "completed_at", "payload")}
     if job.status == JOB_QUEUED:
         values["worker_id"] = None                       # a retry releases the lease
+    subject = (job.type, job.entity_type, job.entity_id, job.status)
     db.expunge(job)
     res = await db.execute(update(Job).where(*_owned(job.id, lease)).values(**values).execution_options(synchronize_session=False))
     if res.rowcount == 0:
@@ -1647,8 +1648,21 @@ async def _finalize_fenced(db: AsyncSession, job: Job, lease: tuple[str | None, 
         now = (await db.execute(select(Job.status, Job.worker_id, Job.attempts).where(Job.id == job.id))).first()
         log.warning("job %s: final write refused: lease %s, row now %s", job.id, lease, tuple(now) if now else None)
         return False
+    await _settle_session(db, *subject)                  # same transaction: the session never outlives the job's verdict
     await db.commit()
     return True
+
+
+async def _settle_session(db: AsyncSession, job_type: str, entity_type: str | None, entity_id: str | None, job_status: str) -> None:
+    """A reconstruction that stopped without a result must not leave its session ``processing`` (a permanent spinner for
+    work no longer happening). failed -> ``failed``; cancelled -> ``created`` (photos kept, re-runnable). A retry
+    (queued), a success (the handler already set ``complete``) and any session that has since moved on are left alone."""
+    if job_type != RECONSTRUCT_SESSION or entity_type != "session" or not entity_id:
+        return
+    target = {JOB_FAILED: "failed", JOB_CANCELLED: "created"}.get(job_status)
+    if target is not None:
+        await db.execute(update(Session).where(Session.id == entity_id, Session.status == "processing").values(status=target)
+                         .execution_options(synchronize_session=False))
 
 
 async def reap_stale_jobs(db: AsyncSession) -> int:
@@ -1663,33 +1677,14 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     from reconstruction.proc import get_dead_worker_jobs, recover_orphaned_jobs
 
     cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
-    result = await db.execute(
-        select(Job).where(Job.status == JOB_RUNNING, Job.heartbeat_at < cutoff)
-    )
+    stale = [tuple(r) for r in (await db.execute(
+        select(Job.id, Job.worker_id, Job.attempts, Job.max_attempts, Job.type, Job.entity_type, Job.entity_id)
+        .where(Job.status == JOB_RUNNING, Job.heartbeat_at < cutoff))).all()]
     reaped = 0
-    for job in result.scalars().all():
-        # Compare-and-swap: the flip only lands if the row is STILL the stale one we read (same attempt, same dead
-        # worker, heartbeat still older than the cutoff). A worker that heartbeats between our SELECT and this UPDATE
-        # keeps its job instead of having it requeued under it.
-        seen = (job.id, job.worker_id, job.attempts, job.max_attempts)
-        if job.attempts >= job.max_attempts:
-            values = {"status": JOB_FAILED, "stage": TERMINAL_STAGE[JOB_FAILED], "completed_at": utcnow(),
-                      "error": f"Worker died or job timed out after {job.attempts} attempt(s)"}
-            entry = ("failed", "ERROR", values["error"])
-        else:
-            values = {"status": JOB_QUEUED, "stage": None, "worker_id": None}
-            entry = ("recovered", "WARNING",
-                     f"Recovered stale job from crashed worker (attempt {job.attempts}/{job.max_attempts}); requeued")
-        flipped = await db.execute(
-            update(Job).where(Job.id == seen[0], Job.status == JOB_RUNNING, Job.worker_id == seen[1],
-                              Job.attempts == seen[2], Job.heartbeat_at < cutoff)
-            .values(**values).execution_options(synchronize_session=False))
-        if flipped.rowcount:
-            db.add(JobLog(id=new_id("log"), job_id=seen[0], stage=entry[0], level=entry[1], message=entry[2],
-                          context_json={"attempts": seen[2], "reaped": True}))
+    for seen in stale:
+        if await _cas_recover(db, seen, "stale", Job.heartbeat_at < cutoff):
             reaped += 1
     if reaped:
-        await db.commit()
         log.warning("reaped %d stale running job(s)", reaped)
 
     # Also check for dead workers
@@ -1697,24 +1692,46 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     if dead_jobs:
         log.warning("Found %d dead worker jobs, recovering...", len(dead_jobs))
         for dead_id in dead_jobs:
-            dead_res = await db.execute(
-                select(Job).where(Job.id == dead_id, Job.status == JOB_RUNNING)
-            )
-            dead_job = dead_res.scalar_one_or_none()
-            if dead_job:
-                if dead_job.attempts >= dead_job.max_attempts:
-                    dead_job.status = JOB_FAILED
-                    dead_job.stage = TERMINAL_STAGE[JOB_FAILED]
-                    dead_job.completed_at = utcnow()
-                    dead_job.error = f"Worker process died after {dead_job.attempts} attempt(s)"
-                else:
-                    dead_job.status = JOB_QUEUED
-                    dead_job.stage = None
-                    dead_job.worker_id = None
-                reaped += 1
-                await db.commit()
+            row = (await db.execute(select(Job.id, Job.worker_id, Job.attempts, Job.max_attempts, Job.type, Job.entity_type,
+                                           Job.entity_id, Job.heartbeat_at)
+                                    .where(Job.id == dead_id, Job.status == JOB_RUNNING))).first()
+            if row is not None:
+                beat = row[7]  # a heartbeat after this read means the worker is alive after all: leave the job alone
+                unchanged = Job.heartbeat_at == beat if beat is not None else Job.heartbeat_at.is_(None)
+                if await _cas_recover(db, tuple(row[:7]), "dead_worker", unchanged):
+                    reaped += 1
+            # Process cleanup is independent of who won the row: the dead worker's children are orphans either way.
             await recover_orphaned_jobs(db, dead_id)
     return reaped
+
+
+async def _cas_recover(db: AsyncSession, seen: tuple, why: str, *extra_where) -> bool:
+    """Requeue (or fail, once attempts are exhausted) a job observed running, in ONE compare-and-swap UPDATE that only
+    lands while the row is still exactly what was observed: same id, still running, same worker, same attempt (plus any
+    ``extra_where``, e.g. 'heartbeat still stale'). A worker that completes, heartbeats, or loses and re-claims the job
+    between the caller's SELECT and this UPDATE matches no row, so nothing is requeued under it and nothing is written.
+    The audit log row is added in the same transaction only when the swap succeeded; a lost race rolls back, untouched."""
+    seen_id, seen_worker, seen_attempts, max_attempts, job_type, entity_type, entity_id = seen  # as observed
+    if seen_attempts >= max_attempts:
+        values = {"status": JOB_FAILED, "stage": TERMINAL_STAGE[JOB_FAILED], "completed_at": utcnow(),
+                  "error": f"Worker died or job timed out after {seen_attempts} attempt(s)"}
+        entry = ("failed", "ERROR", values["error"])
+    else:
+        values = {"status": JOB_QUEUED, "stage": None, "worker_id": None}
+        entry = ("recovered", "WARNING",
+                 f"Recovered stale job from crashed worker (attempt {seen_attempts}/{max_attempts}); requeued")
+    res = await db.execute(
+        update(Job).where(Job.id == seen_id, Job.status == JOB_RUNNING, Job.worker_id == seen_worker,
+                          Job.attempts == seen_attempts, *extra_where)
+        .values(**values).execution_options(synchronize_session=False))
+    if res.rowcount == 0:
+        await db.rollback()
+        return False
+    db.add(JobLog(id=new_id("log"), job_id=seen_id, stage=entry[0], level=entry[1], message=entry[2],
+                  context_json={"attempts": seen_attempts, "reaped": True, "why": why}))
+    await _settle_session(db, job_type, entity_type, entity_id, values["status"])
+    await db.commit()
+    return True
 
 
 async def claim_next_job(db: AsyncSession, worker_id: str | None = None) -> Job | None:
@@ -2030,4 +2047,3 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
         except Exception:
             log.exception("worker loop error")
             await asyncio.sleep(poll_seconds * 2)
-

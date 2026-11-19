@@ -23,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import worldstore_service
 from apps.api.auth import AuthContext, get_auth_context
 from apps.api.db import get_db
+from apps.api.models import Session as CaptureSession
 from apps.api.models import World, WorldEditCommand, utcnow
+from apps.api.tenancy import assert_visible, world_scope
 from provenance import Provenance
 from world_ir.incremental import apply_incremental_update
 from world_ir.schema_v1 import Entity
@@ -31,7 +33,7 @@ from world_ir.world_v1 import WorldIR
 
 log = logging.getLogger("reality.api.adoptions")
 
-adoptions_router = APIRouter(prefix="/api/worlds", tags=["adoptions"])
+adoptions_router = APIRouter(prefix="/api/worlds", tags=["adoptions"], dependencies=[Depends(world_scope)])
 
 
 def _proposals_dir() -> Path:
@@ -241,6 +243,9 @@ async def propose_adoption(
     Evaluates relative Sim(3) registration, scores alignment confidence C_align,
     refuses alignment if C_align < min_confidence, and derives the 5-state ChangeSet.
     """
+    # The session id arrives in the body: a session this caller cannot see is "not found", like a missing one.
+    await assert_visible(db, CaptureSession, payload.session_id, auth)
+
     # 1. Load target world and verify HEAD exists
     world_row = await db.get(World, world_id)
     if world_row is None:

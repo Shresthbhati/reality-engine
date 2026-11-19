@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 527
+Total: 528
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -545,6 +545,7 @@ Total: 527
 - `tests/test_security_audit.py`
 - `tests/test_sensor_identity.py`
 - `tests/test_sensor_streams.py`
+- `tests/test_sequential_maximum_fidelity.py`
 - `tests/test_serialization.py`
 - `tests/test_session_store.py`
 - `tests/test_sfm_pipeline_rule4.py`

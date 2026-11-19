@@ -10,6 +10,7 @@ A gate is a named measurement with a direction and a threshold. Two rules are en
 Overall results: COMPLETE (all required gates pass), FAILED (a required gate failed or a regression was found), PARTIAL (some
 required gates pass, the rest could not be verified), UNVERIFIED (no required gate could be verified).
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -33,13 +34,20 @@ class Overall(str, Enum):
 
 #: The metrics the task requires tracking. Names only -- thresholds come from benchmarks, not from this file.
 STANDARD_GATES: Tuple[Tuple[str, str, str], ...] = (
-    ("camera_pose_accuracy", "lower_is_better", "m"), ("reprojection_error", "lower_is_better", "px"),
-    ("depth_consistency", "lower_is_better", ""), ("pointcloud_accuracy", "lower_is_better", "m"),
-    ("pointcloud_completeness", "higher_is_better", "fraction"), ("mesh_accuracy", "lower_is_better", "m"),
-    ("metric_scale_confidence", "higher_is_better", ""), ("surface_coverage", "higher_is_better", "fraction"),
-    ("detection_precision", "higher_is_better", "fraction"), ("detection_recall", "higher_is_better", "fraction"),
-    ("segmentation_quality", "higher_is_better", ""), ("identity_consistency", "higher_is_better", "fraction"),
-    ("spatial_relationship_accuracy", "higher_is_better", "fraction"), ("uncertainty_calibration", "lower_is_better", ""),
+    ("camera_pose_accuracy", "lower_is_better", "m"),
+    ("reprojection_error", "lower_is_better", "px"),
+    ("depth_consistency", "lower_is_better", ""),
+    ("pointcloud_accuracy", "lower_is_better", "m"),
+    ("pointcloud_completeness", "higher_is_better", "fraction"),
+    ("mesh_accuracy", "lower_is_better", "m"),
+    ("metric_scale_confidence", "higher_is_better", ""),
+    ("surface_coverage", "higher_is_better", "fraction"),
+    ("detection_precision", "higher_is_better", "fraction"),
+    ("detection_recall", "higher_is_better", "fraction"),
+    ("segmentation_quality", "higher_is_better", ""),
+    ("identity_consistency", "higher_is_better", "fraction"),
+    ("spatial_relationship_accuracy", "higher_is_better", "fraction"),
+    ("uncertainty_calibration", "lower_is_better", ""),
     ("missing_region_coverage", "higher_is_better", "fraction"),
 )
 
@@ -47,9 +55,11 @@ STANDARD_GATES: Tuple[Tuple[str, str, str], ...] = (
 @dataclass(frozen=True)
 class GateSpec:
     name: str
-    direction: str                         # "lower_is_better" | "higher_is_better"
-    threshold: float | None = None      # None = no benchmark-established threshold exists yet
-    threshold_source: str = ""             # the benchmark record the threshold came from; required when threshold is set
+    direction: str  # "lower_is_better" | "higher_is_better"
+    threshold: float | None = None  # None = no benchmark-established threshold exists yet
+    threshold_source: str = (
+        ""  # the benchmark record the threshold came from; required when threshold is set
+    )
     required: bool = True
     unit: str = ""
 
@@ -57,15 +67,17 @@ class GateSpec:
         if self.direction not in ("lower_is_better", "higher_is_better"):
             raise ValueError(f"gate {self.name!r}: unknown direction {self.direction!r}")
         if self.threshold is not None and not self.threshold_source:
-            raise ValueError(f"gate {self.name!r}: a threshold must cite the benchmark it was established from")
+            raise ValueError(
+                f"gate {self.name!r}: a threshold must cite the benchmark it was established from"
+            )
 
 
 @dataclass(frozen=True)
 class Measurement:
     value: float
-    method: str                            # how it was measured (e.g. "reprojection over registered views")
-    n: int | None = None                # sample size, if applicable
-    source: str = ""                       # run / artifact the measurement came from
+    method: str  # how it was measured (e.g. "reprojection over registered views")
+    n: int | None = None  # sample size, if applicable
+    source: str = ""  # run / artifact the measurement came from
 
 
 @dataclass(frozen=True)
@@ -81,7 +93,7 @@ class GateResult:
 @dataclass(frozen=True)
 class Regression:
     feature_id: str
-    kind: str                              # "missing" | "changed"
+    kind: str  # "missing" | "changed"
     previous: object
     current: object
 
@@ -95,15 +107,38 @@ class QualityReport:
     notes: Tuple[str, ...]
 
     def to_dict(self) -> dict:
-        return {"overall": self.overall.value, "stages_ok": self.stages_ok, "notes": list(self.notes),
-                "gates": [{"name": g.name, "verdict": g.verdict.value, "reason": g.reason, "value": g.value,
-                           "threshold": g.threshold, "required": g.required} for g in self.gates],
-                "regressions": [{"feature_id": r.feature_id, "kind": r.kind, "previous": r.previous, "current": r.current}
-                                for r in self.regressions]}
+        return {
+            "overall": self.overall.value,
+            "stages_ok": self.stages_ok,
+            "notes": list(self.notes),
+            "gates": [
+                {
+                    "name": g.name,
+                    "verdict": g.verdict.value,
+                    "reason": g.reason,
+                    "value": g.value,
+                    "threshold": g.threshold,
+                    "required": g.required,
+                }
+                for g in self.gates
+            ],
+            "regressions": [
+                {
+                    "feature_id": r.feature_id,
+                    "kind": r.kind,
+                    "previous": r.previous,
+                    "current": r.current,
+                }
+                for r in self.regressions
+            ],
+        }
 
 
-def default_gate_specs(thresholds: Mapping[str, Tuple[float, str]] | None = None, *, required: Iterable[str] | None = None
-                       ) -> List[GateSpec]:
+def default_gate_specs(
+    thresholds: Mapping[str, Tuple[float, str]] | None = None,
+    *,
+    required: Iterable[str] | None = None,
+) -> List[GateSpec]:
     """The standard gates. ``thresholds`` maps gate name -> (threshold, benchmark record). Anything not given stays threshold-less
     (UNVERIFIED). ``required`` limits which gates are required (default: all)."""
     t = dict(thresholds or {})
@@ -114,12 +149,15 @@ def default_gate_specs(thresholds: Mapping[str, Tuple[float, str]] | None = None
     out = []
     for name, direction, unit in STANDARD_GATES:
         thr, src = t.get(name, (None, ""))
-        out.append(GateSpec(name, direction, thr, src, required=(req is None or name in req), unit=unit))
+        out.append(
+            GateSpec(name, direction, thr, src, required=(req is None or name in req), unit=unit)
+        )
     return out
 
 
-def check_regressions(previous: Mapping[str, object], current: Mapping[str, object], *, tolerance: Mapping[str, float]
-                      ) -> List[Regression]:
+def check_regressions(
+    previous: Mapping[str, object], current: Mapping[str, object], *, tolerance: Mapping[str, float]
+) -> List[Regression]:
     """Features validated earlier must not silently vanish or change. ``tolerance`` maps feature id -> allowed absolute change for
     numeric values; a feature with no stated tolerance must be exactly equal (no default is invented)."""
     out: List[Regression] = []
@@ -129,8 +167,12 @@ def check_regressions(previous: Mapping[str, object], current: Mapping[str, obje
             continue
         cur = current[fid]
         tol = tolerance.get(fid)
-        numeric = (isinstance(prev, (int, float)) and isinstance(cur, (int, float))
-                   and not isinstance(prev, bool) and not isinstance(cur, bool))
+        numeric = (
+            isinstance(prev, (int, float))
+            and isinstance(cur, (int, float))
+            and not isinstance(prev, bool)
+            and not isinstance(cur, bool)
+        )
         if numeric and tol is not None:
             if abs(float(cur) - float(prev)) > tol:
                 out.append(Regression(fid, "changed", prev, cur))
@@ -139,26 +181,55 @@ def check_regressions(previous: Mapping[str, object], current: Mapping[str, obje
     return out
 
 
-def evaluate(specs: Sequence[GateSpec], measurements: Mapping[str, Measurement | None], *, stages_ok: bool | None = None,
-             regressions: Sequence[Regression] = ()) -> QualityReport:
+def evaluate(
+    specs: Sequence[GateSpec],
+    measurements: Mapping[str, Measurement | None],
+    *,
+    stages_ok: bool | None = None,
+    regressions: Sequence[Regression] = (),
+) -> QualityReport:
     results: List[GateResult] = []
     for s in specs:
         m = measurements.get(s.name)
         if m is None:
-            results.append(GateResult(s.name, GateVerdict.UNVERIFIED, "not measured", None, s.threshold, s.required))
+            results.append(
+                GateResult(
+                    s.name, GateVerdict.UNVERIFIED, "not measured", None, s.threshold, s.required
+                )
+            )
         elif s.threshold is None:
-            results.append(GateResult(s.name, GateVerdict.UNVERIFIED,
-                                      "measured, but no benchmark-established threshold exists to judge it against", m.value, None,
-                                      s.required))
+            results.append(
+                GateResult(
+                    s.name,
+                    GateVerdict.UNVERIFIED,
+                    "measured, but no benchmark-established threshold exists to judge it against",
+                    m.value,
+                    None,
+                    s.required,
+                )
+            )
         else:
-            ok = m.value <= s.threshold if s.direction == "lower_is_better" else m.value >= s.threshold
-            results.append(GateResult(s.name, GateVerdict.PASS if ok else GateVerdict.FAIL,
-                                      f"{m.value:g} vs threshold {s.threshold:g} ({s.direction}, from {s.threshold_source})",
-                                      m.value, s.threshold, s.required))
+            ok = (
+                m.value <= s.threshold
+                if s.direction == "lower_is_better"
+                else m.value >= s.threshold
+            )
+            results.append(
+                GateResult(
+                    s.name,
+                    GateVerdict.PASS if ok else GateVerdict.FAIL,
+                    f"{m.value:g} vs threshold {s.threshold:g} ({s.direction}, from {s.threshold_source})",
+                    m.value,
+                    s.threshold,
+                    s.required,
+                )
+            )
     required = [r for r in results if r.required]
     notes: List[str] = []
     if stages_ok is True:
-        notes.append("all pipeline stages returned without error; that alone does not make the reconstruction complete")
+        notes.append(
+            "all pipeline stages returned without error; that alone does not make the reconstruction complete"
+        )
     if not required:
         overall = Overall.UNVERIFIED
         notes.append("no required gate is configured")
@@ -172,8 +243,10 @@ def evaluate(specs: Sequence[GateSpec], measurements: Mapping[str, Measurement |
         overall = Overall.COMPLETE
     elif any(r.verdict is GateVerdict.PASS for r in required):
         overall = Overall.PARTIAL
-        notes.append("some required gates could not be verified: "
-                     + ", ".join(r.name for r in required if r.verdict is GateVerdict.UNVERIFIED))
+        notes.append(
+            "some required gates could not be verified: "
+            + ", ".join(r.name for r in required if r.verdict is GateVerdict.UNVERIFIED)
+        )
     else:
         overall = Overall.UNVERIFIED
         notes.append("no required gate could be verified")

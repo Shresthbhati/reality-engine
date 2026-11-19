@@ -13,6 +13,7 @@ Rules enforced here:
   state is kept (the rejection is recorded).
 * The loop stops with an explicit reason and never reports success it did not measure.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -55,9 +56,11 @@ class ProblemKind(str, Enum):
 
 
 class ProblemCause(str, Enum):
-    INSUFFICIENT_EVIDENCE = "insufficient_evidence"    # the photos do not contain enough: only new evidence helps
-    ENGINE_DISAGREEMENT = "engine_disagreement"        # engines conflict: another engine / the image evidence may resolve it
-    ENGINE_MISS = "engine_miss"                        # evidence exists but the engines run so far did not extract it
+    INSUFFICIENT_EVIDENCE = (
+        "insufficient_evidence"  # the photos do not contain enough: only new evidence helps
+    )
+    ENGINE_DISAGREEMENT = "engine_disagreement"  # engines conflict: another engine / the image evidence may resolve it
+    ENGINE_MISS = "engine_miss"  # evidence exists but the engines run so far did not extract it
     UNKNOWN = "unknown"
 
 
@@ -65,9 +68,13 @@ class StopReason(str, Enum):
     TARGET_MET = "target_met"
     MAX_ITERATIONS = "max_iterations"
     NO_IMPROVEMENT = "no_improvement"
-    NO_ENGINE_AVAILABLE = "no_engine_available"        # every remaining problem has no untried available engine
-    AWAITING_EVIDENCE = "awaiting_evidence"            # remaining problems need new photographs
-    NOTHING_TO_REFINE = "nothing_to_refine"            # no problem found, yet the result is not verified complete
+    NO_ENGINE_AVAILABLE = (
+        "no_engine_available"  # every remaining problem has no untried available engine
+    )
+    AWAITING_EVIDENCE = "awaiting_evidence"  # remaining problems need new photographs
+    NOTHING_TO_REFINE = (
+        "nothing_to_refine"  # no problem found, yet the result is not verified complete
+    )
 
 
 @dataclass(frozen=True)
@@ -76,17 +83,17 @@ class Problem:
     kind: ProblemKind
     cause: ProblemCause
     location: Mapping[str, Any]
-    tasks: Tuple[Task, ...] = ()                       # tasks whose engines could re-examine it
+    tasks: Tuple[Task, ...] = ()  # tasks whose engines could re-examine it
     evidence: ProblemEvidence = ProblemEvidence()
     target_ids: Tuple[str, ...] = ()
     detail: str = ""
-    basis: Tuple[str, ...] = ()                        # observation / measurement ids that revealed it
+    basis: Tuple[str, ...] = ()  # observation / measurement ids that revealed it
 
 
 @dataclass(frozen=True)
 class ActionRecord:
     problem_id: str
-    outcome: str       # applied | unchanged | rejected_inconsistent | rejected_regression | engine_failed | exhausted | needs_evidence | unresolved
+    outcome: str  # applied | unchanged | rejected_inconsistent | rejected_regression | engine_failed | exhausted | needs_evidence | unresolved
     engines: Tuple[str, ...] = ()
     detail: str = ""
 
@@ -112,16 +119,40 @@ class RefinementResult:
 
     def to_dict(self) -> dict:
         return {
-            "stop_reason": self.stop_reason.value, "final_quality": self.final_quality.to_dict(),
+            "stop_reason": self.stop_reason.value,
+            "final_quality": self.final_quality.to_dict(),
             "unresolved": list(self.unresolved),
-            "capture_requests": [{"reason": c.reason, "why_insufficient": list(c.why_insufficient), "instruction": c.instruction,
-                                  "overlap_with": list(c.overlap_with), "target_ids": list(c.target_ids)}
-                                 for c in self.capture_requests],
-            "iterations": [{"index": i.index, "overall_before": i.quality_before.overall.value,
-                            "overall_after": None if i.quality_after is None else i.quality_after.overall.value,
-                            "improved": i.improved, "problems": [p.problem_id for p in i.problems],
-                            "actions": [{"problem_id": a.problem_id, "outcome": a.outcome, "engines": list(a.engines),
-                                         "detail": a.detail} for a in i.actions]} for i in self.iterations],
+            "capture_requests": [
+                {
+                    "reason": c.reason,
+                    "why_insufficient": list(c.why_insufficient),
+                    "instruction": c.instruction,
+                    "overlap_with": list(c.overlap_with),
+                    "target_ids": list(c.target_ids),
+                }
+                for c in self.capture_requests
+            ],
+            "iterations": [
+                {
+                    "index": i.index,
+                    "overall_before": i.quality_before.overall.value,
+                    "overall_after": None
+                    if i.quality_after is None
+                    else i.quality_after.overall.value,
+                    "improved": i.improved,
+                    "problems": [p.problem_id for p in i.problems],
+                    "actions": [
+                        {
+                            "problem_id": a.problem_id,
+                            "outcome": a.outcome,
+                            "engines": list(a.engines),
+                            "detail": a.detail,
+                        }
+                        for a in i.actions
+                    ],
+                }
+                for i in self.iterations
+            ],
         }
 
 
@@ -135,24 +166,41 @@ def _score(q: QualityReport, n_problems: int) -> Tuple[int, int, int, int]:
 
 
 class RefinementLoop:
-    def __init__(self, *, manager: ExecutionManager, registry: EngineRegistry, specs: Sequence[GateSpec],
-                 measure: Callable[[Any], Tuple[Mapping[str, Measurement | None], bool | None]],
-                 detect: Callable[[Any, QualityReport], Sequence[Problem]],
-                 apply: Callable[[Any, Problem, ExecutionReport], Any],
-                 consistency: Callable[[Any], Sequence[str]],
-                 features: Callable[[Any], Mapping[str, object]] = lambda s: {},
-                 regression_tolerance: Mapping[str, float] | None = None,
-                 max_iterations: int = 5, patience: int = 1) -> None:
+    def __init__(
+        self,
+        *,
+        manager: ExecutionManager,
+        registry: EngineRegistry,
+        specs: Sequence[GateSpec],
+        measure: Callable[[Any], Tuple[Mapping[str, Measurement | None], bool | None]],
+        detect: Callable[[Any, QualityReport], Sequence[Problem]],
+        apply: Callable[[Any, Problem, ExecutionReport], Any],
+        consistency: Callable[[Any], Sequence[str]],
+        features: Callable[[Any], Mapping[str, object]] = lambda s: {},
+        regression_tolerance: Mapping[str, float] | None = None,
+        max_iterations: int = 5,
+        patience: int = 1,
+    ) -> None:
         if max_iterations < 1:
             raise ValueError("max_iterations must be at least 1")
         self.manager, self.registry, self.specs = manager, registry, list(specs)
-        self.measure, self.detect, self.apply, self.consistency, self.features = measure, detect, apply, consistency, features
+        self.measure, self.detect, self.apply, self.consistency, self.features = (
+            measure,
+            detect,
+            apply,
+            consistency,
+            features,
+        )
         self.regression_tolerance = dict(regression_tolerance or {})
         self.max_iterations, self.patience = max_iterations, max(1, patience)
 
     def _quality(self, state: Any, validated: Mapping[str, object]) -> QualityReport:
         measurements, stages_ok = self.measure(state)
-        regs = check_regressions(validated, self.features(state), tolerance=self.regression_tolerance) if validated else []
+        regs = (
+            check_regressions(validated, self.features(state), tolerance=self.regression_tolerance)
+            if validated
+            else []
+        )
         return evaluate(self.specs, measurements, stages_ok=stages_ok, regressions=regs)
 
     def run(self, state: Any) -> RefinementResult:
@@ -168,20 +216,36 @@ class RefinementLoop:
             if quality.overall is Overall.COMPLETE and not problems:
                 return self._done(state, StopReason.TARGET_MET, history, capture, quality, problems)
             if not problems:
-                return self._done(state, StopReason.NOTHING_TO_REFINE, history, capture, quality, problems)
+                return self._done(
+                    state, StopReason.NOTHING_TO_REFINE, history, capture, quality, problems
+                )
             actions: List[ActionRecord] = []
             for p in problems:
                 if p.problem_id in exhausted:
                     continue
                 if p.cause in (ProblemCause.INSUFFICIENT_EVIDENCE, ProblemCause.UNKNOWN):
-                    spec = request_for_problem(problem_kind=p.kind.value, location=dict(p.location), target_ids=p.target_ids,
-                                               evidence=p.evidence, basis=p.basis)
+                    spec = request_for_problem(
+                        problem_kind=p.kind.value,
+                        location=dict(p.location),
+                        target_ids=p.target_ids,
+                        evidence=p.evidence,
+                        basis=p.basis,
+                    )
                     exhausted.add(p.problem_id)
                     if spec is None:
-                        actions.append(ActionRecord(p.problem_id, "unresolved", (), "no measured fact shows that more photos would help"))
+                        actions.append(
+                            ActionRecord(
+                                p.problem_id,
+                                "unresolved",
+                                (),
+                                "no measured fact shows that more photos would help",
+                            )
+                        )
                     else:
                         capture.setdefault(p.problem_id, spec)
-                        actions.append(ActionRecord(p.problem_id, "needs_evidence", (), spec.reason))
+                        actions.append(
+                            ActionRecord(p.problem_id, "needs_evidence", (), spec.reason)
+                        )
                     continue
                 state, record = self._reprocess(state, p, tried, validated)
                 actions.append(record)
@@ -190,7 +254,9 @@ class RefinementLoop:
             after = self._quality(state, validated)
             new_problems = list(self.detect(state, after))
             improved = _score(after, len(new_problems)) > _score(quality, len(problems))
-            history.append(IterationRecord(index, quality, tuple(problems), tuple(actions), after, improved))
+            history.append(
+                IterationRecord(index, quality, tuple(problems), tuple(actions), after, improved)
+            )
             quality, problems = after, new_problems
             stagnant = 0 if improved else stagnant + 1
             open_problems = [p for p in problems if p.problem_id not in exhausted]
@@ -200,12 +266,15 @@ class RefinementLoop:
                 reason = StopReason.AWAITING_EVIDENCE if capture else StopReason.NO_ENGINE_AVAILABLE
                 return self._done(state, reason, history, capture, quality, problems)
             if stagnant >= self.patience:
-                return self._done(state, StopReason.NO_IMPROVEMENT, history, capture, quality, problems)
+                return self._done(
+                    state, StopReason.NO_IMPROVEMENT, history, capture, quality, problems
+                )
         return self._done(state, StopReason.MAX_ITERATIONS, history, capture, quality, problems)
 
     # ------------------------------------------------------------------ one targeted reprocessing step
-    def _reprocess(self, state: Any, p: Problem, tried: Dict[str, Set[str]], validated: Mapping[str, object]
-                   ) -> Tuple[Any, ActionRecord]:
+    def _reprocess(
+        self, state: Any, p: Problem, tried: Dict[str, Set[str]], validated: Mapping[str, object]
+    ) -> Tuple[Any, ActionRecord]:
         done = tried.setdefault(p.problem_id, set())
         candidates: List[Tuple[Task, List[str]]] = []
         for task in p.tasks:
@@ -213,27 +282,59 @@ class RefinementLoop:
             if ids:
                 candidates.append((task, ids))
         if not candidates:
-            return state, ActionRecord(p.problem_id, "exhausted", (), "no untried available engine can address this problem")
+            return state, ActionRecord(
+                p.problem_id,
+                "exhausted",
+                (),
+                "no untried available engine can address this problem",
+            )
         task, ids = candidates[0]
-        request = EngineRequest(sources=tuple(p.target_ids) or ("region",),
-                                payload={"problem": p.problem_id, "kind": p.kind.value, "location": dict(p.location)})
+        request = EngineRequest(
+            sources=tuple(p.target_ids) or ("region",),
+            payload={"problem": p.problem_id, "kind": p.kind.value, "location": dict(p.location)},
+        )
         report = self.manager.run(task, request, only=ids)
         done.update(r.engine_id for r in report.runs)
         ran = tuple(r.engine_id for r in report.runs if r.ok)
         if not ran:
-            return state, ActionRecord(p.problem_id, "engine_failed", tuple(r.engine_id for r in report.runs),
-                                       "; ".join(f"{r.engine_id}: {r.error}" for r in report.runs if r.error))
+            return state, ActionRecord(
+                p.problem_id,
+                "engine_failed",
+                tuple(r.engine_id for r in report.runs),
+                "; ".join(f"{r.engine_id}: {r.error}" for r in report.runs if r.error),
+            )
         candidate = self.apply(state, p, report)
         if candidate is state or candidate is None:
-            return state, ActionRecord(p.problem_id, "unchanged", ran, "reconciliation produced no change")
+            return state, ActionRecord(
+                p.problem_id, "unchanged", ran, "reconciliation produced no change"
+            )
         violations = list(self.consistency(candidate))
         if violations:
-            return state, ActionRecord(p.problem_id, "rejected_inconsistent", ran, "; ".join(violations))
-        regs = check_regressions(validated, self.features(candidate), tolerance=self.regression_tolerance) if validated else []
+            return state, ActionRecord(
+                p.problem_id, "rejected_inconsistent", ran, "; ".join(violations)
+            )
+        regs = (
+            check_regressions(
+                validated, self.features(candidate), tolerance=self.regression_tolerance
+            )
+            if validated
+            else []
+        )
         if regs:
-            return state, ActionRecord(p.problem_id, "rejected_regression", ran, "regressed: " + ", ".join(r.feature_id for r in regs))
+            return state, ActionRecord(
+                p.problem_id,
+                "rejected_regression",
+                ran,
+                "regressed: " + ", ".join(r.feature_id for r in regs),
+            )
         return candidate, ActionRecord(p.problem_id, "applied", ran, "")
 
     def _done(self, state, reason, history, capture, quality, problems) -> RefinementResult:
-        return RefinementResult(state, reason, tuple(history), tuple(capture.values()), quality,
-                                tuple(sorted(p.problem_id for p in problems)))
+        return RefinementResult(
+            state,
+            reason,
+            tuple(history),
+            tuple(capture.values()),
+            quality,
+            tuple(sorted(p.problem_id for p in problems)),
+        )

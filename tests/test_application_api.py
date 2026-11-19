@@ -1348,6 +1348,11 @@ def test_reap_stale_running_job(client):
     import asyncio
     from datetime import timedelta
 
+    # Cancel background worker loop to avoid test races
+    task = getattr(client.app.state, "worker", None)
+    if task:
+        task.cancel()
+
     import apps.api.db as db_mod
     from apps.api.jobs import reap_stale_jobs
     from apps.api.models import Job, utcnow

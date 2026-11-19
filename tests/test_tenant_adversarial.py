@@ -37,6 +37,10 @@ def env(tmp_path, monkeypatch):
     importlib.reload(db_mod)
     import apps.api.main as main_mod
     importlib.reload(main_mod)
+    # The sweep sends hundreds of requests from one host. A throttled request (429) is "rejected" for the wrong reason
+    # and would make a breach invisible, so the limiter is lifted here and the sweep asserts it never saw a 429.
+    monkeypatch.setattr(rate_limiter, "default_rps", 1_000_000.0)
+    monkeypatch.setattr(rate_limiter, "default_burst", 1_000_000.0)
     rate_limiter.reset()
 
     def bearer(tenant, user, role):
@@ -98,7 +102,7 @@ def test_positive_controls_tenant_a_reaches_its_own_resources(env):
 @pytest.mark.parametrize("who", ["b", "b-admin", "anon"])
 def test_no_route_taking_a_tenant_resource_id_succeeds_for_another_tenant(env, who):
     client, h, ids, app = env
-    attempts, breaches, crashes = 0, [], []
+    attempts, breaches, crashes, throttled = 0, [], [], []
     for method, template, url in _targets(app, ids):
         kwargs = {"headers": h[who]}
         if method in ("POST", "PUT", "PATCH"):
@@ -107,9 +111,12 @@ def test_no_route_taking_a_tenant_resource_id_succeeds_for_another_tenant(env, w
         attempts += 1
         if 200 <= res.status_code < 300:
             breaches.append(f"{method} {template} -> {res.status_code}")
+        elif res.status_code == 429:
+            throttled.append(f"{method} {template}")
         elif res.status_code >= 500:
             crashes.append(f"{method} {template} -> {res.status_code}")
     assert attempts > 40, f"the sweep reached only {attempts} routes; the route discovery is broken"
+    assert not throttled, f"{len(throttled)} request(s) were rate-limited, so the sweep proved nothing for them: {throttled[:3]}"
     assert not breaches, "cross-tenant access succeeded:\n" + "\n".join(breaches)
     assert not crashes, "foreign-id requests crashed the server:\n" + "\n".join(crashes)
 

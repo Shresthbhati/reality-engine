@@ -25,6 +25,9 @@ from world_ir.observations import (
 
 @pytest.mark.asyncio
 async def test_entity_evidence_provenance_with_ledger():
+    # ASGITransport does not run the app lifespan; create the schema so this does not depend on test order.
+    from apps.api.db import init_db
+    await init_db()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Create a world

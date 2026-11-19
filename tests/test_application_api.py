@@ -41,6 +41,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         yield c
 
 
+@pytest.fixture()
+def no_worker(monkeypatch: pytest.MonkeyPatch):
+    """Tests that drive ``process_next_job`` directly must be the only claimer: with the in-process worker running, it can
+    claim the queued row first on a fast machine and the test's own call returns None. Request this BEFORE ``client``."""
+    monkeypatch.setenv("ENABLE_WORKER", "false")
+
+
 def _wait_job(client: TestClient, job_id: str, timeout: float = 15.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -1216,7 +1223,7 @@ def test_concurrent_rooms_no_lost_update(client, tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_timed_out_job_adopts_nothing(client, tmp_path, monkeypatch):
+def test_timed_out_job_adopts_nothing(no_worker, client, tmp_path, monkeypatch):
     """A handler that outlives its timeout must not adopt anything when
     its leaked completion lands: status FAILED, HEAD untouched, no
     versions, timeout named in the error."""
@@ -1374,7 +1381,7 @@ def test_reap_stale_running_job(client):
     assert fresh_status == "running"
 
 
-def test_terminal_jobs_never_resurrected(client):
+def test_terminal_jobs_never_resurrected(no_worker, client):
     """Reaping and claiming must never touch terminal jobs, however
     stale their heartbeats: succeeded/partial/failed/cancelled are
     final. A resurrection would re-run completed work and fork state."""
@@ -1413,7 +1420,7 @@ def test_terminal_jobs_never_resurrected(client):
     assert all(a == 3 for _, a in states.values())
 
 
-def test_job_handler_timeout_fails_explicitly(client, monkeypatch):
+def test_job_handler_timeout_fails_explicitly(no_worker, client, monkeypatch):
     """A wedged handler fails the job with a timeout error instead of
     stalling the worker queue forever."""
     import asyncio
@@ -1651,7 +1658,7 @@ def test_cancel_running_job(client, tmp_path, monkeypatch):
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
-def test_timeout_with_pending_cancel_grades_cancelled(client, monkeypatch):
+def test_timeout_with_pending_cancel_grades_cancelled(no_worker, client, monkeypatch):
     """Timeout and cancel racing: the operator's explicit cancel wins
     over the timeout failure -- deterministic priority, never SUCCESS."""
     import asyncio

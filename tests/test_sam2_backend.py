@@ -110,7 +110,7 @@ class TestSAM2SegmentationBackendLogic:
         cached_file = tmp_path / "sam2_hiera_tiny.pt"
         cached_file.write_bytes(b"mock_weights")
 
-        import torch
+        torch = pytest.importorskip("torch", reason="torch is not installed (optional extra)")
         monkeypatch.setattr(torch.hub, "get_dir", lambda: str(tmp_path.parent))
         checkpoints_dir = tmp_path.parent / "checkpoints"
         checkpoints_dir.mkdir(parents=True, exist_ok=True)

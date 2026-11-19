@@ -1142,6 +1142,7 @@ def import_ifc_to_world(path: str | Path) -> WorldIR:
                 relationships.append(Relationship(
                     target_id=storey_map[struct.id()],
                     kind=RelationshipKind.INSIDE,
+                    confidence=confidence,
                 ))
 
         for rel in getattr(elem, "Decomposes", ()):
@@ -1150,6 +1151,7 @@ def import_ifc_to_world(path: str | Path) -> WorldIR:
                 relationships.append(Relationship(
                     target_id=storey_map[parent.id()],
                     kind=RelationshipKind.INSIDE,
+                    confidence=confidence,
                 ))
 
         entity = Entity(

@@ -27,6 +27,8 @@ import numpy as np
 
 from perception.architecture.layout_evidence import LAYOUT_BASIS_CONFIDENCE, layout_support
 from perception.architecture.non_rectangular import classify_room_shape, regularise_canted_angles
+# Shared with reconstruction (which may not import perception); re-exported here for existing callers.
+from world_ir.polygon_ops import ear_clip, signed_area as _signed_area  # noqa: F401
 
 #: edges within this angle of a dominant direction are snapped to it
 SNAP_TOL_DEG = 8.0
@@ -90,11 +92,6 @@ class RoomLayout:
         n = math.hypot(dx, dy) or 1.0
         left = (-dy / n, dx / n)
         return (left[0], left[1]) if not self.clockwise else (-left[0], -left[1])
-
-
-def _signed_area(poly: Sequence[Sequence[float]]) -> float:
-    return 0.5 * sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1]
-                     for i in range(len(poly)))
 
 
 def dominant_angle(poly: Sequence[Sequence[float]]) -> Tuple[Optional[float], float]:
@@ -380,39 +377,6 @@ def wall_slab_mesh(origin_xyz, dir_xyz, out_xyz, up_xyz, length, height, thickne
                                ((s0, 0, v0), (s1, 0, v0), (s1, thickness, v0), (s0, thickness, v0),
                                 (s0, 0, v1), (s1, 0, v1), (s1, thickness, v1), (s0, thickness, v1))]))
     return _merge(parts)
-
-
-def ear_clip(poly: Sequence[Sequence[float]]) -> List[Tuple[int, int, int]]:
-    """Counter-clockwise triangles (vertex index triples) of a simple polygon; [] when it is not simple."""
-    n = len(poly)
-    if n < 3:
-        return []
-    idx = list(range(n))
-    if _signed_area(poly) < 0:
-        idx.reverse()
-
-    def orient(o, a, b):
-        return (poly[a][0] - poly[o][0]) * (poly[b][1] - poly[o][1]) - (poly[a][1] - poly[o][1]) * (poly[b][0] - poly[o][0])
-
-    out: List[Tuple[int, int, int]] = []
-    guard = 0
-    while len(idx) > 3 and guard < n * n:
-        guard += 1
-        for k in range(len(idx)):
-            a, b, c = idx[k - 1], idx[k], idx[(k + 1) % len(idx)]
-            if orient(a, b, c) <= 1e-12:
-                continue
-            if any(p not in (a, b, c) and orient(a, b, p) >= -1e-12 and orient(b, c, p) >= -1e-12 and orient(c, a, p) >= -1e-12
-                   for p in idx):
-                continue
-            out.append((a, b, c))
-            idx.pop(k)
-            break
-        else:
-            return []
-    if len(idx) == 3:
-        out.append((idx[0], idx[1], idx[2]))
-    return out
 
 
 def polygon_slab_mesh(poly_xyz: Sequence[Sequence[float]], up_xyz, thickness: float, direction: int, plan_ab: Sequence[Sequence[float]]):

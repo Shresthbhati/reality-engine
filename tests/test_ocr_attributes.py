@@ -28,6 +28,7 @@ def test_whole_words_only():
 
 
 def test_read_text_reads_rendered_text():
+    pytest.importorskip("torch", reason="torch is not installed (optional extra); Florence-2 needs it")
     from PIL import Image, ImageDraw, ImageFont
 
     img = Image.new("RGB", (480, 120), "white")

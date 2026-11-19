@@ -173,6 +173,11 @@ async def test_api_entity_confidence_endpoint():
     store = WorldStore(_worldstore_root())
     store.save_version(w, parent=None, version_id=version_id)
 
+    # ASGITransport does not run the app lifespan, so the schema must be created here; otherwise this test only passes
+    # when an earlier test happened to create the tables in the default database.
+    from apps.api.db import init_db
+    await init_db()
+
     session_maker = get_sessionmaker()
     async with session_maker() as db:
         w_row = World(id=world_id, name="API CV Test", status="active", current_version_id=version_id, team_id="default")

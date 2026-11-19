@@ -7,6 +7,9 @@ import pytest
 
 from perception.instances.dinov2_hf import Dinov2Embedder, Dinov2Unavailable
 
+# The stand-in model returns torch tensors, so these tests need torch (an optional extra, not in `.[dev]`).
+pytest.importorskip("torch", reason="torch is not installed (optional extra)")
+
 
 class _FakeOut:
     def __init__(self, cls):

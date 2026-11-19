@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -18,6 +19,10 @@ import pytest
 from evidence.session import EvidenceItem, EvidenceKind
 from perception.depth.interface import DepthMap, IDepthBackend
 from perception.depth.depth_anything_backend import DepthAnythingV2Backend
+
+
+_HAVE_ML = importlib.util.find_spec("torch") is not None and importlib.util.find_spec("transformers") is not None
+requires_ml = pytest.mark.skipif(not _HAVE_ML, reason="torch and transformers are not installed (optional extras)")
 
 
 class TestDepthAnythingV2BackendInterface:
@@ -29,6 +34,7 @@ class TestDepthAnythingV2BackendInterface:
         assert backend._custom_device == "cpu"
 
 
+@requires_ml
 class TestDepthAnythingV2BackendLogic:
     def test_skips_non_image_evidence(self):
         backend = DepthAnythingV2Backend()
@@ -53,6 +59,7 @@ class TestDepthAnythingV2BackendLogic:
         assert backend.estimate_depth(missing) == []
 
 
+@requires_ml
 class TestDepthAnythingV2BackendIntegration:
     @pytest.fixture()
     def sample_photo(self, tmp_path):

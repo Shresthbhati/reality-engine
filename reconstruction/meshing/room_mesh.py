@@ -12,8 +12,8 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from perception.architecture.room_layout import ear_clip
 from world_ir.geometry_data import MeshData, Point, Triangle
+from world_ir.polygon_ops import ear_clip
 
 
 def _polygon_area_2d(pts: Sequence[tuple[float, float]]) -> float:

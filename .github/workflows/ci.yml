@@ -104,6 +104,11 @@ jobs:
             tests/test_backup_restore.py \
             tests/test_backup_durability.py \
             tests/test_backup_lifecycle.py \
+            tests/test_real_specialist_executors.py \
+            tests/test_ifc_roundtrip.py \
+            tests/test_robust_depth_fusion.py \
+            tests/test_room_mesh.py \
+            tests/test_trajectory_interpolation.py \
             tests/test_activity_ownership.py \
             tests/test_token_hardening.py \
             tests/test_tenant_adversarial.py \
@@ -132,11 +137,8 @@ jobs:
             tests/test_multiview_finegrained_identity.py \
             tests/test_measurement_fusion.py \
             tests/test_robust_fusion_cycle3.py \
-            tests/test_robust_depth_fusion.py \
             tests/test_specialist_refinement_engines.py \
-            tests/test_real_specialist_executors.py \
             tests/test_architectural_geometry_cycle3.py \
-            tests/test_ifc_roundtrip.py \
             tests/test_ifc_interoperability_cycle3.py \
             tests/test_vram_rtx4050_profile.py \
             tests/test_relations.py \
@@ -179,6 +181,36 @@ jobs:
         run: |
           # Run the vertical slice test which exercises the full CLI path
           pytest tests/test_cli_vertical_slice.py -v --tb=short
+
+  # The core job above runs a hand-kept allowlist on three Python versions. THIS job runs EVERY test file (sharded), so a
+  # test cannot be left out of CI by omission (tests/test_ci_full_coverage.py guards the workflow and the shard script).
+  # `slow` tests run in the scheduled job below. Skips are reported and budgeted: a skipped test verifies nothing.
+  full:
+    name: Full Suite (shard ${{ matrix.shard }}/8)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install package (editable)
+        run: pip install -e ".[dev]"
+      - name: Run this shard (every test file in it, slow tests excluded)
+        run: |
+          python scripts/ci_shard_tests.py --shard ${{ matrix.shard }} --of 8 > shard_files.txt
+          echo "shard ${{ matrix.shard }}: $(wc -l < shard_files.txt) test files"
+          pytest $(cat shard_files.txt) -m "not slow" -ra --tb=short --junitxml=junit.xml
+      - name: Skip report (skips are not passes)
+        if: always()
+        run: python scripts/ci_skip_report.py junit.xml --max-skip-share 0.30
 
   fidelity-gate:
     name: Room Fidelity Gate

@@ -33,7 +33,7 @@ from perception.instances.appearance import (
     appearance_similarity,
     compute_color_histogram,
 )
-from perception.instances.epipolar import epipolar_residual_px
+from perception.instances.epipolar import DEFAULT_EPIPOLAR_TOLERANCE_PX, epipolar_residual_px  # noqa: F401  (re-exported for apps.api)
 from world_ir.camera import PinholeCamera
 
 AppearanceFn = Callable[[Candidate, EvidenceMatrix], "AppearanceDescriptor | None"]

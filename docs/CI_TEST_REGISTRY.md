@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 539
+Total: 544
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -409,6 +409,7 @@ Total: 539
 - `tests/test_metric_scale_fusion.py`
 - `tests/test_midas_backend.py`
 - `tests/test_mobile_bridge.py`
+- `tests/test_model_catalogue_125.py`
 - `tests/test_model_pool.py`
 - `tests/test_model_registry_task4_1.py`
 - `tests/test_model_scheduler_task4_2.py`
@@ -560,6 +561,7 @@ Total: 539
 - `tests/test_serialization.py`
 - `tests/test_session_store.py`
 - `tests/test_sfm_pipeline_rule4.py`
+- `tests/test_shared_evidence_matrix.py`
 - `tests/test_shared_walls.py`
 - `tests/test_simulation_loop.py`
 - `tests/test_single_image_furniture.py`
@@ -569,6 +571,7 @@ Total: 539
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
 - `tests/test_spatial_continuity.py`
+- `tests/test_spatial_hierarchy.py`
 - `tests/test_spatial_index.py`
 - `tests/test_spatial_index_benchmark.py`
 - `tests/test_spatial_index_grid_correctness.py`
@@ -623,7 +626,9 @@ Total: 539
 - `tests/test_uncertainty_propagation.py`
 - `tests/test_units.py`
 - `tests/test_universal_expansion_e2e.py`
+- `tests/test_universal_fusion_14_stages.py`
 - `tests/test_universal_ingestion_extensions.py`
+- `tests/test_universal_object_ontology.py`
 - `tests/test_universal_pipeline.py`
 - `tests/test_unreachable_sfm_mvs_wiring.py`
 - `tests/test_upload_integrity_contract.py`

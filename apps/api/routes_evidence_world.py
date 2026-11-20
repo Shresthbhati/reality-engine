@@ -96,6 +96,38 @@ async def get_run(
     return {k: s[k] for k in keys}
 
 
+@evidence_world_router.get("/{run_id}/readiness")
+async def get_readiness(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Honest product-facing state of one run, derived only from persisted data (see ``evidence_world_stage.readiness``)."""
+    from apps.api.evidence_world_stage import readiness
+
+    return readiness(_run_dir(await _world_dir(db, world_id, auth), run_id))
+
+
+@evidence_world_router.get("/{run_id}/world")
+async def get_persisted_world(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """The persisted, verified canonical WorldIR of the run. No persisted world is a 404 -- never an empty successful world."""
+    from apps.api.evidence_world_stage import WORLDSTORE_REL
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    versions = sorted((d / WORLDSTORE_REL / "versions").glob("*.json")) if (d / WORLDSTORE_REL / "versions").is_dir() else []
+    if not versions:
+        raise HTTPException(404, "No persisted world for this run")
+    store, vid = WorldStore(d / WORLDSTORE_REL), versions[-1].stem
+    try:
+        problems = store.verify_version(vid)
+        if problems:
+            raise HTTPException(500, f"persisted world failed verification: {problems[:3]}")
+        return {"version_id": vid, "world": store.load_version(vid).to_dict()}
+    except WorldStoreError as exc:
+        raise HTTPException(500, f"persisted world is unreadable: {exc}") from None
+
+
 @evidence_world_router.get("/{run_id}/entities")
 async def list_entities(
     world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)

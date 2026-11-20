@@ -1,36 +1,1170 @@
 {
   "dataset": "real_room_capture_synthetic",
-  "description": "Independent ground-truth physical identities for synthetic interior room capture benchmark",
+  "description": "Independent ground-truth physical identities and 2D annotations for synthetic room capture benchmark",
   "is_physically_surveyed": false,
   "milestone_status": "BLOCKED",
   "blocker_reason": "Physical millimeter laser survey and on-site camera capture not yet performed on site. Dataset is synthetic fixture.",
   "ground_truth_physical_entities": {
     "gt_door_front_center": {
       "class_name": "door",
-      "position": [2.5, 0.0, 1.05],
-      "dimensions": [0.9, 0.1, 2.1],
+      "position": [
+        2.5,
+        0.0,
+        1.05
+      ],
+      "dimensions": [
+        0.9,
+        0.1,
+        2.1
+      ],
       "wall": "front"
     },
     "gt_window_left_center": {
       "class_name": "window",
-      "position": [0.0, 2.0, 1.4],
-      "dimensions": [0.1, 1.2, 1.0],
+      "position": [
+        0.0,
+        2.0,
+        1.4
+      ],
+      "dimensions": [
+        0.1,
+        1.2,
+        1.0
+      ],
       "wall": "left"
     },
     "gt_table_center": {
       "class_name": "table",
-      "position": [2.5, 0.375, 2.0],
-      "dimensions": [1.5, 0.75, 0.75]
+      "position": [
+        2.5,
+        0.375,
+        2.0
+      ],
+      "dimensions": [
+        1.5,
+        0.75,
+        0.75
+      ]
     },
     "gt_chair_table": {
       "class_name": "chair",
-      "position": [1.8, 0.45, 2.0],
-      "dimensions": [0.5, 0.5, 0.9]
+      "position": [
+        1.8,
+        0.45,
+        2.0
+      ],
+      "dimensions": [
+        0.5,
+        0.5,
+        0.9
+      ]
     },
     "gt_lamp_table": {
       "class_name": "lamp",
-      "position": [2.5, 0.9, 2.0],
-      "dimensions": [0.3, 0.3, 0.5]
+      "position": [
+        2.5,
+        0.9,
+        2.0
+      ],
+      "dimensions": [
+        0.3,
+        0.3,
+        0.5
+      ]
     }
+  },
+  "image_annotations": {
+    "IMG_0000.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1564.0,
+          907.0,
+          2168.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          153.0,
+          967.0,
+          556.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1121.0,
+          1361.0,
+          1443.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1806.0,
+          1120.0,
+          1926.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0001.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1652.0,
+          907.0,
+          2256.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          241.0,
+          967.0,
+          644.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1551.0,
+          1361.0,
+          2357.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1209.0,
+          1361.0,
+          1531.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1894.0,
+          1120.0,
+          2014.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0002.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1496.0,
+          907.0,
+          2100.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          85.0,
+          967.0,
+          488.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1395.0,
+          1361.0,
+          2201.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1053.0,
+          1361.0,
+          1375.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1738.0,
+          1120.0,
+          1858.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0003.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1564.0,
+          907.0,
+          2168.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          153.0,
+          967.0,
+          556.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1121.0,
+          1361.0,
+          1443.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1806.0,
+          1120.0,
+          1926.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0004.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1864.0,
+          907.0,
+          2468.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          453.0,
+          967.0,
+          856.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1421.0,
+          1361.0,
+          1743.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2106.0,
+          1120.0,
+          2226.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0005.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1558.0,
+          907.0,
+          2162.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          147.0,
+          967.0,
+          550.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1457.0,
+          1361.0,
+          2263.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1115.0,
+          1361.0,
+          1437.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1800.0,
+          1120.0,
+          1920.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0006.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1864.0,
+          907.0,
+          2468.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          453.0,
+          967.0,
+          856.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1421.0,
+          1361.0,
+          1743.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2106.0,
+          1120.0,
+          2226.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0007.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1564.0,
+          907.0,
+          2168.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          153.0,
+          967.0,
+          556.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1121.0,
+          1361.0,
+          1443.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1806.0,
+          1120.0,
+          1926.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0008.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1776.0,
+          907.0,
+          2380.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          365.0,
+          967.0,
+          768.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1675.0,
+          1361.0,
+          2481.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1333.0,
+          1361.0,
+          1655.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2018.0,
+          1120.0,
+          2138.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0009.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1714.0,
+          907.0,
+          2318.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          303.0,
+          967.0,
+          706.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1613.0,
+          1361.0,
+          2419.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1271.0,
+          1361.0,
+          1593.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1956.0,
+          1120.0,
+          2076.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0010.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1621.0,
+          907.0,
+          2225.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          210.0,
+          967.0,
+          613.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1520.0,
+          1361.0,
+          2326.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1178.0,
+          1361.0,
+          1500.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1863.0,
+          1120.0,
+          1983.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0011.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1564.0,
+          907.0,
+          2168.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          153.0,
+          967.0,
+          556.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1121.0,
+          1361.0,
+          1443.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1806.0,
+          1120.0,
+          1926.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0012.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1864.0,
+          907.0,
+          2468.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          453.0,
+          967.0,
+          856.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1421.0,
+          1361.0,
+          1743.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2106.0,
+          1120.0,
+          2226.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0013.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1776.0,
+          907.0,
+          2380.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          365.0,
+          967.0,
+          768.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1675.0,
+          1361.0,
+          2481.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1333.0,
+          1361.0,
+          1655.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2018.0,
+          1120.0,
+          2138.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0014.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1496.0,
+          907.0,
+          2100.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          85.0,
+          967.0,
+          488.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1395.0,
+          1361.0,
+          2201.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1053.0,
+          1361.0,
+          1375.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1738.0,
+          1120.0,
+          1858.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0015.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1683.0,
+          907.0,
+          2287.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          272.0,
+          967.0,
+          675.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1582.0,
+          1361.0,
+          2388.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1240.0,
+          1361.0,
+          1562.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1925.0,
+          1120.0,
+          2045.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0016.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1683.0,
+          907.0,
+          2287.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          272.0,
+          967.0,
+          675.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1582.0,
+          1361.0,
+          2388.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1240.0,
+          1361.0,
+          1562.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1925.0,
+          1120.0,
+          2045.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0017.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1864.0,
+          907.0,
+          2468.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          453.0,
+          967.0,
+          856.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1421.0,
+          1361.0,
+          1743.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          2106.0,
+          1120.0,
+          2226.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0018.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1558.0,
+          907.0,
+          2162.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          147.0,
+          967.0,
+          550.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1457.0,
+          1361.0,
+          2263.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1115.0,
+          1361.0,
+          1437.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1800.0,
+          1120.0,
+          1920.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0019.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1652.0,
+          907.0,
+          2256.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          241.0,
+          967.0,
+          644.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1551.0,
+          1361.0,
+          2357.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1209.0,
+          1361.0,
+          1531.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1894.0,
+          1120.0,
+          2014.0,
+          1361.0
+        ]
+      }
+    ],
+    "IMG_0020.jpg": [
+      {
+        "ground_truth_id": "gt_door_front_center",
+        "class_name": "door",
+        "bbox_2d": [
+          1621.0,
+          907.0,
+          2225.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_window_left_center",
+        "class_name": "window",
+        "bbox_2d": [
+          210.0,
+          967.0,
+          613.0,
+          1571.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_table_center",
+        "class_name": "table",
+        "bbox_2d": [
+          1520.0,
+          1361.0,
+          2326.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_chair_table",
+        "class_name": "chair",
+        "bbox_2d": [
+          1178.0,
+          1361.0,
+          1500.0,
+          1814.0
+        ]
+      },
+      {
+        "ground_truth_id": "gt_lamp_table",
+        "class_name": "lamp",
+        "bbox_2d": [
+          1863.0,
+          1120.0,
+          1983.0,
+          1361.0
+        ]
+      }
+    ]
   }
 }

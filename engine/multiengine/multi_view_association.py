@@ -731,7 +731,7 @@ def evaluate_association_benchmark(
         performance_under_occlusion=_calc_sub(occl_tp, occl_fp, occl_fn),
         performance_repeated_structures=_calc_sub(rep_tp, rep_fp, rep_fn),
         performance_missing_calibration=_calc_sub(nocal_tp, nocal_fp, nocal_fn),
-        evaluation_status="COMPLETED",
+        evaluation_status="NOT_EVALUATED" if pairs_evaluated == 0 else "COMPLETED",
         unmatched_observations_count=unmatched_count,
         unlabelled_observations_count=unlabelled_count,
     )

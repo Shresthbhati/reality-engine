@@ -53,6 +53,7 @@ VALIDATION_STATUSES = ("valid", "rejected")
 class ScaleState(str, Enum):
     RELATIVE_DEPTH = "relative_depth"  # up to an unknown per-image scale/shift (e.g. monocular depth); NOT a length
     SFM_GAUGE = "sfm_gauge"  # consistent within one reconstruction, arbitrary global scale (COLMAP units)
+    SYNTHETIC_SCALE_ALIGNED = "synthetic_scale_aligned"  # metric scale from synthetic/simulated ground truth; NOT physically surveyed
     METRIC_ANCHORED = "metric_anchored"  # metres, established by an independent calibration (``metric_anchor_ref``)
     UNKNOWN = "unknown"
 
@@ -60,6 +61,7 @@ class ScaleState(str, Enum):
 _UNITS = {
     ScaleState.RELATIVE_DEPTH: ("relative", "unitless"),
     ScaleState.SFM_GAUGE: ("sfm_units",),
+    ScaleState.SYNTHETIC_SCALE_ALIGNED: ("synthetic_m", "synthetic_metres", "synthetic_meters", "m"),
     ScaleState.METRIC_ANCHORED: ("m",),
     ScaleState.UNKNOWN: ("unknown",),
 }
@@ -116,10 +118,10 @@ class Metric3DObservation:
             p.append(f"units {self.units!r} contradict scale_state {self.scale_state.value} (allowed: {_UNITS[self.scale_state]})")
         if self.scale_state is ScaleState.METRIC_ANCHORED and not self.metric_anchor_ref:
             p.append("metres need a metric_anchor_ref naming the independent calibration; none was given")
-        if self.scale_state is not ScaleState.METRIC_ANCHORED and self.metric_anchor_ref:
-            p.append("a metric_anchor_ref was given but the scale_state is not METRIC_ANCHORED")
-        if self.quantity == "depth_metric" and self.scale_state is not ScaleState.METRIC_ANCHORED:
-            p.append("quantity depth_metric requires METRIC_ANCHORED; relative or gauge depth must be named depth_relative")
+        if self.scale_state not in (ScaleState.METRIC_ANCHORED, ScaleState.SYNTHETIC_SCALE_ALIGNED) and self.metric_anchor_ref:
+            p.append("a metric_anchor_ref was given but the scale_state is not METRIC_ANCHORED or SYNTHETIC_SCALE_ALIGNED")
+        if self.quantity == "depth_metric" and self.scale_state not in (ScaleState.METRIC_ANCHORED, ScaleState.SYNTHETIC_SCALE_ALIGNED):
+            p.append("quantity depth_metric requires METRIC_ANCHORED or SYNTHETIC_SCALE_ALIGNED; relative or gauge depth must be named depth_relative")
         if self.quantity == "depth_relative" and self.scale_state is not ScaleState.RELATIVE_DEPTH:
             p.append("quantity depth_relative requires scale_state RELATIVE_DEPTH")
         if self.confidence is not None:

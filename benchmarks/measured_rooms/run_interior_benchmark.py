@@ -84,8 +84,12 @@ def parse_interior_colmap_cameras(room_dir: Path) -> dict[str, PinholeCamera]:
             for img in man.get("images", []):
                 name = img["filename"]
                 pos = Vec3(float(img["position_m"][0]), float(img["position_m"][1]), float(img["position_m"][2]))
-                q_gl = Quat(*img["rotation_quat_wxyz"]).normalized()
-                rot_cv = q_gl.multiply(Quat(0.0, 1.0, 0.0, 0.0)).normalized()
+                q_raw = Quat(*img["rotation_quat_wxyz"]).normalized()
+                conv = img.get("camera_convention", "OPENCV").upper()
+                if conv == "OPENGL":
+                    rot_cv = q_raw.multiply(Quat(0.0, 1.0, 0.0, 0.0)).normalized()
+                else:
+                    rot_cv = q_raw
                 cameras[name] = PinholeCamera(
                     intrinsics=intr,
                     extrinsics=CameraExtrinsics(position=pos, rotation=rot_cv),
@@ -120,27 +124,29 @@ def parse_interior_colmap_cameras(room_dir: Path) -> dict[str, PinholeCamera]:
                 cx, cy = float(parts[5]), float(parts[6])
             intrinsics_map[cam_id] = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=w, height=h)
 
-    # Parse camera extrinsics (qw, qx, qy, qz, tx, ty, tz, cam_id, name)
+    # Parse standard COLMAP camera extrinsics (qw, qx, qy, qz, tx, ty, tz, cam_id, name)
+    # In standard COLMAP, rotation is world-to-cam R_cw and translation is t_cw.
+    # Convert to camera-to-world: q_wc = q_cw.conjugate(), C = -q_wc.rotate(t_cw)
     with open(images_file, encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
         for line in lines:
             parts = line.split()
-            if len(parts) >= 9:
+            if len(parts) >= 10:
                 qw, qx, qy, qz = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
                 tx, ty, tz = float(parts[5]), float(parts[6]), float(parts[7])
                 cam_id = int(parts[8])
                 name = parts[9]
 
-                # Convert OpenGL rotation to OpenCV frame: R_cv = R_gl * diag(1, -1, -1)
-                q_gl = Quat(qw, qx, qy, qz).normalized()
-                rot_cv = q_gl.multiply(Quat(0.0, 1.0, 0.0, 0.0)).normalized()
-                pos = Vec3(tx, ty, tz)
+                q_cw = Quat(qw, qx, qy, qz).normalized()
+                q_wc = q_cw.conjugate()
+                t_vec = Vec3(tx, ty, tz)
+                C = Vec3(0.0, 0.0, 0.0) - q_wc.rotate(t_vec)
 
                 intr = intrinsics_map.get(cam_id)
                 if intr:
                     cameras[name] = PinholeCamera(
                         intrinsics=intr,
-                        extrinsics=CameraExtrinsics(position=pos, rotation=rot_cv),
+                        extrinsics=CameraExtrinsics(position=C, rotation=q_wc),
                     )
 
     return cameras
@@ -423,28 +429,55 @@ def run_interior_room_sequential() -> dict[str, Any]:
         f"{assoc_summary.refused_pairs_count} refused pairs in {t_assoc:.2f}s)."
     )
 
+    def _box_iou_2d(box_a: Sequence[float], box_b: Sequence[float]) -> float:
+        xa0, ya0, xa1, ya1 = box_a
+        xb0, yb0, xb1, yb1 = box_b
+        ix0, iy0 = max(xa0, xb0), max(ya0, yb0)
+        ix1, iy1 = min(xa1, xb1), min(ya1, yb1)
+        iw = max(0.0, ix1 - ix0)
+        ih = max(0.0, iy1 - iy0)
+        i_area = iw * ih
+        area_a = max(0.0, xa1 - xa0) * max(0.0, ya1 - ya0)
+        area_b = max(0.0, xb1 - xb0) * max(0.0, yb1 - yb0)
+        u_area = area_a + area_b - i_area
+        return float(i_area / u_area) if u_area > 0.0 else 0.0
+
     # --- STAGE F: Independent Ground-Truth Identity Benchmark Evaluation ---
+    # Strictly independent 2D IoU assignment against separate image annotations.
+    # No predicted 3D position or reconstructed geometry is EVER consulted.
     gt_map: dict[str, str] = {}
     gt_identities_file = dataset_dir / "ground_truth_identities.json"
     if gt_identities_file.exists():
         try:
             with open(gt_identities_file, encoding="utf-8") as f:
                 gt_ident_data = json.load(f)
-            gt_phys_ents = gt_ident_data.get("ground_truth_physical_entities", {})
+            image_annotations = gt_ident_data.get("image_annotations", {})
             for obs in all_multiview_observations:
                 obs_cls = obs.class_name.lower().strip()
+                anns_for_img = image_annotations.get(obs.source_id, [])
                 best_gt_id = None
-                best_dist = float("inf")
-                for gt_id, gt_info in gt_phys_ents.items():
-                    gt_cls = gt_info["class_name"].lower().strip()
-                    if obs_cls == gt_cls or obs_cls in gt_cls or gt_cls in obs_cls:
-                        gt_pos = gt_info["position"]
-                        dist = math.hypot(obs.position[0] - gt_pos[0], obs.position[1] - gt_pos[1], obs.position[2] - gt_pos[2])
-                        if dist < 1.0 and dist < best_dist:
-                            best_dist = dist
-                            best_gt_id = gt_id
-                if best_gt_id is not None:
-                    gt_map[obs.observation_id] = best_gt_id
+                best_iou = 0.0
+                second_best_iou = 0.0
+
+                for ann in anns_for_img:
+                    ann_cls = ann.get("class_name", "").lower().strip()
+                    if obs_cls == ann_cls or obs_cls in ann_cls or ann_cls in obs_cls:
+                        iou = _box_iou_2d(obs.box_2d, ann["bbox_2d"])
+                        if iou > best_iou:
+                            second_best_iou = best_iou
+                            best_iou = iou
+                            best_gt_id = ann["ground_truth_id"]
+                        elif iou > second_best_iou:
+                            second_best_iou = iou
+
+                # Assign only with clear 2D bounding box correspondence (IoU >= 0.20)
+                if best_gt_id is not None and best_iou >= 0.20:
+                    if (best_iou - second_best_iou) < 0.05 and second_best_iou > 0.20:
+                        gt_map[obs.observation_id] = "ambiguous"
+                    else:
+                        gt_map[obs.observation_id] = best_gt_id
+                else:
+                    gt_map[obs.observation_id] = "unlabelled"
         except Exception as e:
             print(f"Warning: Failed to load ground truth identities: {e}")
 

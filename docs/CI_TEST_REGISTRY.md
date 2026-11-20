@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 570
+Total: 571
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -205,6 +205,7 @@ Total: 570
 - `tests/test_cad_importer.py`
 - `tests/test_camera_calibration.py`
 - `tests/test_camera_calibration_integrity.py`
+- `tests/test_camera_coordinate_conventions.py`
 - `tests/test_candidate_selection.py`
 - `tests/test_canonical_covariance_propagation.py`
 - `tests/test_canonical_interior.py`

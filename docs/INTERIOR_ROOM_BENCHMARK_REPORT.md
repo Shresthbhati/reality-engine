@@ -1,9 +1,9 @@
 # Interior Furnished Room Sequential Reconstruction Benchmark Report
 
-**Date:** 2026-11-19 19:40:42 UTC
+**Date:** 2026-11-20 07:04:53 UTC
 **Device:** `cuda:0`
 **Dataset:** `datasets/real_room_capture`
-**Total Wall Time:** 57.22 s
+**Total Wall Time:** 173.59 s
 **COLMAP Registered Cameras:** 21
 **Persisted WorldIR Artifact:** `artifacts\interior_room_reconstruction.worldir.json`
 
@@ -33,17 +33,17 @@ All model workloads ran sequentially with full GPU/host memory unloads between s
 ## 3. Multi-View Identity Association Benchmark Metrics
 
 - **Evaluation Status:** `COMPLETED`
-- **Total Cross-View Candidate Pairs Evaluated:** 0
+- **Total Cross-View Candidate Pairs Evaluated:** 23
 - **True Positives (Correctly Merged Pairs):** 0
 - **False Positives (False Merges):** 0
-- **False Negatives (False Splits):** 0
-- **Identity Precision:** NOT_EVALUATED
-- **Identity Recall:** NOT_EVALUATED
-- **Identity F1 Score:** NOT_EVALUATED
-- **False Merge Rate:** NOT_EVALUATED
-- **False Split Rate:** NOT_EVALUATED
+- **False Negatives (False Splits):** 8
+- **Identity Precision:** 0.0000
+- **Identity Recall:** 0.0000
+- **Identity F1 Score:** 0.0000
+- **False Merge Rate:** 0.0000
+- **False Split Rate:** 1.0000
 - **Unmatched Observations:** 0
-- **Unlabelled Observations:** 34
+- **Unlabelled Observations:** 27
 
 ## 4. Physical Accuracy and Honest Ground Truth Disclosure
 

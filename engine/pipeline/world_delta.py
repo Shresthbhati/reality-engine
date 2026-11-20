@@ -111,7 +111,7 @@ def entity_records(world, artifact_store=None) -> List[dict]:
             continue
         rec = {"id": e.id, "type": e.type.value, "center": [round(float(v), 5) for v in c],
                "provenance": getattr(e.provenance, "value", str(e.provenance)),
-               "confidence": round(float(e.confidence), 4)}
+               "confidence": None if e.confidence is None else round(float(e.confidence), 4)}
         if getattr(e, "name", None):
             rec["name"] = e.name
         if bounds is not None:

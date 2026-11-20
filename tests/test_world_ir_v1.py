@@ -63,7 +63,7 @@ def test_measurement_defaults():
     assert m2.precision == 0.01
     assert m2.timestamp is None
     assert m2.provenance == Provenance.UNKNOWN
-    assert m2.confidence == 0.5
+    assert m2.confidence is None  # not measured: never a fabricated 0.5
 
 
 # ===== Observation Tests =====

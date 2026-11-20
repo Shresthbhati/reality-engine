@@ -3,7 +3,24 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
-## 2026-11-19 -- Two-agent cycle, PART B (Sonnet): metric-3D contract, covariance, failure semantics (branch `claude/sonnet-metric3d-contract`)
+## 2026-11-20 -- Reconstruction accuracy & production readiness cycle (Sonnet; branches `claude/sonnet-*`, split into reviewable PRs)
+
+Implemented + unit/integration-tested: `metric3d_producers.py` (depth drafts -> `metric3d.v1` with the raw array stored as a `.npy` artifact; sparse-SfM
+region lifter, gauge units); `produce_depth` (load -> infer -> unload, failure reported); opt-in stage wiring (`RE_EVIDENCE_WORLD_DEPTH_ENGINES`);
+`depth_scale_alignment` repair (anchor validation: missing/NaN/coincident/synthetic/unresolvable anchors refused, held-out + leave-region-out gates,
+unit-neutral error fields, anchor uncertainty propagated); `benchmark_manifest.py` (hash + split-leakage + provenance checks, BLOCKED-not-score);
+CI: unmeasured (`None`) confidence no longer crashes `corrections.split` / `world_delta` or prints "None" in the assistant; stale 0.5 assertions aligned
+to the None contract; COLMAP-dependent tests skip (not fail) when COLMAP is absent.
+Defects found by the audit: every real depth adapter's raw ndarray was refused by the observation validator (no depth map was ever persisted); MiDaS
+exposed no pixels at all; `Metric3DLifterAdapter` read a non-existent `request.options` (AttributeError once loaded); an anchor without reference points
+produced METRES at scale 1.0; NaN distance passed validation; SfM residuals were named `*_m`.
+EXECUTED WITH REAL MODELS (South Building, exterior, NO ground truth): MiDaS DPT_Hybrid + Depth Anything V2 Small on 3 photos -> 6 valid relative-depth records,
+raw arrays byte-exact after reload; COLMAP on 32 photos registered 22 (4,506 pts), OWL-ViT 89 detections, 23 regions lifted (sfm_gauge), 17 rejected.
+NOT validated against physical ground truth: nothing. NOT production-enabled: `RE_EVIDENCE_WORLD` is still off and the gate is NOT READY.
+BLOCKED: WS3 interior benchmark (no furnished-interior photographs with independent measurements exist in the repository; every metric reports BLOCKED);
+WS4 labelled multi-view association set; physical anchor on real data. Unreproduced: `test_the_main_application_mounts_the_engines_router` fails on CI only.
+
+## 2026-11-19 -- Two-agent cycle, PART B (Sonnet): metric-3D contract, covariance, failure semantics (merged as #349)
 
 Done + tested (synthetic doubles unless stated): `engine/multiengine/metric3d.py` shared contract `metric3d.v1` + `ingest()` (relative depth /
 SfM gauge / metric-anchored kept distinct; refused records and missing raw artifacts land in the rejected log; unknown versions refused);

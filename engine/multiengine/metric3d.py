@@ -107,8 +107,11 @@ class Metric3DObservation:
         if not isinstance(self.scale_state, ScaleState):
             p.append(f"scale_state {self.scale_state!r} is not a ScaleState")
             return p
-        if not self.value or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in self.value):
-            p.append("value must be a non-empty vector of finite numbers")
+        has_value = bool(self.value)
+        if has_value and not all(isinstance(v, (int, float)) and math.isfinite(v) for v in self.value):
+            p.append("value must be a vector of finite numbers")
+        if not has_value and self.validation_status == "valid":
+            p.append("a valid observation needs a non-empty value; a rejected one may carry none (no placeholder is invented)")
         if self.units not in _UNITS[self.scale_state]:
             p.append(f"units {self.units!r} contradict scale_state {self.scale_state.value} (allowed: {_UNITS[self.scale_state]})")
         if self.scale_state is ScaleState.METRIC_ANCHORED and not self.metric_anchor_ref:

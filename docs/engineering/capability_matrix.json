@@ -1,16 +1,16 @@
 {
- "generated_at": "2026-11-19T02:16:55+0530",
+ "generated_at": "2026-11-20T00:37:37+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
  ],
- "ran_tests": false,
+ "ran_tests": true,
  "note": "Verified = the row's unit tests passed in this run; it is not accuracy on real photographs.",
  "rows": [
   {
    "capability": "Image ingestion",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "evidence/importers.py",
     "evidence/session.py",
@@ -35,7 +35,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 37,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -45,7 +45,7 @@
   {
    "capability": "Video ingestion",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/video_frames.py",
     "evidence/video.py"
@@ -71,7 +71,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 16,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -80,8 +80,8 @@
   },
   {
    "capability": "Image quality analysis",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/capture_quality.py",
     "evidence/quality_checks.py"
@@ -104,7 +104,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 40,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -114,7 +114,7 @@
   {
    "capability": "Camera calibration",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/calibration/camera.py",
     "reconstruction/colmap_intrinsics.py",
@@ -144,7 +144,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 79,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -153,8 +153,8 @@
   },
   {
    "capability": "Object detection",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/detection/grounded_scene.py",
     "engine/pipeline/open_vocab_furniture.py",
@@ -178,7 +178,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 31,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -188,7 +188,7 @@
   {
    "capability": "Instance segmentation",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/segmentation/sam2_backend.py",
     "perception/segmentation/sam_backend.py",
@@ -215,7 +215,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 7,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -225,7 +225,7 @@
   {
    "capability": "Small-object detection",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/entities/small_objects.py",
     "perception/detail/crop_pass.py",
@@ -256,7 +256,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 16,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -266,7 +266,7 @@
   {
    "capability": "Object tracking",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/instances/track_backend.py",
     "perception/tracking/temporal.py",
@@ -294,17 +294,17 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 29,
     "failed": 0,
-    "skipped": 0,
+    "skipped": 1,
     "errors": 0
    },
    "real_data_notes": ""
   },
   {
    "capability": "Depth estimation",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/depth/depth_anything_backend.py",
     "perception/depth/midAS_backend.py",
@@ -330,7 +330,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 25,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -338,9 +338,112 @@
    "real_data_notes": "DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a)."
   },
   {
-   "capability": "SfM",
+   "capability": "Metric-3D evidence producers",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
+   "modules": [
+    "engine/multiengine/metric3d.py",
+    "engine/multiengine/metric3d_producers.py",
+    "engine/multiengine/adapters/depth_adapters.py",
+    "engine/multiengine/adapters/metric_3d_lifter.py"
+   ],
+   "modules_missing": [],
+   "modules_total": 4,
+   "reachable_from_api": 3,
+   "shortest_live_import_chain": [
+    "apps.api.jobs",
+    "apps.api.evidence_world_stage",
+    "engine.multiengine.metric3d_producers"
+   ],
+   "not_reachable_from_api": [
+    "engine.multiengine.adapters.metric_3d_lifter"
+   ],
+   "entries_not_reachable_from_api": [
+    "engine/multiengine/adapters/metric_3d_lifter.py"
+   ],
+   "offline_tool": false,
+   "failing_tests": [],
+   "tests": [
+    "tests/test_metric3d_contract.py",
+    "tests/test_metric3d_producers.py",
+    "tests/test_evidence_world_failure_semantics.py"
+   ],
+   "tests_missing": [],
+   "test_counts": {
+    "passed": 66,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0
+   },
+   "real_data_notes": "Executed with REAL models on 3 South Building photos (exterior, no ground truth): MiDaS DPT_Hybrid (dpt_hybrid_384.pt, sha256 501f0c75...) and Depth Anything V2 Small (sha256 3152477c...) each emitted 3 valid relative-depth records; raw 768x1024 float32 arrays reloaded byte-exact from disk. Sparse-SfM lifter on the 32-photo set: COLMAP registered 22/32 images (4,506 points), OWL-ViT made 89 detections, 23 regions lifted to sfm_gauge records, 17 rejected for too few points. Gauge units only: nothing here is metres, and no interior or physical ground truth was used."
+  },
+  {
+   "capability": "Metric scale calibration",
+   "status": "Partial",
+   "verified": "yes (unit tests)",
+   "modules": [
+    "engine/multiengine/depth_scale_alignment.py"
+   ],
+   "modules_missing": [],
+   "modules_total": 1,
+   "reachable_from_api": 0,
+   "shortest_live_import_chain": [],
+   "not_reachable_from_api": [
+    "engine.multiengine.depth_scale_alignment"
+   ],
+   "entries_not_reachable_from_api": [
+    "engine/multiengine/depth_scale_alignment.py"
+   ],
+   "offline_tool": false,
+   "failing_tests": [],
+   "tests": [
+    "tests/test_depth_scale_alignment.py",
+    "tests/test_metric_anchor_integrity.py"
+   ],
+   "tests_missing": [],
+   "test_counts": {
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0
+   },
+   "real_data_notes": "No physical anchor has ever been applied to a real reconstruction; South Building stays COLMAP_SFM_UNITS. Anchor acceptance is verified on synthetic scenes only."
+  },
+  {
+   "capability": "Benchmark manifests (BLOCKED when ground truth is missing)",
+   "status": "Partial",
+   "verified": "yes (unit tests)",
+   "modules": [
+    "engine/multiengine/benchmark_manifest.py"
+   ],
+   "modules_missing": [],
+   "modules_total": 1,
+   "reachable_from_api": 0,
+   "shortest_live_import_chain": [],
+   "not_reachable_from_api": [
+    "engine.multiengine.benchmark_manifest"
+   ],
+   "entries_not_reachable_from_api": [
+    "engine/multiengine/benchmark_manifest.py"
+   ],
+   "offline_tool": false,
+   "failing_tests": [],
+   "tests": [
+    "tests/test_benchmark_manifest.py"
+   ],
+   "tests_missing": [],
+   "test_counts": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0
+   },
+   "real_data_notes": "No furnished-interior benchmark exists in the repository: every interior metric is BLOCKED (no scenes, no independent measurements)."
+  },
+  {
+   "capability": "SfM",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/backend/colmap_backend.py",
     "reconstruction/colmap_session.py",
@@ -365,7 +468,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 22,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -374,8 +477,8 @@
   },
   {
    "capability": "MVS",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/mvs/dense_cloud.py",
     "reconstruction/dense_pipeline.py",
@@ -400,7 +503,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 31,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -410,7 +513,7 @@
   {
    "capability": "Point-cloud fusion",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/fusion/fusion.py",
     "reconstruction/fusion/multi_source.py",
@@ -442,7 +545,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 25,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -452,7 +555,7 @@
   {
    "capability": "Mesh reconstruction",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/meshing/mesh.py",
     "reconstruction/meshing/surface.py",
@@ -482,7 +585,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 55,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -491,8 +594,8 @@
   },
   {
    "capability": "Multi-view identity",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/instances/association.py",
     "perception/instances/object_resolution.py",
@@ -517,7 +620,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 60,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -526,8 +629,8 @@
   },
   {
    "capability": "Room segmentation",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/architecture/room_semantics.py",
     "perception/architecture/room_graph.py",
@@ -555,7 +658,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 34,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -565,7 +668,7 @@
   {
    "capability": "Architectural topology",
    "status": "Partial",
-   "verified": "not run",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/architecture/topology.py",
     "perception/architecture/space_graph.py",
@@ -601,7 +704,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 24,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -610,8 +713,8 @@
   },
   {
    "capability": "Material recognition",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "perception/materials/classifier.py",
     "perception/materials/material_hypotheses.py",
@@ -635,7 +738,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 17,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -644,8 +747,8 @@
   },
   {
    "capability": "Uncertainty estimation",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "engine/quality/report.py",
     "reconstruction/consistency.py",
@@ -673,7 +776,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 58,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -682,8 +785,8 @@
   },
   {
    "capability": "WorldIR",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "world_ir/artifact_store.py",
     "world_ir/camera.py",
@@ -699,8 +802,8 @@
     "world_ir/frame_graph.py"
    ],
    "modules_missing": [],
-   "modules_total": 31,
-   "reachable_from_api": 26,
+   "modules_total": 32,
+   "reachable_from_api": 27,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "world_ir.artifact_store"
@@ -722,7 +825,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 27,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -731,8 +834,8 @@
   },
   {
    "capability": "Accuracy validation",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/evaluation.py",
     "reconstruction/validation.py",
@@ -773,7 +876,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 66,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -782,8 +885,8 @@
   },
   {
    "capability": "Active capture guidance",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "reconstruction/capture_quality.py",
     "reconstruction/completeness.py"
@@ -807,7 +910,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 7,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -816,8 +919,8 @@
   },
   {
    "capability": "Export and persistence",
-   "status": "Partial",
-   "verified": "not run",
+   "status": "Existing",
+   "verified": "yes (unit tests)",
    "modules": [
     "exporters/gltf/exporter.py",
     "exporters/gltf/__init__.py",
@@ -847,7 +950,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 0,
+    "passed": 48,
     "failed": 0,
     "skipped": 0,
     "errors": 0

@@ -374,6 +374,7 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                     source_id=str(s),
                     coordinate_system=f"cam:{Path(str(s)).stem}",
                     predicted={
+                        "array": depth_np,  # raw inverse-relative-depth pixels; externalised by metric3d_producers
                         "depth_min_m": d_min,
                         "depth_max_m": d_max,
                         "depth_mean_m": float(np.mean(depth_np)),

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 ENV_FLAG = "RE_EVIDENCE_WORLD"
+ENV_DEPTH_ENGINES = "RE_EVIDENCE_WORLD_DEPTH_ENGINES"
 SNAPSHOT_REL = "snapshot.json"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
@@ -42,7 +43,10 @@ ENABLEMENT_CRITERIA: tuple[tuple[str, bool, tuple[str, ...], str], ...] = (
     ("cancellation_and_failure_semantics", True, ("tests/test_evidence_world_job.py", "tests/test_evidence_world_failure_semantics.py"), ""),
     ("metric3d_contract_published", True, ("tests/test_metric3d_contract.py",), "contract + ingest exist; see the producers criterion"),
     ("covariance_propagation", True, ("tests/test_canonical_covariance_propagation.py", "tests/test_worldir_bridge_uncertainty_roundtrip.py"), ""),
-    ("metric3d_producers_emit_contract", False, (), "depth/lifting producers do not yet emit metric3d.v1 records or persist depth maps (Gemini)"),
+    ("metric3d_producers_emit_contract", True, ("tests/test_metric3d_producers.py",),
+     "depth + sparse-lift producers emit metric3d.v1 with recoverable raw arrays (real-model run on South Building recorded in the ledger); "
+     "wired into the stage only behind RE_EVIDENCE_WORLD_DEPTH_ENGINES, and no depth producer yet feeds fusion"),
+    ("metric_anchor_integrity", True, ("tests/test_metric_anchor_integrity.py",), "verified on synthetic scenes only; no physical anchor applied to real data"),
     ("real_multi_photo_job_run", False, (), "one outdoor run produced 0 detections; no furnished-interior multi-photo run exists"),
     ("detector_accuracy_benchmark", False, (), "no benchmark of the production detectors on labelled interior imagery"),
     ("confidence_calibration", False, (), "observation calibration is LEGACY_UNSPECIFIED; no calibration dataset"),
@@ -127,8 +131,13 @@ def run_for_job(
     base: Path | None = None,
     flow_inputs: Callable[[], tuple[Any, Any, Any]] | None = None,
     cameras: Mapping[str, Any] | None = None,
+    depth_engines: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Run the flow on the job's evidence files and return the compact facts for the job report.
+
+    ``depth_engines`` (default: the ``RE_EVIDENCE_WORLD_DEPTH_ENGINES`` env, comma separated; empty = none) runs those depth
+    adapters ONE AT A TIME after the detection flow and persists their ``metric3d.v1`` records + raw depth arrays in the same
+    run's evidence matrix. An engine that is unknown, fails or is rejected is reported in ``depth`` -- never skipped silently.
 
     Never raises for a flow failure (the facts say ``failed`` with the error); raises ``EvidenceWorldError`` only for an unsafe id.
     ``status == "cancelled"`` means the operator cancelled and the caller should stop the job.
@@ -177,7 +186,37 @@ def run_for_job(
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
-    return _facts(res.snapshot, job_id, skipped, status=res.status)
+    facts = _facts(res.snapshot, job_id, skipped, status=res.status)
+    wanted = list(depth_engines) if depth_engines is not None else [
+        e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
+    ]
+    if wanted and res.status != "cancelled":
+        facts["depth"] = _run_depth(root, job_id, real, wanted, adapters)
+    return facts
+
+
+def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequence[str], adapters: Mapping[str, Any]) -> list[dict[str, Any]]:
+    from engine.multiengine.evidence_matrix import EvidenceMatrix
+    from engine.multiengine.metric3d_producers import (
+        checkpoint_sha256,
+        hf_checkpoint_file,
+        produce_depth,
+    )
+
+    matrix = EvidenceMatrix(root)
+    reports: list[dict[str, Any]] = []
+    for eid in engines:  # sequential: produce_depth unloads each model before the next one loads
+        adapter = adapters.get(eid)
+        if adapter is None:
+            reports.append({"engine_id": eid, "status": "failed", "error": "engine is not available in this deployment", "accepted": [], "rejected": []})
+            continue
+        ckpt = getattr(adapter, "checkpoint", None)
+        path = hf_checkpoint_file(ckpt) if isinstance(ckpt, str) and "/" in ckpt else None
+        rep = produce_depth(adapter, sources, matrix=matrix, run_id=job_id, checkpoint_id=str(ckpt or eid), checkpoint_hash=checkpoint_sha256(path))
+        rep["accepted"], rep["rejected"] = len(rep["accepted"]), list(rep["rejected"])
+        reports.append(rep)
+    (root / "depth_report.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
+    return reports
 
 
 def _facts(snap: Mapping[str, Any], job_id: str, skipped: int, *, status: str | None = None) -> dict[str, Any]:

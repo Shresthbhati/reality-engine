@@ -60,6 +60,16 @@ ROWS: Dict[str, dict] = {
     "Depth estimation": dict(
         modules=["perception/depth/depth_anything_backend.py", "perception/depth/midAS_backend.py", "reconstruction/depth_to_points.py"],
         tests=["tests/test_depth_anything_backend.py", "tests/test_depth_to_points.py", "tests/test_depth_scale.py", "tests/test_stage_depth.py"]),
+    "Metric-3D evidence producers": dict(
+        modules=["engine/multiengine/metric3d.py", "engine/multiengine/metric3d_producers.py", "engine/multiengine/adapters/depth_adapters.py",
+                 "engine/multiengine/adapters/metric_3d_lifter.py"],
+        tests=["tests/test_metric3d_contract.py", "tests/test_metric3d_producers.py", "tests/test_evidence_world_failure_semantics.py"]),
+    "Metric scale calibration": dict(
+        modules=["engine/multiengine/depth_scale_alignment.py"],
+        tests=["tests/test_depth_scale_alignment.py", "tests/test_metric_anchor_integrity.py"]),
+    "Benchmark manifests (BLOCKED when ground truth is missing)": dict(
+        modules=["engine/multiengine/benchmark_manifest.py"],
+        tests=["tests/test_benchmark_manifest.py"]),
     "SfM": dict(
         modules=["reconstruction/backend/colmap_backend.py", "reconstruction/colmap_session.py", "reconstruction/sfm/core_pipeline.py"],
         tests=["tests/test_colmap_backend.py", "tests/test_colmap_session.py", "tests/test_mapper_retry.py", "tests/test_sfm_pipeline_rule4.py"]),
@@ -112,6 +122,14 @@ REAL_DATA_NOTES: Dict[str, str] = {
     "SfM": "10 photos: 9/10 registered after seed pinning; sparse geometry differed between runs (995 vs 1,423 points).",
     "Depth estimation": "DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a).",
     "Room segmentation": "Floor/wall consolidation cut replayed wall counts 25->8 and 21->6; footprint remains a ragged polygon.",
+    "Metric-3D evidence producers": (
+        "Executed with REAL models on 3 South Building photos (exterior, no ground truth): MiDaS DPT_Hybrid (dpt_hybrid_384.pt, sha256 501f0c75...) and "
+        "Depth Anything V2 Small (sha256 3152477c...) each emitted 3 valid relative-depth records; raw 768x1024 float32 arrays reloaded byte-exact from disk. "
+        "Sparse-SfM lifter on the 32-photo set: COLMAP registered 22/32 images (4,506 points), OWL-ViT made 89 detections, 23 regions lifted to "
+        "sfm_gauge records, 17 rejected for too few points. Gauge units only: nothing here is metres, and no interior or physical ground truth was used."
+    ),
+    "Metric scale calibration": "No physical anchor has ever been applied to a real reconstruction; South Building stays COLMAP_SFM_UNITS. Anchor acceptance is verified on synthetic scenes only.",
+    "Benchmark manifests (BLOCKED when ground truth is missing)": "No furnished-interior benchmark exists in the repository: every interior metric is BLOCKED (no scenes, no independent measurements).",
 }
 
 

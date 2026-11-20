@@ -45,12 +45,12 @@ def provenance_label(e) -> str:
 
 
 def _confidence(e) -> Any:
-    """Entity confidence defaults to 0.5 = 'not measured'; uncertainty defaults to 0.0 = unknown."""
+    """Entity confidence None (or the legacy 0.5 sentinel) = 'not measured'; uncertainty defaults to 0.0 = unknown."""
     if e.uncertainty is not None and e.uncertainty.confidence > 0:
         return e.uncertainty.confidence
-    if e.confidence != 0.5:
-        return e.confidence
-    return NOT_RECORDED
+    if e.confidence is None or e.confidence == 0.5:
+        return NOT_RECORDED
+    return e.confidence
 
 
 def _note(e) -> str:

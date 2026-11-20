@@ -140,3 +140,23 @@ def test_ingest_is_idempotent_for_the_same_record():
     a = ingest(m, [r], run_id="run-1", model_version="v1", processed_at=t)["accepted"]
     b = ingest(m, [r], run_id="run-1", model_version="v1", processed_at=t)["accepted"]
     assert a == b and len(m) == 1
+
+
+def test_synthetic_scale_aligned_is_preserved_as_distinct_state():
+    r = rec(
+        quantity="position",
+        scale_state=ScaleState.SYNTHETIC_SCALE_ALIGNED,
+        units="synthetic_m",
+        value=(2.5, 1.0, 2.0),
+        frame="world:canonical",
+    )
+    assert r.problems() == []
+    assert r.scale_state == ScaleState.SYNTHETIC_SCALE_ALIGNED
+    assert r.units == "synthetic_m"
+
+    # Serialization round-trip
+    d = r.to_dict()
+    assert d["scale_state"] == "synthetic_scale_aligned"
+    assert d["units"] == "synthetic_m"
+    reloaded = Metric3DObservation.from_dict(d)
+    assert reloaded == r

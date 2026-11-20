@@ -60,11 +60,27 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                 "Failed to construct valid PinholeCamera from provided 'camera' metadata.",
             )
 
-        # 2. Metric Depth map
-        if not options.get("is_metric_depth", True):
+        # 2. Scale metadata validation (must fail closed)
+        if "is_metric_depth" not in options and "scale_state" not in options:
             raise EngineError(
                 EngineErrorKind.INVALID_INPUT,
-                "Metric3DLifter requires verified metric depth; relative monocular depth without scale alignment cannot be unprojected.",
+                "Missing scale metadata: 'is_metric_depth' or 'scale_state' must be explicitly specified (fail closed).",
+            )
+
+        is_metric = bool(options.get("is_metric_depth", False))
+        scale_state = options.get("scale_state")
+        scale_units = options.get("scale_units")
+
+        if is_metric and scale_state not in ("METRIC_SCALE_ALIGNED", "metric_anchored", None):
+            raise EngineError(
+                EngineErrorKind.INVALID_INPUT,
+                f"Contradictory scale metadata: is_metric_depth=True cannot be used with scale_state={scale_state!r}.",
+            )
+
+        if scale_state in ("RELATIVE_UNSCALED", "relative_depth", "UNKNOWN", "unknown") or (not is_metric and scale_state is None):
+            raise EngineError(
+                EngineErrorKind.INVALID_INPUT,
+                "Metric3DLifter requires verified metric or scale-aligned depth; relative monocular depth without scale alignment cannot be unprojected.",
             )
 
         depth_map = options.get("depth_map")
@@ -89,10 +105,18 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                     "Metric3DLifter requires 'depth_map' array or valid 'depth_path'.",
                 )
 
+        from engine.multiengine.depth_scale_alignment import validate_depth_map
+        ok, err = validate_depth_map(depth_map)
+        if not ok:
+            raise EngineError(EngineErrorKind.INVALID_INPUT, f"Invalid depth map: {err}")
+
         # 3. 2D Detections / Observations to lift
         detections = options.get("detections", [])
         if not detections:
             return drafts
+
+        eff_scale_state = scale_state or ("METRIC_SCALE_ALIGNED" if is_metric else "RELATIVE_UNSCALED")
+        eff_scale_units = scale_units or ("METRES" if is_metric else "RELATIVE_DISPARITY")
 
         lifted_entities = []
         for idx, det in enumerate(detections):
@@ -113,7 +137,9 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                 camera=camera,
                 target_frame=options.get("target_frame", "world:canonical"),
                 mask_2d=mask,
-                is_metric_depth=True,
+                is_metric_depth=is_metric,
+                scale_state=eff_scale_state,
+                scale_units=eff_scale_units,
                 depth_source=options.get("depth_source", "calibrated_metric_depth"),
                 calibration_source=options.get("calibration_source", "camera_metadata"),
                 confidence=float(conf) if conf is not None else None,

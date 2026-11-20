@@ -484,7 +484,11 @@ class Metric3DLifter:
             s_state = ScaleState.METRIC_ANCHORED
             s_units = "m"
             anchor_ref = entity.scale_source if (entity.scale_source and entity.scale_source.startswith(("anchor://", "artifact://"))) else "anchor://surveyed_metric_anchor"
-        elif "sfm" in entity.scale_units.lower():
+        elif entity.scale_state == "SYNTHETIC_SCALE_ALIGNED" or "synthetic" in entity.scale_units.lower():
+            s_state = ScaleState.SYNTHETIC_SCALE_ALIGNED
+            s_units = "synthetic_m"
+            anchor_ref = entity.scale_source if (entity.scale_source and entity.scale_source.startswith(("anchor://", "artifact://"))) else None
+        elif "sfm" in entity.scale_units.lower() or entity.scale_state in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC"):
             s_state = ScaleState.SFM_GAUGE
             s_units = "sfm_units"
             anchor_ref = None

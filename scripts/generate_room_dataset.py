@@ -120,23 +120,30 @@ def generate_camera_trajectory(num_images: int = 30) -> List[dict]:
             forward_norm = 1.0
         forward = forward / forward_norm
 
-        # Camera up (world up) - avoid parallel to forward
-        up = np.array([0.0, 1.0, 0.0])
-        if abs(np.dot(forward, up)) > 0.99:
-            up = np.array([0.0, 0.0, 1.0])  # use Z-up when looking straight down/up
-        right = np.cross(forward, up)
-        right_norm = np.linalg.norm(right)
-        if right_norm < 1e-6:
-            right = np.array([1.0, 0.0, 0.0])
-            right_norm = 1.0
-        right = right / right_norm
-        up = np.cross(right, forward)
+        # World up reference
+        world_up = np.array([0.0, 1.0, 0.0])
+        if abs(np.dot(forward, world_up)) > 0.99:
+            world_up = np.array([0.0, 0.0, 1.0])  # use Z-up when looking straight down/up
 
-        # Rotation matrix (camera to world)
-        R = np.column_stack([right, up, -forward])  # OpenCV convention
+        # In OpenCV camera convention:
+        # local +Z (forward along optical axis into scene) = forward
+        # local +X (right) = forward x world_up
+        # local +Y (down) = forward x right
+        c_z = forward
+        c_x = np.cross(c_z, world_up)
+        c_x_norm = np.linalg.norm(c_x)
+        if c_x_norm < 1e-6:
+            c_x = np.array([1.0, 0.0, 0.0])
+            c_x_norm = 1.0
+        c_x = c_x / c_x_norm
+        c_y = np.cross(c_z, c_x)
+        c_y = c_y / np.linalg.norm(c_y)
 
-        # Convert to quaternion
-        q = rotation_matrix_to_quaternion(R)
+        # Camera-to-world rotation matrix (det = +1.0)
+        R_wc = np.column_stack([c_x, c_y, c_z])
+
+        # Convert to quaternion (camera to world, OpenCV convention)
+        q = rotation_matrix_to_quaternion(R_wc)
 
         # Add small GPS jitter
         gps_lat = GPS_BASE["lat"] + np.random.normal(0, 1e-6)
@@ -147,6 +154,7 @@ def generate_camera_trajectory(num_images: int = 30) -> List[dict]:
             "index": idx,
             "position": (float(x), float(y), float(z)),
             "rotation_quat": (float(q[0]), float(q[1]), float(q[2]), float(q[3])),
+            "camera_convention": "OPENCV",
             "gps": (gps_lat, gps_lon, gps_alt),
             "timestamp": base_time + idx * 2,  # 2 seconds between captures
         })
@@ -381,13 +389,31 @@ def generate_dataset(
     # Write COLMAP-compatible cameras.txt and images.txt for ground truth
     write_colmap_ground_truth(output_dir, trajectory, intrinsics)
 
+    # Write independent ground truth identities and 2D annotations
+    write_ground_truth_identities(output_dir, trajectory, intrinsics["width"], intrinsics["height"])
+
     print(f"Generated {num_images} images in {output_dir}")
     print(f"Manifest: {manifest_path}")
     return manifest
 
 
+def quaternion_to_rotation_matrix(q: Tuple[float, float, float, float]) -> np.ndarray:
+    """Convert quaternion (w, x, y, z) to 3x3 rotation matrix."""
+    w, x, y, z = q
+    return np.array([
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ], dtype=np.float64)
+
+
 def write_colmap_ground_truth(output_dir: Path, trajectory: List[dict], intrinsics: dict):
-    """Write COLMAP-format ground truth for validation."""
+    """Write standard COLMAP-format ground truth for validation.
+
+    In standard COLMAP images.txt:
+    IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME
+    where (QW, QX, QY, QZ) is world-to-cam rotation R_cw, and (TX, TY, TZ) is t_cw = -R_cw @ C.
+    """
     # cameras.txt
     cam_id = 1
     cam_line = f"{cam_id} PINHOLE {intrinsics['width']} {intrinsics['height']} {intrinsics['fx']} {intrinsics['fy']} {intrinsics['cx']} {intrinsics['cy']}\n"
@@ -397,10 +423,14 @@ def write_colmap_ground_truth(output_dir: Path, trajectory: List[dict], intrinsi
     lines = []
     for i, cam in enumerate(trajectory):
         idx = i + 1  # COLMAP is 1-indexed
-        qw, qx, qy, qz = cam["rotation_quat"]
-        x, y, z = cam["position"]
+        q_wc = cam["rotation_quat"]  # camera-to-world quaternion (w, x, y, z)
+        R_wc = quaternion_to_rotation_matrix(q_wc)
+        R_cw = R_wc.T
+        q_cw = rotation_matrix_to_quaternion(R_cw)
+        C = np.array(cam["position"], dtype=np.float64)
+        t_cw = -R_cw @ C
         name = f"IMG_{cam['index']:04d}.jpg"
-        line = f"{idx} {qw} {qx} {qy} {qz} {x} {y} {z} {cam_id} {name}\n"
+        line = f"{idx} {q_cw[0]} {q_cw[1]} {q_cw[2]} {q_cw[3]} {t_cw[0]} {t_cw[1]} {t_cw[2]} {cam_id} {name}\n"
         # Second line (2D points) - empty for ground truth
         lines.append(line)
         lines.append("\n")
@@ -409,6 +439,85 @@ def write_colmap_ground_truth(output_dir: Path, trajectory: List[dict], intrinsi
 
     # points3D.txt (empty - no ground truth 3D points for synthetic)
     (output_dir / "points3D.txt").write_text("# No ground truth 3D points for synthetic dataset\n")
+
+
+def write_ground_truth_identities(output_dir: Path, trajectory: List[dict], width: int, height: int):
+    """Writes independent ground-truth physical identities and 2D image annotations."""
+    floor_start = int(height * 0.6)
+    ceiling_end = int(height * 0.2)
+    wall_width = int(width * 0.25)
+
+    # 2D Bounding boxes in unshifted image coordinates
+    # Door
+    door_w = int(width * 0.15)
+    door_h = int(height * 0.3)
+    door_x = (width - door_w) // 2
+    door_y = floor_start - door_h
+    # Window
+    win_w = int(width * 0.1)
+    win_h = int(height * 0.2)
+    win_x = wall_width // 2 - win_w // 2
+    win_y = ceiling_end + int((floor_start - ceiling_end) * 0.3)
+    # Table
+    table_w = int(width * 0.2)
+    table_h = int(height * 0.15)
+    table_x = width // 2 - table_w // 2
+    table_y = floor_start - table_h
+    # Chair
+    chair_w = int(width * 0.08)
+    chair_h = int(height * 0.15)
+    chair_x = table_x - chair_w - 20
+    chair_y = floor_start - chair_h
+    # Lamp
+    lamp_w = int(width * 0.03)
+    lamp_h = int(height * 0.08)
+    lamp_x = table_x + table_w // 2 - lamp_w // 2
+    lamp_y = table_y - lamp_h
+
+    base_objects = [
+        {"ground_truth_id": "gt_door_front_center", "class_name": "door", "base_bbox": [door_x, door_y, door_x + door_w, door_y + door_h]},
+        {"ground_truth_id": "gt_window_left_center", "class_name": "window", "base_bbox": [win_x, win_y, win_x + win_w, win_y + win_h]},
+        {"ground_truth_id": "gt_table_center", "class_name": "table", "base_bbox": [table_x, table_y, table_x + table_w, table_y + table_h]},
+        {"ground_truth_id": "gt_chair_table", "class_name": "chair", "base_bbox": [chair_x, chair_y, chair_x + chair_w, chair_y + chair_h]},
+        {"ground_truth_id": "gt_lamp_table", "class_name": "lamp", "base_bbox": [lamp_x, lamp_y, lamp_x + lamp_w, lamp_y + lamp_h]},
+    ]
+
+    image_annotations: dict[str, list[dict]] = {}
+    for cam in trajectory:
+        idx = cam["index"]
+        name = f"IMG_{idx:04d}.jpg"
+        pos = cam["position"]
+        shift_x = int((pos[0] - 2.5) * 50)
+
+        anns = []
+        for obj in base_objects:
+            bx0, by0, bx1, by1 = obj["base_bbox"]
+            sx0 = (bx0 + shift_x) % width
+            sx1 = sx0 + (bx1 - bx0)
+            if sx1 <= width:
+                anns.append({
+                    "ground_truth_id": obj["ground_truth_id"],
+                    "class_name": obj["class_name"],
+                    "bbox_2d": [float(sx0), float(by0), float(sx1), float(by1)],
+                })
+        image_annotations[name] = anns
+
+    manifest_gt = {
+        "dataset": "real_room_capture_synthetic",
+        "description": "Independent ground-truth physical identities and 2D annotations for synthetic room capture benchmark",
+        "is_physically_surveyed": False,
+        "milestone_status": "BLOCKED",
+        "blocker_reason": "Physical millimeter laser survey and on-site camera capture not yet performed on site. Dataset is synthetic fixture.",
+        "ground_truth_physical_entities": {
+            "gt_door_front_center": {"class_name": "door", "position": [2.5, 0.0, 1.05], "dimensions": [0.9, 0.1, 2.1], "wall": "front"},
+            "gt_window_left_center": {"class_name": "window", "position": [0.0, 2.0, 1.4], "dimensions": [0.1, 1.2, 1.0], "wall": "left"},
+            "gt_table_center": {"class_name": "table", "position": [2.5, 0.375, 2.0], "dimensions": [1.5, 0.75, 0.75]},
+            "gt_chair_table": {"class_name": "chair", "position": [1.8, 0.45, 2.0], "dimensions": [0.5, 0.5, 0.9]},
+            "gt_lamp_table": {"class_name": "lamp", "position": [2.5, 0.9, 2.0], "dimensions": [0.3, 0.3, 0.5]},
+        },
+        "image_annotations": image_annotations,
+    }
+    (output_dir / "ground_truth_identities.json").write_text(json.dumps(manifest_gt, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

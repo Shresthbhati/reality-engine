@@ -78,6 +78,8 @@ class RoomGroundTruth:
     openings: tuple[OpeningGroundTruth, ...]
     fixtures: tuple[FixtureGroundTruth, ...]
     capture: RoomCaptureMetadata | None = None
+    source: str = "measured"
+    is_synthetic: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RoomGroundTruth:
@@ -125,6 +127,13 @@ class RoomGroundTruth:
                 lighting=c.get("lighting", "natural"),
                 notes=c.get("notes", ""),
             )
+        source = str(data.get("source", "measured"))
+        is_synthetic = bool(
+            data.get("is_synthetic", False)
+            or "synthetic" in source.lower()
+            or "synthetic" in rm.get("id", "").lower()
+            or "synthetic" in data.get("fixture", "").lower()
+        )
         return cls(
             room_id=rm["id"],
             name=rm.get("name", rm["id"]),
@@ -136,6 +145,8 @@ class RoomGroundTruth:
             openings=openings,
             fixtures=fixtures,
             capture=cap,
+            source=source,
+            is_synthetic=is_synthetic,
         )
 
 
@@ -151,6 +162,7 @@ class RoomAccuracyReport:
     opening_precision: float | None = None
     opening_recall: float | None = None
     opening_f1: float | None = None
+    opening_position_rmse_m: float | None = None
     opening_width_rmse_m: float | None = None
     opening_height_rmse_m: float | None = None
     fixture_mean_error_m: float | None = None
@@ -169,6 +181,7 @@ class RoomAccuracyReport:
             "opening_precision": round(self.opening_precision, 4) if self.opening_precision is not None else None,
             "opening_recall": round(self.opening_recall, 4) if self.opening_recall is not None else None,
             "opening_f1": round(self.opening_f1, 4) if self.opening_f1 is not None else None,
+            "opening_position_rmse_m": round(self.opening_position_rmse_m, 4) if self.opening_position_rmse_m is not None else None,
             "opening_width_rmse_m": round(self.opening_width_rmse_m, 4) if self.opening_width_rmse_m is not None else None,
             "opening_height_rmse_m": round(self.opening_height_rmse_m, 4) if self.opening_height_rmse_m is not None else None,
             "fixture_mean_error_m": round(self.fixture_mean_error_m, 4) if self.fixture_mean_error_m is not None else None,
@@ -291,13 +304,14 @@ def evaluate_room_reconstruction(
     # 2. Evaluate Ceiling Height
     reconstructed_ceilings = [
         e for e in reconstructed_world.entities.values()
-        if "ceiling" in e.name.lower() or "roof" in e.name.lower()
+        if "ceiling" in e.name.lower() or "roof" in e.name.lower() or str(e.custom_properties.get("class_name", "")).lower() in ("ceiling", "roof")
     ]
-    ceiling_error = None
-    if reconstructed_ceilings:
-        c_pos = _extract_position(reconstructed_ceilings[0])
+    ceiling_errors: list[float] = []
+    for c in reconstructed_ceilings:
+        c_pos = _extract_position(c)
         if c_pos is not None:
-            ceiling_error = abs(c_pos[2] - gt.height_m)
+            ceiling_errors.append(abs(c_pos[2] - gt.height_m))
+    ceiling_error = float(sum(ceiling_errors) / len(ceiling_errors)) if ceiling_errors else None
 
     # 3. Evaluate Openings (Doors and Windows) with precision-aware threshold (<= 0.25m) and semantic compatibility
     reconstructed_openings = [
@@ -305,7 +319,7 @@ def evaluate_room_reconstruction(
         if e.type in (EntityType.DOOR, EntityType.WINDOW) or any(k in e.name.lower() for k in ("door", "window"))
     ]
 
-    opening_candidates: list[tuple[float, int, int, float, float]] = []
+    opening_candidates: list[tuple[float, int, int, float | None, float | None]] = []
     for g_idx, go in enumerate(gt.openings):
         go_kind = go.kind.lower()
         for r_idx, ro in enumerate(reconstructed_openings):
@@ -324,13 +338,14 @@ def evaluate_room_reconstruction(
             dist = math.hypot(ro_pos[0] - go.center[0], ro_pos[1] - go.center[1], ro_pos[2] - go.center[2])
             if dist <= 0.25:  # Precision-aware threshold <= 0.25m
                 dims = ro.custom_properties.get("dimensions_w_d_h") or ro.custom_properties.get("dimensions")
-                w_err = abs(float(dims[0]) - go.width_m) if dims and len(dims) >= 3 else 0.0
-                h_err = abs(float(dims[2]) - go.height_m) if dims and len(dims) >= 3 else 0.0
+                w_err = abs(float(dims[0]) - go.width_m) if dims and len(dims) >= 3 else None
+                h_err = abs(float(dims[2]) - go.height_m) if dims and len(dims) >= 3 else None
                 opening_candidates.append((dist, g_idx, r_idx, w_err, h_err))
 
     opening_candidates.sort(key=lambda x: x[0])
     matched_go: set[int] = set()
     matched_ro: set[int] = set()
+    opening_position_errors: list[float] = []
     opening_w_errors: list[float] = []
     opening_h_errors: list[float] = []
 
@@ -338,8 +353,11 @@ def evaluate_room_reconstruction(
         if g_idx not in matched_go and r_idx not in matched_ro:
             matched_go.add(g_idx)
             matched_ro.add(r_idx)
-            opening_w_errors.append(w_err)
-            opening_h_errors.append(h_err)
+            opening_position_errors.append(dist)
+            if w_err is not None:
+                opening_w_errors.append(w_err)
+            if h_err is not None:
+                opening_h_errors.append(h_err)
 
     tp_openings = len(matched_go)
     fp_openings = len(reconstructed_openings) - len(matched_ro)
@@ -349,6 +367,7 @@ def evaluate_room_reconstruction(
     recall_openings = float(tp_openings / len(gt.openings)) if len(gt.openings) > 0 else None
     f1_openings = float(2 * precision_openings * recall_openings / (precision_openings + recall_openings)) if (precision_openings is not None and recall_openings is not None and (precision_openings + recall_openings) > 0) else None
 
+    opening_pos_rmse = float(math.sqrt(sum(e ** 2 for e in opening_position_errors) / len(opening_position_errors))) if opening_position_errors else None
     w_rmse = float(math.sqrt(sum(e ** 2 for e in opening_w_errors) / len(opening_w_errors))) if opening_w_errors else None
     h_rmse = float(math.sqrt(sum(e ** 2 for e in opening_h_errors) / len(opening_h_errors))) if opening_h_errors else None
 
@@ -396,18 +415,27 @@ def evaluate_room_reconstruction(
         (len(gt.walls) > 0 and len(matched_gw) < len(gt.walls))
         or (len(gt.openings) > 0 and len(matched_go) < len(gt.openings))
         or (len(gt.fixtures) > 0 and len(matched_gf) < len(gt.fixtures))
+        or (gt.height_m > 0 and ceiling_error is None)
     )
     status = "PARTIAL" if is_incomplete else "COMPLETED"
+
+    is_physically_measured = bool(
+        gt.capture is not None
+        and gt.capture.method in ("laser", "tape", "both")
+        and getattr(gt, "source", "measured") == "measured"
+        and not getattr(gt, "is_synthetic", False)
+    )
 
     return RoomAccuracyReport(
         status=status,
         room_id=gt.room_id,
-        is_physically_measured=True,
+        is_physically_measured=is_physically_measured,
         wall_length_rmse_m=wall_rmse,
         ceiling_height_error_m=ceiling_error,
         opening_precision=precision_openings,
         opening_recall=recall_openings,
         opening_f1=f1_openings,
+        opening_position_rmse_m=opening_pos_rmse,
         opening_width_rmse_m=w_rmse,
         opening_height_rmse_m=h_rmse,
         fixture_mean_error_m=fixture_mean_err,

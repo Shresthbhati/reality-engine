@@ -30,6 +30,11 @@ from world_ir.serialization import load_world, save_world
 from world_ir.validation import validate_world_ir
 from world_ir.world_v1 import WorldIR
 
+ANCHORED = dict(  # SYNTHETIC test fixtures declare their scale explicitly; nothing defaults to metres
+    is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+    depth_source="synthetic_test_fixture", calibration_source="synthetic_test_fixture",
+)
+
 
 @pytest.fixture
 def calibrated_rig() -> tuple[PinholeCamera, np.ndarray, dict]:
@@ -82,7 +87,8 @@ def test_e2e_reconstruction_full_success_path(
         depth_map=depth_map,
         camera=camera,
         confidence=0.95,
-        is_metric_depth=True,
+        is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+        depth_source="synthetic_test_fixture",
     )
     assert wall_lifted is not None
     assert wall_lifted.class_name == "wall"
@@ -95,7 +101,8 @@ def test_e2e_reconstruction_full_success_path(
         depth_map=depth_map,
         camera=camera,
         confidence=0.90,
-        is_metric_depth=True,
+        is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+        depth_source="synthetic_test_fixture",
     )
     assert window_lifted is not None
     assert window_lifted.class_name == "window"
@@ -191,6 +198,7 @@ def test_e2e_failure_path_incompatible_mask(
 
     bad_mask = np.ones((100, 100), dtype=bool)  # Depth map is (600, 800)
     result = lifter.lift_detection(
+        **ANCHORED,
         entity_id="mismatched_mask",
         class_name="door",
         box_2d=(200.0, 150.0, 400.0, 350.0),

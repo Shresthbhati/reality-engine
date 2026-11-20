@@ -12,6 +12,11 @@ from world.ontology.universal_object_ontology import (
 )
 from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
 
+ANCHORED = dict(  # SYNTHETIC test fixtures declare their scale explicitly; nothing defaults to metres
+    is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+    depth_source="synthetic_test_fixture", calibration_source="synthetic_test_fixture",
+)
+
 
 @pytest.fixture
 def test_setup() -> tuple[PinholeCamera, np.ndarray, UniversalObjectOntology]:
@@ -41,6 +46,7 @@ def test_lift_detection_reconstructs_metric_position_and_dimensions(
     # Box: x in [270, 370], y in [190, 290]
     # At depth 2.0m: delta_x = 100 * 2.0 / 500 = 0.40 m; delta_y = 0.40 m
     lifted = lifter.lift_detection(
+        **ANCHORED,
         entity_id="chair_01",
         class_name="chair",
         box_2d=(270.0, 190.0, 370.0, 290.0),
@@ -82,6 +88,7 @@ def test_lift_detection_returns_none_when_unobserved_or_invalid_depth(
     invalid_depth[190:290, 270:370] = np.nan
 
     lifted = lifter.lift_detection(
+        **ANCHORED,
         entity_id="unobserved_01",
         class_name="table",
         box_2d=(270.0, 190.0, 370.0, 290.0),
@@ -141,6 +148,7 @@ def test_observation_drafts_output_compatible_with_canonical_contracts(
     lifter = Metric3DLifter(ontology)
 
     lifted = lifter.lift_detection(
+        **ANCHORED,
         entity_id="faucet_01",
         class_name="faucet",
         box_2d=(300.0, 220.0, 340.0, 260.0),

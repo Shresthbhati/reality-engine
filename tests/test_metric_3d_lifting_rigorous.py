@@ -20,6 +20,11 @@ from engine.multiengine.metric_lifting import LiftedEntity3D, Metric3DLifter
 from world.ontology.universal_object_ontology import UniversalObjectOntology
 from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
 
+ANCHORED = dict(  # SYNTHETIC test fixtures declare their scale explicitly; nothing defaults to metres
+    is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+    depth_source="synthetic_test_fixture", calibration_source="synthetic_test_fixture",
+)
+
 
 @pytest.fixture
 def calibrated_camera() -> PinholeCamera:
@@ -80,7 +85,7 @@ def test_reconstructs_synthetic_3d_cuboid_with_high_accuracy(calibrated_camera: 
         depth_map=depth_map,
         camera=camera,
         mask_2d=mask,
-        is_metric_depth=True,
+        is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
         depth_source="calibrated_sensor_depth",
         calibration_source="bundle_adjustment",
         confidence=0.95,
@@ -131,6 +136,7 @@ def test_rejects_incompatible_or_empty_masks(calibrated_camera: PinholeCamera) -
     # 1. Incompatible shape
     bad_mask = np.ones((240, 320), dtype=bool)
     lifted_bad_shape = lifter.lift_detection(
+        **ANCHORED,
         entity_id="bad_mask_shape",
         class_name="door",
         box_2d=(100.0, 100.0, 200.0, 200.0),
@@ -143,6 +149,7 @@ def test_rejects_incompatible_or_empty_masks(calibrated_camera: PinholeCamera) -
     # 2. All-zero mask
     empty_mask = np.zeros((480, 640), dtype=bool)
     lifted_empty = lifter.lift_detection(
+        **ANCHORED,
         entity_id="empty_mask",
         class_name="door",
         box_2d=(100.0, 100.0, 200.0, 200.0),
@@ -180,7 +187,8 @@ def test_rotational_symmetry_reports_unknown_orientation(calibrated_camera: Pinh
         box_2d=(200.0, 120.0, 440.0, 360.0),
         depth_map=depth_map,
         camera=camera,
-        is_metric_depth=True,
+        is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+        depth_source="synthetic_test_fixture",
     )
 
     assert lifted is not None
@@ -203,6 +211,7 @@ def test_order_statistic_quantile_variance(calibrated_camera: PinholeCamera) -> 
 
     # 1. High density box (N > 100 points)
     lifted_dense = lifter.lift_detection(
+        **ANCHORED,
         entity_id="dense_box",
         class_name="bench",
         box_2d=(280.0, 200.0, 360.0, 280.0),
@@ -226,6 +235,7 @@ def test_order_statistic_quantile_variance(calibrated_camera: PinholeCamera) -> 
             sparse_depth[240 + dv, 320 + du] = 2.5
 
     lifted_sparse = lifter.lift_detection(
+        **ANCHORED,
         entity_id="sparse_box",
         class_name="pipe",
         box_2d=(300.0, 235.0, 340.0, 245.0),

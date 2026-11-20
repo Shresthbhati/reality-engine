@@ -327,7 +327,9 @@ def run_interior_room_sequential() -> dict[str, Any]:
                 target_frame="world",
                 mask_2d=mask_arr,
                 is_metric_depth=True,
-                scale_state="METRIC_SCALE_ALIGNED",
+                # Depth Anything V2 Metric-Indoor is a metric-TRAINED network: its metres are the model's claim, not an independent
+                # physical anchor, so the lift must not be labelled physically metric (the lifter marks it unverified).
+                scale_state="METRIC_TRAINED_MODEL",
                 scale_units="METRES",
                 depth_source="depth_anything_v2_metric",
                 calibration_source="pinhole_camera_intrinsics",

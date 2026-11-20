@@ -31,6 +31,33 @@ from world.ontology.universal_object_ontology import (
 from world_ir.camera import PinholeCamera
 
 
+#: scale_state values by what they are allowed to claim. ``physical_metric`` needs an independent anchor reference in ``scale_source``.
+_PHYSICAL_STATES = ("METRIC_SCALE_ALIGNED", "PHYSICALLY_ANCHORED")
+_MODEL_METRIC_STATES = ("METRIC_CALIBRATED", "METRIC_TRAINED_MODEL", "MODEL_CALIBRATED")
+_GAUGE_STATES = ("SFM_ALIGNED_UNMETRIC", "SFM_GAUGE")
+_RELATIVE_STATES = ("RELATIVE_UNSCALED", "RELATIVE_DEPTH", "MODEL_RELATIVE_DEPTH", "RELATIVE", "relative")
+
+
+def classify_scale(
+    scale_state: str, scale_units: str, is_metric_depth: bool, scale_source: str
+) -> tuple[str, str | None]:
+    """``(scale_class, rejection_reason)``. Classes: physical_metric | model_metric | sfm_gauge. Anything undeclared, relative or
+    claiming physical metres without an anchor reference is refused with a reason (the raw evidence is the caller's to keep)."""
+    if scale_state in (None, "", "UNDECLARED", "UNKNOWN"):
+        return "", "UNDECLARED_SCALE: the caller must declare the depth scale class; nothing defaults to metres"
+    if scale_state in _GAUGE_STATES or scale_units == "COLMAP_SFM_UNITS":
+        return "sfm_gauge", None
+    if scale_state in _RELATIVE_STATES or not is_metric_depth:
+        return "", "UNSCALED_RELATIVE_DEPTH"
+    if scale_state in _PHYSICAL_STATES:
+        if not scale_source:
+            return "", "PHYSICAL_SCALE_WITHOUT_ANCHOR: a physically metric claim needs scale_source naming the independent anchor"
+        return "physical_metric", None
+    if scale_state in _MODEL_METRIC_STATES:
+        return "model_metric", None
+    return "", f"UNSUPPORTED_SCALE_STATE: {scale_state!r}"
+
+
 @dataclass(frozen=True)
 class LiftedEntity3D:
     """A metric 3D entity reconstructed from 2D perception + metric depth."""
@@ -46,8 +73,8 @@ class LiftedEntity3D:
     covariance_dimensions: tuple[tuple[float, ...], ...] | None
     point_count: int
     rejected_point_count: int = 0
-    depth_source: str = "calibrated_metric_depth"
-    calibration_source: str = "camera_metadata"
+    depth_source: str = "unspecified"
+    calibration_source: str = "unspecified"
     scale_source: str = ""
     model_id: str = ""
     checkpoint_id: str = ""
@@ -63,8 +90,8 @@ class LiftedEntity3D:
     reprojection_error_px: float | None = None
     confidence: float | None = None
     confidence_basis: str | None = None
-    scale_units: str = "METRES"
-    is_physically_metric: bool = True
+    scale_units: str = "UNSPECIFIED"
+    is_physically_metric: bool = False  # never assumed: only a validated physical anchor sets this
     box_2d: Sequence[float] | None = None
 
     @property
@@ -129,11 +156,11 @@ class Metric3DLifter:
         mask_2d: np.ndarray | None = None,
         min_points: int = 5,
         sensor_depth_sigma_m: float = 0.02,
-        is_metric_depth: bool = True,
-        scale_state: str = "METRIC_CALIBRATED",
-        scale_units: str = "METRES",
-        depth_source: str = "calibrated_metric_depth",
-        calibration_source: str = "camera_metadata",
+        is_metric_depth: bool = False,
+        scale_state: str = "UNDECLARED",
+        scale_units: str = "UNSPECIFIED",
+        depth_source: str = "unspecified",
+        calibration_source: str = "unspecified",
         scale_source: str = "",
         model_id: str = "",
         checkpoint_id: str = "",
@@ -148,12 +175,15 @@ class Metric3DLifter:
         """
         self.last_rejection_reason = None
 
-        # 1. Enforce verified scale contract (refuses unscaled relative depth)
-        is_sfm_gauge = (scale_state == "SFM_ALIGNED_UNMETRIC" or scale_units == "COLMAP_SFM_UNITS")
-        if not is_metric_depth and not is_sfm_gauge:
-            self.last_rejection_reason = "UNSCALED_RELATIVE_DEPTH"
+        # 1. Enforce the scale contract. NOTHING defaults to metres: the caller must declare the scale class, and only an
+        #    independently validated physical anchor may be labelled physically metric.
+        scale_class, scale_reason = classify_scale(scale_state, scale_units, is_metric_depth, scale_source)
+        if scale_reason is not None:
+            self.last_rejection_reason = scale_reason
             return None
-        is_metric = is_metric_depth and not is_sfm_gauge
+        is_metric = scale_class == "physical_metric"
+        if scale_class == "model_metric":  # a network's own metres claim: usable geometry, but NOT physically verified
+            scale_units = "MODEL_ESTIMATED_METRES_UNVERIFIED"
 
         # 2. Validate camera calibration and pose rigidity
         from engine.multiengine.visibility_reprojection import VisibilityReprojectionValidator
@@ -210,6 +240,7 @@ class Metric3DLifter:
 
         v_rel, u_rel = np.where(valid_mask)
         if len(u_rel) < min_points:
+            self.last_rejection_reason = f"INSUFFICIENT_VALID_DEPTH_POINTS: {len(u_rel)} valid pixel(s) in the region (minimum {min_points})"
             return None
 
         u_all = u_rel + x1
@@ -227,6 +258,7 @@ class Metric3DLifter:
         d_inliers = d_all[inlier_mask]
 
         if len(d_inliers) < min_points:
+            self.last_rejection_reason = f"INSUFFICIENT_DEPTH_INLIERS: {len(d_inliers)} depth inlier(s) (minimum {min_points})"
             return None
 
         # Subsample only on mega-resolution regions (> 20,000 points) to prevent Moiré aliasing
@@ -245,6 +277,7 @@ class Metric3DLifter:
             valid_pts_world.append(np.array([p_world_vec.x, p_world_vec.y, p_world_vec.z]))
 
         if len(valid_pts_world) < min_points:
+            self.last_rejection_reason = f"INSUFFICIENT_UNPROJECTED_POINTS: {len(valid_pts_world)} point(s) (minimum {min_points})"
             return None
 
         pts = np.vstack(valid_pts_world)  # Shape (N, 3)
@@ -309,6 +342,7 @@ class Metric3DLifter:
 
         # Check for degeneracy: primary observed dimensions must be physically positive (> 5 mm)
         if raw_w < 0.005 or raw_d < 0.005:
+            self.last_rejection_reason = f"DEGENERATE_GEOMETRY: observed extent {raw_w:.4f} x {raw_d:.4f} is below 5 mm"
             return None
 
         # Depth thickness: report actual observed extent honestly (0.0 for fronto-parallel planar surface)

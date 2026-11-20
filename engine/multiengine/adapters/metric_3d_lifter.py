@@ -95,6 +95,11 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                     "Metric3DLifter requires 'depth_map' array or valid 'depth_path'.",
                 )
 
+        from engine.multiengine.depth_scale_alignment import validate_depth_map
+        ok, err = validate_depth_map(depth_map)
+        if not ok:
+            raise EngineError(EngineErrorKind.INVALID_INPUT, f"Invalid depth map: {err}")
+
         # 3. 2D Detections / Observations to lift
         detections = options.get("detections", [])
         if not detections:

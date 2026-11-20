@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -46,6 +47,7 @@ from engine.multiengine.adapters import (  # noqa: E402
     OwlVitEngineAdapter,
     SamEngineAdapter,
 )
+from engine.multiengine.adapters.perception_detectors import clean_and_split_detection_label  # noqa: E402
 from engine.multiengine.contract import Device, EngineRequest  # noqa: E402
 from engine.multiengine.depth_scale_alignment import validate_depth_map  # noqa: E402
 from engine.multiengine.metric_lifting import Metric3DLifter  # noqa: E402
@@ -64,6 +66,39 @@ from world_ir.world_v1 import WorldIR  # noqa: E402
 
 def parse_interior_colmap_cameras(room_dir: Path) -> dict[str, PinholeCamera]:
     """Parses pinhole camera intrinsics and extrinsics for interior room capture."""
+    cameras: dict[str, PinholeCamera] = {}
+    manifest_file = room_dir / "manifest.json"
+    if manifest_file.exists():
+        try:
+            with open(manifest_file, encoding="utf-8") as f:
+                man = json.load(f)
+            intr_dict = man.get("intrinsics", {})
+            intr = CameraIntrinsics(
+                fx=float(intr_dict["fx"]),
+                fy=float(intr_dict["fy"]),
+                cx=float(intr_dict["cx"]),
+                cy=float(intr_dict["cy"]),
+                width=int(intr_dict["width"]),
+                height=int(intr_dict["height"]),
+            )
+            for img in man.get("images", []):
+                name = img["filename"]
+                pos = Vec3(float(img["position_m"][0]), float(img["position_m"][1]), float(img["position_m"][2]))
+                q_raw = Quat(*img["rotation_quat_wxyz"]).normalized()
+                conv = img.get("camera_convention", "OPENCV").upper()
+                if conv == "OPENGL":
+                    rot_cv = q_raw.multiply(Quat(0.0, 1.0, 0.0, 0.0)).normalized()
+                else:
+                    rot_cv = q_raw
+                cameras[name] = PinholeCamera(
+                    intrinsics=intr,
+                    extrinsics=CameraExtrinsics(position=pos, rotation=rot_cv),
+                )
+            if cameras:
+                return cameras
+        except Exception:
+            pass
+
     cameras_file = room_dir / "cameras.txt"
     images_file = room_dir / "images.txt"
 
@@ -89,28 +124,29 @@ def parse_interior_colmap_cameras(room_dir: Path) -> dict[str, PinholeCamera]:
                 cx, cy = float(parts[5]), float(parts[6])
             intrinsics_map[cam_id] = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=w, height=h)
 
-    # Parse camera extrinsics (qw, qx, qy, qz, tx, ty, tz, cam_id, name)
-    cameras: dict[str, PinholeCamera] = {}
+    # Parse standard COLMAP camera extrinsics (qw, qx, qy, qz, tx, ty, tz, cam_id, name)
+    # In standard COLMAP, rotation is world-to-cam R_cw and translation is t_cw.
+    # Convert to camera-to-world: q_wc = q_cw.conjugate(), C = -q_wc.rotate(t_cw)
     with open(images_file, encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
         for line in lines:
             parts = line.split()
-            if len(parts) >= 9:
+            if len(parts) >= 10:
                 qw, qx, qy, qz = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
                 tx, ty, tz = float(parts[5]), float(parts[6]), float(parts[7])
                 cam_id = int(parts[8])
                 name = parts[9]
 
                 q_cw = Quat(qw, qx, qy, qz).normalized()
-                rot_c2w = q_cw.conjugate()
-                t_w2c = Vec3(tx, ty, tz)
-                pos_c2w = Vec3(0.0, 0.0, 0.0) - rot_c2w.rotate(t_w2c)
+                q_wc = q_cw.conjugate()
+                t_vec = Vec3(tx, ty, tz)
+                C = Vec3(0.0, 0.0, 0.0) - q_wc.rotate(t_vec)
 
                 intr = intrinsics_map.get(cam_id)
                 if intr:
                     cameras[name] = PinholeCamera(
                         intrinsics=intr,
-                        extrinsics=CameraExtrinsics(position=pos_c2w, rotation=rot_c2w),
+                        extrinsics=CameraExtrinsics(position=C, rotation=q_wc),
                     )
 
     return cameras
@@ -203,40 +239,46 @@ def run_interior_room_sequential() -> dict[str, Any]:
             "raw_depth_artifact": str(raw_depth_path.relative_to(_REPO_ROOT)),
         }
 
-        # --- STAGE B: Interior Object Detection (Grounding DINO / OWL-ViT) ---
-        interior_queries = [
-            "wall", "door", "window", "floor", "ceiling",
-            "table", "chair", "bed", "couch", "electrical socket", "light switch"
+        # --- STAGE B: Hierarchical Interior Object Detection ---
+        detection_passes = [
+            ("surfaces", ["wall", "floor", "ceiling"]),
+            ("openings", ["door", "window"]),
+            ("furniture", ["table", "chair", "bed", "couch", "desk"]),
+            ("fixtures", ["electrical socket", "light switch", "lamp"]),
         ]
         det_drafts = []
-        detector_name = "grounding_dino"
+        detector_name = "owlvit"
 
         try:
-            dino_spec = reg.get("grounding_dino")
-            detector_adapter = GroundingDinoEngineAdapter(dino_spec)
-            t0_load = time.perf_counter()
-            detector_adapter.load(device)
-            t_load_det = time.perf_counter() - t0_load
-            t0 = time.perf_counter()
-            det_drafts = detector_adapter.infer(EngineRequest(
-                sources=(str(img_path),),
-                payload={"queries": interior_queries, "threshold": 0.15},
-            ))
-            t_infer_det = time.perf_counter() - t0
-            detector_adapter.unload()
-        except Exception as e:
-            print(f"Grounding DINO unavailable ({e}), falling back to OWL-ViT...")
-            detector_name = "owlvit"
             owl_spec = reg.get("owlvit")
             detector_adapter = OwlVitEngineAdapter(owl_spec)
             t0_load = time.perf_counter()
             detector_adapter.load(device)
             t_load_det = time.perf_counter() - t0_load
             t0 = time.perf_counter()
-            det_drafts = detector_adapter.infer(EngineRequest(
-                sources=(str(img_path),),
-                payload={"queries": interior_queries, "threshold": 0.01},
-            ))
+            for _, queries in detection_passes:
+                pass_drafts = detector_adapter.infer(EngineRequest(
+                    sources=(str(img_path),),
+                    payload={"queries": queries, "threshold": 0.01},
+                ))
+                det_drafts.extend(pass_drafts)
+            t_infer_det = time.perf_counter() - t0
+            detector_adapter.unload()
+        except Exception as e:
+            print(f"OWL-ViT unavailable ({e}), falling back to Grounding DINO...")
+            detector_name = "grounding_dino"
+            dino_spec = reg.get("grounding_dino")
+            detector_adapter = GroundingDinoEngineAdapter(dino_spec)
+            t0_load = time.perf_counter()
+            detector_adapter.load(device)
+            t_load_det = time.perf_counter() - t0_load
+            t0 = time.perf_counter()
+            for _, queries in detection_passes:
+                pass_drafts = detector_adapter.infer(EngineRequest(
+                    sources=(str(img_path),),
+                    payload={"queries": queries, "threshold": 0.15},
+                ))
+                det_drafts.extend(pass_drafts)
             t_infer_det = time.perf_counter() - t0
             detector_adapter.unload()
 
@@ -326,12 +368,10 @@ def run_interior_room_sequential() -> dict[str, Any]:
                 camera=camera,
                 target_frame="world",
                 mask_2d=mask_arr,
-                is_metric_depth=True,
-                # Depth Anything V2 Metric-Indoor is a metric-TRAINED network: its metres are the model's claim, not an independent
-                # physical anchor, so the lift must not be labelled physically metric (the lifter marks it unverified).
-                scale_state="METRIC_TRAINED_MODEL",
-                scale_units="METRES",
-                depth_source="depth_anything_v2_metric",
+                is_metric_depth=False,
+                scale_state="SYNTHETIC_SCALE_ALIGNED",
+                scale_units="SYNTHETIC_METRES",
+                depth_source="synthetic_depth_map",
                 calibration_source="pinhole_camera_intrinsics",
                 confidence=det.confidence,
                 source_id=img_name,
@@ -355,7 +395,7 @@ def run_interior_room_sequential() -> dict[str, Any]:
                     dimensions=lent.dimensions,
                     orientation=lent.orientation,
                     confidence=lent.confidence,
-                    scale_units="METRES",
+                    scale_units="SYNTHETIC_METRES",
                     is_physically_metric=False,  # Unanchored without on-site laser survey
                     box_2d=lent.box_2d or (),
                     camera=camera,
@@ -389,11 +429,57 @@ def run_interior_room_sequential() -> dict[str, Any]:
         f"{assoc_summary.refused_pairs_count} refused pairs in {t_assoc:.2f}s)."
     )
 
-    # --- STAGE F: Multi-View Identity Benchmark Evaluation ---
+    def _box_iou_2d(box_a: Sequence[float], box_b: Sequence[float]) -> float:
+        xa0, ya0, xa1, ya1 = box_a
+        xb0, yb0, xb1, yb1 = box_b
+        ix0, iy0 = max(xa0, xb0), max(ya0, yb0)
+        ix1, iy1 = min(xa1, xb1), min(ya1, yb1)
+        iw = max(0.0, ix1 - ix0)
+        ih = max(0.0, iy1 - iy0)
+        i_area = iw * ih
+        area_a = max(0.0, xa1 - xa0) * max(0.0, ya1 - ya0)
+        area_b = max(0.0, xb1 - xb0) * max(0.0, yb1 - yb0)
+        u_area = area_a + area_b - i_area
+        return float(i_area / u_area) if u_area > 0.0 else 0.0
+
+    # --- STAGE F: Independent Ground-Truth Identity Benchmark Evaluation ---
+    # Strictly independent 2D IoU assignment against separate image annotations.
+    # No predicted 3D position or reconstructed geometry is EVER consulted.
     gt_map: dict[str, str] = {}
-    for rent in reconciled_entities:
-        for mid in rent.member_observation_ids:
-            gt_map[mid] = f"gt_interior_{rent.entity_id}"
+    gt_identities_file = dataset_dir / "ground_truth_identities.json"
+    if gt_identities_file.exists():
+        try:
+            with open(gt_identities_file, encoding="utf-8") as f:
+                gt_ident_data = json.load(f)
+            image_annotations = gt_ident_data.get("image_annotations", {})
+            for obs in all_multiview_observations:
+                obs_cls = obs.class_name.lower().strip()
+                anns_for_img = image_annotations.get(obs.source_id, [])
+                best_gt_id = None
+                best_iou = 0.0
+                second_best_iou = 0.0
+
+                for ann in anns_for_img:
+                    ann_cls = ann.get("class_name", "").lower().strip()
+                    if obs_cls == ann_cls or obs_cls in ann_cls or ann_cls in obs_cls:
+                        iou = _box_iou_2d(obs.box_2d, ann["bbox_2d"])
+                        if iou > best_iou:
+                            second_best_iou = best_iou
+                            best_iou = iou
+                            best_gt_id = ann["ground_truth_id"]
+                        elif iou > second_best_iou:
+                            second_best_iou = iou
+
+                # Assign only with clear 2D bounding box correspondence (IoU >= 0.20)
+                if best_gt_id is not None and best_iou >= 0.20:
+                    if (best_iou - second_best_iou) < 0.05 and second_best_iou > 0.20:
+                        gt_map[obs.observation_id] = "ambiguous"
+                    else:
+                        gt_map[obs.observation_id] = best_gt_id
+                else:
+                    gt_map[obs.observation_id] = "unlabelled"
+        except Exception as e:
+            print(f"Warning: Failed to load ground truth identities: {e}")
 
     assoc_benchmark = evaluate_association_benchmark(
         ground_truth_entities=gt_map,
@@ -468,7 +554,8 @@ def run_interior_room_sequential() -> dict[str, Any]:
         "association_benchmark": assoc_benchmark.to_dict(),
         "worldir_entities_count": len(world.entities),
         "worldir_validation_errors": len([i for i in validation_report.issues if i.severity.value == "error"]),
-        "scale_units": "METRES",
+        "scale_units": "SYNTHETIC_METRES",
+        "scale_state": "SYNTHETIC_SCALE_ALIGNED",
         "is_physically_metric": False,
         "dataset_origin_disclosure": "datasets/real_room_capture originates from rendered synthetic multi-view room capture; independent millimeter physical laser survey is unmeasured.",
         "physical_accuracy_status": "NOT_MEASURED (Requires on-site physical double laser distance survey)",
@@ -480,6 +567,10 @@ def run_interior_room_sequential() -> dict[str, Any]:
     report_json_path.parent.mkdir(parents=True, exist_ok=True)
     report_json_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
+    def _fmt(val: float | None) -> str:
+        return f"{val:.4f}" if val is not None else "NOT_EVALUATED"
+
+    bm = summary['association_benchmark']
     md_content = f"""# Interior Furnished Room Sequential Reconstruction Benchmark Report
 
 **Date:** {summary['execution_date']}
@@ -514,15 +605,18 @@ All model workloads ran sequentially with full GPU/host memory unloads between s
 
 ## 3. Multi-View Identity Association Benchmark Metrics
 
-- **Total Cross-View Candidate Pairs Evaluated:** {summary['association_benchmark']['total_pairs_evaluated']}
-- **True Positives (Correctly Merged Pairs):** {summary['association_benchmark']['true_positives']}
-- **False Positives (False Merges):** {summary['association_benchmark']['false_positives']}
-- **False Negatives (False Splits):** {summary['association_benchmark']['false_negatives']}
-- **Identity Precision:** {summary['association_benchmark']['precision']:.4f}
-- **Identity Recall:** {summary['association_benchmark']['recall']:.4f}
-- **Identity F1 Score:** {summary['association_benchmark']['f1_score']:.4f}
-- **False Merge Rate:** {summary['association_benchmark']['false_merge_rate']:.4f}
-- **False Split Rate:** {summary['association_benchmark']['false_split_rate']:.4f}
+- **Evaluation Status:** `{bm.get('evaluation_status', 'EVALUATED')}`
+- **Total Cross-View Candidate Pairs Evaluated:** {bm.get('total_pairs_evaluated', 0)}
+- **True Positives (Correctly Merged Pairs):** {bm.get('true_positives', 0)}
+- **False Positives (False Merges):** {bm.get('false_positives', 0)}
+- **False Negatives (False Splits):** {bm.get('false_negatives', 0)}
+- **Identity Precision:** {_fmt(bm.get('precision'))}
+- **Identity Recall:** {_fmt(bm.get('recall'))}
+- **Identity F1 Score:** {_fmt(bm.get('f1_score'))}
+- **False Merge Rate:** {_fmt(bm.get('false_merge_rate'))}
+- **False Split Rate:** {_fmt(bm.get('false_split_rate'))}
+- **Unmatched Observations:** {bm.get('unmatched_observations_count', 0)}
+- **Unlabelled Observations:** {bm.get('unlabelled_observations_count', 0)}
 
 ## 4. Physical Accuracy and Honest Ground Truth Disclosure
 

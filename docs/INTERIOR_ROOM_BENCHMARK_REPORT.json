@@ -1,5 +1,5 @@
 {
-  "execution_date": "2026-11-19 18:45:49 UTC",
+  "execution_date": "2026-11-20 07:04:53 UTC",
   "dataset": "datasets/real_room_capture",
   "photos_processed": [
     "IMG_0000.jpg",
@@ -8,48 +8,72 @@
     "IMG_0003.jpg"
   ],
   "total_photos_count": 4,
-  "total_wall_time_s": 173.84,
+  "total_wall_time_s": 173.59,
   "device": "cuda:0",
   "registered_cameras_in_colmap": 21,
-  "raw_observations_count": 79,
-  "total_lifted_entities": 79,
-  "unique_physical_entities_count": 79,
+  "raw_observations_count": 35,
+  "total_lifted_entities": 35,
+  "unique_physical_entities_count": 35,
   "multiview_merged_entities_count": 0,
-  "single_view_entities_count": 79,
+  "single_view_entities_count": 35,
   "max_views_per_entity": 1,
   "association_accepted_merges": 0,
-  "association_refused_pairs": 0,
-  "association_refusal_reasons": {},
+  "association_refused_pairs": 595,
+  "association_refusal_reasons": {
+    "same_image_conflict": 144,
+    "excessive_3d_distance": 205,
+    "excessive_reprojection_error": 246
+  },
   "association_benchmark": {
-    "total_pairs_evaluated": 2340,
+    "evaluation_status": "COMPLETED",
+    "total_pairs_evaluated": 23,
     "true_positives": 0,
     "false_positives": 0,
-    "false_negatives": 0,
-    "precision": 1.0,
-    "recall": 1.0,
-    "f1_score": 1.0,
+    "false_negatives": 8,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1_score": 0.0,
     "false_merge_rate": 0.0,
-    "false_split_rate": 0.0,
-    "per_class_metrics": {},
+    "false_split_rate": 1.0,
+    "unmatched_observations_count": 0,
+    "unlabelled_observations_count": 27,
+    "per_class_metrics": {
+      "window": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "door": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "table": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
     "performance_under_occlusion": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "precision": null,
+      "recall": null,
+      "f1": null
     },
     "performance_repeated_structures": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "performance_missing_calibration": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "precision": null,
+      "recall": null,
+      "f1": null
     }
   },
-  "worldir_entities_count": 79,
+  "worldir_entities_count": 35,
   "worldir_validation_errors": 0,
-  "scale_units": "METRES",
+  "scale_units": "SYNTHETIC_METRES",
+  "scale_state": "SYNTHETIC_SCALE_ALIGNED",
   "is_physically_metric": false,
   "dataset_origin_disclosure": "datasets/real_room_capture originates from rendered synthetic multi-view room capture; independent millimeter physical laser survey is unmeasured.",
   "physical_accuracy_status": "NOT_MEASURED (Requires on-site physical double laser distance survey)",
@@ -59,48 +83,35 @@
       "photo": "IMG_0000.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 42.508,
-          "infer_s": 2.884,
+          "load_s": 28.491,
+          "infer_s": 2.167,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0000.jpg.npy"
         },
         "detector": {
-          "load_s": 5.242,
-          "infer_s": 2.318,
-          "detections_count": 20,
+          "load_s": 2.991,
+          "infer_s": 2.506,
+          "detections_count": 7,
           "labels": [
-            "ceiling",
-            "window",
-            "floor",
             "door",
-            "table",
-            "wall",
-            "door electrical socket light switch",
-            "door window chair socket light switch",
-            "wall",
-            "",
-            "wall",
-            "wall",
-            "bed",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
+            "door",
+            "desk",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch"
           ],
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0000.jpg.json"
         },
         "sam": {
-          "load_s": 1.698,
-          "infer_s": 1.998,
-          "masks_count": 20,
+          "load_s": 1.505,
+          "infer_s": 5.408,
+          "masks_count": 7,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0000.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 14.576,
-          "candidates_evaluated": 20,
-          "lifted_entities_count": 20
+          "duration_s": 5.012,
+          "candidates_evaluated": 7,
+          "lifted_entities_count": 7
         }
       }
     },
@@ -108,48 +119,35 @@
       "photo": "IMG_0001.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 0.644,
-          "infer_s": 0.597,
+          "load_s": 1.447,
+          "infer_s": 1.336,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0001.jpg.npy"
         },
         "detector": {
-          "load_s": 3.659,
-          "infer_s": 1.086,
-          "detections_count": 20,
+          "load_s": 4.059,
+          "infer_s": 2.626,
+          "detections_count": 7,
           "labels": [
-            "ceiling",
-            "window",
-            "floor",
             "door",
-            "window",
-            "door window electrical socket light switch",
-            "wall",
-            "wall",
-            "wall",
-            "table electrical socket",
-            "electrical socket light switch",
-            "wall",
-            "wall",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "light",
-            ""
+            "desk",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch"
           ],
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0001.jpg.json"
         },
         "sam": {
-          "load_s": 1.758,
-          "infer_s": 2.374,
-          "masks_count": 20,
+          "load_s": 2.753,
+          "infer_s": 1.965,
+          "masks_count": 7,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0001.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 25.282,
-          "candidates_evaluated": 20,
-          "lifted_entities_count": 20
+          "duration_s": 5.598,
+          "candidates_evaluated": 7,
+          "lifted_entities_count": 7
         }
       }
     },
@@ -157,47 +155,37 @@
       "photo": "IMG_0002.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 0.814,
-          "infer_s": 0.493,
+          "load_s": 0.906,
+          "infer_s": 0.684,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0002.jpg.npy"
         },
         "detector": {
-          "load_s": 3.24,
-          "infer_s": 1.166,
-          "detections_count": 19,
+          "load_s": 3.16,
+          "infer_s": 2.916,
+          "detections_count": 9,
           "labels": [
-            "ceiling",
-            "window",
-            "floor",
-            "door window electrical socket light switch",
-            "wall",
             "door",
-            "wall",
-            "table socket",
-            "door electrical socket light switch",
-            "socket light switch",
-            "wall",
-            "wall",
-            "table electrical socket",
-            "socket light switch",
-            "wall",
-            "",
-            "",
-            "",
-            ""
+            "door",
+            "window",
+            "desk",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch"
           ],
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0002.jpg.json"
         },
         "sam": {
-          "load_s": 1.546,
-          "infer_s": 1.84,
-          "masks_count": 19,
+          "load_s": 3.219,
+          "infer_s": 2.701,
+          "masks_count": 9,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0002.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 15.791,
-          "candidates_evaluated": 19,
-          "lifted_entities_count": 19
+          "duration_s": 13.5,
+          "candidates_evaluated": 9,
+          "lifted_entities_count": 9
         }
       }
     },
@@ -205,48 +193,40 @@
       "photo": "IMG_0003.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 0.828,
-          "infer_s": 0.83,
+          "load_s": 1.922,
+          "infer_s": 1.198,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0003.jpg.npy"
         },
         "detector": {
-          "load_s": 8.34,
-          "infer_s": 1.181,
-          "detections_count": 20,
+          "load_s": 6.072,
+          "infer_s": 3.269,
+          "detections_count": 12,
           "labels": [
-            "ceiling",
+            "wall",
             "window",
-            "floor",
+            "door",
             "window",
-            "table",
-            "door chair",
-            "door window chair electrical socket light switch",
-            "wall",
-            "wall",
-            "wall",
-            "wall",
-            "wall",
-            "switch",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
+            "desk",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch",
+            "light switch"
           ],
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0003.jpg.json"
         },
         "sam": {
-          "load_s": 1.237,
-          "infer_s": 2.301,
-          "masks_count": 20,
+          "load_s": 4.632,
+          "infer_s": 36.441,
+          "masks_count": 12,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0003.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 15.626,
-          "candidates_evaluated": 20,
-          "lifted_entities_count": 20
+          "duration_s": 9.194,
+          "candidates_evaluated": 12,
+          "lifted_entities_count": 12
         }
       }
     }

@@ -146,27 +146,33 @@ class AssociationBenchmarkReport:
     true_positives: int
     false_positives: int  # False merges
     false_negatives: int  # False splits
-    precision: float
-    recall: float
-    f1_score: float
-    false_merge_rate: float
-    false_split_rate: float
-    per_class_metrics: dict[str, dict[str, float]]
-    performance_under_occlusion: dict[str, float]
-    performance_repeated_structures: dict[str, float]
-    performance_missing_calibration: dict[str, float]
+    precision: float | None
+    recall: float | None
+    f1_score: float | None
+    false_merge_rate: float | None
+    false_split_rate: float | None
+    per_class_metrics: dict[str, dict[str, float | None]]
+    performance_under_occlusion: dict[str, float | None]
+    performance_repeated_structures: dict[str, float | None]
+    performance_missing_calibration: dict[str, float | None]
+    evaluation_status: str = "COMPLETED"  # "COMPLETED", "NOT_EVALUATED", "EMPTY_GROUND_TRUTH"
+    unmatched_observations_count: int = 0
+    unlabelled_observations_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "evaluation_status": self.evaluation_status,
             "total_pairs_evaluated": self.total_pairs_evaluated,
             "true_positives": self.true_positives,
             "false_positives": self.false_positives,
             "false_negatives": self.false_negatives,
-            "precision": round(self.precision, 4),
-            "recall": round(self.recall, 4),
-            "f1_score": round(self.f1_score, 4),
-            "false_merge_rate": round(self.false_merge_rate, 4),
-            "false_split_rate": round(self.false_split_rate, 4),
+            "precision": round(self.precision, 4) if self.precision is not None else None,
+            "recall": round(self.recall, 4) if self.recall is not None else None,
+            "f1_score": round(self.f1_score, 4) if self.f1_score is not None else None,
+            "false_merge_rate": round(self.false_merge_rate, 4) if self.false_merge_rate is not None else None,
+            "false_split_rate": round(self.false_split_rate, 4) if self.false_split_rate is not None else None,
+            "unmatched_observations_count": self.unmatched_observations_count,
+            "unlabelled_observations_count": self.unlabelled_observations_count,
             "per_class_metrics": self.per_class_metrics,
             "performance_under_occlusion": self.performance_under_occlusion,
             "performance_repeated_structures": self.performance_repeated_structures,
@@ -478,8 +484,9 @@ class MultiViewAssociator:
             for o in observations
         ]
 
-        # 2. Build pairwise cross-view scores
+        # 2. Build pairwise cross-view scores and log non-qualifying refusals
         pair_scores: list[PairScore] = []
+        extra_refused_decisions: list[Decision] = []
         n = len(observations)
         for i in range(n):
             for j in range(i + 1, n):
@@ -490,8 +497,32 @@ class MultiViewAssociator:
                     max_distance_3d=self.max_distance_3d,
                     max_reproj_err_px=self.max_reproj_err_px,
                 )
-                if ps is not None and ps.score >= self.min_match_score:
-                    pair_scores.append(ps)
+                if ps is not None:
+                    if ps.score >= self.min_match_score:
+                        pair_scores.append(ps)
+                    else:
+                        reason = str(ps.basis.get("reason", "low_match_score"))
+                        extra_refused_decisions.append(
+                            Decision(
+                                a=ps.a,
+                                b=ps.b,
+                                score=ps.score,
+                                outcome=REFUSED,
+                                reason=reason,
+                                basis=ps.basis,
+                            )
+                        )
+                else:
+                    extra_refused_decisions.append(
+                        Decision(
+                            a=o_a.observation_id,
+                            b=o_b.observation_id,
+                            score=0.0,
+                            outcome=REFUSED,
+                            reason="uncomputable_pair_score",
+                            basis={},
+                        )
+                    )
 
         # 3. Run rigorous association union-find with hard constraints
         label_compat = ontology_label_compat()
@@ -507,10 +538,18 @@ class MultiViewAssociator:
             reconciled = reconcile_associated_geometry(cluster, obs_map)
             reconciled_entities.append(reconciled)
 
-        # 5. Compute summary metrics and ledger breakdown
+        # 5. Build unified decision ledger and breakdown
+        all_decisions: list[Decision] = []
+        for d in result.decisions:
+            if d.outcome == REFUSED and d.reason == "non_positive_score" and d.basis.get("reason"):
+                all_decisions.append(Decision(d.a, d.b, d.score, d.outcome, str(d.basis["reason"]), d.basis))
+            else:
+                all_decisions.append(d)
+        all_decisions.extend(extra_refused_decisions)
+
         refusal_counter: Counter[str] = Counter()
         accepted_count = 0
-        for d in result.decisions:
+        for d in all_decisions:
             if d.outcome == MERGED:
                 accepted_count += 1
             elif d.outcome == REFUSED:
@@ -533,7 +572,7 @@ class MultiViewAssociator:
             class_counts=class_counts,
         )
 
-        return tuple(reconciled_entities), summary, result.decisions
+        return tuple(reconciled_entities), summary, tuple(all_decisions)
 
 
 def evaluate_association_benchmark(
@@ -543,16 +582,50 @@ def evaluate_association_benchmark(
     occluded_obs_ids: set[str] | None = None,
     repeated_pattern_classes: set[str] | None = None,
 ) -> AssociationBenchmarkReport:
-    """Evaluates multi-view identity association against ground truth physical identities."""
+    """Evaluates multi-view identity association against ground truth physical identities.
+
+    Strict Evaluation Rules:
+    - Independent Ground Truth: Uses an external mapping of observation -> true physical object ID.
+    - If ground truth is empty or missing, returns evaluation_status='NOT_EVALUATED' with None metrics.
+    - Never produce perfect (1.0) precision or recall from an empty positive set; returns None.
+    - Reports unmatched observations and unlabelled cases separately.
+    """
+    if not ground_truth_entities or not any(v for v in ground_truth_entities.values() if str(v).strip() not in ("", "none", "unknown", "unlabelled")):
+        return AssociationBenchmarkReport(
+            total_pairs_evaluated=0,
+            true_positives=0,
+            false_positives=0,
+            false_negatives=0,
+            precision=None,
+            recall=None,
+            f1_score=None,
+            false_merge_rate=None,
+            false_split_rate=None,
+            per_class_metrics={},
+            performance_under_occlusion={"precision": None, "recall": None, "f1": None},
+            performance_repeated_structures={"precision": None, "recall": None, "f1": None},
+            performance_missing_calibration={"precision": None, "recall": None, "f1": None},
+            evaluation_status="NOT_EVALUATED",
+            unmatched_observations_count=0,
+            unlabelled_observations_count=len(observations),
+        )
+
     obs_to_pred = {}
     for rent in reconciled_entities:
         for oid in rent.member_observation_ids:
             obs_to_pred[oid] = rent.entity_id
 
-    # Evaluate pairwise associations among observations that have ground truth labels
-    obs_ids = [o.observation_id for o in observations if o.observation_id in ground_truth_entities]
+    # Evaluate pairwise associations among observations that have valid ground truth labels
+    obs_ids = [
+        o.observation_id
+        for o in observations
+        if o.observation_id in ground_truth_entities and str(ground_truth_entities[o.observation_id]).strip() not in ("", "none", "unknown", "unlabelled")
+    ]
     obs_by_id = {o.observation_id: o for o in observations}
     n = len(obs_ids)
+
+    unlabelled_count = len(observations) - len(obs_ids)
+    unmatched_count = sum(1 for oid in obs_ids if oid not in obs_to_pred)
 
     tp, fp, fn = 0, 0, 0
     per_class_tp: Counter[str] = Counter()
@@ -564,7 +637,7 @@ def evaluate_association_benchmark(
     nocal_tp, nocal_fp, nocal_fn = 0, 0, 0
 
     occluded_set = occluded_obs_ids or set()
-    repeated_set = repeated_pattern_classes or {"window", "door", "column"}
+    repeated_set = repeated_pattern_classes or {"window", "door", "column", "table", "chair", "socket"}
 
     pairs_evaluated = 0
 
@@ -612,28 +685,37 @@ def evaluate_association_benchmark(
                 if is_nocal:
                     nocal_fn += 1
 
-    precision = float(tp / (tp + fp)) if (tp + fp) > 0 else 1.0
-    recall = float(tp / (tp + fn)) if (tp + fn) > 0 else 1.0
-    f1 = float(2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    # Never produce 1.0 from an empty set
+    precision = float(tp / (tp + fp)) if (tp + fp) > 0 else (None if (tp + fn) == 0 else 0.0)
+    recall = float(tp / (tp + fn)) if (tp + fn) > 0 else None
+    f1 = float(2 * precision * recall / (precision + recall)) if (precision is not None and recall is not None and (precision + recall) > 0) else (0.0 if (precision is not None or recall is not None) else None)
 
-    false_merge_rate = float(fp / (tp + fp)) if (tp + fp) > 0 else 0.0
-    false_split_rate = float(fn / (tp + fn)) if (tp + fn) > 0 else 0.0
+    false_merge_rate = float(fp / (tp + fp)) if (tp + fp) > 0 else (None if (tp + fn) == 0 else 0.0)
+    false_split_rate = float(fn / (tp + fn)) if (tp + fn) > 0 else None
 
     # Per-class metrics
     all_classes = set(per_class_tp.keys()) | set(per_class_fp.keys()) | set(per_class_fn.keys())
-    per_class_metrics: dict[str, dict[str, float]] = {}
+    per_class_metrics: dict[str, dict[str, float | None]] = {}
     for c in all_classes:
         c_tp, c_fp, c_fn = per_class_tp[c], per_class_fp[c], per_class_fn[c]
-        c_prec = float(c_tp / (c_tp + c_fp)) if (c_tp + c_fp) > 0 else 1.0
-        c_rec = float(c_tp / (c_tp + c_fn)) if (c_tp + c_fn) > 0 else 1.0
-        c_f1 = float(2 * c_prec * c_rec / (c_prec + c_rec)) if (c_prec + c_rec) > 0 else 0.0
-        per_class_metrics[c] = {"precision": round(c_prec, 4), "recall": round(c_rec, 4), "f1": round(c_f1, 4)}
+        c_prec = float(c_tp / (c_tp + c_fp)) if (c_tp + c_fp) > 0 else (None if (c_tp + c_fn) == 0 else 0.0)
+        c_rec = float(c_tp / (c_tp + c_fn)) if (c_tp + c_fn) > 0 else None
+        c_f1 = float(2 * c_prec * c_rec / (c_prec + c_rec)) if (c_prec is not None and c_rec is not None and (c_prec + c_rec) > 0) else (0.0 if (c_prec is not None or c_rec is not None) else None)
+        per_class_metrics[c] = {
+            "precision": round(c_prec, 4) if c_prec is not None else None,
+            "recall": round(c_rec, 4) if c_rec is not None else None,
+            "f1": round(c_f1, 4) if c_f1 is not None else None,
+        }
 
-    def _calc_sub(t: int, f_p: int, f_n: int) -> dict[str, float]:
-        p = float(t / (t + f_p)) if (t + f_p) > 0 else 1.0
-        r = float(t / (t + f_n)) if (t + f_n) > 0 else 1.0
-        s_f1 = float(2 * p * r / (p + r)) if (p + r) > 0 else 0.0
-        return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(s_f1, 4)}
+    def _calc_sub(t: int, f_p: int, f_n: int) -> dict[str, float | None]:
+        p = float(t / (t + f_p)) if (t + f_p) > 0 else (None if (t + f_n) == 0 else 0.0)
+        r = float(t / (t + f_n)) if (t + f_n) > 0 else None
+        s_f1 = float(2 * p * r / (p + r)) if (p is not None and r is not None and (p + r) > 0) else (0.0 if (p is not None or r is not None) else None)
+        return {
+            "precision": round(p, 4) if p is not None else None,
+            "recall": round(r, 4) if r is not None else None,
+            "f1": round(s_f1, 4) if s_f1 is not None else None,
+        }
 
     return AssociationBenchmarkReport(
         total_pairs_evaluated=pairs_evaluated,
@@ -649,4 +731,7 @@ def evaluate_association_benchmark(
         performance_under_occlusion=_calc_sub(occl_tp, occl_fp, occl_fn),
         performance_repeated_structures=_calc_sub(rep_tp, rep_fp, rep_fn),
         performance_missing_calibration=_calc_sub(nocal_tp, nocal_fp, nocal_fn),
+        evaluation_status="NOT_EVALUATED" if pairs_evaluated == 0 else "COMPLETED",
+        unmatched_observations_count=unmatched_count,
+        unlabelled_observations_count=unlabelled_count,
     )

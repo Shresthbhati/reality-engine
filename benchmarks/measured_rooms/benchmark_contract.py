@@ -78,6 +78,8 @@ class RoomGroundTruth:
     openings: tuple[OpeningGroundTruth, ...]
     fixtures: tuple[FixtureGroundTruth, ...]
     capture: RoomCaptureMetadata | None = None
+    source: str = "measured"
+    is_synthetic: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RoomGroundTruth:
@@ -125,6 +127,13 @@ class RoomGroundTruth:
                 lighting=c.get("lighting", "natural"),
                 notes=c.get("notes", ""),
             )
+        source = str(data.get("source", "measured"))
+        is_synthetic = bool(
+            data.get("is_synthetic", False)
+            or "synthetic" in source.lower()
+            or "synthetic" in rm.get("id", "").lower()
+            or "synthetic" in data.get("fixture", "").lower()
+        )
         return cls(
             room_id=rm["id"],
             name=rm.get("name", rm["id"]),
@@ -136,6 +145,8 @@ class RoomGroundTruth:
             openings=openings,
             fixtures=fixtures,
             capture=cap,
+            source=source,
+            is_synthetic=is_synthetic,
         )
 
 
@@ -143,7 +154,7 @@ class RoomGroundTruth:
 class RoomAccuracyReport:
     """Quantitative evaluation report for an interior room reconstruction."""
 
-    status: str  # "COMPLETED", "BLOCKED", "FAILED"
+    status: str  # "COMPLETED", "PARTIAL", "BLOCKED", "FAILED"
     room_id: str
     is_physically_measured: bool
     wall_length_rmse_m: float | None = None
@@ -151,7 +162,12 @@ class RoomAccuracyReport:
     opening_precision: float | None = None
     opening_recall: float | None = None
     opening_f1: float | None = None
+    opening_position_rmse_m: float | None = None
+    opening_width_rmse_m: float | None = None
+    opening_height_rmse_m: float | None = None
     fixture_mean_error_m: float | None = None
+    fixture_precision: float | None = None
+    fixture_recall: float | None = None
     blockers: tuple[str, ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -165,7 +181,12 @@ class RoomAccuracyReport:
             "opening_precision": round(self.opening_precision, 4) if self.opening_precision is not None else None,
             "opening_recall": round(self.opening_recall, 4) if self.opening_recall is not None else None,
             "opening_f1": round(self.opening_f1, 4) if self.opening_f1 is not None else None,
+            "opening_position_rmse_m": round(self.opening_position_rmse_m, 4) if self.opening_position_rmse_m is not None else None,
+            "opening_width_rmse_m": round(self.opening_width_rmse_m, 4) if self.opening_width_rmse_m is not None else None,
+            "opening_height_rmse_m": round(self.opening_height_rmse_m, 4) if self.opening_height_rmse_m is not None else None,
             "fixture_mean_error_m": round(self.fixture_mean_error_m, 4) if self.fixture_mean_error_m is not None else None,
+            "fixture_precision": round(self.fixture_precision, 4) if self.fixture_precision is not None else None,
+            "fixture_recall": round(self.fixture_recall, 4) if self.fixture_recall is not None else None,
             "blockers": list(self.blockers),
             "details": self.details,
         }
@@ -252,89 +273,187 @@ def evaluate_room_reconstruction(
     gt_data = json.loads((room_dir / "ground_truth.json").read_text(encoding="utf-8"))
     gt = RoomGroundTruth.from_dict(gt_data)
 
-    # 1. Evaluate Wall Lengths
+    # 1. Evaluate Wall Lengths (Mutual exclusion matching)
     reconstructed_walls = [
         e for e in reconstructed_world.entities.values()
         if e.type == EntityType.STRUCTURE and ("wall" in e.name.lower() or "wall" in str(e.custom_properties.get("class_name", "")).lower())
     ]
 
+    wall_candidate_pairs: list[tuple[float, int, int]] = []
+    for g_idx, gw in enumerate(gt.walls):
+        for r_idx, rw in enumerate(reconstructed_walls):
+            dims = rw.custom_properties.get("dimensions_w_d_h") or rw.custom_properties.get("dimensions")
+            if dims and len(dims) >= 3:
+                rec_len = float(max(dims[0], dims[1]))
+                diff = abs(rec_len - gw.length_m)
+                wall_candidate_pairs.append((diff, g_idx, r_idx))
+
+    wall_candidate_pairs.sort(key=lambda x: x[0])
+    matched_gw: set[int] = set()
+    matched_rw: set[int] = set()
     wall_errors: list[float] = []
-    if gt.walls and reconstructed_walls:
-        for gw in gt.walls:
-            # Find closest reconstructed wall
-            best_diff = float("inf")
-            for rw in reconstructed_walls:
-                dims = rw.custom_properties.get("dimensions_w_d_h") or rw.custom_properties.get("dimensions")
-                if dims and len(dims) >= 3:
-                    rec_len = float(max(dims[0], dims[1]))
-                    diff = abs(rec_len - gw.length_m)
-                    if diff < best_diff:
-                        best_diff = diff
-            if best_diff < float("inf"):
-                wall_errors.append(best_diff)
+
+    for diff, g_idx, r_idx in wall_candidate_pairs:
+        if g_idx not in matched_gw and r_idx not in matched_rw:
+            matched_gw.add(g_idx)
+            matched_rw.add(r_idx)
+            wall_errors.append(diff)
 
     wall_rmse = float(math.sqrt(sum(e ** 2 for e in wall_errors) / len(wall_errors))) if wall_errors else None
 
     # 2. Evaluate Ceiling Height
     reconstructed_ceilings = [
         e for e in reconstructed_world.entities.values()
-        if "ceiling" in e.name.lower() or "roof" in e.name.lower()
+        if "ceiling" in e.name.lower() or "roof" in e.name.lower() or str(e.custom_properties.get("class_name", "")).lower() in ("ceiling", "roof")
     ]
-    ceiling_error = None
-    if reconstructed_ceilings:
-        c_pos = _extract_position(reconstructed_ceilings[0])
+    ceiling_errors: list[float] = []
+    for c in reconstructed_ceilings:
+        c_pos = _extract_position(c)
         if c_pos is not None:
-            ceiling_error = abs(c_pos[2] - gt.height_m)
+            ceiling_errors.append(abs(c_pos[2] - gt.height_m))
+    ceiling_error = float(sum(ceiling_errors) / len(ceiling_errors)) if ceiling_errors else None
 
-    # 3. Evaluate Openings (Doors and Windows)
+    # 3. Evaluate Openings (Doors and Windows) with precision-aware threshold (<= 0.25m) and semantic compatibility
     reconstructed_openings = [
         e for e in reconstructed_world.entities.values()
         if e.type in (EntityType.DOOR, EntityType.WINDOW) or any(k in e.name.lower() for k in ("door", "window"))
     ]
 
-    tp = 0
-    fp = 0
-    matched_gt: set[int] = set()
-
-    for ro in reconstructed_openings:
-        ro_pos = _extract_position(ro)
-        if ro_pos is None:
-            continue
-        # Find nearest ground truth opening of compatible kind
-        matched = False
-        for g_idx, go in enumerate(gt.openings):
-            if g_idx in matched_gt:
+    opening_candidates: list[tuple[float, int, int, float | None, float | None]] = []
+    for g_idx, go in enumerate(gt.openings):
+        go_kind = go.kind.lower()
+        for r_idx, ro in enumerate(reconstructed_openings):
+            ro_pos = _extract_position(ro)
+            if ro_pos is None:
                 continue
-            dist = math.hypot(ro_pos[0] - go.center[0], ro_pos[1] - go.center[1], ro_pos[2] - go.center[2])
-            if dist < 0.60:  # 60cm proximity threshold
-                matched_gt.add(g_idx)
-                tp += 1
-                matched = True
-                break
-        if not matched:
-            fp += 1
+            ro_is_door = (ro.type == EntityType.DOOR or "door" in ro.name.lower() or "door" in str(ro.custom_properties.get("class_name", "")).lower())
+            ro_is_window = (ro.type == EntityType.WINDOW or "window" in ro.name.lower() or "window" in str(ro.custom_properties.get("class_name", "")).lower())
 
-    fn = len(gt.openings) - len(matched_gt)
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+            # Enforce semantic class compatibility (doors only match doors, windows only match windows)
+            if "door" in go_kind and not ro_is_door:
+                continue
+            if "window" in go_kind and not ro_is_window:
+                continue
+
+            dist = math.hypot(ro_pos[0] - go.center[0], ro_pos[1] - go.center[1], ro_pos[2] - go.center[2])
+            if dist <= 0.25:  # Precision-aware threshold <= 0.25m
+                dims = ro.custom_properties.get("dimensions_w_d_h") or ro.custom_properties.get("dimensions")
+                w_err = abs(float(dims[0]) - go.width_m) if dims and len(dims) >= 3 else None
+                h_err = abs(float(dims[2]) - go.height_m) if dims and len(dims) >= 3 else None
+                opening_candidates.append((dist, g_idx, r_idx, w_err, h_err))
+
+    opening_candidates.sort(key=lambda x: x[0])
+    matched_go: set[int] = set()
+    matched_ro: set[int] = set()
+    opening_position_errors: list[float] = []
+    opening_w_errors: list[float] = []
+    opening_h_errors: list[float] = []
+
+    for dist, g_idx, r_idx, w_err, h_err in opening_candidates:
+        if g_idx not in matched_go and r_idx not in matched_ro:
+            matched_go.add(g_idx)
+            matched_ro.add(r_idx)
+            opening_position_errors.append(dist)
+            if w_err is not None:
+                opening_w_errors.append(w_err)
+            if h_err is not None:
+                opening_h_errors.append(h_err)
+
+    tp_openings = len(matched_go)
+    fp_openings = len(reconstructed_openings) - len(matched_ro)
+    fn_openings = len(gt.openings) - len(matched_go)
+
+    precision_openings = float(tp_openings / (tp_openings + fp_openings)) if (tp_openings + fp_openings) > 0 else (None if len(gt.openings) == 0 else 0.0)
+    recall_openings = float(tp_openings / len(gt.openings)) if len(gt.openings) > 0 else None
+    f1_openings = float(2 * precision_openings * recall_openings / (precision_openings + recall_openings)) if (precision_openings is not None and recall_openings is not None and (precision_openings + recall_openings) > 0) else None
+
+    opening_pos_rmse = float(math.sqrt(sum(e ** 2 for e in opening_position_errors) / len(opening_position_errors))) if opening_position_errors else None
+    w_rmse = float(math.sqrt(sum(e ** 2 for e in opening_w_errors) / len(opening_w_errors))) if opening_w_errors else None
+    h_rmse = float(math.sqrt(sum(e ** 2 for e in opening_h_errors) / len(opening_h_errors))) if opening_h_errors else None
+
+    # 4. Evaluate Fixtures (sockets, switches, MEP) with precision-aware threshold (<= 0.15m)
+    reconstructed_fixtures = [
+        e for e in reconstructed_world.entities.values()
+        if any(k in e.name.lower() or k in str(e.custom_properties.get("class_name", "")).lower() for k in ("socket", "switch", "outlet", "radiator", "vent", "lamp"))
+    ]
+
+    fixture_candidates: list[tuple[float, int, int]] = []
+    for g_idx, gf in enumerate(gt.fixtures):
+        gf_type = gf.fixture_type.lower()
+        for r_idx, rf in enumerate(reconstructed_fixtures):
+            rf_pos = _extract_position(rf)
+            if rf_pos is None:
+                continue
+            rf_name = (rf.name + " " + str(rf.custom_properties.get("class_name", ""))).lower()
+            if gf_type not in rf_name and not any(k in rf_name for k in gf_type.split()):
+                continue
+            dist = math.hypot(rf_pos[0] - gf.position_m[0], rf_pos[1] - gf.position_m[1], rf_pos[2] - gf.position_m[2])
+            if dist <= 0.15:  # Precision-aware threshold <= 0.15m
+                fixture_candidates.append((dist, g_idx, r_idx))
+
+    fixture_candidates.sort(key=lambda x: x[0])
+    matched_gf: set[int] = set()
+    matched_rf: set[int] = set()
+    fixture_dist_errors: list[float] = []
+
+    for dist, g_idx, r_idx in fixture_candidates:
+        if g_idx not in matched_gf and r_idx not in matched_rf:
+            matched_gf.add(g_idx)
+            matched_rf.add(r_idx)
+            fixture_dist_errors.append(dist)
+
+    tp_fixtures = len(matched_gf)
+    fp_fixtures = len(reconstructed_fixtures) - len(matched_rf)
+    fn_fixtures = len(gt.fixtures) - len(matched_gf)
+
+    fixture_mean_err = float(sum(fixture_dist_errors) / len(fixture_dist_errors)) if fixture_dist_errors else None
+    fixture_prec = float(tp_fixtures / len(reconstructed_fixtures)) if reconstructed_fixtures else (None if not gt.fixtures else 0.0)
+    fixture_rec = float(tp_fixtures / len(gt.fixtures)) if gt.fixtures else None
+
+    # Status classification: PARTIAL if unobserved/incomplete, COMPLETED only when complete
+    is_incomplete = (
+        (len(gt.walls) > 0 and len(matched_gw) < len(gt.walls))
+        or (len(gt.openings) > 0 and len(matched_go) < len(gt.openings))
+        or (len(gt.fixtures) > 0 and len(matched_gf) < len(gt.fixtures))
+        or (gt.height_m > 0 and ceiling_error is None)
+    )
+    status = "PARTIAL" if is_incomplete else "COMPLETED"
+
+    is_physically_measured = bool(
+        gt.capture is not None
+        and gt.capture.method in ("laser", "tape", "both")
+        and getattr(gt, "source", "measured") == "measured"
+        and not getattr(gt, "is_synthetic", False)
+    )
 
     return RoomAccuracyReport(
-        status="COMPLETED",
+        status=status,
         room_id=gt.room_id,
-        is_physically_measured=True,
+        is_physically_measured=is_physically_measured,
         wall_length_rmse_m=wall_rmse,
         ceiling_height_error_m=ceiling_error,
-        opening_precision=precision,
-        opening_recall=recall,
-        opening_f1=f1,
+        opening_precision=precision_openings,
+        opening_recall=recall_openings,
+        opening_f1=f1_openings,
+        opening_position_rmse_m=opening_pos_rmse,
+        opening_width_rmse_m=w_rmse,
+        opening_height_rmse_m=h_rmse,
+        fixture_mean_error_m=fixture_mean_err,
+        fixture_precision=fixture_prec,
+        fixture_recall=fixture_rec,
         details={
             "ground_truth_walls_count": len(gt.walls),
             "reconstructed_walls_count": len(reconstructed_walls),
+            "matched_walls_count": len(matched_gw),
             "ground_truth_openings_count": len(gt.openings),
             "reconstructed_openings_count": len(reconstructed_openings),
-            "openings_tp": tp,
-            "openings_fp": fp,
-            "openings_fn": fn,
+            "openings_tp": tp_openings,
+            "openings_fp": fp_openings,
+            "openings_fn": fn_openings,
+            "ground_truth_fixtures_count": len(gt.fixtures),
+            "reconstructed_fixtures_count": len(reconstructed_fixtures),
+            "fixtures_tp": tp_fixtures,
+            "fixtures_fp": fp_fixtures,
+            "fixtures_fn": fn_fixtures,
         },
     )

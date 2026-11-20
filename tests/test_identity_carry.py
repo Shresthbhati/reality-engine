@@ -124,10 +124,10 @@ def test_confidence_defaults_never_read_as_observed_certainty():
     from world_ir.schema_v1 import CausalRelation, Observation
 
     r = Relationship(kind=RelationshipKind.PART_OF, target_id="t")
-    assert r.confidence == 0.5 and r.provenance == Provenance.UNKNOWN
-    assert Observation().confidence == 0.5 and CausalRelation().confidence == 0.5
-    # a legacy record without confidence is "not measured", and measured values round-trip untouched
-    assert Relationship.from_dict({"kind": "part_of", "target_id": "t"}).confidence == 0.5
+    assert r.confidence is None and r.provenance == Provenance.UNKNOWN
+    assert Observation().confidence is None and CausalRelation().confidence is None
+    # a record without confidence is "not measured" (None), and measured values round-trip untouched
+    assert Relationship.from_dict({"kind": "part_of", "target_id": "t"}).confidence is None
     measured = Relationship(kind=RelationshipKind.PART_OF, target_id="t", confidence=0.83,
                             provenance=Provenance.INFERRED)
     back = Relationship.from_dict(measured.to_dict())

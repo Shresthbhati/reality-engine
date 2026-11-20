@@ -14,9 +14,12 @@ Verifies:
 
 from __future__ import annotations
 
+import importlib.util
+import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -59,6 +62,13 @@ def test_sequential_stages_definitions():
     assert stage_ids[12] == StageId.STAGE_13_REFINEMENT
 
 
+requires_colmap = pytest.mark.skipif(
+    importlib.util.find_spec("pycolmap") is None and shutil.which("colmap") is None,
+    reason="COLMAP (pycolmap or the CLI) is not installed; the real-reconstruction path cannot run here (reported as skipped, not passed)",
+)
+
+
+@requires_colmap
 def test_ten_step_lifecycle_enforcement():
     """Verify that every model follows:
     LOAD -> INFERENCE -> SAVE RAW OUTPUT -> VALIDATE -> NORMALISE -> RECORD ERRORS -> RELEASE RESOURCES -> VERIFY PERSISTENCE.
@@ -125,6 +135,7 @@ def test_licensing_enforcement_dust3r_and_mast3r():
     assert "licence CC-BY-NC-4.0 is not approved" in d_entry.reason
 
 
+@requires_colmap
 def test_sequential_maximum_fidelity_pipeline_execution():
     """Verify end-to-end sequential pipeline execution across all stages on source photos."""
     from PIL import Image
@@ -168,6 +179,7 @@ def test_sequential_maximum_fidelity_pipeline_execution():
         assert job_report.quality_report is not None
 
 
+@requires_colmap
 def test_api_routes_engines_endpoints():
     """Verify that /api/engines endpoints correctly serve the sequential pipeline."""
     client = TestClient(app)

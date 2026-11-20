@@ -27,6 +27,11 @@ from world_ir.serialization import load_world, save_world
 from world_ir.validation import validate_world_ir
 from world_ir.world_v1 import WorldIR
 
+ANCHORED = dict(  # SYNTHETIC test fixtures declare their scale explicitly; nothing defaults to metres
+    is_metric_depth=True, scale_state="PHYSICALLY_ANCHORED", scale_source="synthetic-test-fixture-anchor",
+    depth_source="synthetic_test_fixture", calibration_source="synthetic_test_fixture",
+)
+
 
 def test_colmap_calibration_has_no_invented_defaults() -> None:
     from benchmarks.hardware.run_south_building_sequential import (
@@ -76,6 +81,7 @@ def test_metric_lifter_rejects_unscaled_relative_depth() -> None:
         depth_map=depth_map,
         camera=camera,
         is_metric_depth=False,
+        scale_state="RELATIVE_DEPTH",
     )
     assert lifted is None
     assert lifter.last_rejection_reason == "UNSCALED_RELATIVE_DEPTH"

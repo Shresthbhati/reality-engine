@@ -155,6 +155,40 @@ def test_a_damaged_or_missing_snapshot_is_an_error_never_an_empty_successful_wor
     assert client.get(_url(wid, "run-bad"), headers=A).status_code == 500
 
 
+def test_readiness_and_the_persisted_world_are_derived_from_persisted_data_and_tenant_scoped(client, tmp_path):
+    wid = _world(client, A)
+    _seed(tmp_path, "tenant-a", wid)  # runs the flow directly: nothing has persisted a WORLD yet
+    assert client.get(_url(wid, "run-1", "world"), headers=A).status_code == 404  # not an empty 200
+    rd = client.get(_url(wid, "run-1", "readiness"), headers=A).json()
+    assert rd["physical_accuracy"] == "NOT_MEASURED" and rd["world"]["status"] == "not_persisted" and rd["export_ready"] is False
+    assert rd["stage_status"] == "complete" and rd["scale"]["status"] == "no_depth_evidence" and rd["evidence_received"]["sources"] == 2
+    assert client.get(_url(wid, "run-1", "readiness"), headers=B).status_code in (403, 404)  # tenant isolation
+    assert client.get(_url(wid, "run-1", "world"), headers=B).status_code in (403, 404)
+
+
+def test_a_persisted_world_is_served_verified_and_reflected_in_readiness(client, tmp_path):
+    from apps.api import evidence_world_stage as ew
+    from tests.test_multiengine_evidence_flow import _setup
+
+    wid = _world(client, A)
+    files = []
+    for n in ("img1.jpg", "img2.jpg"):
+        p = tmp_path / n
+        p.write_bytes(b"\xff\xd8\xff\xd9")
+        files.append(str(p))
+
+    def inputs():
+        reg, adapters = _setup(())
+        return reg, adapters, None
+
+    facts = ew.run_for_job(team_id="tenant-a", world_id=wid, job_id="run-2", sources=files, base=tmp_path / "ws", flow_inputs=inputs)
+    got = client.get(_url(wid, "run-2", "world"), headers=A).json()
+    assert got["version_id"] == facts["world_ir"]["version_id"] and len(got["world"]["entities"]) == 3
+    rd = client.get(_url(wid, "run-2", "readiness"), headers=A).json()
+    assert rd["world"]["status"] == "persisted" and rd["world"]["entities"] == 3 and rd["world"]["entities_with_position"] == 0
+    assert rd["export_ready"] is False and "no entity has a measured position" in rd["export_not_ready_reason"]  # 2D-only: honest
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

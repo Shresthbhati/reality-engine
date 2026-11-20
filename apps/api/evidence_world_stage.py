@@ -187,12 +187,120 @@ def run_for_job(
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
     facts = _facts(res.snapshot, job_id, skipped, status=res.status)
+    facts["world_ir"] = persist_world(root, job_id, res.bridge)
+    if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
+        facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
     wanted = list(depth_engines) if depth_engines is not None else [
         e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
     ]
     if wanted and res.status != "cancelled":
         facts["depth"] = _run_depth(root, job_id, real, wanted, adapters)
     return facts
+
+
+WORLDSTORE_REL = "worldstore"
+
+
+def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
+    """Evidence -> WorldIR -> validated -> immutable WorldStore version -> verified -> reloaded and compared.
+
+    ``status`` is ``persisted`` ONLY when all of that held. Otherwise it is ``not_persisted`` (nothing to persist, e.g. no entities)
+    or ``failed`` (invalid world, store error, verification or reload mismatch), always with the reason. The version id is derived
+    from the world's content, so persisting the same world twice is idempotent. Nothing is invented: entities, geometry and
+    relationships are exactly what the bridge produced from the evidence."""
+    import hashlib
+
+    try:
+        from world_ir.validation import validate_world_ir
+        from world_ir.world_v1 import WorldIR
+        from worldstore.store import WorldStore
+
+        if bridge is None or not getattr(bridge, "entities", None):
+            return {"status": "not_persisted", "reason": "the evidence produced no canonical entities, so there is no world to persist",
+                    "entities": 0, "geometries": 0}
+        world = WorldIR(id=f"evw-{job_id}", name=f"evidence world {job_id}")
+        bridge.apply_to(world)
+        counts = {"entities": len(world.entities), "geometries": len(world.geometries)}
+        errors = [str(i) for i in validate_world_ir(world).errors]
+        if errors:
+            return {"status": "failed", "reason": "the world built from the evidence failed validation and was NOT persisted",
+                    "validation_errors": errors[:20], **counts}
+        payload = json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        store = WorldStore(root / WORLDSTORE_REL)
+        vid = f"v-{digest[:16]}"
+        try:
+            store.save_version(world, parent=None, version_id=vid)
+            reused = False
+        except Exception as exc:  # noqa: BLE001 -- an identical, already-saved version is fine; anything else is a real failure
+            if "already exists" not in str(exc):
+                raise
+            reused = True
+        problems = store.verify_version(vid)
+        if problems:
+            return {"status": "failed", "reason": "the saved version failed integrity verification", "verification": problems[:10],
+                    "version_id": vid, **counts}
+        back = store.load_version(vid)
+        if back.to_dict() != world.to_dict():
+            return {"status": "failed", "reason": "the reloaded world differs from the one that was saved", "version_id": vid, **counts}
+        return {"status": "persisted", "version_id": vid, "sha256": digest, "store": WORLDSTORE_REL, "reused_existing_version": reused,
+                "reload_verified": True, "validation": "valid", **counts}
+    except Exception as exc:  # noqa: BLE001 -- recorded, never a silent success and never a failed job
+        return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def readiness(root: Path) -> dict[str, Any]:
+    """What the frontend may honestly say about one run, derived ONLY from what is persisted on disk (snapshot, evidence matrix,
+    persisted world). Nothing is estimated, seeded or defaulted: an unreadable or missing piece is reported as such."""
+    out: dict[str, Any] = {"physical_accuracy": "NOT_MEASURED"}
+    try:
+        snap = json.loads((root / SNAPSHOT_REL).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {**out, "stage_status": "unreadable", "reason": f"snapshot unavailable: {exc}", "export_ready": False}
+    out["stage_status"] = snap.get("status")
+    out["evidence_received"] = {"sources": len(snap.get("sources", []))}
+    out["stages"] = [{"task": s.get("task"), "status": s.get("status"), "engines": s.get("engines", {})} for s in snap.get("stages", [])]
+    out["missing_evidence"] = {"capture_requests": len(snap.get("capture_requests", [])), "limitations": list(snap.get("limitations", []))}
+    out["refinement"] = [{"stop_reason": h.get("stop_reason"), "new_inference": h.get("new_inference"),
+                          "refinement_claim": h.get("refinement_claim")} for h in snap.get("refinement_history", [])]
+    # scale status: what the metric-3D records actually say, never a default
+    scale: dict[str, int] = {}
+    try:
+        from engine.multiengine.evidence_matrix import EvidenceMatrix
+
+        m = EvidenceMatrix(root)
+        for o in m.store.query(task="metric3d"):
+            s = str((o.predicted or {}).get("scale_state", "unknown"))
+            scale[s] = scale.get(s, 0) + 1
+        out["rejected_predictions"] = len(m.rejected())
+    except Exception as exc:  # noqa: BLE001
+        out["scale_error"] = f"{type(exc).__name__}: {exc}"
+    out["scale"] = {"records_by_scale_state": scale,
+                    "physical_metric": "METRIC_ANCHORED" in {k.upper() for k in scale} or "metric_anchored" in scale,
+                    "status": "physically_anchored" if "metric_anchored" in scale else ("unanchored" if scale else "no_depth_evidence")}
+    # entity / geometry counts and export readiness from the PERSISTED world
+    out["world"] = {"status": "not_persisted"}
+    out["export_ready"] = False
+    try:
+        from worldstore.store import WorldStore
+
+        store_root = root / WORLDSTORE_REL
+        versions = sorted((store_root / "versions").glob("*.json")) if (store_root / "versions").is_dir() else []
+        if versions:
+            vid = versions[-1].stem
+            store = WorldStore(store_root)
+            problems = store.verify_version(vid)
+            w = store.load_version(vid)
+            placed = [e for e in w.entities.values() if (e.transform or {}).get("position")]
+            out["world"] = {"status": "persisted" if not problems else "failed_verification", "version_id": vid,
+                            "entities": len(w.entities), "geometries": len(w.geometries), "entities_with_position": len(placed),
+                            "verification": problems[:5]}
+            out["export_ready"] = bool(placed) and not problems
+            if not placed:
+                out["export_not_ready_reason"] = "no entity has a measured position yet; exporters would place nothing"
+    except Exception as exc:  # noqa: BLE001
+        out["world"] = {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+    return out
 
 
 def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequence[str], adapters: Mapping[str, Any]) -> list[dict[str, Any]]:

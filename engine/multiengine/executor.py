@@ -98,13 +98,27 @@ class TorchResourceProbe:
 
         return torch
 
+    cuda_error: str | None = None  # why CUDA was judged unusable (sticky/out-of-memory context); recorded, not hidden
+
+    def _cuda_usable(self, t) -> bool:
+        """CUDA counts as available only if it can answer a memory query: after an OOM or other sticky CUDA error
+        ``is_available()`` stays True while every later call raises, which used to crash the whole stage."""
+        try:
+            if not t.cuda.is_available():
+                return False
+            t.cuda.mem_get_info()
+            return True
+        except Exception as exc:  # noqa: BLE001 -- any CUDA runtime fault means the GPU is unusable right now
+            self.cuda_error = f"{type(exc).__name__}: {str(exc).splitlines()[0][:200]}"
+            return False
+
     def gpu_available(self) -> bool | None:
         t = self._torch()
-        return None if t is None else bool(t.cuda.is_available())
+        return None if t is None else self._cuda_usable(t)
 
     def free_vram_mb(self) -> float | None:
         t = self._torch()
-        if t is None or not t.cuda.is_available():
+        if t is None or not self._cuda_usable(t):
             return None
         free, _total = t.cuda.mem_get_info()
         return free / (1024 * 1024)

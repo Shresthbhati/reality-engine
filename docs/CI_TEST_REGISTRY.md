@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 571
+Total: 575
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -309,6 +309,7 @@ Total: 571
 - `tests/test_evidence_world_failure_semantics.py`
 - `tests/test_evidence_world_gate.py`
 - `tests/test_evidence_world_job.py`
+- `tests/test_evidence_world_persistence.py`
 - `tests/test_export_parts_and_attributes.py`
 - `tests/test_export_route.py`
 - `tests/test_extensible_prompter_finegrained.py`
@@ -389,6 +390,7 @@ Total: 571
 - `tests/test_lazy_query.py`
 - `tests/test_licenses.py`
 - `tests/test_lie_algebra.py`
+- `tests/test_lifting_scale_safety.py`
 - `tests/test_lighting_estimator.py`
 - `tests/test_living_room_acceptance_12_steps.py`
 - `tests/test_locality_instrumentation.py`
@@ -516,6 +518,7 @@ Total: 571
 - `tests/test_procedural_room_grammar.py`
 - `tests/test_procedural_templates.py`
 - `tests/test_procedural_urban_grammar.py`
+- `tests/test_production_job_real_files.py`
 - `tests/test_progressive_layout.py`
 - `tests/test_progressive_units.py`
 - `tests/test_promote_objects.py`
@@ -641,6 +644,7 @@ Total: 571
 - `tests/test_tiles3d_profile.py`
 - `tests/test_topology_coherence.py`
 - `tests/test_topology_revalidation_task5_4.py`
+- `tests/test_torch_probe_cuda_fault.py`
 - `tests/test_tracking_2d.py`
 - `tests/test_trajectory_backend.py`
 - `tests/test_trajectory_diagnostics.py`

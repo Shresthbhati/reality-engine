@@ -30,6 +30,7 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
     def __init__(self, spec: EngineSpec) -> None:
         super().__init__(spec)
         self._lifter = Metric3DLifter()
+        self.rejections: list[dict] = []  # per-detection rejections of the LAST infer call (entity_id, class_name, reason)
 
     def _load_model_weights(self, device: Device) -> None:
         # Algorithmic/geometric adapter: no heavy neural weights to download
@@ -43,6 +44,7 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
             )
 
         drafts: list[ObservationDraft] = []
+        self.rejections = []
         options = request.payload or {}  # EngineRequest carries ``payload``; it has never had an ``options`` attribute
 
         # 1. Camera parameters
@@ -60,28 +62,16 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                 "Failed to construct valid PinholeCamera from provided 'camera' metadata.",
             )
 
-        # 2. Scale metadata validation (must fail closed)
-        if "is_metric_depth" not in options and "scale_state" not in options:
-            raise EngineError(
-                EngineErrorKind.INVALID_INPUT,
-                "Missing scale metadata: 'is_metric_depth' or 'scale_state' must be explicitly specified (fail closed).",
-            )
-
-        is_metric = bool(options.get("is_metric_depth", False))
+        # 2. Depth map + an EXPLICIT scale declaration. Nothing defaults to metres: a missing declaration is refused, and the
+        #    scale class (relative / model-metric / gauge / physically anchored) decides what the lift may claim.
         scale_state = options.get("scale_state")
-        scale_units = options.get("scale_units")
-
-        if is_metric and scale_state not in ("METRIC_SCALE_ALIGNED", "metric_anchored", None):
+        if not scale_state:
             raise EngineError(
                 EngineErrorKind.INVALID_INPUT,
-                f"Contradictory scale metadata: is_metric_depth=True cannot be used with scale_state={scale_state!r}.",
+                "Metric3DLifter requires an explicit 'scale_state' for the depth map (e.g. PHYSICALLY_ANCHORED with 'scale_source', "
+                "METRIC_TRAINED_MODEL, SFM_GAUGE); an undeclared scale is never assumed to be metric.",
             )
-
-        if scale_state in ("RELATIVE_UNSCALED", "relative_depth", "UNKNOWN", "unknown") or (not is_metric and scale_state is None):
-            raise EngineError(
-                EngineErrorKind.INVALID_INPUT,
-                "Metric3DLifter requires verified metric or scale-aligned depth; relative monocular depth without scale alignment cannot be unprojected.",
-            )
+        is_metric_depth = bool(options.get("is_metric_depth", False))
 
         depth_map = options.get("depth_map")
         if depth_map is None:
@@ -115,9 +105,6 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
         if not detections:
             return drafts
 
-        eff_scale_state = scale_state or ("METRIC_SCALE_ALIGNED" if is_metric else "RELATIVE_UNSCALED")
-        eff_scale_units = scale_units or ("METRES" if is_metric else "RELATIVE_DISPARITY")
-
         lifted_entities = []
         for idx, det in enumerate(detections):
             ent_id = det.get("entity_id", f"entity_{idx:03d}")
@@ -137,16 +124,26 @@ class Metric3DLifterAdapter(BaseModelEngineAdapter):
                 camera=camera,
                 target_frame=options.get("target_frame", "world:canonical"),
                 mask_2d=mask,
-                is_metric_depth=is_metric,
-                scale_state=eff_scale_state,
-                scale_units=eff_scale_units,
-                depth_source=options.get("depth_source", "calibrated_metric_depth"),
-                calibration_source=options.get("calibration_source", "camera_metadata"),
+                is_metric_depth=is_metric_depth,
+                scale_state=str(scale_state),
+                scale_units=str(options.get("scale_units", "UNSPECIFIED")),
+                scale_source=str(options.get("scale_source", "")),
+                depth_source=str(options.get("depth_source", "unspecified")),
+                calibration_source=str(options.get("calibration_source", "unspecified")),
                 confidence=float(conf) if conf is not None else None,
                 source_id=str(request.sources[0]) if request.sources else "camera0",
             )
             if lifted is not None:
                 lifted_entities.append(lifted)
+            else:  # never discard silently: the reason stays on the adapter and, if nothing lifted, in the raised error  # noqa: E501
+                self.rejections.append({"entity_id": ent_id, "class_name": cls_name, "reason": self._lifter.last_rejection_reason})
+
+        if not lifted_entities and self.rejections:
+            reasons = sorted({str(r["reason"]) for r in self.rejections})
+            raise EngineError(
+                EngineErrorKind.INVALID_INPUT,
+                f"all {len(self.rejections)} detection(s) were rejected by the lifter: {reasons}; the 2D evidence is unchanged",
+            )
 
         # 4. Associate subparts to parents in 3D
         associated = self._lifter.associate_parts_and_parents(lifted_entities)

@@ -145,6 +145,11 @@ const COMMANDS: Command[] = [
     icon: Download,
     action: () => window.dispatchEvent(new CustomEvent("open-export-panel")),
   },
+  {
+    label: "Evidence runs (readiness, rejected predictions, entity evidence)",
+    icon: Search,
+    action: () => window.dispatchEvent(new CustomEvent("open-evidence-panel")),
+  },
   // Exports
   {
     label: "Export world data (JSON)",

@@ -1149,7 +1149,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled,
                 cameras=_evw.cameras_from_poses(
                     _registered_camera_poses(prog), {ei.item.id: ei.path for ei in (run_inputs or [])},
-                    (intrinsics_record or {}).get("intrinsics"), (intrinsics_record or {}).get("image_size")))
+                    (intrinsics_record or {}).get("intrinsics"), (intrinsics_record or {}).get("image_size")),
+                points3d=[(float(p[0]), float(p[1]), float(p[2])) for p in prog.points])  # sparse SfM points: depth alignment anchor
             holder["evidence_world"] = ew_facts
             if ew_facts["status"] == "cancelled":
                 raise _JobCancelled(f"job {job.id} cancelled by operator")

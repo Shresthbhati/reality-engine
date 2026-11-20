@@ -513,3 +513,20 @@ stateDiagram-v2
    - Startup reconciliation (`reconcile_adoptions`) cleans orphaned intents before workers process incoming tasks.
    - The world model is never left in a corrupted or ambiguous state.
 
+### 7. Evidence World vs Vertical-Slice World (status: DECIDED for the interim, MERGE BLOCKED)
+
+Two WorldIRs exist per job: the **vertical-slice world** (committed through the adoption state machine of section 6; the world the Studio viewer and
+exporters read) and the opt-in **evidence world** (`<WORLDSTORE_ROOT>/evidence-world/<team>/<world>/<job>/worldstore`, one verified immutable version
+per run, built from the Evidence Matrix by the canonical bridge).
+
+- **Interim rule:** the evidence world is a *candidate*. It is never adopted into the canonical world implicitly and never overwrites it. It is
+  inspected through `/api/worlds/{id}/evidence-world/*` and the Evidence runs panel. Section 6 remains the ONLY path by which a world becomes HEAD.
+- **Scale rule:** evidence-world positions/dimensions carry `scale_state` / `units` on the entity transform and the box geometry. SfM-gauge values
+  are `sfm_units`, `physically_metric: false`; `readiness().metric_export_ready` is true only when every positioned entity is `metric_anchored`.
+- **DECISION REQUIRED (merge into one canonical world):** OPTIONS (a) promote evidence entities as a `ChangeSet` proposed through section 6;
+  (b) make the evidence bridge the single producer and retire the vertical-slice entity path; (c) keep both and show both. TRADEOFFS: (a) reuses the
+  adoption/rollback safety but needs entity-identity alignment between the two producers and a verified frame/unit match (the evidence entities are
+  in the SfM gauge frame; the vertical-slice world is canonicalised +Y-up, scale-state dependent); (b) is the cleanest end state but rewrites the
+  verified vertical-slice path; (c) leaves the user with two inconsistent worlds. RECOMMENDATION: (a), after the frame/unit check passes on a real
+  furnished-interior run. DEPENDENCIES: that real run, which does not exist yet (see RELEASE.md open facts).
+

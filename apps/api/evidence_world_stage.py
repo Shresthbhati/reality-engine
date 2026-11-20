@@ -45,7 +45,10 @@ ENABLEMENT_CRITERIA: tuple[tuple[str, bool, tuple[str, ...], str], ...] = (
     ("covariance_propagation", True, ("tests/test_canonical_covariance_propagation.py", "tests/test_worldir_bridge_uncertainty_roundtrip.py"), ""),
     ("metric3d_producers_emit_contract", True, ("tests/test_metric3d_producers.py",),
      "depth + sparse-lift producers emit metric3d.v1 with recoverable raw arrays (real-model run on South Building recorded in the ledger); "
-     "wired into the stage only behind RE_EVIDENCE_WORLD_DEPTH_ENGINES, and no depth producer yet feeds fusion"),
+     "wired into the stage only behind RE_EVIDENCE_WORLD_DEPTH_ENGINES"),
+    ("depth_feeds_fusion", True, ("tests/test_lift_stage_e2e.py",),
+     "aligned relative depth + registered cameras + sparse SfM points -> position/dimensions observations that join the detection's entity "
+     "(SfM gauge units, never metres); proven on a SYNTHETIC scene only -- no real-photo accuracy result exists"),
     ("metric_anchor_integrity", True, ("tests/test_metric_anchor_integrity.py",), "verified on synthetic scenes only; no physical anchor applied to real data"),
     ("real_multi_photo_job_run", False, (), "one outdoor run produced 0 detections; no furnished-interior multi-photo run exists"),
     ("detector_accuracy_benchmark", False, (), "no benchmark of the production detectors on labelled interior imagery"),
@@ -132,6 +135,7 @@ def run_for_job(
     flow_inputs: Callable[[], tuple[Any, Any, Any]] | None = None,
     cameras: Mapping[str, Any] | None = None,
     depth_engines: Sequence[str] | None = None,
+    points3d: Sequence[Sequence[float]] | None = None,
 ) -> dict[str, Any]:
     """Run the flow on the job's evidence files and return the compact facts for the job report.
 
@@ -179,10 +183,29 @@ def run_for_job(
                             "caveat": "thresholds are untuned starting values; epipolar geometry is necessary, not sufficient"}
         from engine.multiengine.identity import IdentityRegistry
 
+        wanted = list(depth_engines) if depth_engines is not None else [
+            e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
+        ]
+
+        def _depth_and_lift(matrix: Any) -> dict[str, Any]:
+            """Depth (sequential, each model unloaded before the next) then lifting, on the flow's own matrix so refinement and
+            entity derivation see the result. Lifting needs depth + registered cameras + the job's sparse SfM points."""
+            from engine.multiengine.lift_stage import run_lift_stage
+
+            out: dict[str, Any] = {"status": "skipped", "reason": "no depth engines requested (RE_EVIDENCE_WORLD_DEPTH_ENGINES)"}
+            if not wanted:
+                return out
+            depth = _run_depth(root, job_id, real, wanted, adapters, matrix=matrix)
+            if not usable:
+                return {**out, "reason": "no registered cameras for these images; depth was produced but nothing can be lifted", "depth": depth}
+            lift = run_lift_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real)
+            return {**lift, "depth": depth}
+
         res = run_evidence_flow(
             root, job_id, real, registry=registry, adapters=adapters, stages=[StageSpec(Task.DETECTION)],
             should_cancel=should_cancel, probe=probe, pair_scorer=scorer, scoring_note=scoring_note,
             identity_registry=IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json"),
+            after_stages=_depth_and_lift,
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
@@ -190,11 +213,11 @@ def run_for_job(
     facts["world_ir"] = persist_world(root, job_id, res.bridge)
     if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
         facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
-    wanted = list(depth_engines) if depth_engines is not None else [
-        e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
-    ]
-    if wanted and res.status != "cancelled":
-        facts["depth"] = _run_depth(root, job_id, real, wanted, adapters)
+    after = res.snapshot.get("after_stages") or {}
+    if after.get("depth") is not None:
+        facts["depth"] = after["depth"]
+    if after:
+        facts["lifting"] = {k: v for k, v in after.items() if k != "depth"}
     return facts
 
 
@@ -296,6 +319,19 @@ def readiness(root: Path) -> dict[str, Any]:
                             "entities": len(w.entities), "geometries": len(w.geometries), "entities_with_position": len(placed),
                             "verification": problems[:5]}
             out["export_ready"] = bool(placed) and not problems
+            sized = [e for e in placed if any(w.geometries.get(g) is not None for g in e.geometry_ids)]
+            states = [str((e.transform or {}).get("scale_state") or "undeclared") for e in placed]
+            n = len(w.entities)
+            # a world is only "complete" when every entity is positioned AND sized AND the stage itself completed; anything less is
+            # reported as partial/empty with the numbers, never as a finished reconstruction
+            world_state = ("empty" if n == 0 else "partial" if (len(placed) < n or len(sized) < n or out.get("stage_status") != "complete")
+                           else "complete")
+            out["world"].update({"entities_with_geometry": len(sized), "state": world_state,
+                                 "scale_states": {s: states.count(s) for s in sorted(set(states))}})
+            out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
+            if placed and not out["metric_export_ready"]:
+                out["export_scale_warning"] = ("positions/dimensions are not physically anchored metres (scale states: "
+                                               f"{sorted(set(states))}); an export carries unitless/gauge values, not a metric model")
             if not placed:
                 out["export_not_ready_reason"] = "no entity has a measured position yet; exporters would place nothing"
     except Exception as exc:  # noqa: BLE001
@@ -303,7 +339,8 @@ def readiness(root: Path) -> dict[str, Any]:
     return out
 
 
-def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequence[str], adapters: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequence[str], adapters: Mapping[str, Any],
+               matrix: Any | None = None) -> list[dict[str, Any]]:
     from engine.multiengine.evidence_matrix import EvidenceMatrix
     from engine.multiengine.metric3d_producers import (
         checkpoint_sha256,
@@ -311,7 +348,7 @@ def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequenc
         produce_depth,
     )
 
-    matrix = EvidenceMatrix(root)
+    matrix = matrix if matrix is not None else EvidenceMatrix(root)
     reports: list[dict[str, Any]] = []
     for eid in engines:  # sequential: produce_depth unloads each model before the next one loads
         adapter = adapters.get(eid)

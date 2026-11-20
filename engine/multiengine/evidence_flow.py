@@ -213,10 +213,14 @@ def derive_entities(
     limitations = list(LIMITATIONS) + ([] if pair_scorer is not None else [PAIR_SCORER_LIMITATION])
     scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
     assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto))
+    from engine.multiengine.lift_stage import lifted_members
+
+    lifted = lifted_members(matrix, obs)  # lifted position/dimensions of the SAME box in the SAME image join that detection's entity
     entities = [
-        replace(e, members=(ms := tuple(sorted(m for rep in e.members for m in by_rep[rep].members))),
+        replace(e, members=tuple(sorted({x for m in ms for x in (m, *lifted.get(m, ()))})),
                 labels=tuple(sorted({label_of[m] for m in ms})))
         for e in assoc.entities
+        for ms in [tuple(sorted(m for rep in e.members for m in by_rep[rep].members))]
     ]
     identity_events: list[dict[str, Any]] = []
     if identity is not None:  # keep entity ids stable when later evidence extends, merges or splits entities
@@ -266,6 +270,7 @@ def run_evidence_flow(
     scoring_note: Mapping[str, Any] | None = None,
     refine: bool = True,
     refine_max_iterations: int = 3,
+    after_stages: Callable[[EvidenceMatrix], Mapping[str, Any]] | None = None,
 ) -> EvidenceFlowResult:
     from perception.ontology import get_default_ontology
 
@@ -307,6 +312,15 @@ def run_evidence_flow(
     else:
         status = "partial"
 
+    # ---- caller-supplied step on the SAME matrix (depth + lifting): runs before refinement and entity derivation so both see its
+    # observations. A failure is recorded in the snapshot and the flow carries on with whatever evidence exists (never silent).
+    after_report: dict[str, Any] | None = None
+    if after_stages is not None and not cancelled:
+        try:
+            after_report = dict(after_stages(matrix))
+        except Exception as exc:  # noqa: BLE001
+            after_report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
     # ---- refinement: reprocess with untried engines where that can help, roll back what fails the checks, stop with a reason
     refine_outcome = None
     active: frozenset[str] | None = None
@@ -334,6 +348,8 @@ def run_evidence_flow(
     )
     cands, assoc, canonicals, conflicts = derived.cands, derived.assoc, derived.canonicals, derived.conflicts
     identity_events, limitations = derived.identity_events, derived.limitations
+    if after_report and after_report.get("lifted"):  # geometry now exists: the "no geometry" statement no longer holds as written
+        limitations[0:1] = list(after_report.get("limitations") or ())
     if n_obs == 0 and status != "failed":
         limitations.append("The engines ran successfully but produced no detections on these images (no entity is invented).")
     conflict_entities = {eid for cf in conflicts if cf.kind == "interpenetration" for eid in cf.entity_ids}
@@ -380,6 +396,7 @@ def run_evidence_flow(
         "identity_events": identity_events,
         "scoring": dict(scoring_note) if scoring_note else None,  # which pair scorer + thresholds were used (None = no scorer)
         "bridge_notes": list(bridge.notes),
+        "after_stages": after_report,  # depth + lifting facts (None = no such step was supplied)
         "matrix_problems": matrix.verify(),
     }
     _atomic_write_json(root / SNAPSHOT_FILE, snapshot)

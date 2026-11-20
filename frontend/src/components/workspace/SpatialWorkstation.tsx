@@ -22,6 +22,7 @@ import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStat
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
+import EvidenceRunPanel from "@/components/workspace/EvidenceRunPanel";
 import MapPlotView from "@/components/map/MapPlotView";
 import {
   useWorlds,
@@ -106,6 +107,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [evidencePanelOpen, setEvidencePanelOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
@@ -460,6 +462,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     window.addEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
     window.addEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
     window.addEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+    const handleOpenEvidencePanelEvent = () => setEvidencePanelOpen(true);
+    window.addEventListener("open-evidence-panel", handleOpenEvidencePanelEvent);
     window.addEventListener("trigger-export", handleTriggerExportEvent as EventListener);
 
     return () => {
@@ -470,6 +474,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
       window.removeEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
       window.removeEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+      window.removeEventListener("open-evidence-panel", handleOpenEvidencePanelEvent);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
   }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport]);
@@ -744,6 +749,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
 
           {exportPanelOpen && <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />}
+          {evidencePanelOpen && <EvidenceRunPanel worldId={worldId} onClose={() => setEvidencePanelOpen(false)} />}
 
           {exportError && (
             <div

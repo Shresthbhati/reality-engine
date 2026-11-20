@@ -3,6 +3,24 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-21 -- Evidence world: depth wired into fusion, positioned entities, honest readiness, evidence-run UI (Claude half of the joint milestone)
+
+ROOT CAUSE of "48 entities, 0 positioned" (#356): detections (bbox) and depth records (raw .npy) both sat in the Evidence Matrix but NOTHING joined them --
+`Metric3DLifter` was only called from benchmark scripts, never from the production stage -- and the lifter's `position` observations would in any case
+have been excluded by `canonical.determine` (frame mismatch, not members of the detection's entity). Relative depth was (correctly) refused as a length.
+DONE + tested (synthetic scene; 159 + 65 tests in the touched areas pass, 4 skip): `engine/multiengine/lift_stage.py` (relative depth ->
+`align_relative_depth_to_metric` against the job's sparse SfM points with its held-out / leave-region-out gates -> box lift -> `metric3d.v1`
+position/dimensions in SfM gauge units; unalignable / unliftable regions become REJECTED records with reasons; joined to the detection's entity by
+exact (image, box) via `lifted_members`); `run_evidence_flow(after_stages=...)` runs depth+lift on the flow's own matrix BEFORE refinement/derivation;
+`run_for_job(points3d=...)` + jobs.py passes `prog.points`; lifter `axis_aligned=True` (world-axis extents, orientation not claimed); bridge records
+`scale_state`/`units`/`physically_metric` on the transform and box geometry; `readiness()` adds `world.state` (empty|partial|complete),
+`entities_with_geometry`, `scale_states`, `metric_export_ready`, `export_scale_warning`; gate criterion `depth_feeds_fusion` (gate still NOT READY);
+frontend: `lib/api/evidence-world.ts`, `EvidenceRunPanel` (runs, readiness, partial/empty wording, rejected predictions, entity evidence), palette entry.
+DECISION: DESIGN_DECISIONS.md section 7 (evidence world is a candidate; merge into the canonical world is BLOCKED -- DECISION REQUIRED, recommendation (a)).
+NOT DONE / NOT VERIFIED: no real furnished-interior run, no physical accuracy, no multi-view merge on real photos, no mask-based lift, the evidence world is
+NOT yet the world the viewer/exporters read (they still read the vertical-slice world), frontend not exercised in a browser, `RE_EVIDENCE_WORLD` still OFF.
+Unexplained: `RuntimeWarning: Mean of empty slice` from `depth_scale_alignment` on the synthetic scene (not investigated).
+
 ## 2026-11-20 -- Reconstruction accuracy & production readiness cycle (Sonnet; branches `claude/sonnet-*`, split into reviewable PRs)
 
 Implemented + unit/integration-tested: `metric3d_producers.py` (depth drafts -> `metric3d.v1` with the raw array stored as a `.npy` artifact; sparse-SfM

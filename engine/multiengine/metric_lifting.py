@@ -150,10 +150,12 @@ class Metric3DLifter:
 
         # 1. Enforce verified scale contract (refuses unscaled relative depth)
         is_sfm_gauge = (scale_state == "SFM_ALIGNED_UNMETRIC" or scale_units == "COLMAP_SFM_UNITS")
-        if not is_metric_depth and not is_sfm_gauge:
+        is_synthetic = (scale_state == "SYNTHETIC_SCALE_ALIGNED" or scale_units == "SYNTHETIC_METRES")
+        if not is_metric_depth and not is_sfm_gauge and not is_synthetic:
             self.last_rejection_reason = "UNSCALED_RELATIVE_DEPTH"
             return None
-        is_metric = is_metric_depth and not is_sfm_gauge
+        is_metric = is_metric_depth and not is_sfm_gauge and not is_synthetic
+        scale_units_out = "METRES" if is_metric else ("SYNTHETIC_METRES" if is_synthetic else "COLMAP_SFM_UNITS")
 
         # 2. Validate camera calibration and pose rigidity
         from engine.multiengine.visibility_reprojection import VisibilityReprojectionValidator
@@ -373,7 +375,7 @@ class Metric3DLifter:
             source_observation_ids=(source_id,),
             confidence=confidence,
             confidence_basis="depth_unprojection_pca" if confidence is not None else None,
-            scale_units=scale_units,
+            scale_units=scale_units_out,
             is_physically_metric=is_metric,
             box_2d=box_2d,
         )
@@ -476,6 +478,58 @@ class Metric3DLifter:
         drafts: list[ObservationDraft] = []
         src = entity.source_observation_ids[0] if entity.source_observation_ids else "reconstruction"
 
+        from engine.multiengine.metric3d import Metric3DObservation, ScaleState
+
+        if entity.is_physically_metric:
+            s_state = ScaleState.METRIC_ANCHORED
+            s_units = "m"
+            anchor_ref = entity.scale_source if (entity.scale_source and entity.scale_source.startswith(("anchor://", "artifact://"))) else "anchor://surveyed_metric_anchor"
+        elif "sfm" in entity.scale_units.lower():
+            s_state = ScaleState.SFM_GAUGE
+            s_units = "sfm_units"
+            anchor_ref = None
+        else:
+            s_state = ScaleState.RELATIVE_DEPTH
+            s_units = "relative"
+            anchor_ref = None
+
+        raw_ref = entity.raw_artifact_ref if (entity.raw_artifact_ref and entity.raw_artifact_ref.startswith(("artifact://", "anchor://"))) else f"artifact://metric_lifting/{entity.entity_id}"
+        conf_basis = entity.confidence_basis if entity.confidence_basis in ("calibrated", "raw_model", "heuristic") else ("calibrated" if entity.confidence is not None else None)
+
+        metric3d_pos = Metric3DObservation(
+            engine_id="metric_3d_lifter",
+            architecture_id=entity.model_id or "metric_lifting_pca",
+            checkpoint_id=entity.checkpoint_id or "pca_quantile_v1",
+            source_id=src,
+            quantity="position",
+            value=tuple(float(v) for v in entity.position),
+            units=s_units,
+            scale_state=s_state,
+            frame=entity.coordinate_frame or "world:canonical",
+            metric_anchor_ref=anchor_ref,
+            raw_artifact_ref=raw_ref,
+            confidence=entity.confidence,
+            confidence_basis=conf_basis,
+            covariance=entity.covariance_position,
+        )
+
+        metric3d_dim = Metric3DObservation(
+            engine_id="metric_3d_lifter",
+            architecture_id=entity.model_id or "metric_lifting_pca",
+            checkpoint_id=entity.checkpoint_id or "pca_quantile_v1",
+            source_id=src,
+            quantity="dimensions",
+            value=tuple(float(v) for v in entity.dimensions),
+            units=s_units,
+            scale_state=s_state,
+            frame=entity.coordinate_frame or "world:canonical",
+            metric_anchor_ref=anchor_ref,
+            raw_artifact_ref=raw_ref,
+            confidence=entity.confidence,
+            confidence_basis=conf_basis,
+            covariance=entity.covariance_dimensions,
+        )
+
         # 1. Position observation (compatible with canonical.determine(POSITION))
         drafts.append(
             ObservationDraft(
@@ -489,6 +543,7 @@ class Metric3DLifter:
                     "class_name": entity.class_name,
                     "parent_entity_id": entity.parent_entity_id,
                     "is_part": entity.is_part,
+                    "metric3d": metric3d_pos.to_dict(),
                 },
                 uncertainty={
                     "covariance": [list(row) for row in entity.covariance_position]
@@ -509,6 +564,7 @@ class Metric3DLifter:
                     "value": list(entity.dimensions),
                     "entity_id": entity.entity_id,
                     "class_name": entity.class_name,
+                    "metric3d": metric3d_dim.to_dict(),
                 },
                 uncertainty={
                     "covariance": [list(row) for row in entity.covariance_dimensions]

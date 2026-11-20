@@ -25,6 +25,39 @@ from engine.multiengine.observation import ObservationDraft
 from perception.detection.extensible_prompter import ExtensiblePrompter, ScaleFilter
 
 
+def clean_and_split_detection_label(
+    label: str | Any,
+    known_queries: Sequence[str] | None = None,
+) -> list[str]:
+    """Splits compound Grounding DINO labels and rejects empty, none, or whitespace labels."""
+    if label is None:
+        return []
+    s = str(label).strip()
+    if not s or s.lower() in ("none", "null", "unknown", "object", "undefined"):
+        return []
+
+    # If known queries supplied, look for matching tokens
+    if known_queries:
+        queries_clean = [str(q).strip().lower() for q in known_queries if str(q).strip()]
+        s_lower = s.lower()
+        # Direct exact match
+        if s_lower in queries_clean:
+            return [s_lower]
+        # Check which known queries appear in the compound string
+        matched: list[str] = []
+        for q in queries_clean:
+            if f" {q} " in f" {s_lower} " or s_lower.startswith(f"{q} ") or s_lower.endswith(f" {q}"):
+                matched.append(q)
+        if matched:
+            return matched
+
+    # Fallback: split on punctuation/conjunctions
+    tokens = [t.strip().lower() for t in s.replace(".", " ").replace(",", " ").replace("/", " ").split()]
+    valid = [t for t in tokens if t not in ("", "none", "null", "unknown", "the", "a", "an", "and")]
+    return valid
+
+
+
 def _hf_hub_cache() -> Path:
     import os
 
@@ -221,24 +254,29 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
 
             labels = results.get("text_labels", results.get("labels", []))
             for box, score, label in zip(results["boxes"], results["scores"], labels):
+                clean_labels = clean_and_split_detection_label(label, payload_queries)
+                if not clean_labels:
+                    continue
                 b = [float(x) for x in box]
                 norm_b = [b[0] / w, b[1] / h, b[2] / w, b[3] / h]
-                drafts.append(
-                    ObservationDraft(
-                        task="detection",
-                        quantity="bbox",
-                        source_id=str(s),
-                        coordinate_system=f"image:{Path(str(s)).stem}",
-                        image_region=(b[0], b[1], b[2], b[3]),
-                        predicted={
-                            "label": str(label),
-                            "score": float(score),
-                            "box_normalized": norm_b,
-                        },
-                        original_coordinates={"box_xyxy_px": b},
-                        confidence=float(score),
+                for cl in clean_labels:
+                    drafts.append(
+                        ObservationDraft(
+                            task="detection",
+                            quantity="bbox",
+                            source_id=str(s),
+                            coordinate_system=f"image:{Path(str(s)).stem}",
+                            image_region=(b[0], b[1], b[2], b[3]),
+                            predicted={
+                                "label": cl,
+                                "raw_label": str(label),
+                                "score": float(score),
+                                "box_normalized": norm_b,
+                            },
+                            original_coordinates={"box_xyxy_px": b},
+                            confidence=float(score),
+                        )
                     )
-                )
 
         return drafts
 
@@ -444,23 +482,28 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
             for box, score, label_idx in zip(
                 results["boxes"], results["scores"], results["labels"]
             ):
-                b = [float(x) for x in box]
                 lbl = prompts[label_idx] if label_idx < len(prompts) else "object"
-                drafts.append(
-                    ObservationDraft(
-                        task="detection",
-                        quantity="bbox",
-                        source_id=str(s),
-                        coordinate_system=f"image:{Path(str(s)).stem}",
-                        image_region=(b[0], b[1], b[2], b[3]),
-                        predicted={
-                            "label": str(lbl),
-                            "score": float(score),
-                            "box_normalized": [b[0] / w, b[1] / h, b[2] / w, b[3] / h],
-                        },
-                        original_coordinates={"box_xyxy_px": b},
-                        confidence=float(score),
+                clean_labels = clean_and_split_detection_label(lbl, prompts)
+                if not clean_labels:
+                    continue
+                b = [float(x) for x in box]
+                for cl in clean_labels:
+                    drafts.append(
+                        ObservationDraft(
+                            task="detection",
+                            quantity="bbox",
+                            source_id=str(s),
+                            coordinate_system=f"image:{Path(str(s)).stem}",
+                            image_region=(b[0], b[1], b[2], b[3]),
+                            predicted={
+                                "label": cl,
+                                "raw_label": str(lbl),
+                                "score": float(score),
+                                "box_normalized": [b[0] / w, b[1] / h, b[2] / w, b[3] / h],
+                            },
+                            original_coordinates={"box_xyxy_px": b},
+                            confidence=float(score),
+                        )
                     )
-                )
 
         return drafts

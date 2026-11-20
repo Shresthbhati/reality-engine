@@ -29,17 +29,32 @@ class MetricAnchor:
     remain in arbitrary gauge coordinates (COLMAP_SFM_UNITS) and MUST NOT be labeled as METRES.
     """
 
-    anchor_type: str  # "known_distance", "laser_survey", "lidar_ground_truth", "synthetic_ground_truth"
+    anchor_type: str  # "known_distance", "laser_survey", "laser_distance_meter", "lidar_ground_truth", "synthetic_ground_truth"
     measured_distance_m: float  # Physical measured distance in meters
+    anchor_id: str = "anchor://unspecified"  # URI reference to the verified physical calibration
+    provenance: str = ""  # Surveyor identity, instrument serial, calibration date
+    is_independently_surveyed: bool = False  # True ONLY for physical on-site survey measurements
     uncertainty_m: float = 0.01  # Measurement uncertainty in meters
     reference_point_a: tuple[float, float, float] | None = None  # 3D coordinate in unscaled world frame
     reference_point_b: tuple[float, float, float] | None = None  # 3D coordinate in unscaled world frame
     notes: str = ""
 
+    def __post_init__(self) -> None:
+        if self.anchor_type in PHYSICAL_ANCHOR_TYPES:
+            prov = self.provenance or self.notes or f"anchor://{self.anchor_type}"
+            if not self.provenance:
+                object.__setattr__(self, "provenance", prov)
+            object.__setattr__(self, "is_independently_surveyed", True)
+            if self.anchor_id == "anchor://unspecified":
+                object.__setattr__(self, "anchor_id", f"anchor://{self.anchor_type}")
+
     def to_dict(self) -> dict:
         return {
+            "anchor_id": self.anchor_id,
             "anchor_type": self.anchor_type,
             "measured_distance_m": self.measured_distance_m,
+            "provenance": self.provenance,
+            "is_independently_surveyed": self.is_independently_surveyed,
             "uncertainty_m": self.uncertainty_m,
             "reference_point_a": list(self.reference_point_a) if self.reference_point_a else None,
             "reference_point_b": list(self.reference_point_b) if self.reference_point_b else None,
@@ -60,7 +75,9 @@ DEFAULT_MIN_HELD_OUT = 5
 
 
 def validate_metric_anchor(
-    anchor: MetricAnchor, reference_points_3d: Sequence[tuple[float, float, float]] = ()
+    anchor: MetricAnchor,
+    reference_points_3d: Sequence[tuple[float, float, float]] = (),
+    allow_synthetic: bool = False,
 ) -> str | None:
     """Reason the anchor cannot establish physical metres, or None when it can.
 
@@ -75,8 +92,23 @@ def validate_metric_anchor(
     u = anchor.uncertainty_m
     if not (isinstance(u, (int, float)) and np.isfinite(u)) or u < 0.0 or u >= d:
         return "INVALID_METRIC_ANCHOR: uncertainty_m must be finite, >= 0 and smaller than the measured distance"
+
     if "synthetic" in str(anchor.anchor_type).lower():
-        return "SYNTHETIC_ANCHOR: synthetic ground truth cannot establish physical metres"
+        if getattr(anchor, "is_independently_surveyed", False):
+            return "FORGED_METRIC_ANCHOR: Synthetic ground truth cannot claim is_independently_surveyed=True"
+        if not allow_synthetic:
+            return "SYNTHETIC_ANCHOR: synthetic ground truth cannot establish physical metres"
+
+    # Validate independent physical survey claims
+    if getattr(anchor, "is_independently_surveyed", False):
+        prov = getattr(anchor, "provenance", "") or anchor.notes
+        if not prov or not prov.strip():
+            return "FORGED_METRIC_ANCHOR: Independently surveyed anchor requires non-empty physical survey provenance"
+        valid_prefixes = ("anchor://", "survey://", "physical://", "laser://")
+        aid = getattr(anchor, "anchor_id", "")
+        if not aid or not any(aid.startswith(p) for p in valid_prefixes) or aid == "anchor://unspecified":
+            return f"FORGED_METRIC_ANCHOR: Independently surveyed anchor requires verified anchor_id starting with {valid_prefixes}"
+
     pa, pb = anchor.reference_point_a, anchor.reference_point_b
     if pa is None or pb is None:
         return "ANCHOR_REFERENCE_POINTS_MISSING: both reference points are required to tie the measurement to the reconstruction"
@@ -86,7 +118,7 @@ def validate_metric_anchor(
         return "INVALID_METRIC_ANCHOR: reference points are not numeric"
     if a.shape != (3,) or b.shape != (3,) or not (np.isfinite(a).all() and np.isfinite(b).all()):
         return "INVALID_METRIC_ANCHOR: reference points must be finite 3-vectors"
-    if anchor.anchor_type not in PHYSICAL_ANCHOR_TYPES:
+    if anchor.anchor_type not in PHYSICAL_ANCHOR_TYPES and not (allow_synthetic and "synthetic" in str(anchor.anchor_type).lower()):
         return f"UNVERIFIED_ANCHOR_TYPE: {anchor.anchor_type!r} is not an independent physical measurement type {PHYSICAL_ANCHOR_TYPES}"
     cloud = np.asarray(reference_points_3d, dtype=np.float64).reshape(-1, 3) if len(reference_points_3d) else np.zeros((0, 3))
     extent = float(np.linalg.norm(cloud.max(axis=0) - cloud.min(axis=0))) if len(cloud) else 0.0
@@ -131,6 +163,48 @@ class ScaleAlignmentResult:
     held_out_count: int = 0
     metric_anchor: MetricAnchor | None = None
     rejection_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.is_aligned:
+            is_valid, err = self.validate_scale_contract()
+            if not is_valid:
+                raise ValueError(err)
+
+    def validate_scale_contract(self) -> tuple[bool, str | None]:
+        """Validates that scale_state, units, and is_physically_metric are coherent and non-contradictory."""
+        if self.scale_state == "METRIC_SCALE_ALIGNED":
+            if not self.is_physically_metric:
+                return False, "CONTRADICTORY_SCALE_CONTRACT: scale_state='METRIC_SCALE_ALIGNED' requires is_physically_metric=True"
+            if self.units not in ("METRES", "m"):
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: scale_state='METRIC_SCALE_ALIGNED' requires units in ('METRES', 'm'), got {self.units!r}"
+            if self.metric_anchor is None or not getattr(self.metric_anchor, "is_independently_surveyed", False):
+                return False, "CONTRADICTORY_SCALE_CONTRACT: METRIC_SCALE_ALIGNED requires an independently surveyed MetricAnchor"
+
+        if self.units in ("METRES", "m"):
+            if not self.is_physically_metric:
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: units={self.units!r} cannot be claimed when is_physically_metric=False"
+            if self.scale_state != "METRIC_SCALE_ALIGNED":
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: units={self.units!r} requires scale_state='METRIC_SCALE_ALIGNED', got {self.scale_state!r}"
+
+        if self.is_physically_metric:
+            if self.scale_state != "METRIC_SCALE_ALIGNED":
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: is_physically_metric=True requires scale_state='METRIC_SCALE_ALIGNED', got {self.scale_state!r}"
+            if self.units not in ("METRES", "m"):
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: is_physically_metric=True requires units in ('METRES', 'm'), got {self.units!r}"
+
+        if self.scale_state == "SYNTHETIC_SCALE_ALIGNED":
+            if self.is_physically_metric:
+                return False, "CONTRADICTORY_SCALE_CONTRACT: SYNTHETIC_SCALE_ALIGNED cannot be physically metric"
+            if self.units in ("METRES", "m"):
+                return False, "CONTRADICTORY_SCALE_CONTRACT: SYNTHETIC_SCALE_ALIGNED must use 'SYNTHETIC_METRES' or 'model_metres', not surveyed 'METRES'"
+
+        if self.scale_state == "SFM_ALIGNED_UNMETRIC":
+            if self.is_physically_metric:
+                return False, "CONTRADICTORY_SCALE_CONTRACT: SFM_ALIGNED_UNMETRIC cannot be physically metric"
+            if self.units != "COLMAP_SFM_UNITS":
+                return False, f"CONTRADICTORY_SCALE_CONTRACT: SFM_ALIGNED_UNMETRIC requires units='COLMAP_SFM_UNITS', got {self.units!r}"
+
+        return True, None
 
     def to_dict(self) -> dict:
         return {

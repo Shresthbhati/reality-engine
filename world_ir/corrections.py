@@ -307,7 +307,7 @@ def split_entity(
         name=f"{ent.name} (Part 1)",
         semantic_labels=list(ent.semantic_labels),
         provenance=WProv.RECONSTRUCTED,
-        confidence=float(ent.confidence),
+        confidence=None if ent.confidence is None else float(ent.confidence),  # unmeasured stays unmeasured
         custom_properties=cp1,
         observations=list(ent.observations),
     )
@@ -317,7 +317,7 @@ def split_entity(
         name=f"{ent.name} (Part 2)",
         semantic_labels=list(ent.semantic_labels),
         provenance=WProv.RECONSTRUCTED,
-        confidence=float(ent.confidence),
+        confidence=None if ent.confidence is None else float(ent.confidence),  # unmeasured stays unmeasured
         custom_properties=cp2,
         observations=list(ent.observations),
     )

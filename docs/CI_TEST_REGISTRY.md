@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 569
+Total: 570
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -419,6 +419,7 @@ Total: 569
 - `tests/test_metric_3d_lifting.py`
 - `tests/test_metric_3d_lifting_rigorous.py`
 - `tests/test_metric_anchor_determinism.py`
+- `tests/test_metric_anchor_integrity.py`
 - `tests/test_metric_depth_task4_4.py`
 - `tests/test_metric_scale_fusion.py`
 - `tests/test_midas_backend.py`

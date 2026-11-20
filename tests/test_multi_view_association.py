@@ -407,3 +407,119 @@ def test_evaluate_association_benchmark_metrics() -> None:
     assert report.false_split_rate == 0.0
     assert "window" in report.per_class_metrics
     assert report.per_class_metrics["window"]["f1"] == 1.0
+
+
+def test_evaluate_association_benchmark_empty_ground_truth_returns_not_evaluated() -> None:
+    """When independent ground truth mapping is empty or unavailable, returns NOT_EVALUATED."""
+    from engine.multiengine.multi_view_association import evaluate_association_benchmark
+
+    obs1 = MultiViewEntityObservation(
+        observation_id="o1", source_id="p1.jpg", class_name="door",
+        position=(0.0, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+    associator = MultiViewAssociator()
+    entities, _, _ = associator.associate_observations([obs1])
+
+    report = evaluate_association_benchmark(
+        ground_truth_entities={},
+        reconciled_entities=entities,
+        observations=[obs1],
+    )
+    assert report.evaluation_status == "NOT_EVALUATED"
+    assert report.precision is None
+    assert report.recall is None
+    assert report.f1_score is None
+    assert report.unlabelled_observations_count == 1
+
+
+def test_evaluate_association_benchmark_empty_positive_set_returns_none() -> None:
+    """When GT contains only negative pairs (distinct physical objects), precision and recall are not 1.0."""
+    from engine.multiengine.multi_view_association import evaluate_association_benchmark
+
+    obs1 = MultiViewEntityObservation(
+        observation_id="o1", source_id="p1.jpg", class_name="door",
+        position=(0.0, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="o2", source_id="p2.jpg", class_name="door",
+        position=(10.0, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+    associator = MultiViewAssociator()
+    entities, _, _ = associator.associate_observations([obs1, obs2])
+
+    gt_identities = {
+        "o1": "phys_door_A",
+        "o2": "phys_door_B",
+    }
+    report = evaluate_association_benchmark(
+        ground_truth_entities=gt_identities,
+        reconciled_entities=entities,
+        observations=[obs1, obs2],
+    )
+    assert report.evaluation_status == "COMPLETED"
+    assert report.true_positives == 0
+    assert report.false_positives == 0
+    assert report.false_negatives == 0
+    assert report.precision is None
+    assert report.recall is None
+
+
+def test_multi_view_association_across_2_3_4_views() -> None:
+    """Tests an object observed and associated across 2, 3, and 4 distinct camera views."""
+    obs_views = [
+        MultiViewEntityObservation(
+            observation_id=f"obs_view_{i}",
+            source_id=f"camera_{i}.jpg",
+            class_name="table",
+            position=(2.5 + 0.01 * i, 1.0, 2.0 - 0.01 * i),
+            dimensions=(1.5, 0.8, 0.75),
+            confidence=0.85 + 0.02 * i,
+        )
+        for i in range(4)
+    ]
+
+    associator = MultiViewAssociator()
+
+    # 2 views
+    ent_2, sum_2, _ = associator.associate_observations(obs_views[:2])
+    assert len(ent_2) == 1
+    assert ent_2[0].is_multiview
+    assert len(ent_2[0].sources) == 2
+
+    # 3 views
+    ent_3, sum_3, _ = associator.associate_observations(obs_views[:3])
+    assert len(ent_3) == 1
+    assert ent_3[0].is_multiview
+    assert len(ent_3[0].sources) == 3
+
+    # 4 views
+    ent_4, sum_4, decisions = associator.associate_observations(obs_views)
+    assert len(ent_4) == 1
+    assert ent_4[0].is_multiview
+    assert len(ent_4[0].sources) == 4
+    assert sum_4.max_views_per_entity == 4
+
+
+def test_cross_view_ledger_records_all_refusal_reasons() -> None:
+    """Verifies that non-matching pairs are recorded in the ledger with explicit refusal reasons."""
+    obs_close_door = MultiViewEntityObservation(
+        observation_id="door_1", source_id="p1.jpg", class_name="door",
+        position=(0.0, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+    obs_far_door = MultiViewEntityObservation(
+        observation_id="door_2", source_id="p2.jpg", class_name="door",
+        position=(50.0, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+    obs_same_img = MultiViewEntityObservation(
+        observation_id="door_3", source_id="p1.jpg", class_name="door",
+        position=(0.1, 0.0, 3.0), dimensions=(0.9, 0.1, 2.1), confidence=0.9,
+    )
+
+    associator = MultiViewAssociator()
+    _, summary, decisions = associator.associate_observations([obs_close_door, obs_far_door, obs_same_img])
+
+    reasons = [d.reason for d in decisions if d.outcome == "refused"]
+    assert "excessive_3d_distance" in reasons
+    assert "same_image_conflict" in reasons
+    assert summary.refused_pairs_count >= 2
+

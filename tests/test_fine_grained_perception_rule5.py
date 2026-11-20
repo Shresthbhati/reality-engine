@@ -235,3 +235,27 @@ def test_fine_grained_perception_pipeline_world_promotion():
         geom = updated_world.geometries[gid]
         assert geom.bounds_min is not None
         assert geom.bounds_max is not None
+
+
+def test_clean_and_split_detection_label():
+    """Verify compound label splitting and empty/invalid label refusal."""
+    from engine.multiengine.adapters.perception_detectors import clean_and_split_detection_label
+
+    queries = ["wall", "door", "window", "floor", "electrical socket", "light switch"]
+
+    # 1. Compound label from prompt span
+    compound = "door window electrical socket light switch"
+    res = clean_and_split_detection_label(compound, queries)
+    assert set(res) == {"door", "window", "electrical socket", "light switch"}
+
+    # 2. Empty, whitespace, None, none
+    assert clean_and_split_detection_label("") == []
+    assert clean_and_split_detection_label("   ") == []
+    assert clean_and_split_detection_label(None) == []
+    assert clean_and_split_detection_label("none") == []
+    assert clean_and_split_detection_label("unknown") == []
+
+    # 3. Exact single match
+    assert clean_and_split_detection_label("door", queries) == ["door"]
+    assert clean_and_split_detection_label(" electrical socket ", queries) == ["electrical socket"]
+

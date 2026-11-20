@@ -63,6 +63,33 @@ def test_lift_detection_reconstructs_metric_position_and_dimensions(
     assert pytest.approx(lifted.dimensions[0], abs=0.05) == 0.40
     assert pytest.approx(lifted.dimensions[1], abs=0.05) == 0.40
 
+
+def test_to_observation_drafts_emits_valid_metric3d_contract(
+    test_setup: tuple[PinholeCamera, np.ndarray, UniversalObjectOntology],
+) -> None:
+    from engine.multiengine.metric3d import Metric3DObservation
+
+    camera, depth_map, ontology = test_setup
+    lifter = Metric3DLifter(ontology)
+    lifted = lifter.lift_detection(
+        entity_id="chair_01",
+        class_name="chair",
+        box_2d=(270.0, 190.0, 370.0, 290.0),
+        depth_map=depth_map,
+        camera=camera,
+        confidence=0.88,
+    )
+    assert lifted is not None
+    drafts = lifter.to_observation_drafts(lifted)
+    pos_draft = next(d for d in drafts if d.quantity == "position")
+    assert "metric3d" in pos_draft.predicted
+    metric3d_dict = pos_draft.predicted["metric3d"]
+    obs = Metric3DObservation.from_dict(metric3d_dict)
+    assert obs.problems() == []
+    assert obs.quantity == "position"
+    assert obs.units == "m"
+
+
     # Uncertainty covariance exists and is positive definite
     assert lifted.covariance_position is not None
     cov = np.array(lifted.covariance_position)

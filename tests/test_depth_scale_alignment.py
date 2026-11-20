@@ -13,8 +13,10 @@ import numpy as np
 from engine.math import Quat, Vec3
 from engine.multiengine.depth_scale_alignment import (
     MetricAnchor,
+    ScaleAlignmentResult,
     align_relative_depth_to_metric,
     validate_depth_map,
+    validate_metric_anchor,
 )
 from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
 
@@ -446,3 +448,99 @@ def test_align_relative_depth_to_metric_rejects_insufficient_points() -> None:
     assert not result.is_aligned
     assert result.scale_state == "RELATIVE_UNSCALED"
     assert result.rejection_reason is not None and "INSUFFICIENT_CORRESPONDENCES" in result.rejection_reason
+
+
+def test_validate_metric_anchor_rejects_forged_claims() -> None:
+    # 1. Synthetic anchor claiming is_independently_surveyed=True
+    forged_synthetic = MetricAnchor(
+        anchor_type="synthetic_ground_truth",
+        measured_distance_m=5.0,
+        is_independently_surveyed=True,
+        reference_point_a=(0.0, 0.0, 0.0),
+        reference_point_b=(5.0, 0.0, 0.0),
+    )
+    is_valid, err, _ = validate_metric_anchor(forged_synthetic, allow_synthetic=True)
+    assert not is_valid
+    assert "FORGED_METRIC_ANCHOR" in err
+    assert "cannot claim is_independently_surveyed=True" in err
+
+    # 2. Independently surveyed claim with empty provenance
+    forged_survey = MetricAnchor(
+        anchor_type="laser_survey",
+        measured_distance_m=5.0,
+        is_independently_surveyed=True,
+        provenance="",
+        notes="",
+        anchor_id="anchor://valid",
+        reference_point_a=(0.0, 0.0, 0.0),
+        reference_point_b=(5.0, 0.0, 0.0),
+    )
+    is_valid, err, _ = validate_metric_anchor(forged_survey)
+    assert not is_valid
+    assert "FORGED_METRIC_ANCHOR" in err
+    assert "provenance" in err
+
+    # 3. Independently surveyed claim with unspecified or arbitrary anchor URI
+    forged_uri = MetricAnchor(
+        anchor_type="laser_survey",
+        measured_distance_m=5.0,
+        is_independently_surveyed=True,
+        provenance="Surveyor Smith",
+        anchor_id="unspecified",
+        reference_point_a=(0.0, 0.0, 0.0),
+        reference_point_b=(5.0, 0.0, 0.0),
+    )
+    is_valid, err, _ = validate_metric_anchor(forged_uri)
+    assert not is_valid
+    assert "FORGED_METRIC_ANCHOR" in err
+    assert "anchor_id" in err
+
+
+def test_scale_alignment_result_rejects_contradictory_states() -> None:
+    import pytest
+
+    # 1. scale_state="METRIC_SCALE_ALIGNED" but is_physically_metric=False
+    with pytest.raises(ValueError, match="requires is_physically_metric=True"):
+        ScaleAlignmentResult(
+            is_aligned=True,
+            scale_state="METRIC_SCALE_ALIGNED",
+            units="METRES",
+            is_physically_metric=False,
+        )
+
+    # 2. units="METRES" but is_physically_metric=False
+    with pytest.raises(ValueError, match="cannot be claimed when is_physically_metric=False"):
+        ScaleAlignmentResult(
+            is_aligned=True,
+            scale_state="SFM_ALIGNED_UNMETRIC",
+            units="METRES",
+            is_physically_metric=False,
+        )
+
+    # 3. is_physically_metric=True but units != "METRES"
+    with pytest.raises(ValueError, match="requires units in"):
+        ScaleAlignmentResult(
+            is_aligned=True,
+            scale_state="METRIC_SCALE_ALIGNED",
+            units="COLMAP_SFM_UNITS",
+            is_physically_metric=True,
+        )
+
+    # 4. SYNTHETIC_SCALE_ALIGNED claiming is_physically_metric=True
+    with pytest.raises(ValueError, match="is_physically_metric=True requires scale_state='METRIC_SCALE_ALIGNED'"):
+        ScaleAlignmentResult(
+            is_aligned=True,
+            scale_state="SYNTHETIC_SCALE_ALIGNED",
+            units="SYNTHETIC_METRES",
+            is_physically_metric=True,
+        )
+
+    # 5. SYNTHETIC_SCALE_ALIGNED using surveyed 'METRES'
+    with pytest.raises(ValueError, match="cannot be claimed when is_physically_metric=False"):
+        ScaleAlignmentResult(
+            is_aligned=True,
+            scale_state="SYNTHETIC_SCALE_ALIGNED",
+            units="METRES",
+            is_physically_metric=False,
+        )
+

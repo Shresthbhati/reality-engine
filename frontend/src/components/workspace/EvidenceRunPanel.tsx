@@ -15,6 +15,7 @@ import {
   exportEvidenceRun,
   mergeEvidenceEntities,
   splitEvidenceEntity,
+  proposeEvidenceRun,
   reclassifyEvidenceEntity,
   type EvidenceEntityDetail,
   type EvidenceEntityRow,
@@ -189,6 +190,24 @@ export default function EvidenceRunPanel({
               }
             >
               View this run&apos;s world in 3D
+            </button>
+          )}
+          {runId && w?.status === "persisted" && (
+            <button
+              type="button"
+              className="text-xs rounded px-2 py-1 self-start"
+              style={{ border: "1px solid var(--border)" }}
+              onClick={() =>
+                proposeEvidenceRun(worldId, runId)
+                  .then((r) =>
+                    setNotice(
+                      `Proposed ${r.added_entities} entities to the world: ${r.proposal.summary.supported} supported, ${r.proposal.summary.needs_review} need review, ${r.proposal.summary.conflict} conflict. Nothing is committed until the proposal ${r.proposal.proposal_id} is accepted.`,
+                    ),
+                  )
+                  .catch((e) => setError(err(e, "Could not propose this run's world.")))
+              }
+            >
+              Propose to the world (review before adopting)
             </button>
           )}
           {readiness.export_ready && runId && (

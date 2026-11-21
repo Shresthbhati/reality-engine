@@ -143,6 +143,20 @@ export function mergeEvidenceEntities(worldId: string, runId: string, entityId: 
   );
 }
 
+export interface EvidenceProposalResult {
+  added_entities: number;
+  evidence_version: string;
+  proposal: { proposal_id: string; summary: { supported: number; needs_review: number; conflict: number; changes: number } };
+  frame_check: { basis: string; head_version: string; evidence_scale_states: string[] };
+  next: string;
+}
+
+/** Propose this run's evidence entities to the world's committed HEAD through the adoption protocol. Nothing is committed: the result is a
+ * pending proposal to review and accept (entity by entity). The server refuses (409) unless HEAD is the very version this run accompanied. */
+export function proposeEvidenceRun(worldId: string, runId: string, note = "") {
+  return apiPost<EvidenceProposalResult>(`${base(worldId)}/${encodeURIComponent(runId)}/propose`, { note });
+}
+
 export interface EvidenceSplitResult {
   version_id: string;
   new_entity_id: string;

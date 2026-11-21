@@ -186,7 +186,10 @@ def run_lift_stage(
                     common: dict[str, Any] = dict(
                         engine_id=engine, architecture_id=ARCH, checkpoint_id=drec.checkpoint_id or "none:geometric-algorithm",
                         source_id=src, units="sfm_units", scale_state=ScaleState.SFM_GAUGE, frame=target_frame, camera_id=src,
-                        image_size=(iw, ih), image_region=tuple(float(v) for v in b.image_region), raw_artifact_ref=ref,
+                        # a detector box can extend past the image edge; the exact box stays (it is the join key), and the size is
+                        # omitted for such a box rather than the observation being refused for the detector's own overshoot
+                        image_size=None if (min(b.image_region[:2]) < 0 or b.image_region[2] > iw or b.image_region[3] > ih) else (iw, ih),
+                        image_region=tuple(float(v) for v in b.image_region), raw_artifact_ref=ref,
                     )
                     recs = [Metric3DObservation(quantity="position", value=tuple(lifted.position), covariance=lifted.covariance_position, **common),
                             Metric3DObservation(quantity="dimensions", value=tuple(lifted.dimensions), covariance=lifted.covariance_dimensions, **common)]

@@ -113,8 +113,14 @@ def test_aligned_depth_gives_positioned_gauge_scale_entities_persisted_and_reloa
 
     rd = ew.readiness(_root(tmp_path))  # a FRESH read of what is on disk
     w = rd["world"]
-    assert w["status"] == "persisted" and w["entities"] == 2 and w["entities_with_position"] == 2 and w["entities_with_geometry"] == 2
-    assert w["scale_states"] == {"sfm_gauge": 2} and w["state"] == "complete"
+    # the same chair seen in BOTH photographs occupies the same 3D space, so the two detections are ONE entity (multi-view merge)
+    assert w["status"] == "persisted" and w["entities"] == 1 and w["entities_with_position"] == 1 and w["entities_with_geometry"] == 1
+    from worldstore.store import WorldStore
+
+    store = WorldStore(_root(tmp_path) / ew.WORLDSTORE_REL)
+    ent = next(iter(store.load_version(ew.head_version(_root(tmp_path))).entities.values()))
+    assert len({o.data_uri for o in ent.observations if o.metadata.get("quantity") == "bbox"}) == 2  # evidence from both photographs
+    assert w["scale_states"] == {"sfm_gauge": 1} and w["state"] == "complete"
     assert rd["export_ready"] is True and rd["metric_export_ready"] is False  # geometry exists, but it is NOT metres
     assert "not physically anchored metres" in rd["export_scale_warning"]
 
@@ -126,6 +132,7 @@ def test_the_lifted_position_and_extent_match_the_known_scene(tmp_path, photos):
     store = WorldStore(_root(tmp_path) / ew.WORLDSTORE_REL)
     vid = sorted((_root(tmp_path) / ew.WORLDSTORE_REL / "versions").glob("*.json"))[-1].stem
     world = store.load_version(vid)
+    assert len(world.entities) == 1
     for e in world.entities.values():
         p = e.transform["position"]
         # the object centre is the optical axis at z=2 (synthetic ground truth of THIS scene, in the scene's own units)

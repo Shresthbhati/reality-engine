@@ -188,6 +188,13 @@ def run_for_job(
             e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
         ]
 
+        if wanted:  # depth is requested, so detections may carry lifted 3D boxes: associate across views by 3D overlap first
+            from engine.multiengine.pair_scoring_3d import MIN_IOU, make_geometry_pair_scorer
+
+            scorer = make_geometry_pair_scorer(scorer)  # pairs without 3D boxes still go to the epipolar scorer (if any)
+            scoring_note = {**(scoring_note or {}), "geometry": {"method": "3D box IoU of lifted boxes", "min_iou": MIN_IOU,
+                                                                  "caveat": "untuned threshold; same-class objects overlapping in space would merge"}}
+
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:
             """Depth (sequential, each model unloaded before the next) then lifting, on the flow's own matrix so refinement and
             entity derivation see the result. Lifting needs depth + registered cameras + the job's sparse SfM points."""

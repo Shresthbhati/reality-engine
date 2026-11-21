@@ -523,12 +523,7 @@ per run, built from the Evidence Matrix by the canonical bridge).
   inspected through `/api/worlds/{id}/evidence-world/*` and the Evidence runs panel. Section 6 remains the ONLY path by which a world becomes HEAD.
 - **Scale rule:** evidence-world positions/dimensions carry `scale_state` / `units` on the entity transform and the box geometry. SfM-gauge values
   are `sfm_units`, `physically_metric: false`; `readiness().metric_export_ready` is true only when every positioned entity is `metric_anchored`.
-- **DECISION REQUIRED (merge into one canonical world):** OPTIONS (a) promote evidence entities as a `ChangeSet` proposed through section 6;
-  (b) make the evidence bridge the single producer and retire the vertical-slice entity path; (c) keep both and show both. TRADEOFFS: (a) reuses the
-  adoption/rollback safety but needs entity-identity alignment between the two producers and a verified frame/unit match (the evidence entities are
-  in the SfM gauge frame; the vertical-slice world is canonicalised +Y-up, scale-state dependent); (b) is the cleanest end state but rewrites the
-  verified vertical-slice path; (c) leaves the user with two inconsistent worlds. RECOMMENDATION: (a), after the frame/unit check passes on a real
-  furnished-interior run. DEPENDENCIES: that real run, which does not exist yet (see RELEASE.md open facts).
+- **DECIDED and IMPLEMENTED (option a, 2026-11-22):** the evidence world reaches the committed world only as a *proposal* through section 6. `POST /api/worlds/{id}/evidence-world/{run}/propose` builds HEAD plus the evidence entities and returns a pending change proposal; the user accepts it through `/api/worlds/{id}/proposals/{pid}/accept` (a subset by `entity_ids` if wanted). Nothing is committed by proposing; HEAD's own entities are never modified. **Frame/unit gate:** refused (409) unless HEAD is exactly the version the same job committed beside this run (`committed_version.json`, written by the job after read-back verification): one COLMAP model, one canonical frame, one scale state. A world that has evolved since, or a run without the record, is not mixed in. Evidence entities cite their observations (surfaces cite the aligned depth records they were fitted from), so the protocol judges them on evidence: objects `supported`, anything uncited `needs_review`. Verified on a real 12-photograph run (see section 8); not verified: acceptance after the world has evolved through later sessions (refused by design, no re-alignment path yet).
 
 
 ### 8. Spatial intelligence in the production path (PR #361 deliverable; status: IMPLEMENTED + EXECUTED ON REAL DATA, not physically validated)

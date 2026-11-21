@@ -70,8 +70,8 @@ class SpatialEntity3D:
     planarity_score: float | None = None
     primitive_type: str = "box"  # box, plane, cylinder, point_proxy
     confidence: float = 0.5
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED"
-    scale_units: str = "METRES"
+    scale_state: str = "relative_depth"
+    scale_units: str = "relative"
     is_physically_metric: bool = False
     source_image_id: str = ""
     box_2d: tuple[float, float, float, float] | None = None
@@ -174,8 +174,8 @@ def lift_region_to_spatial_entity(
     min_points: int = 5,
     confidence: float = 0.5,
     source_image_id: str = "",
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED",
-    scale_units: str = "METRES",
+    scale_state: str = "relative_depth",
+    scale_units: str = "relative",
     is_physically_metric: bool = False,
 ) -> SpatialEntity3D | None:
     """Lifts a 2D bounding box and optional instance mask into a 3D SpatialEntity3D."""

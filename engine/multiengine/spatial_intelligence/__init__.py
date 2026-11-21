@@ -1,5 +1,12 @@
 """Reconstruction Intelligence and Multi-View Spatial Understanding Package."""
 
+from engine.multiengine.spatial_intelligence.active_capture import (
+    ActiveCaptureAnalyzer,
+    ActiveCapturePlan,
+    CaptureIssueType,
+    CapturePriority,
+    CaptureRequest,
+)
 from engine.multiengine.spatial_intelligence.association import (
     AssociationOutcome,
     CrossViewRayCandidate,
@@ -13,9 +20,23 @@ from engine.multiengine.spatial_intelligence.association import (
 from engine.multiengine.spatial_intelligence.attributes import (
     EntityVisualAttributes,
     MaterialType,
+    ObjectCondition,
     ObjectState,
     SurfaceFinish,
     extract_visual_attributes,
+)
+from engine.multiengine.spatial_intelligence.detection_pipeline import (
+    DetectionBox,
+    DetectionScale,
+    TileWindow,
+    compute_box_iou,
+    filter_by_class_confidence,
+    generate_domain_prompts,
+    generate_tiling_windows,
+    reconcile_cross_engine_detections,
+    refine_instance_mask,
+    suppress_duplicates_preserving_parts,
+    transform_tile_detections_to_image,
 )
 from engine.multiengine.spatial_intelligence.integration import (
     DetectionInput,
@@ -37,7 +58,11 @@ from engine.multiengine.spatial_intelligence.taxonomy import (
     TaxonomyClass,
     are_semantically_compatible,
     get_all_taxonomy_classes,
+    get_ancestor_classes,
     get_detection_queries_by_domain,
+    get_domain_prompts,
+    get_hierarchical_path,
+    get_subparts_for_class,
     resolve_taxonomy_class,
 )
 
@@ -48,10 +73,15 @@ __all__ = [
     "TaxonomyClass",
     "are_semantically_compatible",
     "get_all_taxonomy_classes",
+    "get_ancestor_classes",
     "get_detection_queries_by_domain",
+    "get_domain_prompts",
+    "get_hierarchical_path",
+    "get_subparts_for_class",
     "resolve_taxonomy_class",
     "EntityVisualAttributes",
     "MaterialType",
+    "ObjectCondition",
     "ObjectState",
     "SurfaceFinish",
     "extract_visual_attributes",
@@ -69,6 +99,22 @@ __all__ = [
     "build_camera_ray",
     "compute_ray_cpa",
     "evaluate_cross_view_pair",
+    "DetectionBox",
+    "DetectionScale",
+    "TileWindow",
+    "compute_box_iou",
+    "filter_by_class_confidence",
+    "generate_domain_prompts",
+    "generate_tiling_windows",
+    "reconcile_cross_engine_detections",
+    "refine_instance_mask",
+    "suppress_duplicates_preserving_parts",
+    "transform_tile_detections_to_image",
+    "ActiveCaptureAnalyzer",
+    "ActiveCapturePlan",
+    "CaptureIssueType",
+    "CapturePriority",
+    "CaptureRequest",
     "DetectionInput",
     "SpatialSceneResult",
     "reconstruct_spatial_scene",

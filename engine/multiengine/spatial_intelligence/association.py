@@ -81,7 +81,9 @@ class PhysicalMergedEntity:
     reprojection_residual_px: float
     ray_triangulation_residual_m: float
     is_multiview: bool
+    scale_state: str = "SYNTHETIC_SCALE_ALIGNED"
     scale_units: str = "METRES"
+    is_physically_metric: bool = False
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,7 +100,9 @@ class PhysicalMergedEntity:
             "reprojection_residual_px": round(self.reprojection_residual_px, 2),
             "ray_triangulation_residual_m": round(self.ray_triangulation_residual_m, 4),
             "is_multiview": self.is_multiview,
+            "scale_state": self.scale_state,
             "scale_units": self.scale_units,
+            "is_physically_metric": self.is_physically_metric,
             "details": self.details,
         }
 
@@ -448,6 +452,40 @@ class MultiViewIntelligenceEngine:
             cluster_reproj_residuals[root_a].extend(cluster_reproj_residuals[root_b])
             accepted_merges += 1
 
+        # Post-pass: False-Split Reduction
+        # If two distinct clusters have zero image collision, compatible class, and close 3D centroids, merge them.
+        unique_roots = list(set(find(c.observation_id) for c in candidates))
+        for r_i in range(len(unique_roots)):
+            for r_j in range(r_i + 1, len(unique_roots)):
+                root_i = find(unique_roots[r_i])
+                root_j = find(unique_roots[r_j])
+                if root_i == root_j:
+                    continue
+                # Check for image collision
+                if cluster_sources[root_i] & cluster_sources[root_j]:
+                    continue
+
+                pts_i = cluster_positions.get(root_i, [])
+                pts_j = cluster_positions.get(root_j, [])
+                if not pts_i or not pts_j:
+                    continue
+
+                pos_i = np.median(np.array(pts_i), axis=0)
+                pos_j = np.median(np.array(pts_j), axis=0)
+                dist_ij = float(np.linalg.norm(pos_i - pos_j))
+
+                # Check semantic compatibility
+                cand_i = obs_by_id[root_i]
+                cand_j = obs_by_id[root_j]
+                if dist_ij <= 0.30 and are_semantically_compatible(cand_i.class_name, cand_j.class_name):
+                    # Merge root_j into root_i (false split repaired)
+                    parent[root_j] = root_i
+                    cluster_sources[root_i].update(cluster_sources[root_j])
+                    cluster_positions[root_i].extend(cluster_positions[root_j])
+                    cluster_ray_residuals[root_i].extend(cluster_ray_residuals[root_j])
+                    cluster_reproj_residuals[root_i].extend(cluster_reproj_residuals[root_j])
+                    refusal_counts["false_split_repaired"] += 1
+
         # Form Reconciled Physical Entities
         grouped_members: dict[str, list[str]] = defaultdict(list)
         for c in candidates:
@@ -462,13 +500,11 @@ class MultiViewIntelligenceEngine:
             is_multi = len(sources) >= 2
 
             # Compute reconciled position
-            # If triangulated points exist, average them; otherwise fall back to lifted entity position
             pts_pool = cluster_positions.get(root_id, [])
             if pts_pool:
                 arr = np.array(pts_pool, dtype=np.float64)
                 fused_pos = tuple(float(c) for c in np.median(arr, axis=0))
             else:
-                # Approximate position along ray at 2.0m depth
                 first_m = members[0]
                 p_approx = first_m.origin + 2.0 * first_m.direction
                 fused_pos = (float(p_approx[0]), float(p_approx[1]), float(p_approx[2]))
@@ -482,14 +518,19 @@ class MultiViewIntelligenceEngine:
                 tax_node = resolve_taxonomy_class(primary_cls)
                 fused_dims = tax_node.min_dimensions_m
 
-            # Orientation & Normal
+            # Orientation & Normal & Scale contract
             orient = (1.0, 0.0, 0.0, 0.0)
             norm = None
+            scale_state = "SYNTHETIC_SCALE_ALIGNED"
+            is_metric = False
             for m in members:
-                if m.lifted_entity and m.lifted_entity.surface_normal:
-                    norm = m.lifted_entity.surface_normal
-                    orient = m.lifted_entity.orientation_quat_wxyz
-                    break
+                if m.lifted_entity:
+                    scale_state = m.lifted_entity.scale_state
+                    is_metric = m.lifted_entity.is_physically_metric
+                    if m.lifted_entity.surface_normal:
+                        norm = m.lifted_entity.surface_normal
+                        orient = m.lifted_entity.orientation_quat_wxyz
+                        break
 
             mean_ray_res = float(np.mean(cluster_ray_residuals[root_id])) if cluster_ray_residuals[root_id] else 0.0
             mean_rep_res = float(np.mean(cluster_reproj_residuals[root_id])) if cluster_reproj_residuals[root_id] else 0.0
@@ -511,7 +552,9 @@ class MultiViewIntelligenceEngine:
                 reprojection_residual_px=mean_rep_res,
                 ray_triangulation_residual_m=mean_ray_res,
                 is_multiview=is_multi,
+                scale_state=scale_state,
                 scale_units="METRES",
+                is_physically_metric=is_metric,
                 details={
                     "view_count": len(sources),
                     "observation_count": len(member_ids),

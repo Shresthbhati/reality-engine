@@ -16,6 +16,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from engine.multiengine.metric3d import Metric3DObservation, ScaleState
+from engine.multiengine.spatial_intelligence.active_capture import (
+    ActiveCaptureAnalyzer,
+    ActiveCapturePlan,
+)
 from engine.multiengine.spatial_intelligence.association import (
     CrossViewRayCandidate,
     MultiViewIntelligenceEngine,
@@ -68,6 +72,7 @@ class SpatialSceneResult:
     spatial_relationships: tuple[SpatialRelationship, ...]
     association_decisions: tuple[PairScore, ...]
     refusal_reasons: dict[str, int]
+    active_capture_plan: ActiveCapturePlan | None = None
     scale_units: str = "METRES"
     is_physically_metric: bool = False
 
@@ -162,6 +167,10 @@ class SpatialSceneResult:
                     },
                 )
                 world.entities[src_ent_id].relationships.append(world_rel)
+
+        # Attach active capture guidance to metadata
+        if self.active_capture_plan is not None:
+            world.metadata["active_capture_guidance"] = self.active_capture_plan.to_dict()
 
         return world
 
@@ -287,6 +296,15 @@ def reconstruct_spatial_scene(
     # 4. Infer Spatial Relationships between lifted 3D entities
     spatial_rels = infer_spatial_relationships(lifted_entities)
 
+    # 5. Active Capture Gap Analysis
+    capture_analyzer = ActiveCaptureAnalyzer()
+    capture_plan = capture_analyzer.analyze(
+        merged_entities=merged_entities,
+        lifted_entities=lifted_entities,
+        cameras=cameras,
+        is_scene_metric=is_physically_metric,
+    )
+
     return SpatialSceneResult(
         merged_entities=merged_entities,
         lifted_entities=tuple(lifted_entities),
@@ -294,6 +312,7 @@ def reconstruct_spatial_scene(
         spatial_relationships=tuple(spatial_rels),
         association_decisions=tuple(decisions),
         refusal_reasons=refusal_reasons,
+        active_capture_plan=capture_plan,
         scale_units=scale_units,
         is_physically_metric=is_physically_metric,
     )

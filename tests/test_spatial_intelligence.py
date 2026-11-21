@@ -19,10 +19,12 @@ from engine.multiengine.spatial_intelligence.association import (
     AssociationOutcome,
     CrossViewRayCandidate,
     MultiViewIntelligenceEngine,
+    PhysicalMergedEntity,
     build_camera_ray,
     compute_ray_cpa,
     evaluate_cross_view_pair,
     triangulate_multiview_rays,
+    validate_ray_candidate,
 )
 from engine.multiengine.spatial_intelligence.attributes import (
     ObjectState,
@@ -34,7 +36,9 @@ from engine.multiengine.spatial_intelligence.integration import (
     reconstruct_spatial_scene,
 )
 from engine.multiengine.spatial_intelligence.spatial_lifting import (
+    SpatialEntity3D,
     SpatialRelationKind,
+    infer_spatial_relationships,
     propagate_unprojection_covariance,
 )
 from engine.multiengine.spatial_intelligence.taxonomy import (
@@ -549,6 +553,7 @@ def test_scale_state_incompatibility_refusal() -> None:
         scale_state="metric_anchored",
         scale_units="m",
         is_physically_metric=True,
+        physical_anchor_ref="anchor://apriltag_001",
     )
 
     score = evaluate_cross_view_pair(ray_relative, ray_metric)
@@ -749,6 +754,7 @@ def test_adversarial_transitive_scale_bridge_prevention() -> None:
         scale_state="metric_anchored",
         scale_units="m",
         is_physically_metric=True,
+        physical_anchor_ref="anchor://apriltag_001",
     )
 
     # Candidate B: UNKNOWN scale (potential bridge attack)
@@ -927,6 +933,7 @@ def test_triangulation_many_views_and_outlier_rejection() -> None:
             scale_state="metric_anchored",
             scale_units="m",
             is_physically_metric=True,
+            physical_anchor_ref="anchor://apriltag_001",
         )
         rays.append(ray)
 
@@ -943,6 +950,7 @@ def test_triangulation_many_views_and_outlier_rejection() -> None:
         scale_state="metric_anchored",
         scale_units="m",
         is_physically_metric=True,
+        physical_anchor_ref="anchor://apriltag_001",
     )
     rays.append(outlier_ray)
 
@@ -976,5 +984,253 @@ def test_cluster_wide_coordinate_frame_and_units_integrity() -> None:
     score = evaluate_cross_view_pair(ray_world, ray_local)
     assert score.outcome == AssociationOutcome.REFUSED
     assert score.reason == "coordinate_frame_mismatch"
+
+
+def test_synthetic_scale_never_serializes_to_metres() -> None:
+    """Verifies that synthetic-scale entities strictly never serialize or alias to metres."""
+    ent = PhysicalMergedEntity(
+        canonical_entity_id="phys_synth_001",
+        primary_class="table",
+        member_observation_ids=("obs_1", "obs_2"),
+        sources=("img_1", "img_2"),
+        position=(1.2, 0.4, 2.8),
+        dimensions=(1.5, 0.8, 0.75),
+        triangulation_residual=0.042,
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+    )
+
+    # Invariant: position_m, dimensions_m, ray_triangulation_residual_m MUST BE None
+    assert ent.position_m is None
+    assert ent.dimensions_m is None
+    assert ent.ray_triangulation_residual_m is None
+    assert not ent.is_physically_anchored
+
+    # Synthetic properties MUST be populated
+    assert ent.position_synthetic == (1.2, 0.4, 2.8)
+    assert ent.dimensions_synthetic == (1.5, 0.8, 0.75)
+    assert ent.ray_triangulation_residual_synthetic == 0.042
+
+    d = ent.to_dict()
+    assert d["position_m"] is None
+    assert d["dimensions_m"] is None
+    assert d["ray_triangulation_residual_m"] is None
+    assert d["position_synthetic"] == [1.2, 0.4, 2.8]
+    assert d["dimensions_synthetic"] == [1.5, 0.8, 0.75]
+    assert d["ray_triangulation_residual_synthetic"] == 0.042
+
+
+def test_synthetic_association_thresholds_separated_from_metric() -> None:
+    """Verifies that synthetic scale uses dedicated tolerances and never reports ray_distance_m."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(-0.3, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.3, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    pt = Vec3(0.0, 0.0, 3.0)
+    uv1 = cam1.project(pt)
+    uv2 = cam2.project(pt)
+    assert uv1 is not None and uv2 is not None
+
+    ray1 = build_camera_ray("s1", "v1", "chair", (uv1[0] - 10, uv1[1] - 10, uv1[0] + 10, uv1[1] + 10), cam1, scale_state="synthetic_scale_aligned")
+    ray2 = build_camera_ray("s2", "v2", "chair", (uv2[0] - 10, uv2[1] + 25, uv2[0] + 10, uv2[1] + 45), cam2, scale_state="synthetic_scale_aligned")
+
+    score = evaluate_cross_view_pair(ray1, ray2)
+    # Check that ray_distance_m is strictly None and ray_distance_synthetic is populated
+    assert score.ray_distance_m is None
+    assert score.ray_distance_synthetic is not None
+    assert score.ray_distance_synthetic == score.ray_distance
+
+
+def test_physical_metric_anchor_provenance_validation() -> None:
+    """Verifies strict physical anchor provenance validation and rejection of contradictory states."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    # 1. METRIC_ANCHORED without physical_anchor_ref is rejected
+    ray_missing_anchor = CrossViewRayCandidate(
+        observation_id="r_bad_1",
+        source_image_id="img_1",
+        class_name="door",
+        origin=np.array([0.0, 0.0, 0.0]),
+        direction=np.array([0.0, 0.0, 1.0]),
+        box_2d=(10, 10, 50, 50),
+        camera=cam,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+        physical_anchor_ref=None,
+    )
+    errs = validate_ray_candidate(ray_missing_anchor)
+    assert "metric_anchored_missing_or_invalid_physical_anchor_ref" in errs
+
+    # 2. METRIC_ANCHORED with invalid anchor format (not starting with anchor:// or artifact://) is rejected
+    ray_invalid_anchor = CrossViewRayCandidate(
+        observation_id="r_bad_2",
+        source_image_id="img_1",
+        class_name="door",
+        origin=np.array([0.0, 0.0, 0.0]),
+        direction=np.array([0.0, 0.0, 1.0]),
+        box_2d=(10, 10, 50, 50),
+        camera=cam,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+        physical_anchor_ref="http://invalid_reference",
+    )
+    errs2 = validate_ray_candidate(ray_invalid_anchor)
+    assert "metric_anchored_missing_or_invalid_physical_anchor_ref" in errs2
+
+    # 3. Contradictory anchor reference on synthetic scale is rejected
+    ray_contradictory = CrossViewRayCandidate(
+        observation_id="r_bad_3",
+        source_image_id="img_1",
+        class_name="door",
+        origin=np.array([0.0, 0.0, 0.0]),
+        direction=np.array([0.0, 0.0, 1.0]),
+        box_2d=(10, 10, 50, 50),
+        camera=cam,
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+        physical_anchor_ref="anchor://tag_01",
+    )
+    errs3 = validate_ray_candidate(ray_contradictory)
+    assert "synthetic_scale_aligned_cannot_have_physical_anchor_ref" in errs3
+
+
+def test_mixed_anchor_references_refusal() -> None:
+    """Verifies that metric observations with contradictory anchor provenance are refused from merging."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(-0.3, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.3, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    pt = Vec3(0.0, 0.0, 2.0)
+    uv1 = cam1.project(pt)
+    uv2 = cam2.project(pt)
+    assert uv1 is not None and uv2 is not None
+
+    ray_anchor_a = build_camera_ray(
+        "obs_a", "v1", "vent", (uv1[0] - 10, uv1[1] - 10, uv1[0] + 10, uv1[1] + 10), cam1,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+        physical_anchor_ref="anchor://site_calibration_tag_a",
+    )
+    ray_anchor_b = build_camera_ray(
+        "obs_b", "v2", "vent", (uv2[0] - 10, uv2[1] - 10, uv2[0] + 10, uv2[1] + 10), cam2,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+        physical_anchor_ref="anchor://site_calibration_tag_b",
+    )
+
+    # Pairwise evaluation must refuse mixed anchor references
+    ps = evaluate_cross_view_pair(ray_anchor_a, ray_anchor_b)
+    assert ps.outcome == AssociationOutcome.REFUSED
+    assert ps.reason == "mixed_anchor_references"
+
+    # MultiViewIntelligenceEngine must not cluster them
+    engine = MultiViewIntelligenceEngine()
+    merged, decisions, refusals = engine.associate_candidates([ray_anchor_a, ray_anchor_b])
+    assert len(merged) == 2
+    assert refusals["mixed_anchor_references"] == 1
+
+
+def test_spatial_relationship_synthetic_distance_units() -> None:
+    """Verifies that spatial relationships correctly track distance units and never report synthetic distance as metres."""
+    ent_a = SpatialEntity3D(
+        entity_id="socket_01",
+        class_name="socket",
+        position_m=(0.5, 0.0, 1.2),
+        dimensions_m=(0.1, 0.05, 0.1),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        covariance_xyz=((0.01, 0.0, 0.0), (0.0, 0.01, 0.0), (0.0, 0.0, 0.01)),
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+    )
+    ent_b = SpatialEntity3D(
+        entity_id="wall_01",
+        class_name="wall",
+        position_m=(0.5, 0.08, 1.2),
+        dimensions_m=(2.0, 0.1, 2.5),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        covariance_xyz=((0.01, 0.0, 0.0), (0.0, 0.01, 0.0), (0.0, 0.0, 0.01)),
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+    )
+
+    rels = infer_spatial_relationships([ent_a, ent_b])
+    assert len(rels) >= 1
+    rel = rels[0]
+    assert rel.distance_units == "synthetic_m"
+    assert rel.distance_m is None  # Strictly None, never synthetic distance
+    assert rel.distance_synthetic is not None
+    assert rel.distance_synthetic == rel.distance
+    r_dict = rel.to_dict()
+    assert r_dict["distance_m"] is None
+    assert r_dict["distance_synthetic"] is not None
+
+
+def test_metric3d_full_ingestion_and_roundtrip(tmp_path) -> None:
+    """Verifies full Metric3DObservation creation, contract validation, and real EvidenceMatrix ingestion."""
+    from engine.multiengine.metric3d import EvidenceMatrix, ScaleState
+    from engine.multiengine.spatial_intelligence.integration import reconstruct_spatial_scene
+
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    depth = np.full((480, 640), 2.0, dtype=np.float32)
+
+    dets = [
+        DetectionInput(
+            detection_id="det_door_1",
+            source_image_id="img_1",
+            box_2d=(200, 150, 400, 350),
+            class_name="door",
+            confidence=0.88,
+        ),
+    ]
+
+    res = reconstruct_spatial_scene(
+        detections=dets,
+        cameras={"img_1": cam},
+        depth_maps={"img_1": depth},
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+    )
+
+    matrix = EvidenceMatrix(tmp_path / "evidence_store")
+    recs = res.to_metric3d_observations(matrix=matrix, run_id="run_test_si")
+    assert len(recs) >= 2
+
+    # Check contract properties on valid records
+    for r in recs:
+        assert r.checkpoint_id == "none:geometric-algorithm"
+        assert r.confidence_basis == "heuristic"
+        assert r.raw_artifact_ref is not None
+        assert r.raw_artifact_ref.startswith("artifact://")
+        # Invariant: synthetic scale records must have units "synthetic_m", never "m"
+        assert r.units == "synthetic_m"
+        assert r.scale_state == ScaleState.SYNTHETIC_SCALE_ALIGNED
+        assert r.metric_anchor_ref is None
+        # Must have zero problems
+        assert r.problems() == []
+
+    # Ingest through EvidenceMatrix
+    ingest_res = res.ingest_metric3d(matrix=matrix, run_id="run_test_si")
+    assert len(ingest_res["accepted"]) >= 2
+    assert len(ingest_res["rejected"]) == 0
+
+    # Verify that accepted observations and raw artifacts are persisted and retrievable
+    for obs_id in ingest_res["accepted"]:
+        row = matrix.row(obs_id)
+        assert row["observation"]["engine_id"] == "spatial_intelligence"
+        raw_ref = row["context"]["artifact_refs"]["raw_output"]
+        raw_bytes = matrix.artifacts.get(raw_ref)
+        assert raw_bytes is not None
+        assert len(raw_bytes) > 0
 
 

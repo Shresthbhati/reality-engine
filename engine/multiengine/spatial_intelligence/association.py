@@ -74,18 +74,28 @@ def validate_ray_candidate(candidate: CrossViewRayCandidate) -> list[str]:
             errors.append(f"metric_anchored_invalid_units_{s_units}")
         if not candidate.is_physically_metric:
             errors.append("metric_anchored_requires_is_physically_metric")
+        if not candidate.physical_anchor_ref or not candidate.physical_anchor_ref.startswith(("anchor://", "artifact://")):
+            errors.append("metric_anchored_missing_or_invalid_physical_anchor_ref")
     elif s_state == "synthetic_scale_aligned":
         if candidate.is_physically_metric:
             errors.append("synthetic_scale_aligned_cannot_be_physically_metric")
+        if candidate.physical_anchor_ref is not None:
+            errors.append("synthetic_scale_aligned_cannot_have_physical_anchor_ref")
     elif s_state == "sfm_gauge":
         if candidate.is_physically_metric:
             errors.append("sfm_gauge_cannot_be_physically_metric")
+        if candidate.physical_anchor_ref is not None:
+            errors.append("sfm_gauge_cannot_have_physical_anchor_ref")
     elif s_state == "relative_depth":
         if candidate.is_physically_metric:
             errors.append("relative_depth_cannot_be_physically_metric")
+        if candidate.physical_anchor_ref is not None:
+            errors.append("relative_depth_cannot_have_physical_anchor_ref")
     elif s_state == "unknown":
         if candidate.is_physically_metric:
             errors.append("unknown_scale_cannot_be_physically_metric")
+        if candidate.physical_anchor_ref is not None:
+            errors.append("unknown_scale_cannot_have_physical_anchor_ref")
     else:
         errors.append(f"unrecognized_scale_state_{s_state}")
 
@@ -113,7 +123,10 @@ class PairScore:
     outcome: AssociationOutcome
     reason: str
     triangulated_position: tuple[float, float, float] | None = None
+    ray_distance: float | None = None
     ray_distance_m: float | None = None
+    ray_distance_synthetic: float | None = None
+    ray_distance_gauge: float | None = None
     reprojection_err_px: float | None = None
     appearance_sim: float | None = None
     basis: dict[str, Any] = field(default_factory=dict)
@@ -146,47 +159,148 @@ class PhysicalMergedEntity:
     physical_anchor_ref: str | None = None
     competing_hypotheses: tuple[dict[str, Any], ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
-    position_m: tuple[float, float, float] | None = None
-    dimensions_m: tuple[float, float, float] | None = None
-    ray_triangulation_residual_m: float = 0.0
 
-    def __post_init__(self) -> None:
-        # Backward compatibility sync between position and position_m
-        if self.position is None and self.position_m is not None:
-            object.__setattr__(self, "position", self.position_m)
-        elif self.position_m is None and self.position is not None:
-            object.__setattr__(self, "position_m", self.position)
+    def __init__(
+        self,
+        canonical_entity_id: str,
+        primary_class: str,
+        member_observation_ids: tuple[str, ...] | Sequence[str],
+        sources: tuple[str, ...] | Sequence[str],
+        position: tuple[float, float, float] | None = None,
+        dimensions: tuple[float, float, float] | None = None,
+        orientation_quat_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+        surface_normal: tuple[float, float, float] | None = None,
+        confidence: float = 0.5,
+        reprojection_residual_px: float = 0.0,
+        triangulation_residual: float = 0.0,
+        is_multiview: bool = False,
+        scale_state: str = "relative_depth",
+        scale_units: str = "relative",
+        is_physically_metric: bool = False,
+        dimension_status: str = "UNKNOWN",
+        covariance_xyz: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]] | None = None,
+        residual_units: str = "relative",
+        covariance_units: str = "relative^2",
+        coordinate_frame: str = "world:canonical",
+        physical_anchor_ref: str | None = None,
+        competing_hypotheses: tuple[dict[str, Any], ...] | Sequence[dict[str, Any]] = (),
+        details: dict[str, Any] | None = None,
+        position_m: tuple[float, float, float] | None = None,
+        dimensions_m: tuple[float, float, float] | None = None,
+        ray_triangulation_residual_m: float | None = None,
+    ) -> None:
+        eff_pos = position if position is not None else position_m
+        eff_dims = dimensions if dimensions is not None else dimensions_m
+        eff_res = triangulation_residual if triangulation_residual != 0.0 else (ray_triangulation_residual_m or 0.0)
 
-        # Backward compatibility sync between dimensions and dimensions_m
-        if self.dimensions is None and self.dimensions_m is not None:
-            object.__setattr__(self, "dimensions", self.dimensions_m)
-        elif self.dimensions_m is None and self.dimensions is not None:
-            object.__setattr__(self, "dimensions_m", self.dimensions)
+        object.__setattr__(self, "canonical_entity_id", canonical_entity_id)
+        object.__setattr__(self, "primary_class", primary_class)
+        object.__setattr__(self, "member_observation_ids", tuple(member_observation_ids))
+        object.__setattr__(self, "sources", tuple(sources))
+        object.__setattr__(self, "position", eff_pos)
+        object.__setattr__(self, "dimensions", eff_dims)
+        object.__setattr__(self, "orientation_quat_wxyz", orientation_quat_wxyz)
+        object.__setattr__(self, "surface_normal", surface_normal)
+        object.__setattr__(self, "confidence", float(confidence))
+        object.__setattr__(self, "reprojection_residual_px", float(reprojection_residual_px))
+        object.__setattr__(self, "triangulation_residual", float(eff_res))
+        object.__setattr__(self, "is_multiview", bool(is_multiview))
+        object.__setattr__(self, "scale_state", scale_state)
+        object.__setattr__(self, "scale_units", scale_units)
+        object.__setattr__(self, "is_physically_metric", bool(is_physically_metric))
+        object.__setattr__(self, "dimension_status", dimension_status)
+        object.__setattr__(self, "covariance_xyz", covariance_xyz)
+        object.__setattr__(self, "residual_units", residual_units)
+        object.__setattr__(self, "covariance_units", covariance_units)
+        object.__setattr__(self, "coordinate_frame", coordinate_frame)
+        object.__setattr__(self, "physical_anchor_ref", physical_anchor_ref)
+        object.__setattr__(self, "competing_hypotheses", tuple(competing_hypotheses))
+        object.__setattr__(self, "details", details if details is not None else {})
 
-        # Backward compatibility sync between triangulation_residual and ray_triangulation_residual_m
-        if self.triangulation_residual == 0.0 and self.ray_triangulation_residual_m != 0.0:
-            object.__setattr__(self, "triangulation_residual", self.ray_triangulation_residual_m)
-        elif self.ray_triangulation_residual_m == 0.0 and self.triangulation_residual != 0.0:
-            object.__setattr__(self, "ray_triangulation_residual_m", self.triangulation_residual)
+    @property
+    def is_physically_anchored(self) -> bool:
+        """Physical metric anchor verification: requires metric_anchored scale, is_physically_metric, and valid anchor reference."""
+        return (
+            self.is_physically_metric
+            and self.scale_state.lower() == "metric_anchored"
+            and bool(
+                self.physical_anchor_ref
+                and self.physical_anchor_ref.startswith(("anchor://", "artifact://"))
+            )
+        )
+
+    @property
+    def position_m(self) -> tuple[float, float, float] | None:
+        """Physical metric position in metres. Strictly None unless physically anchored."""
+        return self.position if self.is_physically_anchored else None
+
+    @property
+    def dimensions_m(self) -> tuple[float, float, float] | None:
+        """Physical metric dimensions in metres. Strictly None unless physically anchored."""
+        return self.dimensions if self.is_physically_anchored else None
+
+    @property
+    def ray_triangulation_residual_m(self) -> float | None:
+        """Physical metric residual in metres. Strictly None unless physically anchored."""
+        return self.triangulation_residual if self.is_physically_anchored else None
+
+    @property
+    def position_synthetic(self) -> tuple[float, float, float] | None:
+        """Synthetic-unit position. Strictly None unless synthetic_scale_aligned."""
+        return self.position if self.scale_state.lower() == "synthetic_scale_aligned" else None
+
+    @property
+    def dimensions_synthetic(self) -> tuple[float, float, float] | None:
+        """Synthetic-unit dimensions. Strictly None unless synthetic_scale_aligned."""
+        return self.dimensions if self.scale_state.lower() == "synthetic_scale_aligned" else None
+
+    @property
+    def ray_triangulation_residual_synthetic(self) -> float | None:
+        """Synthetic-unit residual. Strictly None unless synthetic_scale_aligned."""
+        return self.triangulation_residual if self.scale_state.lower() == "synthetic_scale_aligned" else None
+
+    @property
+    def position_gauge(self) -> tuple[float, float, float] | None:
+        """SfM-gauge position. Strictly None unless sfm_gauge."""
+        return self.position if self.scale_state.lower() == "sfm_gauge" else None
+
+    @property
+    def dimensions_gauge(self) -> tuple[float, float, float] | None:
+        """SfM-gauge dimensions. Strictly None unless sfm_gauge."""
+        return self.dimensions if self.scale_state.lower() == "sfm_gauge" else None
+
+    @property
+    def ray_triangulation_residual_gauge(self) -> float | None:
+        """SfM-gauge residual. Strictly None unless sfm_gauge."""
+        return self.triangulation_residual if self.scale_state.lower() == "sfm_gauge" else None
 
     def to_dict(self) -> dict[str, Any]:
-        is_metric_scale = self.is_physically_metric or self.scale_state.lower() in ("metric_anchored", "synthetic_scale_aligned")
+        is_anchored = self.is_physically_anchored
+        is_synth = self.scale_state.lower() == "synthetic_scale_aligned"
+        is_gauge = self.scale_state.lower() == "sfm_gauge"
+
         return {
             "canonical_entity_id": self.canonical_entity_id,
             "primary_class": self.primary_class,
             "member_observation_ids": list(self.member_observation_ids),
             "sources": list(self.sources),
             "position": [round(c, 4) for c in self.position] if self.position is not None else None,
-            "position_m": [round(c, 4) for c in self.position] if (is_metric_scale and self.position is not None) else None,
+            "position_m": [round(c, 4) for c in self.position] if (is_anchored and self.position is not None) else None,
+            "position_synthetic": [round(c, 4) for c in self.position] if (is_synth and self.position is not None) else None,
+            "position_gauge": [round(c, 4) for c in self.position] if (is_gauge and self.position is not None) else None,
             "dimensions": [round(d, 4) for d in self.dimensions] if self.dimensions is not None else None,
-            "dimensions_m": [round(d, 4) for d in self.dimensions] if (is_metric_scale and self.dimensions is not None) else None,
+            "dimensions_m": [round(d, 4) for d in self.dimensions] if (is_anchored and self.dimensions is not None) else None,
+            "dimensions_synthetic": [round(d, 4) for d in self.dimensions] if (is_synth and self.dimensions is not None) else None,
+            "dimensions_gauge": [round(d, 4) for d in self.dimensions] if (is_gauge and self.dimensions is not None) else None,
             "dimension_status": self.dimension_status,
             "orientation_quat_wxyz": [round(q, 4) for q in self.orientation_quat_wxyz],
             "surface_normal": [round(n, 4) for n in self.surface_normal] if self.surface_normal else None,
             "confidence": round(self.confidence, 4),
             "reprojection_residual_px": round(self.reprojection_residual_px, 2),
             "triangulation_residual": round(self.triangulation_residual, 4),
-            "ray_triangulation_residual_m": round(self.triangulation_residual, 4) if is_metric_scale else None,
+            "ray_triangulation_residual_m": round(self.triangulation_residual, 4) if is_anchored else None,
+            "ray_triangulation_residual_synthetic": round(self.triangulation_residual, 4) if is_synth else None,
+            "ray_triangulation_residual_gauge": round(self.triangulation_residual, 4) if is_gauge else None,
             "residual_units": self.residual_units,
             "covariance_units": self.covariance_units,
             "is_multiview": self.is_multiview,
@@ -293,22 +407,27 @@ def build_camera_ray(
         eff_scale_state = "metric_anchored"
         eff_scale_units = scale_units if scale_units is not None else "m"
         eff_is_metric = is_physically_metric if is_physically_metric is not None else True
+        eff_anchor_ref = physical_anchor_ref
     elif raw_scale == "synthetic_scale_aligned":
         eff_scale_state = "synthetic_scale_aligned"
         eff_scale_units = scale_units if scale_units is not None else "synthetic_m"
         eff_is_metric = False  # Synthetic scale is NEVER physically metric
+        eff_anchor_ref = None
     elif raw_scale == "sfm_gauge":
         eff_scale_state = "sfm_gauge"
         eff_scale_units = scale_units if scale_units is not None else "sfm_units"
         eff_is_metric = False
+        eff_anchor_ref = None
     elif raw_scale == "unknown":
         eff_scale_state = "unknown"
         eff_scale_units = scale_units if scale_units is not None else "unknown"
         eff_is_metric = False
+        eff_anchor_ref = None
     else:
         eff_scale_state = "relative_depth"
         eff_scale_units = scale_units if scale_units is not None else "relative"
         eff_is_metric = False
+        eff_anchor_ref = None
 
     return CrossViewRayCandidate(
         observation_id=observation_id,
@@ -324,7 +443,7 @@ def build_camera_ray(
         scale_units=eff_scale_units,
         is_physically_metric=eff_is_metric,
         coordinate_frame=coordinate_frame,
-        physical_anchor_ref=physical_anchor_ref,
+        physical_anchor_ref=eff_anchor_ref,
     )
 
 
@@ -414,6 +533,9 @@ def triangulate_multiview_rays(
 
     # 4. Scale policy parameter setup
     is_gauge = common_scale in ("sfm_gauge", "relative_depth")
+    is_synthetic = common_scale == "synthetic_scale_aligned"
+    is_metric = common_scale == "metric_anchored"
+
     if is_gauge:
         if max_baseline < 1e-5:
             return None, 0.0, 0.0, None, {
@@ -425,7 +547,32 @@ def triangulate_multiview_rays(
         huber_delta = max(1e-4, 0.05 * max_baseline)
         residual_units = "sfm_units" if common_scale == "sfm_gauge" else "relative"
         covariance_units = f"{residual_units}^2"
-    else:
+    elif is_synthetic:
+        if max_baseline < 0.05:
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "zero_camera_baseline",
+                "max_baseline": round(max_baseline, 4),
+            }
+        min_depth = 0.10
+        max_depth = 50.0
+        huber_delta = 0.25
+        residual_units = "synthetic_m"
+        covariance_units = "synthetic_m^2"
+    else:  # is_metric
+        # Require valid anchor provenance across all rays
+        anchors = set(r.physical_anchor_ref for r in rays)
+        if len(anchors) > 1 or None in anchors:
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "mixed_anchor_references",
+                "anchors": list(anchors),
+            }
+        anchor_val = next(iter(anchors))
+        if not anchor_val or not anchor_val.startswith(("anchor://", "artifact://")):
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "invalid_anchor_reference",
+                "anchor": anchor_val,
+            }
+
         if max_baseline < 0.05:
             return None, 0.0, 0.0, None, {
                 "fail_reason": "zero_camera_baseline",
@@ -434,8 +581,8 @@ def triangulate_multiview_rays(
         min_depth = min_depth_m
         max_depth = max_depth_m
         huber_delta = huber_delta_m
-        residual_units = "m" if rays[0].is_physically_metric else "synthetic_m"
-        covariance_units = "m^2" if rays[0].is_physically_metric else "synthetic_m^2"
+        residual_units = "m"
+        covariance_units = "m^2"
 
     # 5. Build linear system A p = b
     A = np.zeros((3, 3), dtype=np.float64)
@@ -547,8 +694,13 @@ def triangulate_multiview_rays(
         "residual_units": residual_units,
         "covariance_units": covariance_units,
     }
-    if not is_gauge:
+    if is_metric:
         meta["ray_residuals_m"] = [round(r, 4) for r in ray_residuals]
+        meta["physical_anchor_ref"] = rays[0].physical_anchor_ref
+    elif is_synthetic:
+        meta["ray_residuals_synthetic"] = [round(r, 4) for r in ray_residuals]
+    elif is_gauge:
+        meta["ray_residuals_gauge"] = [round(r, 4) for r in ray_residuals]
 
     return p_tuple, mean_ray_res, mean_reproj, cov_3x3, meta
 
@@ -617,6 +769,18 @@ def evaluate_cross_view_pair(
             basis={"frame_a": ray_a.coordinate_frame, "frame_b": ray_b.coordinate_frame},
         )
 
+    # 4b. Physical anchor provenance verification for metric_anchored
+    if sa == "metric_anchored":
+        if not ray_a.physical_anchor_ref or not ray_b.physical_anchor_ref or ray_a.physical_anchor_ref != ray_b.physical_anchor_ref:
+            return PairScore(
+                obs_a_id=ray_a.observation_id,
+                obs_b_id=ray_b.observation_id,
+                score=0.0,
+                outcome=AssociationOutcome.REFUSED,
+                reason="mixed_anchor_references",
+                basis={"anchor_a": ray_a.physical_anchor_ref, "anchor_b": ray_b.physical_anchor_ref},
+            )
+
     # 5. Semantic compatibility
     if not are_semantically_compatible(ray_a.class_name, ray_b.class_name):
         return PairScore(
@@ -668,12 +832,24 @@ def evaluate_cross_view_pair(
         mean_dist = 0.5 * (s_a + t_b)
         adaptive_tol = max(0.10 * cam_baseline, 0.08 * mean_dist)
         ray_dist_m_val = None  # Never label gauge residual as metres
-    else:
+        ray_dist_synth_val = None
+        ray_dist_gauge_val = dist_ray
+    elif sa == "synthetic_scale_aligned":
+        min_depth = 0.10
+        max_depth = 50.0
+        mean_dist = 0.5 * (s_a + t_b)
+        adaptive_tol = max(0.50, 0.08 * mean_dist)
+        ray_dist_m_val = None  # Never label synthetic residual as metres
+        ray_dist_synth_val = dist_ray
+        ray_dist_gauge_val = None
+    else:  # metric_anchored
         min_depth = 0.05
         max_depth = 30.0
         mean_dist = 0.5 * (s_a + t_b)
         adaptive_tol = max(max_ray_distance_m, 0.05 * mean_dist)
         ray_dist_m_val = dist_ray
+        ray_dist_synth_val = None
+        ray_dist_gauge_val = None
 
     # Rays must intersect in FRONT of both cameras
     if s_a <= min_depth or t_b <= min_depth:
@@ -705,7 +881,10 @@ def evaluate_cross_view_pair(
             score=0.0,
             outcome=AssociationOutcome.REFUSED,
             reason="excessive_ray_distance",
+            ray_distance=dist_ray,
             ray_distance_m=ray_dist_m_val,
+            ray_distance_synthetic=ray_dist_synth_val,
+            ray_distance_gauge=ray_dist_gauge_val,
             basis={"dist_ray": round(dist_ray, 4), "tolerance": round(adaptive_tol, 4)},
         )
 
@@ -726,6 +905,10 @@ def evaluate_cross_view_pair(
             outcome=AssociationOutcome.REFUSED,
             reason="projection_failed",
             triangulated_position=p_mid_tuple,
+            ray_distance=dist_ray,
+            ray_distance_m=ray_dist_m_val,
+            ray_distance_synthetic=ray_dist_synth_val,
+            ray_distance_gauge=ray_dist_gauge_val,
         )
 
     # Reprojection error to box center
@@ -746,7 +929,10 @@ def evaluate_cross_view_pair(
             outcome=AssociationOutcome.REFUSED,
             reason="excessive_reprojection_error",
             triangulated_position=p_mid_tuple,
+            ray_distance=dist_ray,
             ray_distance_m=ray_dist_m_val,
+            ray_distance_synthetic=ray_dist_synth_val,
+            ray_distance_gauge=ray_dist_gauge_val,
             reprojection_err_px=mean_reproj,
             basis={"err_a_px": round(err_a, 2), "err_b_px": round(err_b, 2), "mean_err_px": round(mean_reproj, 2)},
         )
@@ -768,6 +954,10 @@ def evaluate_cross_view_pair(
                     outcome=AssociationOutcome.REFUSED,
                     reason="appearance_dissimilarity",
                     triangulated_position=p_mid_tuple,
+                    ray_distance=dist_ray,
+                    ray_distance_m=ray_dist_m_val,
+                    ray_distance_synthetic=ray_dist_synth_val,
+                    ray_distance_gauge=ray_dist_gauge_val,
                     appearance_sim=app_sim,
                     basis={"sim": round(app_sim, 4)},
                 )
@@ -787,7 +977,10 @@ def evaluate_cross_view_pair(
         outcome=AssociationOutcome.MERGED,
         reason="epipolar_reprojection_consensus",
         triangulated_position=p_mid_tuple,
+        ray_distance=dist_ray,
         ray_distance_m=ray_dist_m_val,
+        ray_distance_synthetic=ray_dist_synth_val,
+        ray_distance_gauge=ray_dist_gauge_val,
         reprojection_err_px=mean_reproj,
         appearance_sim=app_sim,
         basis={
@@ -840,7 +1033,7 @@ class MultiViewIntelligenceEngine:
 
                 if ps.outcome == AssociationOutcome.MERGED and ps.score >= self.min_match_score:
                     pos = ps.triangulated_position or (0.0, 0.0, 0.0)
-                    r_dist = ps.ray_distance_m or 0.0
+                    r_dist = ps.ray_distance or 0.0
                     rep_err = ps.reprojection_err_px or 0.0
                     qualifying_edges.append((ps.score, ps.obs_a_id, ps.obs_b_id, pos, r_dist, rep_err))
                 else:
@@ -856,6 +1049,9 @@ class MultiViewIntelligenceEngine:
         cluster_scale_states: dict[str, set[str]] = {c.observation_id: {c.scale_state.lower()} for c in candidates}
         cluster_units: dict[str, set[str]] = {c.observation_id: {c.scale_units.lower()} for c in candidates}
         cluster_frames: dict[str, set[str]] = {c.observation_id: {c.coordinate_frame} for c in candidates}
+        cluster_anchor_refs: dict[str, set[str]] = {
+            c.observation_id: ({c.physical_anchor_ref} if c.physical_anchor_ref else set()) for c in candidates
+        }
         cluster_positions: dict[str, list[tuple[float, float, float]]] = {
             c.observation_id: [c.lifted_entity.position_m] if (c.lifted_entity and c.lifted_entity.position_m is not None) else [] for c in candidates
         }
@@ -942,6 +1138,21 @@ class MultiViewIntelligenceEngine:
                 cluster_competing_hypotheses[root_b].append(hyp)
                 continue
 
+            # 5. Hard constraint: physical anchor consistency for metric_anchored
+            if "metric_anchored" in scales_a and "metric_anchored" in scales_b:
+                if cluster_anchor_refs[root_a] != cluster_anchor_refs[root_b]:
+                    refusal_counts["transitive_mixed_anchor_references"] += 1
+                    hyp = {
+                        "rejected_edge": (id_a, id_b),
+                        "score": score,
+                        "reason": "transitive_mixed_anchor_references",
+                        "anchors_a": list(cluster_anchor_refs[root_a]),
+                        "anchors_b": list(cluster_anchor_refs[root_b]),
+                    }
+                    cluster_competing_hypotheses[root_a].append(hyp)
+                    cluster_competing_hypotheses[root_b].append(hyp)
+                    continue
+
             # Merge root_b into root_a
             parent[root_b] = root_a
             cluster_members[root_a].update(cluster_members[root_b])
@@ -949,6 +1160,7 @@ class MultiViewIntelligenceEngine:
             cluster_scale_states[root_a].update(cluster_scale_states[root_b])
             cluster_units[root_a].update(cluster_units[root_b])
             cluster_frames[root_a].update(cluster_frames[root_b])
+            cluster_anchor_refs[root_a].update(cluster_anchor_refs[root_b])
             cluster_positions[root_a].append(pos_mid)
             cluster_positions[root_a].extend(cluster_positions[root_b])
             cluster_ray_residuals[root_a].append(r_dist)
@@ -1001,7 +1213,10 @@ class MultiViewIntelligenceEngine:
 
                 scale_common = next(iter(scales_i))
                 can_merge = False
-                if scale_common in ("metric_anchored", "synthetic_scale_aligned"):
+                if scale_common == "metric_anchored":
+                    if cluster_anchor_refs[root_i] == cluster_anchor_refs[root_j] and dist_ij <= 0.30:
+                        can_merge = True
+                elif scale_common == "synthetic_scale_aligned":
                     if dist_ij <= 0.30:
                         can_merge = True
                 elif scale_common == "sfm_gauge":
@@ -1018,6 +1233,7 @@ class MultiViewIntelligenceEngine:
                     cluster_scale_states[root_i].update(cluster_scale_states[root_j])
                     cluster_units[root_i].update(cluster_units[root_j])
                     cluster_frames[root_i].update(cluster_frames[root_j])
+                    cluster_anchor_refs[root_i].update(cluster_anchor_refs[root_j])
                     cluster_positions[root_i].extend(cluster_positions[root_j])
                     cluster_ray_residuals[root_i].extend(cluster_ray_residuals[root_j])
                     cluster_reproj_residuals[root_i].extend(cluster_reproj_residuals[root_j])
@@ -1144,23 +1360,18 @@ class MultiViewIntelligenceEngine:
             if mean_rep_res > 50.0:
                 calibrated_conf = max(0.2, calibrated_conf - 0.2)
 
-            is_metric_scale = is_metric or scale_state == "synthetic_scale_aligned"
-
             merged_entities.append(PhysicalMergedEntity(
                 canonical_entity_id=f"phys_{root_id}",
                 primary_class=primary_cls,
                 member_observation_ids=tuple(member_ids),
                 sources=sources,
                 position=fused_pos,
-                position_m=fused_pos if is_metric_scale else None,
                 dimensions=fused_dims,
-                dimensions_m=fused_dims if is_metric_scale else None,
                 orientation_quat_wxyz=orient,
                 surface_normal=norm,
                 confidence=calibrated_conf,
                 reprojection_residual_px=mean_rep_res,
                 triangulation_residual=mean_ray_res,
-                ray_triangulation_residual_m=mean_ray_res if is_metric_scale else 0.0,
                 residual_units=residual_units,
                 covariance_units=covariance_units,
                 is_multiview=is_multi,

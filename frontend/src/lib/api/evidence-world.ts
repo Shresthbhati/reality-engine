@@ -1,3 +1,4 @@
+import type { WorldIR } from "@/types/worldir";
 import { apiGet } from "./client";
 
 /** Client for the read-only evidence-run routes (/api/worlds/{id}/evidence-world). Everything shown comes from what the server
@@ -70,6 +71,10 @@ export async function listEvidenceEntities(worldId: string, runId: string): Prom
 }
 export const getEvidenceEntity = (worldId: string, runId: string, entityId: string) =>
   apiGet<EvidenceEntityDetail>(`${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}`);
+/** The run's persisted, integrity-verified canonical WorldIR (same schema the viewport already renders). 404 = no persisted world. */
+export async function getEvidenceWorld(worldId: string, runId: string): Promise<{ version_id: string; world: WorldIR }> {
+  return apiGet(`${base(worldId)}/${encodeURIComponent(runId)}/world`);
+}
 export async function listRejectedPredictions(worldId: string, runId: string): Promise<RejectedPrediction[]> {
   return (await apiGet<{ rejected: RejectedPrediction[] }>(`${base(worldId)}/${encodeURIComponent(runId)}/rejected`)).rejected;
 }

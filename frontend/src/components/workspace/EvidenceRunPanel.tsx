@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, X, FlaskConical } from "lucide-react";
 import { isApiError } from "@/lib/api/client";
+import type { WorldIR } from "@/types/worldir";
 import {
   evidenceHeadline,
   getEvidenceEntity,
   getEvidenceReadiness,
+  getEvidenceWorld,
   listEvidenceEntities,
   listEvidenceRuns,
   listRejectedPredictions,
@@ -21,7 +23,16 @@ const err = (e: unknown, fallback: string) => (isApiError(e) ? e.describe() : e 
 
 /** Evidence runs of one world: what ran, what was persisted, what is missing, what was refused, and every entity traced to its
  * evidence. A partial or empty result is shown as such -- never as a finished reconstruction. */
-export default function EvidenceRunPanel({ worldId, onClose }: { worldId: string; onClose: () => void }) {
+export default function EvidenceRunPanel({
+  worldId,
+  onClose,
+  onViewWorld,
+}: {
+  worldId: string;
+  onClose: () => void;
+  /** Show this run's persisted WorldIR in the 3D viewport (labelled as a candidate, never replacing the committed world). */
+  onViewWorld?: (runId: string, world: WorldIR) => void;
+}) {
   const [runs, setRuns] = useState<EvidenceRunSummary[] | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   // everything below is keyed by the run it was loaded for, so switching runs never shows the previous run's data and no effect
@@ -137,6 +148,20 @@ export default function EvidenceRunPanel({ worldId, onClose }: { worldId: string
             <dt>Export</dt>
             <dd>{readiness.export_ready ? (readiness.metric_export_ready ? "ready (metric)" : "ready (NOT metres)") : "not ready"}</dd>
           </dl>
+          {onViewWorld && runId && w?.status === "persisted" && (
+            <button
+              type="button"
+              className="text-xs rounded px-2 py-1 self-start"
+              style={{ border: "1px solid var(--border)" }}
+              onClick={() =>
+                getEvidenceWorld(worldId, runId)
+                  .then((r) => onViewWorld(runId, r.world))
+                  .catch((e) => setError(err(e, "Could not load this run's world.")))
+              }
+            >
+              View this run&apos;s world in 3D
+            </button>
+          )}
           {readiness.export_scale_warning && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{readiness.export_scale_warning}</p>}
           {readiness.export_not_ready_reason && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{readiness.export_not_ready_reason}</p>}
           {(readiness.missing_evidence?.limitations.length ?? 0) > 0 && (

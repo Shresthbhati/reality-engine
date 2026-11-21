@@ -12,6 +12,7 @@ import {
   listEvidenceEntities,
   listEvidenceRuns,
   listRejectedPredictions,
+  reclassifyEvidenceEntity,
   type EvidenceEntityDetail,
   type EvidenceEntityRow,
   type EvidenceReadiness,
@@ -76,10 +77,17 @@ export default function EvidenceRunPanel({
     };
   }, [worldId, runId]);
 
+  const [corrected, setCorrected] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const inspect = (id: string) =>
     runId &&
     getEvidenceEntity(worldId, runId, id)
-      .then((d) => setDetailFor({ runId, detail: d }))
+      .then((d) => {
+        setSelectedId(id);
+        setNotice(null);
+        setDetailFor({ runId, detail: d });
+      })
       .catch((e) => setError(err(e, "Could not load this entity.")));
 
   const w = readiness?.world;
@@ -192,6 +200,28 @@ export default function EvidenceRunPanel({
               <span>{detail.observations.length} observations, {detail.rejected_observations.length} rejected, {detail.capture_requests.length} capture requests</span>
               {detail.association_decisions.map((d) => <span key={`${d.a}-${d.b}`}>{d.outcome}: {d.reason}</span>)}
               {detail.trace_problems.length > 0 && <span role="alert">Trace problems: {detail.trace_problems.join("; ")}</span>}
+              <form
+                className="flex gap-1 items-center pt-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const cls = corrected.trim();
+                  if (!cls || !runId || !selectedId) return;
+                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls)
+                    .then((r) => setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`))
+                    .catch((er) => setError(err(er, "Could not save the correction.")));
+                }}
+              >
+                <input
+                  aria-label="Corrected class"
+                  value={corrected}
+                  onChange={(e) => setCorrected(e.target.value)}
+                  placeholder="e.g. furniture/seating/sofa"
+                  className="flex-1 rounded p-1 text-[11px]"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+                />
+                <button type="submit" className="text-[11px] rounded px-2 py-1" style={{ border: "1px solid var(--border)" }}>Reclassify</button>
+              </form>
+              {notice && <span role="status">{notice}</span>}
             </section>
           )}
 

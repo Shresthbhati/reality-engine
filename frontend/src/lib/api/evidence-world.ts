@@ -1,5 +1,5 @@
 import type { WorldIR } from "@/types/worldir";
-import { apiGet } from "./client";
+import { apiGet, apiPost } from "./client";
 
 /** Client for the read-only evidence-run routes (/api/worlds/{id}/evidence-world). Everything shown comes from what the server
  * persisted for that run; nothing here estimates or defaults a missing piece. */
@@ -71,6 +71,20 @@ export async function listEvidenceEntities(worldId: string, runId: string): Prom
 }
 export const getEvidenceEntity = (worldId: string, runId: string, entityId: string) =>
   apiGet<EvidenceEntityDetail>(`${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}`);
+export interface EvidenceCorrectionResult {
+  version_id: string;
+  parent_version_id: string;
+  original_evidence_preserved: boolean;
+}
+
+/** Reclassify one entity of the run's persisted world. Saves a NEW version; the original evidence is untouched (server-checked). */
+export function reclassifyEvidenceEntity(worldId: string, runId: string, entityId: string, newClass: string, note = "") {
+  return apiPost<EvidenceCorrectionResult>(
+    `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/reclassify`,
+    { new_class: newClass, note },
+  );
+}
+
 /** The run's persisted, integrity-verified canonical WorldIR (same schema the viewport already renders). 404 = no persisted world. */
 export async function getEvidenceWorld(worldId: string, runId: string): Promise<{ version_id: string; world: WorldIR }> {
   return apiGet(`${base(worldId)}/${encodeURIComponent(runId)}/world`);

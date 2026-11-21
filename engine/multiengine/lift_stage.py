@@ -69,6 +69,7 @@ def run_lift_stage(
     run_id: str,
     target_frame: str = "world",
     sources: Sequence[str] | None = None,
+    observations: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Lift every non-rejected detection box whose image has a registered camera and an alignable relative depth map.
 
@@ -144,7 +145,17 @@ def run_lift_stage(
             except Exception as exc:  # noqa: BLE001
                 d_info["status"] = f"depth artifact unreadable: {type(exc).__name__}: {exc}"
                 continue
-            al = align_relative_depth_to_metric(depth, cam, pts_list, scale_source="colmap_sparse_points")
+            own = (observations or {}).get(src)
+            if own is not None and len(own["xy"]) >= 4:
+                # the image's OWN observed keypoints (pixel <-> 3D point): occlusion-free reference for the depth alignment
+                al = align_relative_depth_to_metric(depth, cam, [tuple(p) for p in own["xyz"]], [tuple(p) for p in own["xy"]],
+                                                    scale_source="colmap_observed_keypoints")
+                d_info["reference"] = f"{len(own['xy'])} observed keypoints of this image"
+            else:
+                # fallback: every sparse point projected through the camera -- includes points hidden from this view, so the gates
+                # usually refuse it on real scenes; kept so a model without observations still gets an honest verdict
+                al = align_relative_depth_to_metric(depth, cam, pts_list, scale_source="colmap_sparse_points")
+                d_info["reference"] = "all sparse points projected (occlusion-unaware)"
             d_info["alignment"] = {k: v for k, v in al.to_dict().items() if k != "metric_anchor"}
             if not al.is_aligned:
                 d_info["status"] = "not_aligned"

@@ -136,6 +136,7 @@ def run_for_job(
     cameras: Mapping[str, Any] | None = None,
     depth_engines: Sequence[str] | None = None,
     points3d: Sequence[Sequence[float]] | None = None,
+    observations: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the flow on the job's evidence files and return the compact facts for the job report.
 
@@ -198,7 +199,7 @@ def run_for_job(
             depth = _run_depth(root, job_id, real, wanted, adapters, matrix=matrix)
             if not usable:
                 return {**out, "reason": "no registered cameras for these images; depth was produced but nothing can be lifted", "depth": depth}
-            lift = run_lift_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real)
+            lift = run_lift_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real, observations=observations)
             return {**lift, "depth": depth}
 
         res = run_evidence_flow(

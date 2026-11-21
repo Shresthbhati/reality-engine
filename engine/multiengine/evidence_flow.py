@@ -361,7 +361,9 @@ def run_evidence_flow(
         for ce in canonicals:
             requests.extend(_problem_for(ce, matrix, onto, conflict_entities))
 
-    bridge = convert(canonicals, matrix, ontology=onto)
+    from engine.multiengine.spatial_relations import derive_relations
+
+    bridge = convert(canonicals, matrix, ontology=onto, relations=derive_relations(canonicals, matrix))
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()
 
     snapshot: dict[str, Any] = {

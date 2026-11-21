@@ -96,16 +96,16 @@ class SpatialSceneResult:
             )
 
             transform: dict[str, Any] | None = None
-            if rent.position_m is not None:
+            if rent.position is not None:
                 transform = {
-                    "position": {"x": rent.position_m[0], "y": rent.position_m[1], "z": rent.position_m[2]},
+                    "position": {"x": rent.position[0], "y": rent.position[1], "z": rent.position[2]},
                     "orientation": {
                         "w": rent.orientation_quat_wxyz[0],
                         "x": rent.orientation_quat_wxyz[1],
                         "y": rent.orientation_quat_wxyz[2],
                         "z": rent.orientation_quat_wxyz[3],
                     },
-                    "frame_id": "world",
+                    "frame_id": rent.coordinate_frame or "world",
                 }
 
             w_ent = Entity(
@@ -118,16 +118,23 @@ class SpatialSceneResult:
                 confidence_basis="multiview_epipolar_triangulation_consensus",
                 custom_properties={
                     "taxonomy_id": tax_cls.taxonomy_id,
-                    "dimensions_w_d_h": list(rent.dimensions_m) if rent.dimensions_m is not None else None,
+                    "dimensions": list(rent.dimensions) if rent.dimensions is not None else None,
+                    "dimensions_m": list(rent.dimensions) if (rent.is_physically_metric or rent.scale_state == "synthetic_scale_aligned") and rent.dimensions is not None else None,
                     "dimension_status": rent.dimension_status,
                     "is_multiview": rent.is_multiview,
                     "sources": list(rent.sources),
                     "member_observation_ids": list(rent.member_observation_ids),
                     "reprojection_residual_px": rent.reprojection_residual_px,
-                    "ray_triangulation_residual_m": rent.ray_triangulation_residual_m,
+                    "triangulation_residual": rent.triangulation_residual,
+                    "ray_triangulation_residual_m": rent.triangulation_residual if (rent.is_physically_metric or rent.scale_state == "synthetic_scale_aligned") else None,
+                    "residual_units": rent.residual_units,
+                    "covariance_units": rent.covariance_units,
                     "scale_state": rent.scale_state,
                     "scale_units": rent.scale_units,
                     "is_physically_metric": rent.is_physically_metric,
+                    "coordinate_frame": rent.coordinate_frame,
+                    "physical_anchor_ref": rent.physical_anchor_ref,
+                    "competing_hypotheses": list(rent.competing_hypotheses),
                 },
             )
 
@@ -190,10 +197,19 @@ class SpatialSceneResult:
                 s_state = ScaleState(rent.scale_state)
             except Exception:
                 s_state = ScaleState.RELATIVE_DEPTH
-            s_units = rent.scale_units
+
+            # Truthful units alignment: metres ONLY for METRIC_ANCHORED
+            if s_state == ScaleState.METRIC_ANCHORED:
+                s_units = "m"
+            elif s_state == ScaleState.SYNTHETIC_SCALE_ALIGNED:
+                s_units = "synthetic_m"
+            elif s_state == ScaleState.SFM_GAUGE:
+                s_units = "sfm_units"
+            else:
+                s_units = "relative"
 
             # 3D Position (only if observed or triangulated)
-            if rent.position_m is not None:
+            if rent.position is not None:
                 records.append(Metric3DObservation(
                     engine_id="spatial_intelligence",
                     architecture_id="epipolar_triangulation",
@@ -202,12 +218,12 @@ class SpatialSceneResult:
                     quantity="position",
                     scale_state=s_state,
                     units=s_units,
-                    value=tuple(float(v) for v in rent.position_m),
-                    frame="world:canonical",
+                    value=tuple(float(v) for v in rent.position),
+                    frame=rent.coordinate_frame or "world:canonical",
                 ))
 
             # 3D Dimensions (only if observed)
-            if rent.dimensions_m is not None:
+            if rent.dimensions is not None:
                 records.append(Metric3DObservation(
                     engine_id="spatial_intelligence",
                     architecture_id="epipolar_triangulation",
@@ -216,8 +232,8 @@ class SpatialSceneResult:
                     quantity="bounds_extents",
                     scale_state=s_state,
                     units=s_units,
-                    value=tuple(float(v) for v in rent.dimensions_m),
-                    frame="world:canonical",
+                    value=tuple(float(v) for v in rent.dimensions),
+                    frame=rent.coordinate_frame or "world:canonical",
                 ))
 
         return records
@@ -231,6 +247,8 @@ def reconstruct_spatial_scene(
     scale_state: str = "relative_depth",
     scale_units: str = "relative",
     is_physically_metric: bool = False,
+    coordinate_frame: str = "world:canonical",
+    physical_anchor_ref: str | None = None,
     max_ray_distance_m: float = 0.35,
     max_reproj_err_px: float = 100.0,
 ) -> SpatialSceneResult:
@@ -288,6 +306,11 @@ def reconstruct_spatial_scene(
             camera=camera,
             lifted_entity=lifted_ent,
             appearance_features=det.appearance_features,
+            scale_state=scale_state,
+            scale_units=scale_units,
+            is_physically_metric=is_physically_metric,
+            coordinate_frame=coordinate_frame,
+            physical_anchor_ref=physical_anchor_ref,
         )
         ray_candidates.append(ray_cand)
 

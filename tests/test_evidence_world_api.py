@@ -237,6 +237,37 @@ def test_a_correction_is_validated_tenant_scoped_and_404s_without_a_world_or_ent
     assert client.post(_url(wid, "no-run", "entities", eid, "reclassify"), json={"new_class": "x/y"}, headers=A).status_code == 404
 
 
+def test_export_is_refused_when_nothing_is_positioned(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)  # 2D-only: entities exist, none has a position
+    r = client.post(_url(wid, "run-c", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
+    assert r.status_code == 409 and "no entity has a measured position" in r.json()["detail"]
+
+
+def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and_says_it_is_not_metres(client, tmp_path):
+    from PIL import Image
+
+    from apps.api import evidence_world_stage as ew
+    from tests.test_lift_stage_e2e import H, W, _camera, _Depth, _inputs, _inverse_depth, _points
+
+    wid = _world(client, A)
+    photos = []
+    for n in ("a.png", "b.png"):
+        p = tmp_path / n
+        Image.new("RGB", (W, H), (120, 120, 120)).save(p)
+        photos.append(str(p))
+    ew.run_for_job(team_id="tenant-a", world_id=wid, job_id="run-g", sources=photos, base=tmp_path / "ws", flow_inputs=_inputs(_Depth(_inverse_depth())),
+                   depth_engines=["fake_depth"], cameras={p: _camera() for p in photos}, points3d=_points())
+    rd = client.get(_url(wid, "run-g", "readiness"), headers=A).json()
+    assert rd["export_ready"] is True and rd["metric_export_ready"] is False
+    refused = client.post(_url(wid, "run-g", "export"), json={"format": "glb"}, headers=A)
+    assert refused.status_code == 409 and "acknowledge_unscaled" in refused.json()["detail"]
+    ok = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
+    assert ok.status_code == 200 and ok.headers["x-export-scale"] == "sfm_units-NOT-metres" and ok.headers["x-physical-accuracy"] == "NOT_MEASURED"
+    assert int(ok.headers["x-entities-exported"]) == 1 and ok.content[:4] == b"glTF"
+    assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

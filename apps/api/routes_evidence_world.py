@@ -129,6 +129,51 @@ async def get_persisted_world(
         raise HTTPException(500, f"persisted world is unreadable: {exc}") from None
 
 
+class ExportBody(BaseModel):
+    format: str = Field(min_length=1, max_length=40)
+    acknowledge_unscaled: bool = False
+
+
+_EXPORT_MEDIA = {"gltf": "model/gltf+json", "glb": "model/gltf-binary", "obj": "model/obj", "ply": "application/x-ply", "stl": "model/stl",
+                 "usda": "text/plain", "geojson": "application/geo+json", "cityjson": "application/json"}
+
+
+@evidence_world_router.post("/{run_id}/export")
+async def export_run_world(
+    world_id: str, run_id: str, body: ExportBody, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> Response:
+    """Export the run's persisted world ONLY when it meets the export requirements, derived from persisted data (``readiness``):
+    409 when no entity has a measured position (nothing to place), 409 when the geometry is not in metres unless the caller sets
+    ``acknowledge_unscaled`` (the file then carries unitless/gauge values and the response says so in ``X-Export-Scale``). The exporter's
+    own skipped entities are reported in headers, never hidden."""
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version, readiness
+    from sdk import reality
+    from world_ir.artifact_store import FileArtifactStore
+    from worldstore.store import WorldStore
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    rd = readiness(d)
+    if not rd.get("export_ready"):
+        raise HTTPException(409, f"not exportable: {rd.get('export_not_ready_reason') or rd.get('reason') or rd['world'].get('reason') or 'readiness gate not met'}")
+    if not rd.get("metric_export_ready") and not body.acknowledge_unscaled:
+        raise HTTPException(409, f"{rd.get('export_scale_warning')} Re-send with acknowledge_unscaled=true to export gauge-unit geometry.")
+    vid = head_version(d)
+    world = WorldStore(d / WORLDSTORE_REL).load_version(vid)
+    try:
+        content, report = reality.export(world, body.format, artifact_store=FileArtifactStore(d / "export-artifacts"))
+    except reality.UnsupportedExportFormatError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(501, f"{body.format} export is unavailable on this server: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    data = json.dumps(content, sort_keys=True).encode("utf-8") if isinstance(content, dict) else content.encode("utf-8") if isinstance(content, str) else content
+    return Response(content=data, media_type=_EXPORT_MEDIA.get(body.format, "application/octet-stream"), headers={
+        "X-Export-Version": vid, "X-Export-Scale": "metric" if rd.get("metric_export_ready") else "sfm_units-NOT-metres",
+        "X-Entities-Exported": str(len(report.entities_exported)), "X-Entities-Skipped": str(len(report.entities_skipped)),
+        "X-Physical-Accuracy": str(rd.get("physical_accuracy"))})
+
+
 class ReclassifyBody(BaseModel):
     new_class: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)

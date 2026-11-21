@@ -87,10 +87,10 @@ class _Depth:
 @pytest.fixture()
 def photos(tmp_path):
     out = []
-    for name in ("a.png", "b.png"):
+    for i, name in enumerate(("a.png", "b.png")):
         p = tmp_path / "src" / name
         p.parent.mkdir(exist_ok=True)
-        Image.new("RGB", (W, H), (120, 120, 120)).save(p)
+        Image.new("RGB", (W, H), (120 + i, 120, 120)).save(p)  # distinct bytes: identical files would (correctly) share a cache entry
         out.append(str(p))
     return out
 

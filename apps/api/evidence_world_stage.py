@@ -439,14 +439,58 @@ def readiness(root: Path) -> dict[str, Any]:
     return out
 
 
+def _depth_with_cache(adapter: Any, sources: Sequence[str], *, matrix: Any, run_id: str, checkpoint_id: str, checkpoint_hash: str | None, cache: Any) -> dict[str, Any]:
+    """``produce_depth`` for the images that are not cached; cached images are ingested from the cache WITHOUT loading the model (an
+    all-cached engine is never loaded). Caching needs the checkpoint hash: without it every image is a miss and the report says why."""
+    from engine.multiengine.depth_cache import file_sha256
+    from engine.multiengine.metric3d import Metric3DObservation, ingest
+    from engine.multiengine.metric3d_producers import depth_records_from_drafts, produce_depth
+    from engine.multiengine.observation import ObservationDraft
+
+    spec = adapter.spec
+    keys = {src: cache.key(spec.engine_id, checkpoint_hash, file_sha256(src)) for src in sources}
+    hits = {src: cache.get(k) for src, k in keys.items() if k is not None}
+    hits = {src: a for src, a in hits.items() if a is not None}
+    misses = [src for src in sources if src not in hits]
+    info = {"hits": len(hits), "misses": len(misses),
+            "disabled_reason": None if checkpoint_hash else "checkpoint hash unknown: depth maps are only cached when the exact weights are known"}
+    if hits:
+        drafts = [ObservationDraft(task="depth", quantity="depth_map", source_id=s, coordinate_system=f"cam:{s}",
+                                   predicted={"array": a, "scale_state": "RELATIVE_UNSCALED", "from_cache": True}) for s, a in hits.items()]
+        recs = depth_records_from_drafts(drafts, matrix=matrix, engine_id=spec.engine_id, architecture_id=getattr(spec, "name", spec.engine_id),
+                                         checkpoint_id=checkpoint_id, checkpoint_hash=checkpoint_hash)
+        cached = ingest(matrix, recs, run_id=run_id, model_version=getattr(spec, "version", "unknown"))
+    else:
+        cached = {"accepted": [], "rejected": []}
+    if misses:
+        rep = produce_depth(adapter, misses, matrix=matrix, run_id=run_id, checkpoint_id=checkpoint_id, checkpoint_hash=checkpoint_hash)
+        import io
+
+        import numpy as np
+
+        for src in misses:  # remember what the model just produced, keyed by the exact weights + image bytes
+            k = keys.get(src)
+            if k is None:
+                continue
+            for o in matrix.store.query(quantity="depth_relative", source_id=src):
+                if o.engine_id == spec.engine_id and matrix.status(o.observation_id) != "rejected":
+                    rec = Metric3DObservation.from_observation(o)
+                    if rec.raw_artifact_ref:
+                        cache.put(k, np.load(io.BytesIO(matrix.artifacts.get(rec.raw_artifact_ref)), allow_pickle=False))
+    else:
+        rep = {"engine_id": spec.engine_id, "status": "succeeded", "error": None, "sources": [], "records": 0, "accepted": [], "rejected": [], "wall_s": 0.0,
+               "peak_vram_mb": None, "peak_ram_mb": None, "checkpoint_id": checkpoint_id, "checkpoint_sha256": checkpoint_hash, "model_loaded": False}
+    rep["accepted"] = len(rep["accepted"]) + len(cached["accepted"])
+    rep["rejected"] = list(rep["rejected"]) + list(cached["rejected"])
+    rep["cache"] = info
+    return rep
+
+
 def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequence[str], adapters: Mapping[str, Any],
                matrix: Any | None = None) -> list[dict[str, Any]]:
+    from engine.multiengine.depth_cache import DepthCache
     from engine.multiengine.evidence_matrix import EvidenceMatrix
-    from engine.multiengine.metric3d_producers import (
-        checkpoint_sha256,
-        hf_checkpoint_file,
-        produce_depth,
-    )
+    from engine.multiengine.metric3d_producers import checkpoint_sha256, hf_checkpoint_file
 
     matrix = matrix if matrix is not None else EvidenceMatrix(root)
     reports: list[dict[str, Any]] = []
@@ -457,9 +501,9 @@ def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequenc
             continue
         ckpt = getattr(adapter, "checkpoint", None)
         path = hf_checkpoint_file(ckpt) if isinstance(ckpt, str) and "/" in ckpt else None
-        rep = produce_depth(adapter, sources, matrix=matrix, run_id=job_id, checkpoint_id=str(ckpt or eid), checkpoint_hash=checkpoint_sha256(path))
-        rep["accepted"], rep["rejected"] = len(rep["accepted"]), list(rep["rejected"])
-        reports.append(rep)
+        ckpt_hash = checkpoint_sha256(path)
+        reports.append(_depth_with_cache(adapter, sources, matrix=matrix, run_id=job_id, checkpoint_id=str(ckpt or eid), checkpoint_hash=ckpt_hash,
+                                         cache=DepthCache(root.parent / "depth-cache")))
     (root / "depth_report.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
     return reports
 

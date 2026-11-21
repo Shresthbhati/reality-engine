@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import AuthContext, enforce_project_isolation, get_auth_context
@@ -111,14 +112,14 @@ async def get_persisted_world(
     world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     """The persisted, verified canonical WorldIR of the run. No persisted world is a 404 -- never an empty successful world."""
-    from apps.api.evidence_world_stage import WORLDSTORE_REL
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
     from worldstore.store import WorldStore, WorldStoreError
 
     d = _run_dir(await _world_dir(db, world_id, auth), run_id)
-    versions = sorted((d / WORLDSTORE_REL / "versions").glob("*.json")) if (d / WORLDSTORE_REL / "versions").is_dir() else []
-    if not versions:
+    vid = head_version(d)
+    if not vid:
         raise HTTPException(404, "No persisted world for this run")
-    store, vid = WorldStore(d / WORLDSTORE_REL), versions[-1].stem
+    store = WorldStore(d / WORLDSTORE_REL)
     try:
         problems = store.verify_version(vid)
         if problems:
@@ -126,6 +127,55 @@ async def get_persisted_world(
         return {"version_id": vid, "world": store.load_version(vid).to_dict()}
     except WorldStoreError as exc:
         raise HTTPException(500, f"persisted world is unreadable: {exc}") from None
+
+
+class ReclassifyBody(BaseModel):
+    new_class: str = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/reclassify")
+async def reclassify_entity_route(
+    world_id: str, run_id: str, entity_id: str, body: ReclassifyBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User correction on the run's persisted world: a NEW immutable version whose parent is the previous head. The entity keeps its
+    evidence block, observations and external references untouched (checked before returning); the old class and the user's decision are
+    recorded on the entity and in the world's decisions. The snapshot and the Evidence Matrix are never modified."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from world_ir.corrections import CorrectionError, reclassify_entity
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        eid = f"ent-{entity_id}"
+        ent = world.entities.get(eid)
+        if ent is None:
+            raise HTTPException(404, "Entity not found")
+        before = (dict(ent.custom_properties.get("evidence") or {}), [o.id for o in ent.observations], list(ent.external_references))
+        try:
+            decision = reclassify_entity(world, eid, body.new_class, body.note, user_id=str(getattr(auth, "user_id", "") or ""))
+        except CorrectionError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        ent = world.entities[eid]
+        preserved = before == (dict(ent.custom_properties.get("evidence") or {}), [o.id for o in ent.observations], list(ent.external_references))
+        if not preserved:  # a correction must never touch the evidence: refuse rather than save a world that lost it
+            raise HTTPException(500, "correction would have altered the entity's evidence; nothing was saved")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the corrected version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the corrected version: {exc}") from None
+    return {"version_id": vid, "parent_version_id": head, "decision": decision, "original_evidence_preserved": True}
 
 
 @evidence_world_router.get("/{run_id}/entities")

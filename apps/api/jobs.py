@@ -300,6 +300,31 @@ def _colmap_estimated_intrinsics(session: ColmapSession | None, size: tuple[int,
     return committed_intrinsics(session, size)
 
 
+def _evidence_intrinsics(record: dict | None, session: ColmapSession | None) -> dict:
+    """The intrinsics record the evidence stage may use. ``record`` was built BEFORE the solve, so a first job on photographs without
+    EXIF has none even though COLMAP has just estimated them. Fall back to the committed model, then to the run's staging model; both
+    only when every camera agrees (``agreed_intrinsics`` / ``median_intrinsics``). Trust stays ``estimated``; nothing is invented."""
+    rec = dict(record or {})
+    size = rec.get("image_size")
+    if rec.get("intrinsics") or not size or session is None:
+        return rec
+    est, source = None, "colmap_estimated_this_run"
+    try:
+        est = _colmap_estimated_intrinsics(session, tuple(size))
+        if est is None:
+            from reconstruction.colmap_intrinsics import median_intrinsics, read_colmap_cameras
+
+            found = median_intrinsics(read_colmap_cameras(session.staging / "sparse" / "0"), tuple(size))
+            est = None if found is None else found[0]
+    except Exception:  # noqa: BLE001 -- an unreadable model means no intrinsics, which the stage then reports
+        est = None
+    if est is None:
+        return rec
+    rec["intrinsics"] = {"fx": est[0], "fy": est[1], "cx": est[2], "cy": est[3], "source": source, "trust": "estimated",
+                         "caveat": "estimated by COLMAP in this job (distortion ignored)"}
+    return rec
+
+
 def _declared_focal_px(declared: dict, size: tuple[int, int]) -> float | None:
     """Focal length in pixels from an operator declaration ({focal_length_35mm} | {hfov_deg} | {focal_px}), else None."""
     import math
@@ -1144,13 +1169,20 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 aw(db.refresh(job, attribute_names=["cancel_requested"]))
                 return bool(job.cancel_requested)
 
+            ew_intr = _evidence_intrinsics(intrinsics_record, holder.get("session"))
+            ew_poses = _registered_camera_poses(prog)
+            ew_idmap = {ei.item.id: ei.path for ei in (run_inputs or [])}
+            ew_cams = _evw.cameras_from_poses(ew_poses, ew_idmap, ew_intr.get("intrinsics"), ew_intr.get("image_size"))
             ew_facts = _evw.run_for_job(
                 team_id=world.team_id, world_id=world.id, job_id=job.id,  # keyed like the API authorizes: through the world
-                sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled,
-                cameras=_evw.cameras_from_poses(
-                    _registered_camera_poses(prog), {ei.item.id: ei.path for ei in (run_inputs or [])},
-                    (intrinsics_record or {}).get("intrinsics"), (intrinsics_record or {}).get("image_size")),
+                sources=[ei.path for ei in (run_inputs or [])], should_cancel=_evw_cancelled, cameras=ew_cams,
                 points3d=[(float(p[0]), float(p[1]), float(p[2])) for p in prog.points])  # sparse SfM points: depth alignment anchor
+            # what the stage was handed: a drop between "registered" and "usable" is visible here, never silent
+            ew_facts["camera_inputs"] = {
+                "registered_poses": len(ew_poses), "evidence_files": len(ew_idmap), "pose_ids_matched_to_files": sum(p[0] in ew_idmap for p in ew_poses),
+                "cameras_built": len(ew_cams), "intrinsics_source": (ew_intr.get("intrinsics") or {}).get("source"),
+                "image_size": ew_intr.get("image_size"), "sparse_points": len(prog.points), "pose_id_sample": [p[0] for p in ew_poses[:2]],
+                "file_id_sample": list(ew_idmap)[:2]}
             holder["evidence_world"] = ew_facts
             if ew_facts["status"] == "cancelled":
                 raise _JobCancelled(f"job {job.id} cancelled by operator")

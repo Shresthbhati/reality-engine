@@ -189,6 +189,54 @@ def test_a_persisted_world_is_served_verified_and_reflected_in_readiness(client,
     assert rd["export_ready"] is False and "no entity has a measured position" in rd["export_not_ready_reason"]  # 2D-only: honest
 
 
+def _persisted_run(client, tmp_path, wid, job="run-c"):
+    from apps.api import evidence_world_stage as ew
+    from tests.test_multiengine_evidence_flow import _setup
+
+    files = []
+    for n in ("img1.jpg", "img2.jpg"):
+        p = tmp_path / n
+        p.write_bytes(b"\xff\xd8\xff\xd9")
+        files.append(str(p))
+
+    def inputs():
+        reg, adapters = _setup(())
+        return reg, adapters, None
+
+    return ew.run_for_job(team_id="tenant-a", world_id=wid, job_id=job, sources=files, base=tmp_path / "ws", flow_inputs=inputs)
+
+
+def test_a_correction_is_a_new_version_that_keeps_every_piece_of_original_evidence(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    before = client.get(_url(wid, "run-c", "world"), headers=A).json()
+    chair = next(e for e in client.get(_url(wid, "run-c", "entities"), headers=A).json()["entities"] if e["ontology_path"].endswith("chair"))
+    r = client.post(_url(wid, "run-c", "entities", chair["entity_id"], "reclassify"), json={"new_class": "furniture/seating/sofa", "note": "it is a sofa"}, headers=A)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["parent_version_id"] == before["version_id"] and out["version_id"] != before["version_id"] and out["original_evidence_preserved"]
+    after = client.get(_url(wid, "run-c", "world"), headers=A).json()  # head is the NEW version (store sequence, not file name)
+    assert after["version_id"] == out["version_id"]
+    old_e, new_e = before["world"]["entities"][f"ent-{chair['entity_id']}"], after["world"]["entities"][f"ent-{chair['entity_id']}"]
+    assert new_e["custom_properties"]["evidence"] == old_e["custom_properties"]["evidence"]  # the evidence block is untouched
+    assert [o["id"] for o in new_e["observations"]] == [o["id"] for o in old_e["observations"]]
+    assert new_e["custom_properties"]["user_decision"]["old_class"] and new_e["custom_properties"]["classification_basis"] == "user"
+    # the raw layer is never rewritten: the snapshot and matrix still describe the machine's own claim
+    detail = client.get(_url(wid, "run-c", "entities", chair["entity_id"]), headers=A).json()
+    assert detail["trace_problems"] == [] and len(detail["observations"]) == 2
+
+
+def test_a_correction_is_validated_tenant_scoped_and_404s_without_a_world_or_entity(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    ents = client.get(_url(wid, "run-c", "entities"), headers=A).json()["entities"]
+    eid = ents[0]["entity_id"]
+    assert client.post(_url(wid, "run-c", "entities", "nope", "reclassify"), json={"new_class": "x"}, headers=A).status_code == 404
+    assert client.post(_url(wid, "run-c", "entities", eid, "reclassify"), json={"new_class": ""}, headers=A).status_code == 422
+    assert client.post(_url(wid, "run-c", "entities", eid, "reclassify"), json={"new_class": "x/y"}, headers=B).status_code in (403, 404)
+    assert client.post(_url(wid, "no-run", "entities", eid, "reclassify"), json={"new_class": "x/y"}, headers=A).status_code == 404
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

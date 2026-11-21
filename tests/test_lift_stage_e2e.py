@@ -156,6 +156,16 @@ def test_without_sparse_points_the_lift_is_skipped_with_the_reason(tmp_path, pho
     assert ew.readiness(_root(tmp_path))["world"]["entities_with_position"] == 0
 
 
+def test_cameras_are_keyed_by_str_even_when_the_jobs_paths_are_path_objects(tmp_path):
+    # REGRESSION (found on real data): Path keys never matched the str sources, so every camera was silently dropped
+    from pathlib import Path
+
+    p = tmp_path / "x.png"
+    cams = ew.cameras_from_poses([("e1", (0, 0, 0), (1, 0, 0, 0))], {"e1": Path(p)},
+                                 {"fx": F, "fy": F, "cx": W / 2, "cy": H / 2}, (W, H))
+    assert list(cams) == [str(p)]
+
+
 def test_without_cameras_nothing_is_lifted_and_the_reason_is_recorded(tmp_path, photos):
     r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=photos, base=tmp_path / "ws",
                        flow_inputs=_inputs(_Depth(_inverse_depth())), depth_engines=["fake_depth"], points3d=_points())

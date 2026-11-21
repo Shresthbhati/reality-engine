@@ -111,7 +111,7 @@ def cameras_from_poses(poses, id_to_path: Mapping[str, str], intrinsics: Mapping
     for eid, pos, rot in poses:
         path = id_to_path.get(eid)
         if path is not None:
-            out[path] = PinholeCamera(k, CameraExtrinsics(Vec3(*pos), Quat(*rot)))
+            out[str(path)] = PinholeCamera(k, CameraExtrinsics(Vec3(*pos), Quat(*rot)))  # str: the job's paths may be Path objects
     return out
 
 
@@ -272,6 +272,18 @@ def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
         return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
 
 
+def head_version(root: Path) -> str | None:
+    """The newest persisted version of a run's world, by the store's own sequence (a correction adds a version; file names carry no
+    order). ``None`` when nothing is persisted."""
+    from worldstore.store import WorldStore
+
+    store_root = root / WORLDSTORE_REL
+    if not (store_root / "versions").is_dir():
+        return None
+    versions = WorldStore(store_root).list_versions()
+    return versions[-1].version_id if versions else None
+
+
 def readiness(root: Path) -> dict[str, Any]:
     """What the frontend may honestly say about one run, derived ONLY from what is persisted on disk (snapshot, evidence matrix,
     persisted world). Nothing is estimated, seeded or defaulted: an unreadable or missing piece is reported as such."""
@@ -308,9 +320,8 @@ def readiness(root: Path) -> dict[str, Any]:
         from worldstore.store import WorldStore
 
         store_root = root / WORLDSTORE_REL
-        versions = sorted((store_root / "versions").glob("*.json")) if (store_root / "versions").is_dir() else []
-        if versions:
-            vid = versions[-1].stem
+        vid = head_version(root)
+        if vid:
             store = WorldStore(store_root)
             problems = store.verify_version(vid)
             w = store.load_version(vid)

@@ -17,35 +17,59 @@ import numpy as np
 
 class MaterialType(str, Enum):
     WOOD = "wood"
+    WOOD_OAK = "wood_oak"
+    WOOD_WALNUT = "wood_walnut"
+    WOOD_POLISHED = "wood_polished"
     GLASS = "glass"
+    GLASS_CLEAR = "glass_clear"
+    GLASS_FROSTED = "glass_frosted"
+    GLASS_MIRRORED = "glass_mirrored"
     METAL = "metal"
+    METAL_CHROME = "metal_chrome"
+    METAL_BRUSHED = "metal_brushed"
+    METAL_ANODIZED = "metal_anodized"
     CONCRETE = "concrete"
     STONE = "stone"
+    MARBLE = "marble"
+    GRANITE = "granite"
     TILE = "tile"
     FABRIC = "fabric"
+    LEATHER = "leather"
     PLASTIC = "plastic"
     PLASTER = "plaster"
+    PAINT_MATTE = "paint_matte"
+    PAINT_GLOSS = "paint_gloss"
     BRICK = "brick"
-    LEATHER = "leather"
     ASPHALT = "asphalt"
     UNKNOWN = "unknown"
 
 
 class SurfaceFinish(str, Enum):
     MATTE = "matte"
+    SATIN = "satin"
     GLOSSY = "glossy"
     METALLIC = "metallic"
     ROUGH = "rough"
     TRANSPARENT = "transparent"
+    TEXTURED = "textured"
     UNKNOWN = "unknown"
 
 
 class ObjectState(str, Enum):
     OPEN = "open"
     CLOSED = "closed"
+    PARTIALLY_OPEN = "partially_open"
     ON = "on"
     OFF = "off"
     UNSPECIFIED = "unspecified"
+
+
+class ObjectCondition(str, Enum):
+    PRISTINE = "pristine"
+    WORN = "worn"
+    DAMAGED = "damaged"
+    WEATHERED = "weathered"
+    UNKNOWN = "unknown"
 
 
 # Reference colors in CIELAB space: (L, a, b, name, srgb_hex)
@@ -107,6 +131,7 @@ class EntityVisualAttributes:
     dominant_rgb: tuple[float, float, float] = (0.5, 0.5, 0.5)
     operational_state: ObjectState = ObjectState.UNSPECIFIED
     state_confidence: float = 0.0
+    condition: ObjectCondition = ObjectCondition.UNKNOWN
     is_reflective: bool = False
     is_transparent: bool = False
     details: dict[str, Any] = field(default_factory=dict)
@@ -120,6 +145,7 @@ class EntityVisualAttributes:
             "dominant_rgb": [round(c, 4) for c in self.dominant_rgb],
             "operational_state": self.operational_state.value,
             "state_confidence": round(self.state_confidence, 3),
+            "condition": self.condition.value,
             "is_reflective": self.is_reflective,
             "is_transparent": self.is_transparent,
             "details": self.details,
@@ -186,9 +212,15 @@ def extract_visual_attributes(
         grad_mag = np.hypot(gx, gy)
         roughness_energy = float(np.mean(grad_mag))
         specular_ratio = float(np.mean(gray_crop > 240))
+        # Directional gradient energy ratio
+        mean_gx = float(np.mean(np.abs(gx)))
+        mean_gy = float(np.mean(np.abs(gy)))
+        denom = min(mean_gx, mean_gy) + 1e-4
+        directional_ratio = max(mean_gx, mean_gy) / denom
     else:
         roughness_energy = 0.0
         specular_ratio = 0.0
+        directional_ratio = 1.0
 
     # 3. Material & Finish Inference grounded in visual evidence and class context
     c_lower = class_hint.lower()
@@ -198,44 +230,77 @@ def extract_visual_attributes(
     is_refl = False
     is_trans = False
 
-    if "glass" in c_lower or "window" in c_lower:
-        mat = MaterialType.GLASS
-        finish = SurfaceFinish.TRANSPARENT
+    if "glass" in c_lower or "window" in c_lower or "glazing" in c_lower:
+        if roughness_energy > 8.0:
+            mat = MaterialType.GLASS_FROSTED
+            finish = SurfaceFinish.ROUGH
+        elif "mirror" in c_lower:
+            mat = MaterialType.GLASS_MIRRORED
+            finish = SurfaceFinish.GLOSSY
+            is_refl = True
+        else:
+            mat = MaterialType.GLASS_CLEAR
+            finish = SurfaceFinish.TRANSPARENT
         is_trans = True
         mat_conf = 0.85
-    elif any(k in c_lower for k in ("table", "chair", "bed", "wardrobe", "door")) and ("wood" in best_color_name or "brown" in best_color_name):
-        mat = MaterialType.WOOD
-        finish = SurfaceFinish.MATTE if roughness_energy > 8.0 else SurfaceFinish.GLOSSY
-        mat_conf = 0.75
-    elif any(k in c_lower for k in ("socket", "switch", "switchboard")):
+    elif any(k in c_lower for k in ("table", "chair", "bed", "wardrobe", "door", "desk", "shelf", "cabinet")) and any(k in best_color_name for k in ("wood", "brown", "beige")):
+        if specular_ratio > 0.03:
+            mat = MaterialType.WOOD_POLISHED
+            finish = SurfaceFinish.GLOSSY
+        elif "dark" in best_color_name:
+            mat = MaterialType.WOOD_WALNUT
+            finish = SurfaceFinish.MATTE
+        else:
+            mat = MaterialType.WOOD_OAK
+            finish = SurfaceFinish.SATIN if specular_ratio > 0.01 else SurfaceFinish.MATTE
+        mat_conf = 0.80
+    elif any(k in c_lower for k in ("socket", "switch", "switchboard", "panel")):
         mat = MaterialType.PLASTIC
         finish = SurfaceFinish.GLOSSY if specular_ratio > 0.02 else SurfaceFinish.MATTE
-        mat_conf = 0.80
-    elif any(k in c_lower for k in ("faucet", "pipe", "radiator", "lamppost", "pole", "handle")):
-        mat = MaterialType.METAL
-        finish = SurfaceFinish.METALLIC
-        is_refl = True
-        mat_conf = 0.80
-    elif any(k in c_lower for k in ("wall", "ceiling")):
-        mat = MaterialType.PLASTER
-        finish = SurfaceFinish.MATTE
-        mat_conf = 0.70
-    elif "floor" in c_lower:
+        mat_conf = 0.85
+    elif any(k in c_lower for k in ("faucet", "pipe", "radiator", "lamppost", "pole", "handle", "hinge", "lock", "bollard", "hydrant")):
+        if specular_ratio > 0.08:
+            mat = MaterialType.METAL_CHROME
+            finish = SurfaceFinish.METALLIC
+            is_refl = True
+        elif directional_ratio > 1.8:
+            mat = MaterialType.METAL_BRUSHED
+            finish = SurfaceFinish.METALLIC
+        else:
+            mat = MaterialType.METAL
+            finish = SurfaceFinish.METALLIC
+        mat_conf = 0.85
+    elif any(k in c_lower for k in ("wall", "ceiling", "beam", "column")):
+        if specular_ratio > 0.04:
+            mat = MaterialType.PAINT_GLOSS
+            finish = SurfaceFinish.GLOSSY
+        elif "brick" in c_lower:
+            mat = MaterialType.BRICK
+            finish = SurfaceFinish.ROUGH
+        else:
+            mat = MaterialType.PLASTER
+            finish = SurfaceFinish.MATTE
+        mat_conf = 0.75
+    elif "floor" in c_lower or "paving" in c_lower:
         if "tile" in best_color_name or specular_ratio > 0.05:
             mat = MaterialType.TILE
             finish = SurfaceFinish.GLOSSY
         elif "wood" in best_color_name:
-            mat = MaterialType.WOOD
+            mat = MaterialType.WOOD_POLISHED
             finish = SurfaceFinish.GLOSSY
         else:
             mat = MaterialType.CONCRETE
             finish = SurfaceFinish.MATTE
-        mat_conf = 0.65
+        mat_conf = 0.70
     elif any(k in c_lower for k in ("sofa", "couch", "cushion", "curtain", "carpet", "rug")):
-        mat = MaterialType.FABRIC
-        finish = SurfaceFinish.MATTE
+        if "leather" in c_lower or (specular_ratio > 0.02 and roughness_energy < 5.0):
+            mat = MaterialType.LEATHER
+            finish = SurfaceFinish.SATIN
+        else:
+            mat = MaterialType.FABRIC
+            finish = SurfaceFinish.MATTE
         mat_conf = 0.80
-    elif "road" in c_lower or "asphalt" in c_lower:
+    elif "road" in c_lower or "asphalt" in c_lower or "lane" in c_lower:
         mat = MaterialType.ASPHALT
         finish = SurfaceFinish.ROUGH
         mat_conf = 0.85
@@ -248,23 +313,33 @@ def extract_visual_attributes(
     op_state = ObjectState.UNSPECIFIED
     state_conf = 0.0
     if "door" in c_lower:
-        # Aspect ratio of 2D bounding box can hint open vs closed
         w_px = x2 - x1
         h_px = y2 - y1
         aspect = w_px / max(1, h_px)
-        if aspect < 0.25:
+        if aspect < 0.22:
             op_state = ObjectState.OPEN
-            state_conf = 0.60
+            state_conf = 0.75
+        elif aspect < 0.45:
+            op_state = ObjectState.PARTIALLY_OPEN
+            state_conf = 0.65
         else:
             op_state = ObjectState.CLOSED
-            state_conf = 0.70
+            state_conf = 0.75
     elif "light" in c_lower or "lamp" in c_lower:
-        if specular_ratio > 0.15 or np.mean(gray_crop) > 220:
+        if specular_ratio > 0.12 or np.mean(gray_crop) > 215:
             op_state = ObjectState.ON
-            state_conf = 0.80
+            state_conf = 0.85
         else:
             op_state = ObjectState.OFF
-            state_conf = 0.70
+            state_conf = 0.75
+
+    # 5. Object condition assessment
+    if roughness_energy > 22.0 and specular_ratio < 0.01:
+        condition = ObjectCondition.WEATHERED if "exterior" in c_lower else ObjectCondition.WORN
+    elif roughness_energy < 8.0 and specular_ratio > 0.02:
+        condition = ObjectCondition.PRISTINE
+    else:
+        condition = ObjectCondition.UNKNOWN
 
     return EntityVisualAttributes(
         material=mat,
@@ -274,11 +349,13 @@ def extract_visual_attributes(
         dominant_rgb=(float(mean_rgb[0]), float(mean_rgb[1]), float(mean_rgb[2])),
         operational_state=op_state,
         state_confidence=state_conf,
+        condition=condition,
         is_reflective=is_refl,
         is_transparent=is_trans,
         details={
             "delta_e_closest_color": round(best_delta_e, 2),
             "texture_gradient_energy": round(roughness_energy, 2),
+            "directional_gradient_ratio": round(directional_ratio, 2),
             "specular_pixel_fraction": round(specular_ratio, 4),
         },
     )

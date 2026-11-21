@@ -1,0 +1,563 @@
+"""High-Fidelity Detection, Tiled Inference, and Mask Refinement Pipeline (Mission B).
+
+Implements:
+1. Domain-aware open-vocabulary prompt generation tailored by domain and scale.
+2. Overlapping tiled inference for high-resolution images preserving small fixtures.
+3. Crop-based re-detection on host objects for fine-grained parts (handles, locks, sockets).
+4. Class-specific confidence filtering (e.g. lower threshold for tiny fixtures, higher for bulky furniture).
+5. Non-destructive duplicate suppression (preserves part-inside-parent relationships).
+6. Mask refinement with morphological cleanup, hole preservation, and RGB edge-snapping.
+7. Cross-engine prediction reconciliation (ensemble voting, WBF box fusion, and IoU consensus).
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+import numpy as np
+
+from engine.multiengine.spatial_intelligence.taxonomy import (
+    Domain,
+    TaxonomyClass,
+    are_semantically_compatible,
+    get_all_taxonomy_classes,
+    get_subparts_for_class,
+    resolve_taxonomy_class,
+)
+
+
+class DetectionScale(str, Enum):
+    MACRO = "macro"          # Buildings, walls, floors, roofs
+    STANDARD = "standard"    # Furniture, doors, windows, vehicles
+    MICRO = "micro"          # Sockets, switches, handles, hinges, faucets, drains
+
+
+@dataclass(frozen=True)
+class DetectionBox:
+    """Standardized 2D detection bounding box with confidence and class semantics."""
+
+    box_id: str
+    class_name: str
+    box_2d: tuple[float, float, float, float]  # (x1, y1, x2, y2) in pixels
+    confidence: float
+    source_engine: str = "generic_detector"
+    source_image_id: str = ""
+    mask_2d: np.ndarray | None = None
+    parent_box_id: str | None = None
+    scale: DetectionScale = DetectionScale.STANDARD
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def x1(self) -> float:
+        return self.box_2d[0]
+
+    @property
+    def y1(self) -> float:
+        return self.box_2d[1]
+
+    @property
+    def x2(self) -> float:
+        return self.box_2d[2]
+
+    @property
+    def y2(self) -> float:
+        return self.box_2d[3]
+
+    @property
+    def width(self) -> float:
+        return max(0.0, self.x2 - self.x1)
+
+    @property
+    def height(self) -> float:
+        return max(0.0, self.y2 - self.y1)
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    @property
+    def centroid(self) -> tuple[float, float]:
+        return (self.x1 + 0.5 * self.width, self.y1 + 0.5 * self.height)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "box_id": self.box_id,
+            "class_name": self.class_name,
+            "box_2d": [round(c, 2) for c in self.box_2d],
+            "confidence": round(self.confidence, 4),
+            "source_engine": self.source_engine,
+            "source_image_id": self.source_image_id,
+            "parent_box_id": self.parent_box_id,
+            "scale": self.scale.value,
+            "area_px": round(self.area, 1),
+        }
+
+
+# ============================================================================
+# 1. DOMAIN-AWARE PROMPT GENERATION
+# ============================================================================
+
+def generate_domain_prompts(
+    domain: Domain = Domain.INTERIOR,
+    scales: Sequence[DetectionScale] = (DetectionScale.STANDARD, DetectionScale.MICRO),
+) -> dict[DetectionScale, list[str]]:
+    """Generates structured detection prompt queries partitioned by scale to prevent small fixture starvation."""
+    prompts_by_scale: dict[DetectionScale, list[str]] = {s: [] for s in scales}
+
+    for tax_cls in get_all_taxonomy_classes():
+        if tax_cls.domain not in (domain, Domain.UNIVERSAL):
+            continue
+
+        # Classify scale
+        max_dim = max(tax_cls.max_dimensions_m)
+        if max_dim <= 0.35 or tax_cls.parent_class is not None:
+            cls_scale = DetectionScale.MICRO
+        elif max_dim >= 4.0 or tax_cls.is_structural:
+            cls_scale = DetectionScale.MACRO
+        else:
+            cls_scale = DetectionScale.STANDARD
+
+        if cls_scale in prompts_by_scale:
+            queries = [tax_cls.name, *tax_cls.aliases[:2]]
+            for q in queries:
+                clean_q = q.replace("_", " ").strip()
+                if clean_q not in prompts_by_scale[cls_scale]:
+                    prompts_by_scale[cls_scale].append(clean_q)
+
+    return prompts_by_scale
+
+
+# ============================================================================
+# 2. OVERLAPPING TILED INFERENCE
+# ============================================================================
+
+@dataclass(frozen=True)
+class TileWindow:
+    """Rectangular window slice of a high-resolution image."""
+
+    tile_id: str
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+    @property
+    def width(self) -> int:
+        return self.x2 - self.x1
+
+    @property
+    def height(self) -> int:
+        return self.y2 - self.y1
+
+
+def generate_tiling_windows(
+    image_width: int,
+    image_height: int,
+    tile_size: int = 800,
+    overlap_ratio: float = 0.25,
+) -> list[TileWindow]:
+    """Generates a grid of overlapping tile windows covering the entire image."""
+    if image_width <= tile_size and image_height <= tile_size:
+        return [TileWindow(tile_id="tile_0_0", x1=0, y1=0, x2=image_width, y2=image_height)]
+
+    step_x = max(100, int(round(tile_size * (1.0 - overlap_ratio))))
+    step_y = max(100, int(round(tile_size * (1.0 - overlap_ratio))))
+
+    x_starts = list(range(0, max(1, image_width - tile_size + 1), step_x))
+    if not x_starts or x_starts[-1] + tile_size < image_width:
+        x_starts.append(max(0, image_width - tile_size))
+
+    y_starts = list(range(0, max(1, image_height - tile_size + 1), step_y))
+    if not y_starts or y_starts[-1] + tile_size < image_height:
+        y_starts.append(max(0, image_height - tile_size))
+
+    windows: list[TileWindow] = []
+    for row_idx, ys in enumerate(y_starts):
+        for col_idx, xs in enumerate(x_starts):
+            x2 = min(image_width, xs + tile_size)
+            y2 = min(image_height, ys + tile_size)
+            windows.append(TileWindow(
+                tile_id=f"tile_{row_idx}_{col_idx}",
+                x1=xs,
+                y1=ys,
+                x2=x2,
+                y2=y2,
+            ))
+    return windows
+
+
+def transform_tile_detections_to_image(
+    tile_detections: Sequence[DetectionBox],
+    tile: TileWindow,
+    full_image_width: int,
+    full_image_height: int,
+) -> list[DetectionBox]:
+    """Transforms detections made within a tile window back to global image coordinates."""
+    transformed: list[DetectionBox] = []
+    for det in tile_detections:
+        gx1 = max(0.0, min(float(full_image_width), det.x1 + tile.x1))
+        gy1 = max(0.0, min(float(full_image_height), det.y1 + tile.y1))
+        gx2 = max(0.0, min(float(full_image_width), det.x2 + tile.x1))
+        gy2 = max(0.0, min(float(full_image_height), det.y2 + tile.y1))
+
+        if gx2 <= gx1 or gy2 <= gy1:
+            continue
+
+        # Transform mask if present
+        full_mask: np.ndarray | None = None
+        if det.mask_2d is not None and det.mask_2d.shape[:2] == (tile.height, tile.width):
+            full_mask = np.zeros((full_image_height, full_image_width), dtype=bool)
+            full_mask[tile.y1:tile.y2, tile.x1:tile.x2] = det.mask_2d.astype(bool)
+
+        transformed.append(DetectionBox(
+            box_id=f"{det.box_id}_{tile.tile_id}",
+            class_name=det.class_name,
+            box_2d=(gx1, gy1, gx2, gy2),
+            confidence=det.confidence,
+            source_engine=f"{det.source_engine}_tiled",
+            source_image_id=det.source_image_id,
+            mask_2d=full_mask,
+            parent_box_id=det.parent_box_id,
+            scale=det.scale,
+            attributes=dict(det.attributes),
+        ))
+    return transformed
+
+
+# ============================================================================
+# 3. CROP-BASED RE-DETECTION FOR SMALL OBJECTS AND PARTS
+# ============================================================================
+
+def get_subpart_detection_targets(parent_class_name: str) -> list[TaxonomyClass]:
+    """Returns candidate subpart taxonomy classes for a given parent host object."""
+    parent_cls = resolve_taxonomy_class(parent_class_name)
+    subparts = list(get_subparts_for_class(parent_cls.taxonomy_id))
+
+    # Add named potential parts
+    for part_name in parent_cls.potential_parts:
+        part_cls = resolve_taxonomy_class(part_name)
+        if part_cls not in subparts and part_cls.taxonomy_id != parent_cls.taxonomy_id:
+            subparts.append(part_cls)
+
+    return subparts
+
+
+def extract_host_crop_roi(
+    parent_box: DetectionBox,
+    image_width: int,
+    image_height: int,
+    padding_ratio: float = 0.10,
+) -> tuple[int, int, int, int]:
+    """Extracts padded bounding box region for crop re-detection."""
+    pad_w = parent_box.width * padding_ratio
+    pad_h = parent_box.height * padding_ratio
+
+    cx1 = max(0, int(math.floor(parent_box.x1 - pad_w)))
+    cy1 = max(0, int(math.floor(parent_box.y1 - pad_h)))
+    cx2 = min(image_width, int(math.ceil(parent_box.x2 + pad_w)))
+    cy2 = min(image_height, int(math.ceil(parent_box.y2 + pad_h)))
+    return (cx1, cy1, cx2, cy2)
+
+
+# ============================================================================
+# 4. CLASS-SPECIFIC CONFIDENCE GATING & VALIDATION
+# ============================================================================
+
+def filter_by_class_confidence(detections: Sequence[DetectionBox]) -> list[DetectionBox]:
+    """Filters detection candidates using domain- and class-specific confidence thresholds."""
+    filtered: list[DetectionBox] = []
+    for det in detections:
+        tax_cls = resolve_taxonomy_class(det.class_name)
+        threshold = tax_cls.min_detector_confidence
+
+        # Micro fixtures (sockets, switches, door handles) have lower threshold to avoid starvation
+        if det.scale == DetectionScale.MICRO or tax_cls.parent_class is not None:
+            threshold = min(threshold, 0.15)
+
+        if det.confidence >= threshold:
+            filtered.append(det)
+    return filtered
+
+
+# ============================================================================
+# 5. DUPLICATE SUPPRESSION & WEIGHTED BOX FUSION (WBF)
+# ============================================================================
+
+def compute_box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float, float, float, float]) -> float:
+    """Computes Intersection over Union (IoU) between two 2D bounding boxes."""
+    xa = max(box_a[0], box_b[0])
+    ya = max(box_a[1], box_b[1])
+    xb = min(box_a[2], box_b[2])
+    yb = min(box_a[3], box_b[3])
+
+    inter_w = max(0.0, xb - xa)
+    inter_h = max(0.0, yb - ya)
+    inter_area = inter_w * inter_h
+
+    area_a = max(0.0, box_a[2] - box_a[0]) * max(0.0, box_a[3] - box_a[1])
+    area_b = max(0.0, box_b[2] - box_b[0]) * max(0.0, box_b[3] - box_b[1])
+
+    union_area = area_a + area_b - inter_area
+    if union_area <= 1e-6:
+        return 0.0
+    return inter_area / union_area
+
+
+def suppress_duplicates_preserving_parts(
+    detections: Sequence[DetectionBox],
+    iou_threshold: float = 0.55,
+) -> list[DetectionBox]:
+    """Suppresses redundant duplicate detections while explicitly preserving subparts inside parents.
+
+    If Box A and Box B have high overlap:
+    - If Box A and Box B have the exact same class: fuses them via confidence-weighted averaging.
+    - If Box A is a subpart of Box B (e.g. door handle inside door): PRESERVES BOTH and establishes parent-part link.
+    - If Box A and Box B are different unrelated classes: keeps the one with higher confidence unless both are valid distinct scales.
+    """
+    if not detections:
+        return []
+
+    # Sort descending by confidence
+    sorted_dets = sorted(detections, key=lambda d: d.confidence, reverse=True)
+    kept: list[DetectionBox] = []
+
+    for det in sorted_dets:
+        tax_det = resolve_taxonomy_class(det.class_name)
+        should_keep = True
+        fused_with_idx: int | None = None
+
+        for idx, existing in enumerate(kept):
+            tax_existing = resolve_taxonomy_class(existing.class_name)
+            iou = compute_box_iou(det.box_2d, existing.box_2d)
+
+            # Check if one is contained inside the other (part-parent relationship)
+            det_in_existing = (
+                det.x1 >= existing.x1 - 5.0 and det.y1 >= existing.y1 - 5.0 and
+                det.x2 <= existing.x2 + 5.0 and det.y2 <= existing.y2 + 5.0
+            )
+            existing_in_det = (
+                existing.x1 >= det.x1 - 5.0 and existing.y1 >= det.y1 - 5.0 and
+                existing.x2 <= det.x2 + 5.0 and existing.y2 <= det.y2 + 5.0
+            )
+
+            is_part_relation = (
+                tax_det.parent_class == tax_existing.taxonomy_id or
+                tax_existing.parent_class == tax_det.taxonomy_id or
+                tax_det.name in tax_existing.potential_parts or
+                tax_existing.name in tax_det.potential_parts or
+                (det.scale != existing.scale and (det_in_existing or existing_in_det))
+            )
+
+            if is_part_relation:
+                # Do NOT suppress! Establish parentage
+                if det_in_existing and det.parent_box_id is None:
+                    object.__setattr__(det, "parent_box_id", existing.box_id)
+                continue
+
+            if iou >= iou_threshold:
+                if are_semantically_compatible(det.class_name, existing.class_name):
+                    # Same physical entity detected multiple times: fuse boxes
+                    fused_with_idx = idx
+                    should_keep = False
+                    break
+                else:
+                    # High spatial overlap between non-compatible classes: suppress the lower confidence one
+                    should_keep = False
+                    break
+
+        if fused_with_idx is not None:
+            # Fuse coordinates via weighted box fusion (WBF)
+            target = kept[fused_with_idx]
+            w1 = target.confidence
+            w2 = det.confidence
+            w_sum = w1 + w2
+            fused_box = (
+                (target.x1 * w1 + det.x1 * w2) / w_sum,
+                (target.y1 * w1 + det.y1 * w2) / w_sum,
+                (target.x2 * w1 + det.x2 * w2) / w_sum,
+                (target.y2 * w1 + det.y2 * w2) / w_sum,
+            )
+            # Combine masks if available
+            fused_mask = target.mask_2d
+            if det.mask_2d is not None and target.mask_2d is not None:
+                fused_mask = target.mask_2d | det.mask_2d
+            elif det.mask_2d is not None:
+                fused_mask = det.mask_2d
+
+            fused_det = DetectionBox(
+                box_id=target.box_id,
+                class_name=target.class_name,
+                box_2d=fused_box,
+                confidence=min(0.99, max(target.confidence, det.confidence) + 0.05),
+                source_engine=f"{target.source_engine}+wbf",
+                source_image_id=target.source_image_id,
+                mask_2d=fused_mask,
+                parent_box_id=target.parent_box_id,
+                scale=target.scale,
+                attributes=dict(target.attributes),
+            )
+            kept[fused_with_idx] = fused_det
+        elif should_keep:
+            kept.append(det)
+
+    return kept
+
+
+# ============================================================================
+# 6. MASK REFINEMENT: HOLE PRESERVATION & EDGE-SNAPPING
+# ============================================================================
+
+def refine_instance_mask(
+    mask_2d: np.ndarray,
+    rgb_image: np.ndarray | None = None,
+    min_component_area_px: int = 15,
+    max_fill_hole_area_px: int = 100,
+) -> np.ndarray:
+    """Refines a binary segmentation mask.
+
+    1. Removes isolated noise speckles smaller than min_component_area_px.
+    2. Fills small interior voids (noise holes) while preserving large intentional holes.
+    3. If RGB image is provided, snaps mask boundaries to nearby strong color/intensity gradients.
+    """
+    if mask_2d.ndim != 2 or not np.any(mask_2d):
+        return mask_2d.astype(bool)
+
+    h, w = mask_2d.shape[:2]
+    refined = mask_2d.astype(bool).copy()
+
+    # Connected component labeling via simple DFS / BFS flood fill
+    visited = np.zeros((h, w), dtype=bool)
+    components: list[list[tuple[int, int]]] = []
+
+    for r in range(h):
+        for c in range(w):
+            if refined[r, c] and not visited[r, c]:
+                # Start component
+                comp_pixels: list[tuple[int, int]] = []
+                queue = [(r, c)]
+                visited[r, c] = True
+                while queue:
+                    cr, cc = queue.pop()
+                    comp_pixels.append((cr, cc))
+                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        nr, nc = cr + dr, cc + dc
+                        if 0 <= nr < h and 0 <= nc < w:
+                            if refined[nr, nc] and not visited[nr, nc]:
+                                visited[nr, nc] = True
+                                queue.append((nr, nc))
+                components.append(comp_pixels)
+
+    # Filter small speckles
+    for comp in components:
+        if len(comp) < min_component_area_px:
+            for r, c in comp:
+                refined[r, c] = False
+
+    # Hole detection on inverted mask
+    inv_visited = np.zeros((h, w), dtype=bool)
+    # Mark exterior background reachable from borders
+    border_queue: list[tuple[int, int]] = []
+    for r in range(h):
+        for c in (0, w - 1):
+            if not refined[r, c] and not inv_visited[r, c]:
+                inv_visited[r, c] = True
+                border_queue.append((r, c))
+    for c in range(w):
+        for r in (0, h - 1):
+            if not refined[r, c] and not inv_visited[r, c]:
+                inv_visited[r, c] = True
+                border_queue.append((r, c))
+
+    while border_queue:
+        cr, cc = border_queue.pop()
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nr, nc = cr + dr, cc + dc
+            if 0 <= nr < h and 0 <= nc < w:
+                if not refined[nr, nc] and not inv_visited[nr, nc]:
+                    inv_visited[nr, nc] = True
+                    border_queue.append((nr, nc))
+
+    # Any unvisited background pixel is an interior hole
+    for r in range(h):
+        for c in range(w):
+            if not refined[r, c] and not inv_visited[r, c]:
+                # Check hole size
+                hole_pixels: list[tuple[int, int]] = []
+                hq = [(r, c)]
+                inv_visited[r, c] = True
+                while hq:
+                    hr, hc = hq.pop()
+                    hole_pixels.append((hr, hc))
+                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        nr, nc = hr + dr, hc + dc
+                        if 0 <= nr < h and 0 <= nc < w:
+                            if not refined[nr, nc] and not inv_visited[nr, nc]:
+                                inv_visited[nr, nc] = True
+                                hq.append((nr, nc))
+                if len(hole_pixels) <= max_fill_hole_area_px:
+                    # Fill small noise hole
+                    for hr, hc in hole_pixels:
+                        refined[hr, hc] = True
+
+    # Boundary gradient edge snapping if RGB image is provided
+    if rgb_image is not None and rgb_image.shape[:2] == (h, w):
+        # Calculate grayscale gradient magnitude
+        if rgb_image.ndim == 3:
+            gray = 0.299 * rgb_image[..., 0] + 0.587 * rgb_image[..., 1] + 0.114 * rgb_image[..., 2]
+        else:
+            gray = rgb_image.astype(float)
+
+        gx = np.zeros_like(gray)
+        gy = np.zeros_like(gray)
+        gx[:, 1:-1] = np.abs(gray[:, 2:] - gray[:, :-2]) * 0.5
+        gy[1:-1, :] = np.abs(gray[2:, :] - gray[:-2, :]) * 0.5
+        grad_mag = gx + gy
+
+        # Find 1-pixel boundary band
+        eroded = np.pad(refined[1:-1, 1:-1], 1, mode="constant", constant_values=False)
+        eroded = eroded & np.roll(refined, 1, 0) & np.roll(refined, -1, 0) & np.roll(refined, 1, 1) & np.roll(refined, -1, 1)
+        dilated = refined | np.roll(refined, 1, 0) | np.roll(refined, -1, 0) | np.roll(refined, 1, 1) | np.roll(refined, -1, 1)
+        boundary_band = dilated & ~eroded
+
+        # If strong edge occurs in boundary band, snap to it
+        high_grad_mask = grad_mag > np.percentile(grad_mag, 70)
+        refined[boundary_band & high_grad_mask] = True
+
+    return refined
+
+
+# ============================================================================
+# 7. CROSS-ENGINE RECONCILIATION
+# ============================================================================
+
+def reconcile_cross_engine_detections(
+    engine_detections_map: dict[str, Sequence[DetectionBox]],
+    iou_consensus_threshold: float = 0.50,
+) -> list[DetectionBox]:
+    """Reconciles and enlists multi-engine detections across different perception models (e.g. YOLO-World, Grounding DINO, SAM)."""
+    all_detections: list[DetectionBox] = []
+    for engine_name, dets in engine_detections_map.items():
+        for d in dets:
+            all_detections.append(DetectionBox(
+                box_id=d.box_id,
+                class_name=d.class_name,
+                box_2d=d.box_2d,
+                confidence=d.confidence,
+                source_engine=engine_name,
+                source_image_id=d.source_image_id,
+                mask_2d=d.mask_2d,
+                parent_box_id=d.parent_box_id,
+                scale=d.scale,
+                attributes=dict(d.attributes),
+            ))
+
+    # Apply class confidence gating
+    gated = filter_by_class_confidence(all_detections)
+
+    # Apply duplicate suppression preserving subparts and perform WBF
+    reconciled = suppress_duplicates_preserving_parts(gated, iou_threshold=iou_consensus_threshold)
+    return reconciled

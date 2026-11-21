@@ -23,7 +23,6 @@ from engine.multiengine.spatial_intelligence.association import (
     evaluate_cross_view_pair,
 )
 from engine.multiengine.spatial_intelligence.attributes import (
-    MaterialType,
     ObjectState,
     SurfaceFinish,
     extract_visual_attributes,
@@ -92,7 +91,7 @@ def test_visual_attribute_extraction() -> None:
         box_2d=(30, 30, 70, 70),
         class_hint="table",
     )
-    assert attrs.material == MaterialType.WOOD
+    assert "wood" in attrs.material.value
     assert "wood" in attrs.dominant_color_name or "brown" in attrs.dominant_color_name
     assert attrs.surface_finish in (SurfaceFinish.MATTE, SurfaceFinish.GLOSSY)
     assert attrs.operational_state == ObjectState.UNSPECIFIED
@@ -248,3 +247,235 @@ def test_spatial_relationships_and_worldir_export() -> None:
     # Verify metric3d observations
     m3d_obs = scene_res.to_metric3d_observations()
     assert len(m3d_obs) >= 4  # 2 positions + 2 extents
+
+
+def test_expanded_taxonomy_and_hierarchy() -> None:
+    from engine.multiengine.spatial_intelligence.taxonomy import (
+        get_ancestor_classes,
+        get_domain_prompts,
+        get_hierarchical_path,
+        get_subparts_for_class,
+    )
+
+    # 1. New Interior Classes
+    hinge = resolve_taxonomy_class("door hinge")
+    assert hinge.taxonomy_id == "interior.opening.door_hinge"
+    lock = resolve_taxonomy_class("deadbolt")
+    assert lock.taxonomy_id == "interior.opening.door_lock"
+    ac = resolve_taxonomy_class("split ac")
+    assert ac.taxonomy_id == "interior.hvac.split_ac"
+    panel = resolve_taxonomy_class("breaker box")
+    assert panel.taxonomy_id == "interior.electrical.panel"
+    pipe = resolve_taxonomy_class("water pipe")
+    assert pipe.taxonomy_id == "interior.plumbing.pipe"
+
+    # 2. New Exterior Classes
+    building = resolve_taxonomy_class("building structure")
+    assert building.taxonomy_id == "exterior.architecture.building"
+    bollard = resolve_taxonomy_class("traffic bollard")
+    assert bollard.taxonomy_id == "exterior.street.bollard"
+    manhole = resolve_taxonomy_class("manhole cover")
+    assert manhole.taxonomy_id == "exterior.utility.manhole"
+    paving = resolve_taxonomy_class("block paving")
+    assert paving.taxonomy_id == "exterior.circulation.paving"
+
+    # 3. Hierarchy Navigation
+    path = get_hierarchical_path(hinge.taxonomy_id)
+    assert path == ["interior", "opening", "door_hinge"]
+
+    ancestors = get_ancestor_classes(hinge.taxonomy_id)
+    assert len(ancestors) == 1
+    assert ancestors[0].taxonomy_id == "interior.opening.door"
+
+    subparts = get_subparts_for_class("interior.opening.door")
+    subpart_ids = [s.taxonomy_id for s in subparts]
+    assert "interior.opening.door_hinge" in subpart_ids
+    assert "interior.opening.door_lock" in subpart_ids
+    assert "interior.opening.door_frame" in subpart_ids
+
+    # 4. Domain Prompts
+    prompts = get_domain_prompts(Domain.INTERIOR)
+    assert len(prompts) >= 30
+    assert "socket" in prompts
+    assert "door" in prompts
+
+
+def test_detection_pipeline_tiling_and_part_preservation() -> None:
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        DetectionBox,
+        DetectionScale,
+        compute_box_iou,
+        generate_tiling_windows,
+        suppress_duplicates_preserving_parts,
+        transform_tile_detections_to_image,
+    )
+
+    # 1. Tiling window generation
+    windows = generate_tiling_windows(image_width=1920, image_height=1080, tile_size=800, overlap_ratio=0.25)
+    assert len(windows) >= 4
+    # All windows must stay within image bounds
+    for w in windows:
+        assert 0 <= w.x1 < w.x2 <= 1920
+        assert 0 <= w.y1 < w.y2 <= 1080
+
+    # 2. Coordinate transformation back to full image
+    win = windows[0]
+    tile_det = DetectionBox(
+        box_id="det_local",
+        class_name="socket",
+        box_2d=(50.0, 60.0, 100.0, 110.0),
+        confidence=0.8,
+        scale=DetectionScale.MICRO,
+    )
+    mapped = transform_tile_detections_to_image([tile_det], win, 1920, 1080)
+    assert len(mapped) == 1
+    assert mapped[0].x1 == win.x1 + 50.0
+    assert mapped[0].y1 == win.y1 + 60.0
+
+    # 3. IoU Computation
+    box1 = (0.0, 0.0, 10.0, 10.0)
+    box2 = (0.0, 0.0, 10.0, 10.0)
+    assert compute_box_iou(box1, box2) == 1.0
+
+    box3 = (10.0, 10.0, 20.0, 20.0)
+    assert compute_box_iou(box1, box3) == 0.0
+
+    # 4. Duplicate Suppression with Subpart Preservation
+    parent_door = DetectionBox(
+        box_id="door_01",
+        class_name="door",
+        box_2d=(100.0, 100.0, 300.0, 600.0),
+        confidence=0.90,
+        scale=DetectionScale.STANDARD,
+    )
+    subpart_handle = DetectionBox(
+        box_id="handle_01",
+        class_name="door_handle",
+        box_2d=(110.0, 340.0, 140.0, 370.0),
+        confidence=0.75,
+        scale=DetectionScale.MICRO,
+    )
+    duplicate_door = DetectionBox(
+        box_id="door_02",
+        class_name="door",
+        box_2d=(105.0, 95.0, 305.0, 605.0),
+        confidence=0.80,
+        scale=DetectionScale.STANDARD,
+    )
+
+    reconciled = suppress_duplicates_preserving_parts([parent_door, subpart_handle, duplicate_door])
+    # The duplicate door must be fused with the main door, but the door handle must NOT be suppressed!
+    class_names = [d.class_name for d in reconciled]
+    assert "door" in class_names
+    assert "door_handle" in class_names
+    assert len(reconciled) == 2
+
+
+def test_mask_refinement_speckles_and_holes() -> None:
+    from engine.multiengine.spatial_intelligence.detection_pipeline import refine_instance_mask
+
+    # 50x50 binary mask with main 30x30 object, small 2-pixel noise speckle, and small 4-pixel hole
+    mask = np.zeros((50, 50), dtype=bool)
+    mask[10:40, 10:40] = True
+    # Hole inside object (2x2)
+    mask[20:22, 20:22] = False
+    # Noise speckle outside object
+    mask[2:4, 2:4] = True
+
+    refined = refine_instance_mask(mask, min_component_area_px=10, max_fill_hole_area_px=10)
+
+    # Speckle must be removed
+    assert not np.any(refined[2:4, 2:4])
+    # Interior small hole must be filled
+    assert np.all(refined[20:22, 20:22])
+    # Main object preserved
+    assert refined[15, 15]
+
+
+def test_active_capture_gap_analysis() -> None:
+    from engine.multiengine.spatial_intelligence.active_capture import (
+        ActiveCaptureAnalyzer,
+        CaptureIssueType,
+        CapturePriority,
+    )
+    from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
+    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialEntity3D
+
+    intr = CameraIntrinsics(fx=1000.0, fy=1000.0, cx=500.0, cy=500.0, width=1000, height=1000)
+    cam = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    # Single-view entity touching border with synthetic uncertified scale
+    single_obs = SpatialEntity3D(
+        entity_id="obs_single",
+        class_name="socket",
+        position_m=(1.0, 0.5, 2.0),
+        dimensions_m=(0.1, 0.1, 0.1),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        covariance_xyz=((0.01, 0.0, 0.0), (0.0, 0.01, 0.0), (0.0, 0.0, 0.01)),
+        is_truncated_by_border=True,
+        mask_pixels_count=400,
+        source_image_id="img_1",
+    )
+
+    merged_ent = PhysicalMergedEntity(
+        canonical_entity_id="phys_single",
+        primary_class="socket",
+        member_observation_ids=("obs_single",),
+        sources=("img_1",),
+        position_m=(1.0, 0.5, 2.0),
+        dimensions_m=(0.1, 0.1, 0.1),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        surface_normal=None,
+        confidence=0.5,
+        reprojection_residual_px=0.0,
+        ray_triangulation_residual_m=0.0,
+        is_multiview=False,
+        is_physically_metric=False,
+    )
+
+    analyzer = ActiveCaptureAnalyzer()
+    plan = analyzer.analyze(
+        merged_entities=[merged_ent],
+        lifted_entities=[single_obs],
+        cameras={"img_1": cam},
+        is_scene_metric=False,
+    )
+
+    assert plan.total_entities_analyzed == 1
+    assert plan.multiview_coverage_ratio == 0.0
+    assert not plan.is_scale_certified
+
+    # Must contain CRITICAL scale reference request and HIGH missing viewpoints request
+    issues = [r.issue_type for r in plan.requests]
+    assert CaptureIssueType.MISSING_SCALE_REFERENCE in issues
+    assert CaptureIssueType.MISSING_VIEWPOINTS in issues
+
+    scale_req = next(r for r in plan.requests if r.issue_type == CaptureIssueType.MISSING_SCALE_REFERENCE)
+    assert scale_req.priority == CapturePriority.CRITICAL
+
+
+def test_fine_grained_visual_attributes() -> None:
+    from engine.multiengine.spatial_intelligence.attributes import (
+        ObjectCondition,
+        ObjectState,
+        extract_visual_attributes,
+    )
+
+    # 1. Door Open Aspect Ratio Test
+    img_door = np.full((100, 100, 3), 200, dtype=np.uint8)
+    # Thin open door box (aspect = 15/90 < 0.22)
+    attr_open = extract_visual_attributes(img_door, box_2d=(10, 5, 25, 95), class_hint="door")
+    assert attr_open.operational_state == ObjectState.OPEN
+
+    # Wide closed door box (aspect = 50/90 > 0.45)
+    attr_closed = extract_visual_attributes(img_door, box_2d=(10, 5, 60, 95), class_hint="door")
+    assert attr_closed.operational_state == ObjectState.CLOSED
+
+    # 2. Light Fixture ON State Test
+    img_light_on = np.full((50, 50, 3), 250, dtype=np.uint8)  # High luminance / specular
+    attr_light_on = extract_visual_attributes(img_light_on, box_2d=(5, 5, 45, 45), class_hint="ceiling_light")
+    assert attr_light_on.operational_state == ObjectState.ON
+
+    # 3. Object Condition Test
+    assert attr_open.condition in (ObjectCondition.PRISTINE, ObjectCondition.UNKNOWN)
+

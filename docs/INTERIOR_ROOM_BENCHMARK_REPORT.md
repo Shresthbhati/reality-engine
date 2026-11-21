@@ -1,9 +1,9 @@
 # Interior Furnished Room Sequential Reconstruction Benchmark Report
 
-**Date:** 2026-11-21 10:21:56 UTC
+**Date:** 2026-11-21 15:56:29 UTC
 **Device:** `cuda:0`
 **Dataset:** `datasets/real_room_capture`
-**Total Wall Time:** 98.96 s
+**Total Wall Time:** 102.34 s
 **COLMAP Registered Cameras:** 21
 **Persisted WorldIR Artifact:** `artifacts\interior_room_reconstruction.worldir.json`
 

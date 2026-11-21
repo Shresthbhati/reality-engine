@@ -68,6 +68,7 @@ class SpatialEntity3D:
     covariance_xyz: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
     surface_normal: tuple[float, float, float] | None = None
     planarity_score: float | None = None
+    primitive_type: str = "box"  # box, plane, cylinder, point_proxy
     confidence: float = 0.5
     scale_state: str = "SYNTHETIC_SCALE_ALIGNED"
     scale_units: str = "METRES"
@@ -76,6 +77,9 @@ class SpatialEntity3D:
     box_2d: tuple[float, float, float, float] | None = None
     mask_pixels_count: int = 0
     point_cloud_sample: tuple[tuple[float, float, float], ...] = ()
+    is_truncated_by_border: bool = False
+    viewing_angle_deg: float | None = None
+    dimension_uncertainty_m: tuple[float, float, float] = (0.05, 0.05, 0.05)
 
     @property
     def bounds_min(self) -> tuple[float, float, float]:
@@ -95,10 +99,12 @@ class SpatialEntity3D:
             "class_name": self.class_name,
             "position_m": [round(c, 4) for c in self.position_m],
             "dimensions_m": [round(d, 4) for d in self.dimensions_m],
+            "dimension_uncertainty_m": [round(u, 4) for u in self.dimension_uncertainty_m],
             "orientation_quat_wxyz": [round(q, 4) for q in self.orientation_quat_wxyz],
             "covariance_xyz": [[round(v, 6) for v in row] for row in self.covariance_xyz],
             "surface_normal": [round(n, 4) for n in self.surface_normal] if self.surface_normal else None,
             "planarity_score": round(self.planarity_score, 4) if self.planarity_score is not None else None,
+            "primitive_type": self.primitive_type,
             "confidence": round(self.confidence, 4),
             "scale_state": self.scale_state,
             "scale_units": self.scale_units,
@@ -106,6 +112,8 @@ class SpatialEntity3D:
             "source_image_id": self.source_image_id,
             "box_2d": list(self.box_2d) if self.box_2d else None,
             "mask_pixels_count": self.mask_pixels_count,
+            "is_truncated_by_border": self.is_truncated_by_border,
+            "viewing_angle_deg": round(self.viewing_angle_deg, 1) if self.viewing_angle_deg is not None else None,
         }
 
 
@@ -282,6 +290,36 @@ def lift_region_to_spatial_entity(
         (float(sigma_world[1, 0]), float(sigma_world[1, 1]), float(sigma_world[1, 2])),
         (float(sigma_world[2, 0]), float(sigma_world[2, 1]), float(sigma_world[2, 2])),
     )
+    dim_uncert = (
+        float(max(0.01, math.sqrt(max(1e-6, sigma_world[0, 0])))),
+        float(max(0.01, math.sqrt(max(1e-6, sigma_world[1, 1])))),
+        float(max(0.01, math.sqrt(max(1e-6, sigma_world[2, 2])))),
+    )
+
+    # Primitive type selection
+    cls_lower = class_name.lower()
+    if planarity is not None and planarity > 0.85 and any(k in cls_lower for k in ("wall", "floor", "ceiling", "window", "door", "glazing", "mirror", "artwork", "carpet", "road", "footpath")):
+        prim_type = "plane"
+    elif any(k in cls_lower for k in ("column", "pole", "pipe", "trunk", "leg", "lamppost", "bollard", "hydrant", "fan", "lamp")):
+        prim_type = "cylinder"
+    elif min(w_dim, d_dim, h_dim) <= 0.05 and planarity is not None and planarity > 0.80:
+        prim_type = "plane"
+    else:
+        prim_type = "box"
+
+    # Border truncation check
+    is_truncated = (x1 <= 2 or y1 <= 2 or x2 >= dw - 2 or y2 >= dh - 2)
+
+    # Viewing angle
+    view_angle_deg = None
+    if normal_vec is not None:
+        cam_p = np.array([camera.extrinsics.position.x, camera.extrinsics.position.y, camera.extrinsics.position.z])
+        v_dir = cam_p - np.array([cx, cy, cz])
+        v_dist = np.linalg.norm(v_dir)
+        if v_dist > 1e-4:
+            cos_a = float(np.dot(normal_vec, v_dir / v_dist))
+            cos_a = max(-1.0, min(1.0, cos_a))
+            view_angle_deg = float(math.acos(cos_a) * 180.0 / math.pi)
 
     # Sample representative point cloud
     sample_indices = np.linspace(0, len(pts) - 1, min(16, len(pts)), dtype=int)
@@ -296,6 +334,7 @@ def lift_region_to_spatial_entity(
         covariance_xyz=cov_tuple,
         surface_normal=normal_vec,
         planarity_score=planarity,
+        primitive_type=prim_type,
         confidence=confidence,
         scale_state=scale_state,
         scale_units=scale_units,
@@ -304,6 +343,9 @@ def lift_region_to_spatial_entity(
         box_2d=(float(x1), float(y1), float(x2), float(y2)),
         mask_pixels_count=len(u_inliers),
         point_cloud_sample=sample_tuple,
+        is_truncated_by_border=is_truncated,
+        viewing_angle_deg=view_angle_deg,
+        dimension_uncertainty_m=dim_uncert,
     )
 
 

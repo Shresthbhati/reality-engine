@@ -232,6 +232,43 @@ def run_for_job(
 WORLDSTORE_REL = "worldstore"
 
 
+_DUP_RE = re.compile(r"invariant_6_duplicate_entity: entities (\S+) and (\S+) are the same class and overlap (\d+)%")
+
+
+def _withhold_unresolved_duplicates(world: Any, max_rounds: int = 20) -> list[dict[str, Any]]:
+    """Same-class entities that overlap in space with no merge and no DIFFERENT_ENTITY decision are an UNRESOLVED identity: the
+    evidence does not say whether they are one object seen twice (which the association layer could not merge, e.g. because they share
+    an image) or two objects. Claiming either would be a guess, and refusing to persist the whole world would hide all the resolved
+    geometry. So the entity with LESS evidence (fewer observations; ties by id) of each such pair is withheld from the canonical world
+    and recorded in ``world.metadata["withheld_entities"]`` with the pair and overlap; it stays in the run's snapshot and Evidence
+    Matrix. Any other validation error is left alone for the caller to report."""
+    from world_ir.validation import validate_world_ir
+
+    withheld: list[dict[str, Any]] = []
+    for _ in range(max_rounds):
+        errs = [str(i) for i in validate_world_ir(world).errors]
+        pairs = [m.groups() for m in (_DUP_RE.search(e) for e in errs) if m]
+        if not pairs:
+            break
+        dropped: set[str] = set()
+        for a, b, pct in pairs:
+            if a in dropped or b in dropped or a not in world.entities or b not in world.entities:
+                continue
+            loser, keeper = sorted((a, b), key=lambda k: (len(world.entities[k].observations), k))
+            dropped.add(loser)
+            withheld.append({"entity_id": loser, "kept_entity_id": keeper, "overlap_iou_pct": int(pct),
+                             "reason": "same class, overlapping in space, not merged and not declared different: identity unresolved"})
+        for eid in dropped:
+            ent = world.entities.pop(eid)
+            for gid in ent.geometry_ids:
+                world.geometries.pop(gid, None)
+        for ent in world.entities.values():  # no relationship may point at a withheld entity
+            ent.relationships = [r for r in ent.relationships if r.target_id not in dropped]
+    if withheld:
+        world.metadata["withheld_entities"] = withheld
+    return withheld
+
+
 def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
     """Evidence -> WorldIR -> validated -> immutable WorldStore version -> verified -> reloaded and compared.
 
@@ -251,7 +288,8 @@ def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
                     "entities": 0, "geometries": 0}
         world = WorldIR(id=f"evw-{job_id}", name=f"evidence world {job_id}")
         bridge.apply_to(world)
-        counts = {"entities": len(world.entities), "geometries": len(world.geometries)}
+        withheld = _withhold_unresolved_duplicates(world)
+        counts = {"entities": len(world.entities), "geometries": len(world.geometries), "withheld_entities": len(withheld)}
         errors = [str(i) for i in validate_world_ir(world).errors]
         if errors:
             return {"status": "failed", "reason": "the world built from the evidence failed validation and was NOT persisted",
@@ -343,9 +381,10 @@ def readiness(root: Path) -> dict[str, Any]:
             n = len(w.entities)
             # a world is only "complete" when every entity is positioned AND sized AND the stage itself completed; anything less is
             # reported as partial/empty with the numbers, never as a finished reconstruction
-            world_state = ("empty" if n == 0 else "partial" if (len(placed) < n or len(sized) < n or out.get("stage_status") != "complete")
+            withheld = list((w.metadata or {}).get("withheld_entities") or [])
+            world_state = ("empty" if n == 0 else "partial" if (len(placed) < n or len(sized) < n or withheld or out.get("stage_status") != "complete")
                            else "complete")
-            out["world"].update({"entities_with_geometry": len(sized), "state": world_state,
+            out["world"].update({"entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
             out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
             if placed and not out["metric_export_ready"]:

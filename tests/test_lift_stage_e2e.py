@@ -163,6 +163,35 @@ def test_without_sparse_points_the_lift_is_skipped_with_the_reason(tmp_path, pho
     assert ew.readiness(_root(tmp_path))["world"]["entities_with_position"] == 0
 
 
+def _chair(i, lo, hi, n_obs):
+    from provenance import Provenance
+    from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Observation, Vector3
+
+    g = Geometry(id=f"g{i}", type=GeometryType.BOX, lod_level=0, bounds_min=Vector3(*lo), bounds_max=Vector3(*hi),
+                 provenance=Provenance.ESTIMATED, confidence=None)
+    obs = [Observation(id=f"o{i}{k}", sensor_type="camera", timestamp=0.0, frame_id="world", data_uri="x", data_hash="", metadata={},
+                       confidence=None) for k in range(n_obs)]
+    e = Entity(id=f"ent-{i}", type=EntityType.FURNITURE, name="Chair", geometry_ids=[g.id], semantic_labels=["furniture/seating/chair"],
+               observations=obs, provenance=Provenance.ESTIMATED)
+    return e, g
+
+
+def test_unresolved_same_class_overlap_withholds_only_the_weaker_entity_and_records_why():
+    from world_ir.validation import validate_world_ir
+    from world_ir.world_v1 import WorldIR
+
+    w = WorldIR(id="t", name="t")
+    for i, (lo, hi, n) in enumerate([((0, 0, 0), (1, 1, 1), 3), ((0.05, 0.05, 0.05), (1.05, 1.05, 1.05), 1), ((5, 5, 5), (6, 6, 6), 1)]):
+        e, g = _chair(i, lo, hi, n)
+        w.entities[e.id], w.geometries[g.id] = e, g
+    assert any("invariant_6" in str(x) for x in validate_world_ir(w).errors)  # the world would be refused as it stands
+    withheld = ew._withhold_unresolved_duplicates(w)
+    assert [x["entity_id"] for x in withheld] == ["ent-1"] and withheld[0]["kept_entity_id"] == "ent-0"  # fewer observations loses
+    assert set(w.entities) == {"ent-0", "ent-2"} and "g1" not in w.geometries  # the far, unrelated chair is untouched
+    assert "identity unresolved" in withheld[0]["reason"] and w.metadata["withheld_entities"] == withheld
+    assert validate_world_ir(w).errors == []
+
+
 def test_cameras_are_keyed_by_str_even_when_the_jobs_paths_are_path_objects(tmp_path):
     # REGRESSION (found on real data): Path keys never matched the str sources, so every camera was silently dropped
     from pathlib import Path

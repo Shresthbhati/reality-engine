@@ -207,8 +207,8 @@ def run_for_job(
             if lifted_n > 0:
                 from engine.multiengine.evidence_flow import derive_entities
                 from engine.multiengine.worldir_bridge import convert
-                from perception.ontology import get_default_ontology
-                onto = get_default_ontology()
+                from world.ontology.universal_object_ontology import get_universal_ontology
+                onto = get_universal_ontology()
                 identity_reg = IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json")
                 derived = derive_entities(
                     matrix, active=None, registry=registry, onto=onto, pair_scorer=scorer,
@@ -229,7 +229,9 @@ def run_for_job(
 
 def _extract_depth_maps(root: Path, sources: Sequence[str]) -> dict[str, Any]:
     import io
+
     import numpy as np
+
     from engine.multiengine.evidence_matrix import EvidenceMatrix
 
     matrix = EvidenceMatrix(root)
@@ -259,9 +261,9 @@ def _lift_detections_for_cameras(
     """Lifts 2D bounding boxes into 3D using calibrated cameras and available depth maps."""
     from engine.multiengine.metric_lifting import Metric3DLifter
     from engine.multiengine.observation import make_observation
-    from perception.ontology import get_default_ontology
+    from world.ontology.universal_object_ontology import get_universal_ontology
 
-    lifter = Metric3DLifter(get_default_ontology())
+    lifter = Metric3DLifter(get_universal_ontology())
     bbox_obs = [o for o in matrix.store.query(quantity="bbox") if matrix.status(o.observation_id) != "rejected"]
     lifted_count = 0
 

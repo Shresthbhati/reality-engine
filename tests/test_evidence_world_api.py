@@ -248,7 +248,9 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     from PIL import Image
 
     from apps.api import evidence_world_stage as ew
-    from tests.test_lift_stage_e2e import H, W, _camera, _Depth, _inputs, _inverse_depth, _points
+    import os
+
+    from tests.test_lift_stage_e2e import DX, H, W, _camera, _Depth, _inputs, _per_view, _points
 
     wid = _world(client, A)
     photos = []
@@ -256,8 +258,8 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
         p = tmp_path / n
         Image.new("RGB", (W, H), (120, 120, 120)).save(p)
         photos.append(str(p))
-    ew.run_for_job(team_id="tenant-a", world_id=wid, job_id="run-g", sources=photos, base=tmp_path / "ws", flow_inputs=_inputs(_Depth(_inverse_depth())),
-                   depth_engines=["fake_depth"], cameras={p: _camera() for p in photos}, points3d=_points())
+    ew.run_for_job(team_id="tenant-a", world_id=wid, job_id="run-g", sources=photos, base=tmp_path / "ws", flow_inputs=_inputs(_Depth(_per_view())),
+                   depth_engines=["fake_depth"], cameras={p: _camera(DX[os.path.basename(p)]) for p in photos}, points3d=_points())
     rd = client.get(_url(wid, "run-g", "readiness"), headers=A).json()
     assert rd["export_ready"] is True and rd["metric_export_ready"] is False
     refused = client.post(_url(wid, "run-g", "export"), json={"format": "glb"}, headers=A)

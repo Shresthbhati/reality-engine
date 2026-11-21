@@ -6,6 +6,8 @@ never "complete" -- NOT the accuracy of any real depth model or detector (see th
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -25,9 +27,17 @@ def _z(u, v):
     return 2.0 if OBJ[0] <= u <= OBJ[2] and OBJ[1] <= v <= OBJ[3] else 3.0
 
 
-def _camera():
+DX = {"a.png": 0.0, "b.png": 0.3}  # two genuinely different viewpoints (identical poses give parallel rays: nothing to triangulate)
+
+
+def _camera(dx: float = 0.0):
     return PinholeCamera(CameraIntrinsics(fx=F, fy=F, cx=W / 2, cy=H / 2, width=W, height=H),
-                         CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat.identity()))
+                         CameraExtrinsics(Vec3(dx, 0.0, 0.0), Quat.identity()))
+
+
+def _box(dx: float):
+    """The object (world x in [-0.25, 0.25], y in [-0.25, 0.25] at z=2) as seen from a camera at x=dx."""
+    return (400 + (-0.25 - dx) * 400, 200.0, 400 + (0.25 - dx) * 400, 400.0)
 
 
 def _points():
@@ -39,17 +49,19 @@ def _points():
     return pts
 
 
-def _inverse_depth():
+def _inverse_depth(dx: float = 0.0):
     """What a monocular network returns: an affine function of 1/z (here 5/z + 1), with no unit."""
     u, v = np.meshgrid(np.arange(W), np.arange(H))
-    z = np.where((u >= OBJ[0]) & (u <= OBJ[2]) & (v >= OBJ[1]) & (v <= OBJ[3]), 2.0, 3.0)
+    x_hit, y_hit = (u - 400) * 2.0 / F + dx, (v - 300) * 2.0 / F  # where each pixel's ray meets the z=2 plane
+    z = np.where((np.abs(x_hit) <= 0.25) & (np.abs(y_hit) <= 0.25), 2.0, 3.0)
     return (5.0 / z + 1.0).astype(np.float32)
 
 
 class _OneBoxDetector(FakeDetector):
     def infer(self, request):
-        return [ObservationDraft(task="detection", quantity="bbox", source_id=s, coordinate_system=f"image:{s}", image_region=OBJ,
-                                 predicted={"label": "chair", "score": 0.9}, confidence=0.9) for s in request.sources]
+        return [ObservationDraft(task="detection", quantity="bbox", source_id=s, coordinate_system=f"image:{s}",
+                                 image_region=_box(DX[os.path.basename(s)]), predicted={"label": "chair", "score": 0.9}, confidence=0.9)
+                for s in request.sources]
 
 
 class _Depth:
@@ -68,7 +80,8 @@ class _Depth:
 
     def infer(self, request):
         return [ObservationDraft(task="depth", quantity="depth_map", source_id=s, coordinate_system=f"cam:{s}",
-                                 predicted={"array": self.arr, "scale_state": "RELATIVE_UNSCALED"}) for s in request.sources]
+                                 predicted={"array": self.arr if not callable(self.arr) else self.arr(s), "scale_state": "RELATIVE_UNSCALED"})
+                for s in request.sources]
 
 
 @pytest.fixture()
@@ -92,8 +105,12 @@ def _inputs(depth):
     return f
 
 
+def _per_view(dx_map=DX):
+    return lambda src: _inverse_depth(dx_map[os.path.basename(src)])
+
+
 def _run(tmp_path, photos, depth, **kw):
-    cams = {p: _camera() for p in photos}
+    cams = {p: _camera(DX[os.path.basename(p)]) for p in photos}
     return ew.run_for_job(team_id="t1", world_id="w1", job_id=kw.pop("job", "job-1"), sources=photos, base=tmp_path / "ws",
                           flow_inputs=_inputs(depth), depth_engines=["fake_depth"], cameras=cams, **kw)
 
@@ -103,7 +120,7 @@ def _root(tmp_path, job="job-1"):
 
 
 def test_aligned_depth_gives_positioned_gauge_scale_entities_persisted_and_reloadable(tmp_path, photos):
-    depth = _Depth(_inverse_depth())
+    depth = _Depth(_per_view())
     r = _run(tmp_path, photos, depth, points3d=_points())
     assert r["status"] == "complete" and depth.unloaded == 1
     lift = r["lifting"]
@@ -128,7 +145,7 @@ def test_aligned_depth_gives_positioned_gauge_scale_entities_persisted_and_reloa
 def test_the_lifted_position_and_extent_match_the_known_scene(tmp_path, photos):
     from worldstore.store import WorldStore
 
-    _run(tmp_path, photos, _Depth(_inverse_depth()), points3d=_points())
+    _run(tmp_path, photos, _Depth(_per_view()), points3d=_points())
     store = WorldStore(_root(tmp_path) / ew.WORLDSTORE_REL)
     vid = sorted((_root(tmp_path) / ew.WORLDSTORE_REL / "versions").glob("*.json"))[-1].stem
     world = store.load_version(vid)
@@ -158,7 +175,7 @@ def test_an_unalignable_depth_map_rejects_every_region_and_invents_no_geometry(t
 
 
 def test_without_sparse_points_the_lift_is_skipped_with_the_reason(tmp_path, photos):
-    r = _run(tmp_path, photos, _Depth(_inverse_depth()), points3d=[])
+    r = _run(tmp_path, photos, _Depth(_per_view()), points3d=[])
     assert r["lifting"]["status"] == "skipped" and "no sparse SfM points" in r["lifting"]["reason"]
     assert ew.readiness(_root(tmp_path))["world"]["entities_with_position"] == 0
 
@@ -204,5 +221,5 @@ def test_cameras_are_keyed_by_str_even_when_the_jobs_paths_are_path_objects(tmp_
 
 def test_without_cameras_nothing_is_lifted_and_the_reason_is_recorded(tmp_path, photos):
     r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=photos, base=tmp_path / "ws",
-                       flow_inputs=_inputs(_Depth(_inverse_depth())), depth_engines=["fake_depth"], points3d=_points())
+                       flow_inputs=_inputs(_Depth(_per_view())), depth_engines=["fake_depth"], points3d=_points())
     assert "no registered cameras" in r["lifting"]["reason"] and r["lifting"]["status"] == "skipped"

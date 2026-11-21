@@ -70,6 +70,21 @@ class SpatialSceneResult:
     refusal_reasons: dict[str, int]
     scale_units: str = "METRES"
     is_physically_metric: bool = False
+    scale_state: str = "SYNTHETIC_SCALE_ALIGNED"  # the state the inputs were lifted under; never inferred from is_physically_metric
+
+    def metric3d_scale(self) -> tuple[ScaleState, str]:
+        """(ScaleState, units) for the metric3d.v1 contract from the REAL scale state: SfM-gauge and relative outputs are never
+        labelled synthetic metres, and only a physically anchored result is labelled metres."""
+        if self.is_physically_metric:
+            return ScaleState.METRIC_ANCHORED, "m"
+        name = str(self.scale_state).upper()
+        if name in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC") or "SFM" in str(self.scale_units).upper():
+            return ScaleState.SFM_GAUGE, "sfm_units"
+        if name.startswith("RELATIVE") or name in ("MODEL_RELATIVE_DEPTH", "RELATIVE"):
+            return ScaleState.RELATIVE_DEPTH, "relative"
+        if name.startswith("SYNTHETIC") or "SYNTHETIC" in str(self.scale_units).upper():
+            return ScaleState.SYNTHETIC_SCALE_ALIGNED, "synthetic_m"
+        return ScaleState.UNKNOWN, "unknown"  # an unrecognised state makes no scale claim
 
     def to_world_ir(self, world_id: str = "world_spatial_intelligence") -> WorldIR:
         """Converts the reconstructed physical entities and spatial relationships into a validated WorldIR."""
@@ -114,6 +129,7 @@ class SpatialSceneResult:
                     "reprojection_residual_px": rent.reprojection_residual_px,
                     "ray_triangulation_residual_m": rent.ray_triangulation_residual_m,
                     "scale_units": self.scale_units,
+                    "scale_state": self.scale_state,
                     "is_physically_metric": self.is_physically_metric,
                 },
             )
@@ -169,8 +185,7 @@ class SpatialSceneResult:
         """Emits standard Metric3DObservation records for the metric3d.v1 contract."""
         records: list[Metric3DObservation] = []
         for rent in self.merged_entities:
-            s_state = ScaleState.SYNTHETIC_SCALE_ALIGNED if not self.is_physically_metric else ScaleState.METRIC_ANCHORED
-            s_units = "synthetic_m" if not self.is_physically_metric else "m"
+            s_state, s_units = self.metric3d_scale()
 
             # 3D Position
             records.append(Metric3DObservation(
@@ -296,4 +311,5 @@ def reconstruct_spatial_scene(
         refusal_reasons=refusal_reasons,
         scale_units=scale_units,
         is_physically_metric=is_physically_metric,
+        scale_state=scale_state,
     )

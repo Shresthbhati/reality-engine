@@ -21,6 +21,7 @@ from typing import Any
 
 ENV_FLAG = "RE_EVIDENCE_WORLD"
 ENV_DEPTH_ENGINES = "RE_EVIDENCE_WORLD_DEPTH_ENGINES"
+ENV_LIFT = "RE_EVIDENCE_WORLD_LIFT"  # "spatial" (default: spatial_intelligence package) | "legacy" (box lifter + 3D-IoU association)
 SNAPSHOT_REL = "snapshot.json"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
@@ -195,6 +196,16 @@ def run_for_job(
             scoring_note = {**(scoring_note or {}), "geometry": {"method": "3D box IoU of lifted boxes", "min_iou": MIN_IOU,
                                                                   "caveat": "untuned threshold; same-class objects overlapping in space would merge"}}
 
+        scene_state: dict[str, Any] = {}
+        use_spatial = bool(wanted) and os.environ.get(ENV_LIFT, "spatial").strip().lower() != "legacy"
+        relations_fn = None
+        if use_spatial:  # the spatial_intelligence package decides identity across views and supplies relationships
+            from engine.multiengine.spatial_stage import make_scene_pair_scorer, make_scene_relations_fn
+
+            scorer = make_scene_pair_scorer(scene_state, scorer)
+            relations_fn = make_scene_relations_fn(scene_state)
+            scoring_note = {**(scoring_note or {}), "spatial_intelligence": {"method": "multi-view ray triangulation", "fallback": "3D box IoU"}}
+
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:
             """Depth (sequential, each model unloaded before the next) then lifting, on the flow's own matrix so refinement and
             entity derivation see the result. Lifting needs depth + registered cameras + the job's sparse SfM points."""
@@ -206,14 +217,24 @@ def run_for_job(
             depth = _run_depth(root, job_id, real, wanted, adapters, matrix=matrix)
             if not usable:
                 return {**out, "reason": "no registered cameras for these images; depth was produced but nothing can be lifted", "depth": depth}
+            if use_spatial:
+                from engine.multiengine.spatial_stage import run_spatial_stage
+
+                try:
+                    return {**run_spatial_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real,
+                                                observations=observations, state=scene_state), "depth": depth}
+                except Exception as exc:  # noqa: BLE001 -- never silent: the fallback is recorded in the facts
+                    scene_state.clear()
+                    fallback = run_lift_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real, observations=observations)
+                    return {**fallback, "depth": depth, "spatial_error": f"{type(exc).__name__}: {exc}", "engine": "legacy box lifter (spatial stage failed)"}
             lift = run_lift_stage(matrix, cameras=usable, points3d=points3d or [], run_id=job_id, sources=real, observations=observations)
-            return {**lift, "depth": depth}
+            return {**lift, "depth": depth, "engine": "legacy box lifter"}
 
         res = run_evidence_flow(
             root, job_id, real, registry=registry, adapters=adapters, stages=[StageSpec(Task.DETECTION)],
             should_cancel=should_cancel, probe=probe, pair_scorer=scorer, scoring_note=scoring_note,
             identity_registry=IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json"),
-            after_stages=_depth_and_lift,
+            after_stages=_depth_and_lift, relations_fn=relations_fn,
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}

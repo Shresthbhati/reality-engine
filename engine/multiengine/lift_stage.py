@@ -61,6 +61,29 @@ def _rejected(src: str, region: Sequence[float], engine: str, reason: str, *, re
     )
 
 
+def align_depth_record(matrix: EvidenceMatrix, drec: Metric3DObservation, cam: Any, own: Mapping[str, Any] | None,
+                       pts_list: Sequence[Sequence[float]], info: dict[str, Any]):
+    """Align ONE relative-depth record to the job's geometry (shared by every stage that lifts). Returns the ``ScaleAlignmentResult``
+    (``is_aligned`` False carries the reason) and records the reference used and the alignment facts in ``info``. Raises if the raw
+    depth artifact cannot be read -- the caller reports that, it is never skipped silently."""
+    from engine.multiengine.depth_scale_alignment import align_relative_depth_to_metric
+
+    K = cam.intrinsics
+    depth = _resize(_load_depth(matrix, drec), K.width, K.height)
+    if own is not None and len(own["xy"]) >= 4:
+        # the image's OWN observed keypoints (pixel <-> 3D point): occlusion-free reference for the depth alignment
+        al = align_relative_depth_to_metric(depth, cam, [tuple(p) for p in own["xyz"]], [tuple(p) for p in own["xy"]],
+                                            scale_source="colmap_observed_keypoints")
+        info["reference"] = f"{len(own['xy'])} observed keypoints of this image"
+    else:
+        # fallback: every sparse point projected through the camera -- includes points hidden from this view, so the gates
+        # usually refuse it on real scenes; kept so a model without observations still gets an honest verdict
+        al = align_relative_depth_to_metric(depth, cam, [tuple(p) for p in pts_list], scale_source="colmap_sparse_points")
+        info["reference"] = "all sparse points projected (occlusion-unaware)"
+    info["alignment"] = {k: v for k, v in al.to_dict().items() if k != "metric_anchor"}
+    return al
+
+
 def run_lift_stage(
     matrix: EvidenceMatrix,
     *,
@@ -141,22 +164,10 @@ def run_lift_stage(
             d_info: dict[str, Any] = {"depth_observation": depth_oid, "depth_engine": drec.engine_id}
             img["depth_engines"].append(d_info)
             try:
-                depth = _resize(_load_depth(matrix, drec), K.width, K.height)
+                al = align_depth_record(matrix, drec, cam, (observations or {}).get(src), pts_list, d_info)
             except Exception as exc:  # noqa: BLE001
                 d_info["status"] = f"depth artifact unreadable: {type(exc).__name__}: {exc}"
                 continue
-            own = (observations or {}).get(src)
-            if own is not None and len(own["xy"]) >= 4:
-                # the image's OWN observed keypoints (pixel <-> 3D point): occlusion-free reference for the depth alignment
-                al = align_relative_depth_to_metric(depth, cam, [tuple(p) for p in own["xyz"]], [tuple(p) for p in own["xy"]],
-                                                    scale_source="colmap_observed_keypoints")
-                d_info["reference"] = f"{len(own['xy'])} observed keypoints of this image"
-            else:
-                # fallback: every sparse point projected through the camera -- includes points hidden from this view, so the gates
-                # usually refuse it on real scenes; kept so a model without observations still gets an honest verdict
-                al = align_relative_depth_to_metric(depth, cam, pts_list, scale_source="colmap_sparse_points")
-                d_info["reference"] = "all sparse points projected (occlusion-unaware)"
-            d_info["alignment"] = {k: v for k, v in al.to_dict().items() if k != "metric_anchor"}
             if not al.is_aligned:
                 d_info["status"] = "not_aligned"
                 recs = [_rejected(src, b.image_region, engine, f"depth not alignable to the SfM points: {al.rejection_reason}",

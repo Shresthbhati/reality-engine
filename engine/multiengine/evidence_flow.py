@@ -271,6 +271,7 @@ def run_evidence_flow(
     refine: bool = True,
     refine_max_iterations: int = 3,
     after_stages: Callable[[EvidenceMatrix], Mapping[str, Any]] | None = None,
+    relations_fn: Callable[[Sequence[CanonicalEntity], EvidenceMatrix], Sequence[Any]] | None = None,
 ) -> EvidenceFlowResult:
     from perception.ontology import get_default_ontology
 
@@ -363,7 +364,11 @@ def run_evidence_flow(
 
     from engine.multiengine.spatial_relations import derive_relations
 
-    bridge = convert(canonicals, matrix, ontology=onto, relations=derive_relations(canonicals, matrix))
+    relations = list(derive_relations(canonicals, matrix))
+    if relations_fn is not None:  # e.g. the spatial-intelligence relationships, mapped onto these canonical entities
+        known = {(r.source_entity_id, r.kind, r.target_entity_id) for r in relations}
+        relations += [r for r in relations_fn(canonicals, matrix) if (r.source_entity_id, r.kind, r.target_entity_id) not in known]
+    bridge = convert(canonicals, matrix, ontology=onto, relations=relations)
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()
 
     snapshot: dict[str, Any] = {

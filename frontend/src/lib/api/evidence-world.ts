@@ -105,6 +105,24 @@ export function reclassifyEvidenceEntity(worldId: string, runId: string, entityI
   );
 }
 
+export interface EvidenceMergeResult {
+  version_id: string;
+  parent_version_id: string;
+  members: number;
+  rebuilt_from_evidence: boolean;
+  position_status: string;
+  dimensions_status: string;
+}
+
+/** Identity correction: "otherEntityId is the same object as entityId". The server rebuilds the merged entity from the raw evidence of
+ * both and saves a new version; it refuses (422) two entities detected in the same photograph unless acknowledged. */
+export function mergeEvidenceEntities(worldId: string, runId: string, entityId: string, otherEntityId: string, acknowledgeSameImage = false, note = "") {
+  return apiPost<EvidenceMergeResult>(
+    `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/merge`,
+    { other_entity_id: otherEntityId, note, acknowledge_same_image: acknowledgeSameImage },
+  );
+}
+
 /** The run's persisted, integrity-verified canonical WorldIR (same schema the viewport already renders). 404 = no persisted world. */
 export async function getEvidenceWorld(worldId: string, runId: string): Promise<{ version_id: string; world: WorldIR }> {
   return apiGet(`${base(worldId)}/${encodeURIComponent(runId)}/world`);

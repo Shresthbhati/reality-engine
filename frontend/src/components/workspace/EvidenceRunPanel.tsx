@@ -13,6 +13,7 @@ import {
   listEvidenceRuns,
   listRejectedPredictions,
   exportEvidenceRun,
+  mergeEvidenceEntities,
   reclassifyEvidenceEntity,
   type EvidenceEntityDetail,
   type EvidenceEntityRow,
@@ -80,6 +81,7 @@ export default function EvidenceRunPanel({
 
   const [ackUnscaled, setAckUnscaled] = useState(false);
   const [corrected, setCorrected] = useState("");
+  const [mergeWith, setMergeWith] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const inspect = (id: string) =>
@@ -252,6 +254,36 @@ export default function EvidenceRunPanel({
                   style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
                 />
                 <button type="submit" className="text-[11px] rounded px-2 py-1" style={{ border: "1px solid var(--border)" }}>Reclassify</button>
+              </form>
+              <form
+                className="flex gap-1 items-center"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!runId || !selectedId || !mergeWith) return;
+                  const me = selectedId.replace(/^ent-/, "");
+                  const other = mergeWith.replace(/^ent-/, "");
+                  const send = (ack: boolean) =>
+                    mergeEvidenceEntities(worldId, runId, me, other, ack).then((r) =>
+                      setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`),
+                    );
+                  send(false).catch((er) => {
+                    const msg = err(er, "Could not merge.");
+                    if (msg.includes("same photograph") && window.confirm(`${msg}
+
+Merge anyway (duplicate detections of one object)?`)) {
+                      send(true).catch((e2) => setError(err(e2, "Could not merge.")));
+                    } else setError(msg);
+                  });
+                }}
+              >
+                <select aria-label="Same object as" value={mergeWith} onChange={(e) => setMergeWith(e.target.value)} className="flex-1 rounded p-1 text-[11px]"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                  <option value="">Same object as…</option>
+                  {entities.filter((x) => x.entity_id !== selectedId?.replace(/^ent-/, "")).map((x) => (
+                    <option key={x.entity_id} value={x.entity_id}>{x.ontology_path} · {x.entity_id}</option>
+                  ))}
+                </select>
+                <button type="submit" disabled={!mergeWith} className="text-[11px] rounded px-2 py-1 disabled:opacity-50" style={{ border: "1px solid var(--border)" }}>Merge</button>
               </form>
               {notice && <span role="status">{notice}</span>}
             </section>

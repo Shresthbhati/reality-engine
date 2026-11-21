@@ -191,6 +191,107 @@ async def export_run_world(
         "X-Physical-Accuracy": str(rd.get("physical_accuracy"))})
 
 
+class MergeBody(BaseModel):
+    other_entity_id: str = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+    acknowledge_same_image: bool = False
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/merge")
+async def merge_entities_route(
+    world_id: str, run_id: str, entity_id: str, body: MergeBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User identity correction: "``other_entity_id`` is the same physical object as ``entity_id``". The merged entity is REBUILT from the
+    raw evidence of both (position / dimensions / class / material are re-determined from the union of their observations in the Evidence
+    Matrix, not copied), keeps ``entity_id`` (stable id), and is saved as a NEW immutable version; the absorbed entity's relationships are
+    re-pointed, the user's decision is recorded, and the snapshot / matrix are never modified. Refused (422) when the two share an image
+    (one object cannot appear twice in one photograph) unless ``acknowledge_same_image`` is set, and when the rebuilt world would be invalid."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.association import AssociatedEntity
+    from engine.multiengine.canonical import build_canonical_entity
+    from engine.multiengine.worldir_bridge import convert
+    from perception.ontology import get_default_ontology
+    from world_ir.validation import validate_world_ir
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    if body.other_entity_id == entity_id:
+        raise HTTPException(422, "an entity cannot be merged with itself")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        ka, kb = f"ent-{entity_id}", f"ent-{body.other_entity_id}"
+        ea, eb = world.entities.get(ka), world.entities.get(kb)
+        if ea is None or eb is None:
+            raise HTTPException(404, "Entity not found")
+        ev_a, ev_b = (ea.custom_properties.get("evidence") or {}), (eb.custom_properties.get("evidence") or {})
+        if not ev_a.get("members") or not ev_b.get("members"):
+            raise HTTPException(422, "only entities built from evidence can be merged")
+        matrix = _matrix(d)
+        union = sorted(set(ev_a["members"]) | set(ev_b["members"]))
+        bbox_ids = [m for m in union if matrix.store.get(m).quantity == "bbox"]
+        by_source: dict[str, int] = {}
+        for m in bbox_ids:
+            src = matrix.store.get(m).source_id
+            by_source[src] = by_source.get(src, 0) + 1
+        shared = sorted({matrix.store.get(m).source_id for m in ev_a["members"] if matrix.store.get(m).quantity == "bbox"}
+                        & {matrix.store.get(m).source_id for m in ev_b["members"] if matrix.store.get(m).quantity == "bbox"})
+        if shared and not body.acknowledge_same_image:
+            raise HTTPException(422, f"both entities were detected in the same photograph(s) {shared}: one object cannot appear twice in one image. "
+                                     "Re-send with acknowledge_same_image=true if these are duplicate detections of one object.")
+        labels = {m: str(matrix.store.get(m).predicted["label"]) for m in bbox_ids if isinstance(matrix.store.get(m).predicted.get("label"), str)}
+        onto = get_default_ontology()
+        ae = AssociatedEntity(entity_key=entity_id, members=tuple(union), labels=tuple(sorted(set(labels.values()))),
+                              sources=tuple(sorted({matrix.store.get(m).source_id for m in union})))
+        ce = build_canonical_entity(ae, matrix, target_frame="world", tolerances={}, labels=labels, registry=None, ontology=onto, association=None)
+        rebuilt = convert([ce], matrix, ontology=onto)
+        new_ent = rebuilt.entities[ka]
+        decision = {"kind": "merge", "basis": "user", "entity_id": ka, "absorbed_entity_id": kb, "note": body.note.strip() or None,
+                    "user_id": str(getattr(auth, "user_id", "") or "user"), "members_before": {ka: ev_a["members"], kb: ev_b["members"]},
+                    "acknowledged_same_image": bool(shared)}
+        new_ent.custom_properties["user_decision"] = decision
+        new_ent.custom_properties["merged_from"] = [kb]
+        for gid in list(ea.geometry_ids) + list(eb.geometry_ids):
+            world.geometries.pop(gid, None)
+        del world.entities[kb]
+        world.entities[ka] = new_ent
+        world.geometries.update(rebuilt.geometries)
+        world.materials.update(rebuilt.materials)
+        for e in world.entities.values():  # relationships that pointed at the absorbed entity now point at the survivor
+            seen = set()
+            fixed = []
+            for r in e.relationships:
+                if r.target_id == kb:
+                    r.target_id = ka
+                key = (r.kind, r.target_id)
+                if e.id == r.target_id or key in seen:
+                    continue
+                seen.add(key)
+                fixed.append(r)
+            e.relationships = fixed
+        world.metadata["user_decisions"] = list(world.metadata.get("user_decisions") or []) + [decision]
+        errors = [str(i) for i in validate_world_ir(world).errors]
+        if errors:
+            raise HTTPException(422, f"the merged world would be invalid and was not saved: {errors[:3]}")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the merged version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the merged version: {exc}") from None
+    pos, dims = ce.determinations.get("position"), ce.determinations.get("dimensions")
+    return {"version_id": vid, "parent_version_id": head, "entity_id": entity_id, "absorbed_entity_id": body.other_entity_id,
+            "members": len(union), "rebuilt_from_evidence": True, "position_status": pos.status if pos else "absent",
+            "dimensions_status": dims.status if dims else "absent", "decision": decision}
+
+
 class ReclassifyBody(BaseModel):
     new_class: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)

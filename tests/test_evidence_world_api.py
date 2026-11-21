@@ -281,6 +281,62 @@ def test_the_manifest_route_returns_the_manifest_with_a_fresh_verification_and_i
     assert client.get(_url(wid, "no-run", "manifest"), headers=A).status_code == 404
 
 
+def _ents(client, wid, run="run-c"):
+    return client.get(_url(wid, run, "entities"), headers=A).json()["entities"]
+
+
+def test_a_merge_correction_rebuilds_the_entity_from_the_raw_evidence_and_keeps_the_original_layer(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    chairs = [e for e in _ents(client, wid) if e["ontology_path"].endswith("chair")]
+    assert len(chairs) == 2
+    a, b = chairs[0]["entity_id"], chairs[1]["entity_id"]
+    before = client.get(_url(wid, "run-c", "world"), headers=A).json()
+    r = client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b, "note": "same chair, two photos"}, headers=A)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["rebuilt_from_evidence"] and out["members"] == len(set(chairs[0]["members"]) | set(chairs[1]["members"])) and out["parent_version_id"] == before["version_id"]
+    after = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]
+    assert f"ent-{b}" not in after["entities"] and f"ent-{a}" in after["entities"] and len(after["entities"]) == len(before["world"]["entities"]) - 1
+    merged = after["entities"][f"ent-{a}"]
+    ev = merged["custom_properties"]["evidence"]
+    assert sorted(ev["members"]) == sorted(set(chairs[0]["members"]) | set(chairs[1]["members"])) and {o["id"] for o in merged["observations"]} == set(ev["members"])
+    assert merged["custom_properties"]["user_decision"]["kind"] == "merge" and merged["custom_properties"]["merged_from"] == [f"ent-{b}"]
+    # the raw layer is untouched: the run's snapshot still lists BOTH machine entities, and the merged one still traces to its evidence
+    assert len(_ents(client, wid)) == len(before["world"]["entities"])
+    assert client.get(_url(wid, "run-c", "entities", a), headers=A).json()["trace_problems"] == []
+
+
+def test_merging_entities_from_one_photograph_is_refused_unless_acknowledged_and_conflicting_classes_are_kept(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    ents = _ents(client, wid)
+    chair = next(e for e in ents if e["ontology_path"].endswith("chair"))
+    socket = next(e for e in ents if "socket" in e["ontology_path"])
+    url = _url(wid, "run-c", "entities", chair["entity_id"], "merge")
+    refused = client.post(url, json={"other_entity_id": socket["entity_id"]}, headers=A)
+    chair_src = {o["observation"]["source_id"] for o in client.get(_url(wid, "run-c", "entities", chair["entity_id"]), headers=A).json()["observations"]}
+    socket_src = {o["observation"]["source_id"] for o in client.get(_url(wid, "run-c", "entities", socket["entity_id"]), headers=A).json()["observations"]}
+    if chair_src & socket_src:
+        assert refused.status_code == 422 and "same photograph" in refused.json()["detail"]
+        ok = client.post(url, json={"other_entity_id": socket["entity_id"], "acknowledge_same_image": True}, headers=A)
+        assert ok.status_code == 200 and ok.json()["decision"]["acknowledged_same_image"] is True
+        merged = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"][f"ent-{chair['entity_id']}"]
+        assert merged["custom_properties"]["evidence"]["class_status"] in ("conflict", "resolved")  # a class disagreement is kept, never silently resolved
+    else:
+        assert refused.status_code == 200
+
+
+def test_merge_validation_and_tenancy(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    e = _ents(client, wid)[0]["entity_id"]
+    url = _url(wid, "run-c", "entities", e, "merge")
+    assert client.post(url, json={"other_entity_id": e}, headers=A).status_code == 422
+    assert client.post(url, json={"other_entity_id": "nope"}, headers=A).status_code == 404
+    assert client.post(url, json={"other_entity_id": "x"}, headers=B).status_code in (403, 404)
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

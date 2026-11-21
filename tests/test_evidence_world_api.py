@@ -266,7 +266,7 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     assert refused.status_code == 409 and "acknowledge_unscaled" in refused.json()["detail"]
     ok = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert ok.status_code == 200 and ok.headers["x-export-scale"] == "sfm_units-NOT-metres" and ok.headers["x-physical-accuracy"] == "NOT_MEASURED"
-    assert int(ok.headers["x-entities-exported"]) == 1 and ok.content[:4] == b"glTF"
+    assert int(ok.headers["x-entities-exported"]) >= 1 and ok.content[:4] == b"glTF"  # the object plus its observed surfaces
     assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
 
 

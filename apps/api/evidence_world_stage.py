@@ -199,11 +199,17 @@ def run_for_job(
         scene_state: dict[str, Any] = {}
         use_spatial = bool(wanted) and os.environ.get(ENV_LIFT, "spatial").strip().lower() != "legacy"
         relations_fn = None
+        surfaces_fn = None
         if use_spatial:  # the spatial_intelligence package decides identity across views and supplies relationships
             from engine.multiengine.spatial_stage import make_scene_pair_scorer, make_scene_relations_fn
 
             scorer = make_scene_pair_scorer(scene_state, scorer)
             relations_fn = make_scene_relations_fn(scene_state)
+
+            def surfaces_fn(matrix: Any):
+                from engine.multiengine.surfaces import build_surface_entities
+
+                return build_surface_entities(scene_state.get("aligned") or {}, matrix, job_id)
             scoring_note = {**(scoring_note or {}), "spatial_intelligence": {"method": "multi-view ray triangulation", "fallback": "3D box IoU"}}
 
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:
@@ -234,7 +240,7 @@ def run_for_job(
             root, job_id, real, registry=registry, adapters=adapters, stages=[StageSpec(Task.DETECTION)],
             should_cancel=should_cancel, probe=probe, pair_scorer=scorer, scoring_note=scoring_note,
             identity_registry=IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json"),
-            after_stages=_depth_and_lift, relations_fn=relations_fn,
+            after_stages=_depth_and_lift, relations_fn=relations_fn, surfaces_fn=surfaces_fn,
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
@@ -247,6 +253,8 @@ def run_for_job(
         facts["depth"] = after["depth"]
     if after:
         facts["lifting"] = {k: v for k, v in after.items() if k != "depth"}
+    if res.snapshot.get("surfaces") is not None:
+        facts["surfaces"] = res.snapshot["surfaces"]
     return facts
 
 
@@ -416,7 +424,9 @@ def readiness(root: Path) -> dict[str, Any]:
             withheld = list((w.metadata or {}).get("withheld_entities") or [])
             world_state = ("empty" if n == 0 else "partial" if (len(placed) < n or len(sized) < n or withheld or out.get("stage_status") != "complete")
                            else "complete")
-            out["world"].update({"entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
+            n_surf = sum(1 for k in w.entities if str(k).startswith("surf-"))
+            out["world"].update({"object_entities": n - n_surf, "surface_entities": n_surf,
+                                 "entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
             out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
             if placed and not out["metric_export_ready"]:

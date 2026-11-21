@@ -272,6 +272,7 @@ def run_evidence_flow(
     refine_max_iterations: int = 3,
     after_stages: Callable[[EvidenceMatrix], Mapping[str, Any]] | None = None,
     relations_fn: Callable[[Sequence[CanonicalEntity], EvidenceMatrix], Sequence[Any]] | None = None,
+    surfaces_fn: Callable[[EvidenceMatrix], tuple[Sequence[Any], Sequence[Any], Sequence[str], Mapping[str, Any]]] | None = None,
 ) -> EvidenceFlowResult:
     from perception.ontology import get_default_ontology
 
@@ -369,6 +370,17 @@ def run_evidence_flow(
         known = {(r.source_entity_id, r.kind, r.target_entity_id) for r in relations}
         relations += [r for r in relations_fn(canonicals, matrix) if (r.source_entity_id, r.kind, r.target_entity_id) not in known]
     bridge = convert(canonicals, matrix, ontology=onto, relations=relations)
+    surface_report: dict[str, Any] | None = None
+    if surfaces_fn is not None:  # observed floor / wall / ceiling planes + mesh: entities of the SAME world, never a second representation
+        try:
+            s_ents, s_geoms, s_notes, surface_report = surfaces_fn(matrix)
+            for e in s_ents:
+                bridge.entities[e.id] = e
+            for g in s_geoms:
+                bridge.geometries[g.id] = g
+            bridge.notes.extend(s_notes)
+        except Exception as exc:  # noqa: BLE001 -- recorded in the snapshot, never silent and never fatal to the objects
+            surface_report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()
 
     snapshot: dict[str, Any] = {
@@ -404,6 +416,7 @@ def run_evidence_flow(
         "scoring": dict(scoring_note) if scoring_note else None,  # which pair scorer + thresholds were used (None = no scorer)
         "bridge_notes": list(bridge.notes),
         "after_stages": after_report,  # depth + lifting facts (None = no such step was supplied)
+        "surfaces": surface_report,  # observed planes / mesh facts (None = not requested)
         "matrix_problems": matrix.verify(),
     }
     _atomic_write_json(root / SNAPSHOT_FILE, snapshot)

@@ -271,6 +271,7 @@ def run_spatial_stage(
     state.update({
         "lifted_ids": lifted_ids, "entity_of": entity_of, "merged": {e.canonical_entity_id: e for e in scene.merged_entities},
         "relationships": list(scene.spatial_relationships), "refusals": dict(scene.refusal_reasons), "ray_threshold": ray,
+        "aligned": {src: (depth_maps[src], cameras[src]) for src in depth_maps},  # per image: aligned depth + its JOB-frame camera (for surfaces)
     })
     report.update({
         "lifted": len(lifted_ids), "detections_in": len(det_inputs), "merged_entities": len(scene.merged_entities),

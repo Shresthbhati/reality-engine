@@ -337,6 +337,40 @@ def test_merge_validation_and_tenancy(client, tmp_path):
     assert client.post(url, json={"other_entity_id": "x"}, headers=B).status_code in (403, 404)
 
 
+def test_a_merge_then_a_split_restores_two_entities_each_rebuilt_from_its_own_evidence(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    chairs = [e for e in _ents(client, wid) if e["ontology_path"].endswith("chair")]
+    a, b = chairs[0]["entity_id"], chairs[1]["entity_id"]
+    assert client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b}, headers=A).status_code == 200
+    merged = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"][f"ent-{a}"]
+    ids_b = [m for m in chairs[1]["members"] if m in {o["id"] for o in merged["observations"]}]
+    r = client.post(_url(wid, "run-c", "entities", a, "split"), json={"detach_observation_ids": ids_b, "note": "actually two chairs"}, headers=A)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    world = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"]
+    new_id = f"ent-{out['new_entity_id']}"
+    assert new_id in world and f"ent-{a}" in world and out["rebuilt_from_evidence"]
+    moved = {o["id"] for o in world[new_id]["observations"]}
+    kept = {o["id"] for o in world[f"ent-{a}"]["observations"]}
+    assert moved and kept and not (moved & kept) and set(ids_b) <= moved  # a partition of the evidence: nothing duplicated, nothing lost
+    assert world[new_id]["custom_properties"]["split_from"] == f"ent-{a}" and world[new_id]["relationships"] == []
+
+
+def test_split_refuses_bad_requests_and_cannot_empty_the_original(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    e = _ents(client, wid)[0]
+    url = _url(wid, "run-c", "entities", e["entity_id"], "split")
+    assert client.post(url, json={"detach_observation_ids": ["not-an-observation"]}, headers=A).status_code == 422
+    detail = client.get(_url(wid, "run-c", "entities", e["entity_id"]), headers=A).json()
+    every_bbox = [o["observation"]["observation_id"] for o in detail["observations"] if o["observation"]["quantity"] == "bbox"]
+    r = client.post(url, json={"detach_observation_ids": every_bbox}, headers=A)
+    assert r.status_code == 422 and "nothing would stay" in r.json()["detail"]
+    assert client.post(_url(wid, "run-c", "entities", "nope", "split"), json={"detach_observation_ids": ["x"]}, headers=A).status_code == 404
+    assert client.post(url, json={"detach_observation_ids": every_bbox[:1]}, headers=B).status_code in (403, 404)
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

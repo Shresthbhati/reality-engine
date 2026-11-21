@@ -292,6 +292,103 @@ async def merge_entities_route(
             "dimensions_status": dims.status if dims else "absent", "decision": decision}
 
 
+class SplitBody(BaseModel):
+    detach_observation_ids: list[str] = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/split")
+async def split_entity_route(
+    world_id: str, run_id: str, entity_id: str, body: SplitBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User identity correction: "these detections are NOT the same object as the rest". The listed detection observations move to a NEW
+    entity; every observation derived from a moved detection (its lifted position / dimensions, its material claim: same image + same box)
+    moves with it. BOTH entities are rebuilt from their own raw evidence, the original keeps its id, the decision is recorded, and a new
+    immutable version is saved. Refused when nothing would stay behind, when an id is not one of the entity's detections, or when the rebuilt
+    world would be invalid. The new entity starts without relationships: nothing is inferred about it."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.association import AssociatedEntity
+    from engine.multiengine.canonical import build_canonical_entity
+    from engine.multiengine.worldir_bridge import convert
+    from perception.ontology import get_default_ontology
+    from world_ir.validation import validate_world_ir
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        ka = f"ent-{entity_id}"
+        ea = world.entities.get(ka)
+        if ea is None:
+            raise HTTPException(404, "Entity not found")
+        members = list((ea.custom_properties.get("evidence") or {}).get("members") or [])
+        if not members:
+            raise HTTPException(422, "only entities built from evidence can be split")
+        matrix = _matrix(d)
+        bbox = [m for m in members if matrix.store.get(m).quantity == "bbox"]
+        detach = set(body.detach_observation_ids)
+        if not detach <= set(bbox):
+            raise HTTPException(422, f"not detections of this entity: {sorted(detach - set(bbox))[:5]}")
+        if len(detach) == len(bbox):
+            raise HTTPException(422, "nothing would stay in the original entity; to re-label it use reclassify")
+        region = {(matrix.store.get(m).source_id, tuple(matrix.store.get(m).image_region)): m for m in bbox if matrix.store.get(m).image_region is not None}
+        moved = set(detach)
+        for m in members:  # derived observations follow their detection (same image + same box)
+            if m in bbox:
+                continue
+            o = matrix.store.get(m)
+            owner = region.get((o.source_id, tuple(o.image_region))) if o.image_region is not None else None
+            if owner in detach:
+                moved.add(m)
+        stay = [m for m in members if m not in moved]
+        new_key = "ent_" + hashlib.sha256("|".join(sorted(moved)).encode("utf-8")).hexdigest()[:24]
+        onto = get_default_ontology()
+
+        def build(key: str, ids: list[str]):
+            lab = {m: str(matrix.store.get(m).predicted["label"]) for m in ids
+                   if matrix.store.get(m).quantity == "bbox" and isinstance(matrix.store.get(m).predicted.get("label"), str)}
+            ae = AssociatedEntity(entity_key=key, members=tuple(sorted(ids)), labels=tuple(sorted(set(lab.values()))),
+                                  sources=tuple(sorted({matrix.store.get(m).source_id for m in ids})))
+            return build_canonical_entity(ae, matrix, target_frame="world", tolerances={}, labels=lab, registry=None, ontology=onto, association=None)
+
+        ce_stay, ce_new = build(entity_id, stay), build(new_key, sorted(moved))
+        rebuilt = convert([ce_stay, ce_new], matrix, ontology=onto)
+        kn = f"ent-{new_key}"
+        decision = {"kind": "split", "basis": "user", "entity_id": ka, "new_entity_id": kn, "note": body.note.strip() or None,
+                    "user_id": str(getattr(auth, "user_id", "") or "user"), "moved_observation_ids": sorted(moved), "kept_observation_ids": sorted(stay)}
+        old_rels = list(ea.relationships)
+        for gid in ea.geometry_ids:
+            world.geometries.pop(gid, None)
+        stayed, born = rebuilt.entities[ka], rebuilt.entities[kn]
+        stayed.relationships = [r for r in old_rels if r.target_id != kn]  # the survivor keeps its claims; the new entity inherits none
+        stayed.custom_properties["user_decision"] = decision
+        born.custom_properties["user_decision"] = decision
+        born.custom_properties["split_from"] = ka
+        world.entities[ka], world.entities[kn] = stayed, born
+        world.geometries.update(rebuilt.geometries)
+        world.materials.update(rebuilt.materials)
+        world.metadata["user_decisions"] = list(world.metadata.get("user_decisions") or []) + [decision]
+        errors = [str(i) for i in validate_world_ir(world).errors]
+        if errors:
+            raise HTTPException(422, f"the split world would be invalid and was not saved: {errors[:3]}")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the split version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the split version: {exc}") from None
+    return {"version_id": vid, "parent_version_id": head, "entity_id": entity_id, "new_entity_id": new_key, "kept_members": len(stay),
+            "moved_members": len(moved), "rebuilt_from_evidence": True, "decision": decision}
+
+
 class ReclassifyBody(BaseModel):
     new_class: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)

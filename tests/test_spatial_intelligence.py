@@ -22,6 +22,7 @@ from engine.multiengine.spatial_intelligence.association import (
     build_camera_ray,
     compute_ray_cpa,
     evaluate_cross_view_pair,
+    triangulate_multiview_rays,
 )
 from engine.multiengine.spatial_intelligence.attributes import (
     ObjectState,
@@ -729,5 +730,251 @@ def test_visual_attribute_custom_predictor_protocol() -> None:
     attrs = predictor.predict_attributes(img, box_2d=(10, 10, 80, 80), class_hint="table")
     assert isinstance(attrs, EntityVisualAttributes)
     assert attrs.confidence_basis == "deterministic_cielab_texture_analysis"
+
+
+def test_adversarial_transitive_scale_bridge_prevention() -> None:
+    """Verifies that an unknown-scale observation CANNOT bridge incompatible clusters (A -> B -> C)."""
+    intr = CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam_a = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam_b = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.5, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam_c = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(1.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    # Candidate A: METRIC_ANCHORED
+    ray_a = build_camera_ray(
+        observation_id="obs_a",
+        source_image_id="img_a",
+        class_name="chair",
+        box_2d=(300, 220, 340, 260),
+        camera=cam_a,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+    )
+
+    # Candidate B: UNKNOWN scale (potential bridge attack)
+    ray_b = build_camera_ray(
+        observation_id="obs_b",
+        source_image_id="img_b",
+        class_name="chair",
+        box_2d=(300, 220, 340, 260),
+        camera=cam_b,
+        scale_state="unknown",
+        scale_units="unknown",
+        is_physically_metric=False,
+    )
+
+    # Candidate C: SFM_GAUGE
+    ray_c = build_camera_ray(
+        observation_id="obs_c",
+        source_image_id="img_c",
+        class_name="chair",
+        box_2d=(300, 220, 340, 260),
+        camera=cam_c,
+        scale_state="sfm_gauge",
+        scale_units="sfm_units",
+        is_physically_metric=False,
+    )
+
+    # 1. Pairwise checks must refuse any pair involving unknown or mismatched scales
+    score_ab = evaluate_cross_view_pair(ray_a, ray_b)
+    assert score_ab.outcome == AssociationOutcome.REFUSED
+    assert score_ab.reason == "unknown_scale_refusal"
+
+    score_bc = evaluate_cross_view_pair(ray_b, ray_c)
+    assert score_bc.outcome == AssociationOutcome.REFUSED
+    assert score_bc.reason == "unknown_scale_refusal"
+
+    score_ac = evaluate_cross_view_pair(ray_a, ray_c)
+    assert score_ac.outcome == AssociationOutcome.REFUSED
+    assert score_ac.reason == "incompatible_scale_states"
+
+    # 2. Cluster-wide association must yield 3 separate entities (NO transitive merge)
+    engine = MultiViewIntelligenceEngine()
+    merged, decisions, refusals = engine.associate_candidates([ray_a, ray_b, ray_c])
+
+    assert len(merged) == 3
+    # Verify no cluster contains mixed scales
+    for ent in merged:
+        assert len(ent.member_observation_ids) == 1
+        assert not ent.is_multiview
+
+
+def test_sfm_gauge_scale_invariance_and_unit_truthfulness() -> None:
+    """Verifies that SfM gauge coordinates work invariantly across scene scales without metre assumptions."""
+    intr = CameraIntrinsics(fx=800.0, fy=800.0, cx=400.0, cy=300.0, width=800, height=600)
+
+    # Test two scales: large scale (k=100.0) and small scale (k=0.005)
+    for k in (100.0, 0.005):
+        true_pos = Vec3(0.2 * k, -0.1 * k, 3.0 * k)
+        cam1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(-0.4 * k, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+        cam2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.4 * k, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+        uv1 = cam1.project(true_pos)
+        uv2 = cam2.project(true_pos)
+        assert uv1 is not None and uv2 is not None
+
+        ray1 = build_camera_ray("g1", "v1", "desk", (uv1[0] - 10, uv1[1] - 10, uv1[0] + 10, uv1[1] + 10), cam1, scale_state="sfm_gauge")
+        ray2 = build_camera_ray("g2", "v2", "desk", (uv2[0] - 10, uv2[1] - 10, uv2[0] + 10, uv2[1] + 10), cam2, scale_state="sfm_gauge")
+
+        # 1. Pairwise check must succeed in SfM gauge without hitting metre limits
+        score = evaluate_cross_view_pair(ray1, ray2)
+        assert score.outcome == AssociationOutcome.MERGED
+        assert score.ray_distance_m is None  # Gauge residual NOT labeled as metres
+
+        # 2. Multi-ray triangulation in gauge scale
+        p_sol, ray_res, rep_res, cov_3x3, meta = triangulate_multiview_rays([ray1, ray2])
+        assert p_sol is not None
+        assert abs(p_sol[0] - true_pos.x) < 0.05 * k
+        assert abs(p_sol[2] - true_pos.z) < 0.05 * k
+        assert meta["scale_state"] == "sfm_gauge"
+        assert meta["residual_units"] == "sfm_units"
+        assert meta["covariance_units"] == "sfm_units^2"
+        assert "ray_residuals_m" not in meta  # Honest about non-metric units
+
+        # 3. Association and entity export
+        engine = MultiViewIntelligenceEngine()
+        merged, _, _ = engine.associate_candidates([ray1, ray2])
+        assert len(merged) == 1
+        m_ent = merged[0]
+        assert m_ent.scale_state == "sfm_gauge"
+        assert m_ent.scale_units == "sfm_units"
+        assert not m_ent.is_physically_metric
+
+        ent_dict = m_ent.to_dict()
+        assert ent_dict["position_m"] is None  # Do NOT claim metres
+        assert ent_dict["ray_triangulation_residual_m"] is None
+        assert ent_dict["position"] is not None
+        assert ent_dict["residual_units"] == "sfm_units"
+
+
+def test_active_capture_unknown_position_honesty_and_scale_flag() -> None:
+    """Verifies that active capture never invents (0,0,0) target positions and flags scale anchor requests."""
+    from engine.multiengine.spatial_intelligence.active_capture import (
+        ActiveCaptureAnalyzer,
+        CaptureIssueType,
+    )
+    from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
+
+    cam = PinholeCamera(
+        intrinsics=CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480),
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    # Entity without 3D position
+    unpositioned_ent = PhysicalMergedEntity(
+        canonical_entity_id="phys_unpos_001",
+        primary_class="door",
+        member_observation_ids=("obs_u1",),
+        sources=("img_u1",),
+        position=None,
+        dimensions=None,
+        is_multiview=False,
+        scale_state="synthetic_scale_aligned",
+        scale_units="synthetic_m",
+        is_physically_metric=False,
+    )
+
+    analyzer = ActiveCaptureAnalyzer()
+    plan = analyzer.analyze(
+        merged_entities=[unpositioned_ent],
+        lifted_entities=[],
+        cameras={"img_u1": cam},
+        is_scene_metric=False,
+    )
+
+    # Check requests
+    for req in plan.requests:
+        # Zero fabrication: Target position must be None, NEVER (0.0, 0.0, 0.0)
+        assert req.target_position is None
+        assert req.target_position_m is None
+        r_dict = req.to_dict()
+        assert r_dict["target_position"] is None
+        assert r_dict["target_position_m"] is None
+
+        if req.issue_type == CaptureIssueType.MISSING_SCALE_REFERENCE:
+            assert req.is_scale_request is True
+            # Synthetic scale is not physical metric calibration: suggested_distance_m must be 0.0
+            assert req.suggested_distance_m == 0.0
+        else:
+            assert req.is_scale_request is False
+            # Viewpoint request on non-metric scene must not specify metric distance
+            assert req.suggested_distance_m == 0.0
+
+
+def test_triangulation_many_views_and_outlier_rejection() -> None:
+    """Verifies 5-view triangulation with outlier resistance and positive depth validation."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    true_pt = Vec3(0.1, -0.2, 2.5)
+
+    # 4 consistent cameras + 1 outlier camera
+    cameras = [
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(-0.6, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0))),
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(-0.2, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0))),
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.2, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0))),
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.6, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0))),
+    ]
+
+    rays: list[CrossViewRayCandidate] = []
+    for i, c in enumerate(cameras):
+        uv = c.project(true_pt)
+        assert uv is not None
+        ray = build_camera_ray(
+            observation_id=f"ray_5v_{i}",
+            source_image_id=f"view_5v_{i}",
+            class_name="lamp",
+            box_2d=(uv[0] - 15, uv[1] - 15, uv[0] + 15, uv[1] + 15),
+            camera=c,
+            scale_state="metric_anchored",
+            scale_units="m",
+            is_physically_metric=True,
+        )
+        rays.append(ray)
+
+    # Add 5th camera with perturbed box (outlier)
+    cam5 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.4, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    uv5 = cam5.project(true_pt)
+    assert uv5 is not None
+    outlier_ray = build_camera_ray(
+        observation_id="ray_5v_outlier",
+        source_image_id="view_5v_4",
+        class_name="lamp",
+        box_2d=(uv5[0] + 60, uv5[1] + 60, uv5[0] + 90, uv5[1] + 90),
+        camera=cam5,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+    )
+    rays.append(outlier_ray)
+
+    p_sol, ray_res, rep_res, cov_3x3, meta = triangulate_multiview_rays(rays)
+    assert p_sol is not None
+    # Position should still be accurately recovered despite 1 outlier ray out of 5
+    assert abs(p_sol[0] - true_pt.x) < 0.10
+    assert abs(p_sol[1] - true_pt.y) < 0.10
+    assert abs(p_sol[2] - true_pt.z) < 0.20
+    assert meta["scale_state"] == "metric_anchored"
+    assert meta["residual_units"] == "m"
+
+
+def test_cluster_wide_coordinate_frame_and_units_integrity() -> None:
+    """Verifies that observations in different coordinate frames or units are rejected from clustering."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.5, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    ray_world = build_camera_ray(
+        "obs_w", "v1", "sofa", (300, 220, 340, 260), cam1,
+        scale_state="synthetic_scale_aligned",
+        coordinate_frame="world:canonical",
+    )
+    ray_local = build_camera_ray(
+        "obs_l", "v2", "sofa", (300, 220, 340, 260), cam2,
+        scale_state="synthetic_scale_aligned",
+        coordinate_frame="camera_local_frame",
+    )
+
+    score = evaluate_cross_view_pair(ray_world, ray_local)
+    assert score.outcome == AssociationOutcome.REFUSED
+    assert score.reason == "coordinate_frame_mismatch"
 
 

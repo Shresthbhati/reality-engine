@@ -255,6 +255,14 @@ def run_for_job(
         facts["lifting"] = {k: v for k, v in after.items() if k != "depth"}
     if res.snapshot.get("surfaces") is not None:
         facts["surfaces"] = res.snapshot["surfaces"]
+    try:  # reproducibility record: a failure to write it is reported, never fatal and never silent
+        from engine.multiengine import run_manifest
+
+        man = run_manifest.build(root, job_id, real, facts)
+        run_manifest.write(root, man)
+        facts["manifest"] = {"file": run_manifest.MANIFEST_FILE, "content_sha256": man["content_sha256"]}
+    except Exception as exc:  # noqa: BLE001
+        facts["manifest"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     return facts
 
 

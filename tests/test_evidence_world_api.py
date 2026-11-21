@@ -270,6 +270,17 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
 
 
+def test_the_manifest_route_returns_the_manifest_with_a_fresh_verification_and_is_tenant_scoped(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    r = client.get(_url(wid, "run-c", "manifest"), headers=A)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["manifest"]["run_id"] == "run-c" and body["verification"]["ok"] is True and body["manifest"]["result"]["world"]["status"] == "persisted"
+    assert client.get(_url(wid, "run-c", "manifest"), headers=B).status_code in (403, 404)
+    assert client.get(_url(wid, "no-run", "manifest"), headers=A).status_code == 404
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

@@ -129,6 +129,23 @@ async def get_persisted_world(
         raise HTTPException(500, f"persisted world is unreadable: {exc}") from None
 
 
+@evidence_world_router.get("/{run_id}/manifest")
+async def get_manifest(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """The run's reproducibility manifest plus a fresh integrity check against the disk (inputs, manifest hash, persisted world hash)."""
+    from engine.multiengine import run_manifest
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    f = d / run_manifest.MANIFEST_FILE
+    if not f.is_file():
+        raise HTTPException(404, "No manifest for this run")
+    try:
+        return {"manifest": json.loads(f.read_text(encoding="utf-8")), "verification": run_manifest.verify(d)}
+    except ValueError:
+        raise HTTPException(500, "manifest is unreadable") from None
+
+
 class ExportBody(BaseModel):
     format: str = Field(min_length=1, max_length=40)
     acknowledge_unscaled: bool = False

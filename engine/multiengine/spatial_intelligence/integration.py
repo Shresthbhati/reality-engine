@@ -12,10 +12,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 from engine.multiengine.metric3d import Metric3DObservation, ScaleState
+from engine.multiengine.spatial_intelligence.active_capture import (
+    ActiveCaptureAnalyzer,
+    ActiveCapturePlan,
+)
 from engine.multiengine.spatial_intelligence.association import (
     CrossViewRayCandidate,
     MultiViewIntelligenceEngine,
@@ -58,6 +63,21 @@ class DetectionInput:
     appearance_features: Sequence[float] | None = None
 
 
+def _metric3d_scale(scale_state: str, scale_units: str, is_physically_metric: bool) -> tuple[ScaleState, str]:
+    """(ScaleState, units) for the metric3d.v1 contract from the REAL scale state: SfM-gauge and relative outputs are never labelled
+    synthetic metres, and only a physically anchored result is labelled metres. An unrecognised state makes no scale claim."""
+    if is_physically_metric:
+        return ScaleState.METRIC_ANCHORED, "m"
+    name = str(scale_state).upper()
+    if name in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC") or "SFM" in str(scale_units).upper():
+        return ScaleState.SFM_GAUGE, "sfm_units"
+    if name.startswith("RELATIVE") or name in ("MODEL_RELATIVE_DEPTH", "RELATIVE"):
+        return ScaleState.RELATIVE_DEPTH, "relative"
+    if name.startswith("SYNTHETIC") or "SYNTHETIC" in str(scale_units).upper():
+        return ScaleState.SYNTHETIC_SCALE_ALIGNED, "synthetic_m"
+    return ScaleState.UNKNOWN, "unknown"
+
+
 @dataclass
 class SpatialSceneResult:
     """Unified result container of perception, spatial intelligence, and multi-view association."""
@@ -68,23 +88,13 @@ class SpatialSceneResult:
     spatial_relationships: tuple[SpatialRelationship, ...]
     association_decisions: tuple[PairScore, ...]
     refusal_reasons: dict[str, int]
-    scale_units: str = "METRES"
+    active_capture_plan: ActiveCapturePlan | None = None
+    scale_state: str = "relative_depth"
+    scale_units: str = "relative"
     is_physically_metric: bool = False
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED"  # the state the inputs were lifted under; never inferred from is_physically_metric
 
     def metric3d_scale(self) -> tuple[ScaleState, str]:
-        """(ScaleState, units) for the metric3d.v1 contract from the REAL scale state: SfM-gauge and relative outputs are never
-        labelled synthetic metres, and only a physically anchored result is labelled metres."""
-        if self.is_physically_metric:
-            return ScaleState.METRIC_ANCHORED, "m"
-        name = str(self.scale_state).upper()
-        if name in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC") or "SFM" in str(self.scale_units).upper():
-            return ScaleState.SFM_GAUGE, "sfm_units"
-        if name.startswith("RELATIVE") or name in ("MODEL_RELATIVE_DEPTH", "RELATIVE"):
-            return ScaleState.RELATIVE_DEPTH, "relative"
-        if name.startswith("SYNTHETIC") or "SYNTHETIC" in str(self.scale_units).upper():
-            return ScaleState.SYNTHETIC_SCALE_ALIGNED, "synthetic_m"
-        return ScaleState.UNKNOWN, "unknown"  # an unrecognised state makes no scale claim
+        return _metric3d_scale(self.scale_state, self.scale_units, self.is_physically_metric)
 
     def to_world_ir(self, world_id: str = "world_spatial_intelligence") -> WorldIR:
         """Converts the reconstructed physical entities and spatial relationships into a validated WorldIR."""
@@ -103,11 +113,9 @@ class SpatialSceneResult:
                 )
             )
 
-            w_ent = Entity(
-                id=rent.canonical_entity_id,
-                type=ent_type,
-                name=tax_cls.name.replace("_", " ").title(),
-                transform={
+            transform: dict[str, Any] | None = None
+            if rent.position_m is not None:
+                transform = {
                     "position": {"x": rent.position_m[0], "y": rent.position_m[1], "z": rent.position_m[2]},
                     "orientation": {
                         "w": rent.orientation_quat_wxyz[0],
@@ -116,21 +124,28 @@ class SpatialSceneResult:
                         "z": rent.orientation_quat_wxyz[3],
                     },
                     "frame_id": "world",
-                },
+                }
+
+            w_ent = Entity(
+                id=rent.canonical_entity_id,
+                type=ent_type,
+                name=tax_cls.name.replace("_", " ").title(),
+                transform=transform,
                 provenance=Provenance.RECONSTRUCTED,
                 confidence=rent.confidence,
                 confidence_basis="multiview_epipolar_triangulation_consensus",
                 custom_properties={
                     "taxonomy_id": tax_cls.taxonomy_id,
-                    "dimensions_w_d_h": list(rent.dimensions_m),
+                    "dimensions_w_d_h": list(rent.dimensions_m) if rent.dimensions_m is not None else None,
+                    "dimension_status": rent.dimension_status,
                     "is_multiview": rent.is_multiview,
                     "sources": list(rent.sources),
                     "member_observation_ids": list(rent.member_observation_ids),
                     "reprojection_residual_px": rent.reprojection_residual_px,
                     "ray_triangulation_residual_m": rent.ray_triangulation_residual_m,
-                    "scale_units": self.scale_units,
-                    "scale_state": self.scale_state,
-                    "is_physically_metric": self.is_physically_metric,
+                    "scale_state": rent.scale_state,
+                    "scale_units": rent.scale_units,
+                    "is_physically_metric": rent.is_physically_metric,
                 },
             )
 
@@ -179,39 +194,45 @@ class SpatialSceneResult:
                 )
                 world.entities[src_ent_id].relationships.append(world_rel)
 
+        # Attach active capture guidance to metadata
+        if self.active_capture_plan is not None:
+            world.metadata["active_capture_guidance"] = self.active_capture_plan.to_dict()
+
         return world
 
     def to_metric3d_observations(self) -> list[Metric3DObservation]:
         """Emits standard Metric3DObservation records for the metric3d.v1 contract."""
         records: list[Metric3DObservation] = []
         for rent in self.merged_entities:
-            s_state, s_units = self.metric3d_scale()
+            s_state, s_units = _metric3d_scale(rent.scale_state, rent.scale_units, rent.is_physically_metric)
 
-            # 3D Position
-            records.append(Metric3DObservation(
-                engine_id="spatial_intelligence",
-                architecture_id="epipolar_triangulation",
-                checkpoint_id="none",
-                source_id=rent.canonical_entity_id,
-                quantity="position",
-                scale_state=s_state,
-                units=s_units,
-                value=tuple(float(v) for v in rent.position_m),
-                frame="world:canonical",
-            ))
+            # 3D Position (only if observed or triangulated)
+            if rent.position_m is not None:
+                records.append(Metric3DObservation(
+                    engine_id="spatial_intelligence",
+                    architecture_id="epipolar_triangulation",
+                    checkpoint_id="none",
+                    source_id=rent.canonical_entity_id,
+                    quantity="position",
+                    scale_state=s_state,
+                    units=s_units,
+                    value=tuple(float(v) for v in rent.position_m),
+                    frame="world:canonical",
+                ))
 
-            # 3D Dimensions
-            records.append(Metric3DObservation(
-                engine_id="spatial_intelligence",
-                architecture_id="epipolar_triangulation",
-                checkpoint_id="none",
-                source_id=rent.canonical_entity_id,
-                quantity="bounds_extents",
-                scale_state=s_state,
-                units=s_units,
-                value=tuple(float(v) for v in rent.dimensions_m),
-                frame="world:canonical",
-            ))
+            # 3D Dimensions (only if observed)
+            if rent.dimensions_m is not None:
+                records.append(Metric3DObservation(
+                    engine_id="spatial_intelligence",
+                    architecture_id="epipolar_triangulation",
+                    checkpoint_id="none",
+                    source_id=rent.canonical_entity_id,
+                    quantity="bounds_extents",
+                    scale_state=s_state,
+                    units=s_units,
+                    value=tuple(float(v) for v in rent.dimensions_m),
+                    frame="world:canonical",
+                ))
 
         return records
 
@@ -221,8 +242,8 @@ def reconstruct_spatial_scene(
     cameras: Mapping[str, PinholeCamera],
     depth_maps: Mapping[str, np.ndarray] | None = None,
     images_rgb: Mapping[str, np.ndarray] | None = None,
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED",
-    scale_units: str = "METRES",
+    scale_state: str = "relative_depth",
+    scale_units: str = "relative",
     is_physically_metric: bool = False,
     max_ray_distance_m: float = 0.35,
     max_reproj_err_px: float = 100.0,
@@ -302,6 +323,15 @@ def reconstruct_spatial_scene(
     # 4. Infer Spatial Relationships between lifted 3D entities
     spatial_rels = infer_spatial_relationships(lifted_entities)
 
+    # 5. Active Capture Gap Analysis
+    capture_analyzer = ActiveCaptureAnalyzer()
+    capture_plan = capture_analyzer.analyze(
+        merged_entities=merged_entities,
+        lifted_entities=lifted_entities,
+        cameras=cameras,
+        is_scene_metric=is_physically_metric,
+    )
+
     return SpatialSceneResult(
         merged_entities=merged_entities,
         lifted_entities=tuple(lifted_entities),
@@ -309,7 +339,8 @@ def reconstruct_spatial_scene(
         spatial_relationships=tuple(spatial_rels),
         association_decisions=tuple(decisions),
         refusal_reasons=refusal_reasons,
+        active_capture_plan=capture_plan,
+        scale_state=scale_state,
         scale_units=scale_units,
         is_physically_metric=is_physically_metric,
-        scale_state=scale_state,
     )

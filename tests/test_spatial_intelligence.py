@@ -17,13 +17,13 @@ import numpy as np
 
 from engine.multiengine.spatial_intelligence.association import (
     AssociationOutcome,
+    CrossViewRayCandidate,
     MultiViewIntelligenceEngine,
     build_camera_ray,
     compute_ray_cpa,
     evaluate_cross_view_pair,
 )
 from engine.multiengine.spatial_intelligence.attributes import (
-    MaterialType,
     ObjectState,
     SurfaceFinish,
     extract_visual_attributes,
@@ -92,7 +92,7 @@ def test_visual_attribute_extraction() -> None:
         box_2d=(30, 30, 70, 70),
         class_hint="table",
     )
-    assert attrs.material == MaterialType.WOOD
+    assert "wood" in attrs.material.value
     assert "wood" in attrs.dominant_color_name or "brown" in attrs.dominant_color_name
     assert attrs.surface_finish in (SurfaceFinish.MATTE, SurfaceFinish.GLOSSY)
     assert attrs.operational_state == ObjectState.UNSPECIFIED
@@ -248,3 +248,486 @@ def test_spatial_relationships_and_worldir_export() -> None:
     # Verify metric3d observations
     m3d_obs = scene_res.to_metric3d_observations()
     assert len(m3d_obs) >= 4  # 2 positions + 2 extents
+
+
+def test_expanded_taxonomy_and_hierarchy() -> None:
+    from engine.multiengine.spatial_intelligence.taxonomy import (
+        get_ancestor_classes,
+        get_domain_prompts,
+        get_hierarchical_path,
+        get_subparts_for_class,
+    )
+
+    # 1. New Interior Classes
+    hinge = resolve_taxonomy_class("door hinge")
+    assert hinge.taxonomy_id == "interior.opening.door_hinge"
+    lock = resolve_taxonomy_class("deadbolt")
+    assert lock.taxonomy_id == "interior.opening.door_lock"
+    ac = resolve_taxonomy_class("split ac")
+    assert ac.taxonomy_id == "interior.hvac.split_ac"
+    panel = resolve_taxonomy_class("breaker box")
+    assert panel.taxonomy_id == "interior.electrical.panel"
+    pipe = resolve_taxonomy_class("water pipe")
+    assert pipe.taxonomy_id == "interior.plumbing.pipe"
+
+    # 2. New Exterior Classes
+    building = resolve_taxonomy_class("building structure")
+    assert building.taxonomy_id == "exterior.architecture.building"
+    bollard = resolve_taxonomy_class("traffic bollard")
+    assert bollard.taxonomy_id == "exterior.street.bollard"
+    manhole = resolve_taxonomy_class("manhole cover")
+    assert manhole.taxonomy_id == "exterior.utility.manhole"
+    paving = resolve_taxonomy_class("block paving")
+    assert paving.taxonomy_id == "exterior.circulation.paving"
+
+    # 3. Hierarchy Navigation
+    path = get_hierarchical_path(hinge.taxonomy_id)
+    assert path == ["interior", "opening", "door_hinge"]
+
+    ancestors = get_ancestor_classes(hinge.taxonomy_id)
+    assert len(ancestors) == 1
+    assert ancestors[0].taxonomy_id == "interior.opening.door"
+
+    subparts = get_subparts_for_class("interior.opening.door")
+    subpart_ids = [s.taxonomy_id for s in subparts]
+    assert "interior.opening.door_hinge" in subpart_ids
+    assert "interior.opening.door_lock" in subpart_ids
+    assert "interior.opening.door_frame" in subpart_ids
+
+    # 4. Domain Prompts
+    prompts = get_domain_prompts(Domain.INTERIOR)
+    assert len(prompts) >= 30
+    assert "socket" in prompts
+    assert "door" in prompts
+
+
+def test_detection_pipeline_tiling_and_part_preservation() -> None:
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        DetectionBox,
+        DetectionScale,
+        compute_box_iou,
+        generate_tiling_windows,
+        suppress_duplicates_preserving_parts,
+        transform_tile_detections_to_image,
+    )
+
+    # 1. Tiling window generation
+    windows = generate_tiling_windows(image_width=1920, image_height=1080, tile_size=800, overlap_ratio=0.25)
+    assert len(windows) >= 4
+    # All windows must stay within image bounds
+    for w in windows:
+        assert 0 <= w.x1 < w.x2 <= 1920
+        assert 0 <= w.y1 < w.y2 <= 1080
+
+    # 2. Coordinate transformation back to full image
+    win = windows[0]
+    tile_det = DetectionBox(
+        box_id="det_local",
+        class_name="socket",
+        box_2d=(50.0, 60.0, 100.0, 110.0),
+        confidence=0.8,
+        scale=DetectionScale.MICRO,
+    )
+    mapped = transform_tile_detections_to_image([tile_det], win, 1920, 1080)
+    assert len(mapped) == 1
+    assert mapped[0].x1 == win.x1 + 50.0
+    assert mapped[0].y1 == win.y1 + 60.0
+
+    # 3. IoU Computation
+    box1 = (0.0, 0.0, 10.0, 10.0)
+    box2 = (0.0, 0.0, 10.0, 10.0)
+    assert compute_box_iou(box1, box2) == 1.0
+
+    box3 = (10.0, 10.0, 20.0, 20.0)
+    assert compute_box_iou(box1, box3) == 0.0
+
+    # 4. Duplicate Suppression with Subpart Preservation
+    parent_door = DetectionBox(
+        box_id="door_01",
+        class_name="door",
+        box_2d=(100.0, 100.0, 300.0, 600.0),
+        confidence=0.90,
+        scale=DetectionScale.STANDARD,
+    )
+    subpart_handle = DetectionBox(
+        box_id="handle_01",
+        class_name="door_handle",
+        box_2d=(110.0, 340.0, 140.0, 370.0),
+        confidence=0.75,
+        scale=DetectionScale.MICRO,
+    )
+    duplicate_door = DetectionBox(
+        box_id="door_02",
+        class_name="door",
+        box_2d=(105.0, 95.0, 305.0, 605.0),
+        confidence=0.80,
+        scale=DetectionScale.STANDARD,
+    )
+
+    reconciled = suppress_duplicates_preserving_parts([parent_door, subpart_handle, duplicate_door])
+    # The duplicate door must be fused with the main door, but the door handle must NOT be suppressed!
+    class_names = [d.class_name for d in reconciled]
+    assert "door" in class_names
+    assert "door_handle" in class_names
+    assert len(reconciled) == 2
+
+
+def test_mask_refinement_speckles_and_holes() -> None:
+    from engine.multiengine.spatial_intelligence.detection_pipeline import refine_instance_mask
+
+    # 50x50 binary mask with main 30x30 object, small 2-pixel noise speckle, and small 4-pixel hole
+    mask = np.zeros((50, 50), dtype=bool)
+    mask[10:40, 10:40] = True
+    # Hole inside object (2x2)
+    mask[20:22, 20:22] = False
+    # Noise speckle outside object
+    mask[2:4, 2:4] = True
+
+    refined = refine_instance_mask(mask, min_component_area_px=10, max_fill_hole_area_px=10)
+
+    # Speckle must be removed
+    assert not np.any(refined[2:4, 2:4])
+    # Interior small hole must be filled
+    assert np.all(refined[20:22, 20:22])
+    # Main object preserved
+    assert refined[15, 15]
+
+
+def test_active_capture_gap_analysis() -> None:
+    from engine.multiengine.spatial_intelligence.active_capture import (
+        ActiveCaptureAnalyzer,
+        CaptureIssueType,
+        CapturePriority,
+    )
+    from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
+    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialEntity3D
+
+    intr = CameraIntrinsics(fx=1000.0, fy=1000.0, cx=500.0, cy=500.0, width=1000, height=1000)
+    cam = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(Vec3(0.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    # Single-view entity touching border with synthetic uncertified scale
+    single_obs = SpatialEntity3D(
+        entity_id="obs_single",
+        class_name="socket",
+        position_m=(1.0, 0.5, 2.0),
+        dimensions_m=(0.1, 0.1, 0.1),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        covariance_xyz=((0.01, 0.0, 0.0), (0.0, 0.01, 0.0), (0.0, 0.0, 0.01)),
+        is_truncated_by_border=True,
+        mask_pixels_count=400,
+        source_image_id="img_1",
+    )
+
+    merged_ent = PhysicalMergedEntity(
+        canonical_entity_id="phys_single",
+        primary_class="socket",
+        member_observation_ids=("obs_single",),
+        sources=("img_1",),
+        position_m=(1.0, 0.5, 2.0),
+        dimensions_m=(0.1, 0.1, 0.1),
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        surface_normal=None,
+        confidence=0.5,
+        reprojection_residual_px=0.0,
+        ray_triangulation_residual_m=0.0,
+        is_multiview=False,
+        is_physically_metric=False,
+    )
+
+    analyzer = ActiveCaptureAnalyzer()
+    plan = analyzer.analyze(
+        merged_entities=[merged_ent],
+        lifted_entities=[single_obs],
+        cameras={"img_1": cam},
+        is_scene_metric=False,
+    )
+
+    assert plan.total_entities_analyzed == 1
+    assert plan.multiview_coverage_ratio == 0.0
+    assert not plan.is_scale_certified
+
+    # Must contain CRITICAL scale reference request and HIGH missing viewpoints request
+    issues = [r.issue_type for r in plan.requests]
+    assert CaptureIssueType.MISSING_SCALE_REFERENCE in issues
+    assert CaptureIssueType.MISSING_VIEWPOINTS in issues
+
+    scale_req = next(r for r in plan.requests if r.issue_type == CaptureIssueType.MISSING_SCALE_REFERENCE)
+    assert scale_req.priority == CapturePriority.CRITICAL
+
+
+def test_fine_grained_visual_attributes() -> None:
+    from engine.multiengine.spatial_intelligence.attributes import (
+        ObjectCondition,
+        ObjectState,
+        extract_visual_attributes,
+    )
+
+    # 1. Door Open Aspect Ratio Test
+    img_door = np.full((100, 100, 3), 200, dtype=np.uint8)
+    # Thin open door box (aspect = 15/90 < 0.22)
+    attr_open = extract_visual_attributes(img_door, box_2d=(10, 5, 25, 95), class_hint="door")
+    assert attr_open.operational_state == ObjectState.OPEN
+
+    # Wide closed door box (aspect = 50/90 > 0.45)
+    attr_closed = extract_visual_attributes(img_door, box_2d=(10, 5, 60, 95), class_hint="door")
+    assert attr_closed.operational_state == ObjectState.CLOSED
+
+    # 2. Light Fixture ON State Test
+    img_light_on = np.full((50, 50, 3), 250, dtype=np.uint8)  # High luminance / specular
+    attr_light_on = extract_visual_attributes(img_light_on, box_2d=(5, 5, 45, 45), class_hint="ceiling_light")
+    assert attr_light_on.operational_state == ObjectState.ON
+
+    # 3. Object Condition Test
+    assert attr_open.condition in (ObjectCondition.PRISTINE, ObjectCondition.UNKNOWN)
+
+
+def test_scale_integrity_and_zero_geometry_fabrication() -> None:
+    """Verifies that missing 3D coordinates and dimensions remain None, with zero fabricated values."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam = PinholeCamera(
+        intrinsics=intr,
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    # Observation without depth map or lifted entity
+    ray = build_camera_ray(
+        observation_id="unlifted_obs_1",
+        source_image_id="img_1",
+        class_name="chair",
+        box_2d=(100, 100, 200, 200),
+        camera=cam,
+        lifted_entity=None,
+    )
+    # Default scale must be relative_depth, never synthetic or metric
+    assert ray.scale_state == "relative_depth"
+    assert ray.scale_units == "relative"
+    assert not ray.is_physically_metric
+
+    engine = MultiViewIntelligenceEngine()
+    merged, decisions, refusals = engine.associate_candidates([ray])
+
+    assert len(merged) == 1
+    ent = merged[0]
+    # Invariant: NEVER invent position by stepping 2.0m along ray
+    assert ent.position_m is None
+    # Invariant: NEVER invent dimensions from taxonomy minimums
+    assert ent.dimensions_m is None
+    assert ent.dimension_status == "UNKNOWN"
+    assert ent.scale_state == "relative_depth"
+    assert ent.scale_units == "relative"
+    assert not ent.is_physically_metric
+
+
+def test_scale_state_incompatibility_refusal() -> None:
+    """Verifies that cross-view matching strictly rejects merging incompatible scale states."""
+    intr = CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480)
+    cam1 = PinholeCamera(
+        intrinsics=intr,
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+    cam2 = PinholeCamera(
+        intrinsics=intr,
+        extrinsics=CameraExtrinsics(position=Vec3(1.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    ray_relative = build_camera_ray(
+        observation_id="obs_rel",
+        source_image_id="img_1",
+        class_name="desk",
+        box_2d=(250, 150, 390, 330),
+        camera=cam1,
+        scale_state="relative_depth",
+        scale_units="relative",
+    )
+    ray_metric = build_camera_ray(
+        observation_id="obs_met",
+        source_image_id="img_2",
+        class_name="desk",
+        box_2d=(150, 150, 290, 330),
+        camera=cam2,
+        scale_state="metric_anchored",
+        scale_units="m",
+        is_physically_metric=True,
+    )
+
+    score = evaluate_cross_view_pair(ray_relative, ray_metric)
+    assert score.outcome == AssociationOutcome.REFUSED
+    assert score.reason == "incompatible_scale_states"
+
+
+def test_robust_multiview_triangulation_svd_huber() -> None:
+    """Verifies N-view ray triangulation using SVD/least-squares with Huber outlier resistance."""
+    from engine.multiengine.spatial_intelligence.association import triangulate_multiview_rays
+
+    intr = CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0, width=640, height=480)
+    # Known 3D target point
+    true_pt = Vec3(0.3, -0.1, 3.5)
+
+    cameras = [
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(-0.6, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0))),
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0))),
+        PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.6, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0))),
+    ]
+
+    rays: list[CrossViewRayCandidate] = []
+    for i, c in enumerate(cameras):
+        uv = c.project(true_pt)
+        assert uv is not None
+        ray = build_camera_ray(
+            observation_id=f"ray_{i}",
+            source_image_id=f"view_{i}",
+            class_name="bookshelf",
+            box_2d=(uv[0] - 20, uv[1] - 40, uv[0] + 20, uv[1] + 40),
+            camera=c,
+            scale_state="synthetic_scale_aligned",
+        )
+        rays.append(ray)
+
+    # Add a 4th view with slight measurement noise
+    cam4 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.5, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)))
+    uv4 = cam4.project(true_pt)
+    assert uv4 is not None
+    # Add noisy outlier offset to 4th view
+    ray4 = build_camera_ray(
+        observation_id="ray_3",
+        source_image_id="view_3",
+        class_name="bookshelf",
+        box_2d=(uv4[0] - 10, uv4[1] - 30, uv4[0] + 30, uv4[1] + 50),
+        camera=cam4,
+        scale_state="synthetic_scale_aligned",
+    )
+    rays.append(ray4)
+
+    p_sol, ray_res, reproj_res, cov_3x3, meta = triangulate_multiview_rays(rays)
+    assert p_sol is not None
+    assert abs(p_sol[0] - true_pt.x) < 0.08
+    assert abs(p_sol[1] - true_pt.y) < 0.08
+    assert abs(p_sol[2] - true_pt.z) < 0.12
+    assert ray_res < 0.15
+    assert cov_3x3 is not None
+    assert np.all(np.linalg.eigvals(cov_3x3) > 0.0)  # Positive definite covariance
+
+
+def test_adversarial_triangulation_rejections() -> None:
+    """Verifies that degenerate geometry (near-parallel, negative depth, ill-conditioned) is rejected."""
+    from engine.multiengine.spatial_intelligence.association import triangulate_multiview_rays
+
+    intr = CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0, width=640, height=480)
+
+    # 1. Near-parallel rays (<2 degrees)
+    cam1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)))
+    cam2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.005, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)))
+
+    ray1 = build_camera_ray("r1", "v1", "wall", (315, 235, 325, 245), cam1)
+    ray2 = build_camera_ray("r2", "v2", "wall", (315, 235, 325, 245), cam2)
+
+    pair_score = evaluate_cross_view_pair(ray1, ray2)
+    assert pair_score.outcome == AssociationOutcome.REFUSED
+    assert pair_score.reason in ("near_parallel_rays", "zero_camera_baseline")
+
+    # 2. Negative depth (point behind camera)
+    cam_back1 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 2.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)))
+    cam_back2 = PinholeCamera(intrinsics=intr, extrinsics=CameraExtrinsics(position=Vec3(1.0, 0.0, 2.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)))
+    # Point at Z = -2.0 is behind cameras looking along +Z
+    ray_b1 = build_camera_ray("rb1", "vb1", "table", (310, 230, 330, 250), cam_back1)
+    ray_b2 = build_camera_ray("rb2", "vb2", "table", (330, 230, 350, 250), cam_back2)
+
+    p_sol, _, _, _, meta = triangulate_multiview_rays([ray_b1, ray_b2])
+    assert p_sol is None
+    assert meta.get("fail_reason") in ("ray_intersection_behind_camera", "near_parallel_rays")
+
+
+def test_detection_pipeline_full_execution() -> None:
+    """Verifies that the DetectionPipeline runs end-to-end with tiling, subpart detection, and mask refinement."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        DetectionPipeline,
+        RuleBasedDetectorAdapter,
+        ThresholdSegmenterAdapter,
+    )
+
+    # High-resolution image (1000 x 1200) triggering tiling
+    img_rgb = np.full((1000, 1200, 3), 180, dtype=np.uint8)
+
+    pipeline = DetectionPipeline(
+        detector=RuleBasedDetectorAdapter(),
+        segmenter=ThresholdSegmenterAdapter(),
+        tile_size=600,
+        tile_overlap=0.25,
+    )
+
+    res = pipeline.run_pipeline(img_rgb, domain=Domain.INTERIOR, image_id="test_img_001")
+
+    assert res.image_id == "test_img_001"
+    assert len(res.raw_detections) > 0
+    assert len(res.refined_boxes) > 0
+    assert res.execution_stats["tiles_processed"] > 0
+    # Every refined box must have a valid refined mask
+    for b in res.refined_boxes:
+        assert b.mask_2d is not None
+        assert b.mask_2d.shape[:2] == (1000, 1200)
+
+
+def test_active_capture_honesty_uncalibrated_scale() -> None:
+    """Verifies that active capture never promises metric distances when scale is uncalibrated."""
+    from engine.multiengine.spatial_intelligence.active_capture import (
+        ActiveCaptureAnalyzer,
+        CaptureIssueType,
+    )
+    from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
+
+    cam = PinholeCamera(
+        intrinsics=CameraIntrinsics(fx=500.0, fy=500.0, cx=320.0, cy=240.0, width=640, height=480),
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    # Entity with uncalibrated relative depth and unpositioned (position_m=None)
+    uncalibrated_ent = PhysicalMergedEntity(
+        canonical_entity_id="phys_uncalibrated_001",
+        primary_class="cabinet",
+        member_observation_ids=("obs_1",),
+        sources=("img_1",),
+        position_m=None,
+        dimensions_m=None,
+        orientation_quat_wxyz=(1.0, 0.0, 0.0, 0.0),
+        surface_normal=None,
+        confidence=0.5,
+        reprojection_residual_px=0.0,
+        ray_triangulation_residual_m=0.0,
+        is_multiview=False,
+        scale_state="relative_depth",
+        scale_units="relative",
+        is_physically_metric=False,
+    )
+
+    analyzer = ActiveCaptureAnalyzer()
+    plan = analyzer.analyze(
+        merged_entities=[uncalibrated_ent],
+        lifted_entities=[],
+        cameras={"img_1": cam},
+        is_scene_metric=False,
+    )
+
+    assert not plan.is_scale_certified
+    scale_req = next(r for r in plan.requests if r.issue_type == CaptureIssueType.MISSING_SCALE_REFERENCE)
+    # When uncalibrated relative depth, suggested distance must be 0.0 (honest about unknown gauge)
+    assert scale_req.suggested_distance_m == 0.0
+    assert "uncalibrated" in scale_req.guidance_text.lower()
+
+
+def test_visual_attribute_custom_predictor_protocol() -> None:
+    """Verifies the VisualAttributePredictor protocol can be implemented by custom model backends."""
+    from engine.multiengine.spatial_intelligence.attributes import (
+        DeterministicAttributePredictor,
+        EntityVisualAttributes,
+        VisualAttributePredictor,
+    )
+
+    predictor = DeterministicAttributePredictor()
+    assert isinstance(predictor, VisualAttributePredictor)
+
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    attrs = predictor.predict_attributes(img, box_2d=(10, 10, 80, 80), class_hint="table")
+    assert isinstance(attrs, EntityVisualAttributes)
+    assert attrs.confidence_basis == "deterministic_cielab_texture_analysis"
+
+

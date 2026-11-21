@@ -486,7 +486,7 @@ TELEVISION = _register(TaxonomyClass(
     common_confusion_classes=("picture_frame", "blackboard"),
 ))
 
-# --- ARCHITECTURAL DETAILS ---
+# --- ARCHITECTURAL DETAILS & MOULDINGS ---
 BASEBOARD = _register(TaxonomyClass(
     taxonomy_id="interior.detail.baseboard",
     name="baseboard",
@@ -500,13 +500,534 @@ BASEBOARD = _register(TaxonomyClass(
     is_structural=False,
 ))
 
+MOULDING = _register(TaxonomyClass(
+    taxonomy_id="interior.detail.moulding",
+    name="moulding",
+    domain=Domain.INTERIOR,
+    category="detail",
+    aliases=("moulding", "molding", "crown moulding", "coving", "cornice moulding", "wall trim"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.5, 0.01, 0.03),
+    max_dimensions_m=(20.0, 0.20, 0.35),
+    hosts=("wall", "ceiling"),
+    is_structural=False,
+))
+
+# --- DOORS & HARDWARE ---
+DOOR_HINGE = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.door_hinge",
+    name="door_hinge",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.door",
+    aliases=("hinge", "door hinge", "butt hinge"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.01, 0.04),
+    max_dimensions_m=(0.15, 0.05, 0.20),
+    hosts=("door_frame", "door"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+DOOR_LOCK = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.door_lock",
+    name="door_lock",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.door",
+    aliases=("door lock", "lock", "deadbolt", "latch", "strike plate"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.03, 0.02, 0.05),
+    max_dimensions_m=(0.20, 0.10, 0.25),
+    hosts=("door", "door_frame"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+# --- WINDOWS & GLAZING ---
+WINDOW_GLAZING = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.window_glazing",
+    name="window_glazing",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.window",
+    aliases=("window glazing", "glazing", "window pane", "window glass", "glass pane"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.2, 0.003, 0.2),
+    max_dimensions_m=(5.0, 0.05, 4.0),
+    hosts=("window_frame",),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+))
+
+WINDOW_SILL = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.window_sill",
+    name="window_sill",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.window",
+    aliases=("window sill", "window ledge", "sill"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.3, 0.08, 0.02),
+    max_dimensions_m=(5.0, 0.40, 0.15),
+    hosts=("wall", "window_frame"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+# --- ELECTRICAL & CONTROLS ---
+ELECTRICAL_PANEL = _register(TaxonomyClass(
+    taxonomy_id="interior.electrical.panel",
+    name="electrical_panel",
+    domain=Domain.UNIVERSAL,
+    category="electrical",
+    aliases=("electrical panel", "breaker box", "distribution board", "fuse box", "panelboard"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.25, 0.08, 0.30),
+    max_dimensions_m=(1.2, 0.30, 2.0),
+    hosts=("wall",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    common_confusion_classes=("cabinet", "junction_box"),
+))
+
+# --- HVAC UNITS & EXPANDED PLUMBING ---
+SPLIT_AC = _register(TaxonomyClass(
+    taxonomy_id="interior.hvac.split_ac",
+    name="split_ac",
+    domain=Domain.INTERIOR,
+    category="hvac",
+    aliases=("split ac", "air conditioner", "ac unit", "ductless mini split", "aircon"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.60, 0.18, 0.25),
+    max_dimensions_m=(1.40, 0.35, 0.45),
+    hosts=("wall",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    common_confusion_classes=("vent",),
+))
+
+PIPE = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.pipe",
+    name="pipe",
+    domain=Domain.UNIVERSAL,
+    category="plumbing",
+    aliases=("pipe", "plumbing pipe", "water pipe", "drain pipe", "conduit"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.02, 0.02, 0.20),
+    max_dimensions_m=(0.50, 0.50, 10.0),
+    hosts=("wall", "ceiling", "floor"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+DRAIN_INTERIOR = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.drain",
+    name="drain",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    aliases=("drain", "floor drain", "shower drain", "sink drain"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.05, 0.05, 0.01),
+    max_dimensions_m=(0.30, 0.30, 0.05),
+    hosts=("floor", "sink"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+SHOWER = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.shower",
+    name="shower",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    aliases=("shower", "shower head", "shower cabin", "shower stall", "shower enclosure"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.70, 0.70, 1.80),
+    max_dimensions_m=(1.80, 1.80, 2.40),
+    hosts=("floor", "wall"),
+    is_structural=False,
+))
+
+BATHTUB = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.bathtub",
+    name="bathtub",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    aliases=("bathtub", "bath", "tub", "soaking tub"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(1.20, 0.65, 0.40),
+    max_dimensions_m=(2.10, 1.10, 0.75),
+    hosts=("floor",),
+    is_structural=False,
+))
+
+# --- FURNITURE COMPONENTS & STORAGE ---
+SHELF = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.shelf",
+    name="shelf",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("shelf", "bookshelf", "wall shelf", "floating shelf", "shelving unit"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.30, 0.15, 0.15),
+    max_dimensions_m=(4.0, 0.60, 2.5),
+    hosts=("wall", "floor"),
+    common_confusion_classes=("cabinet", "bookcase"),
+))
+
+DRAWER = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.drawer",
+    name="drawer",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("drawer", "sliding drawer", "desk drawer"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.20, 0.25, 0.08),
+    max_dimensions_m=(1.20, 0.75, 0.45),
+    hosts=("desk", "cabinet", "table"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+FURNITURE_HANDLE = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.handle",
+    name="furniture_handle",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("furniture handle", "drawer handle", "cabinet knob", "drawer pull", "pull handle"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.01, 0.01),
+    max_dimensions_m=(0.40, 0.06, 0.05),
+    hosts=("cabinet", "drawer", "wardrobe"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+FURNITURE_LEG = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.leg",
+    name="furniture_leg",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("furniture leg", "table leg", "chair leg", "sofa leg", "desk leg"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.02, 0.02, 0.05),
+    max_dimensions_m=(0.15, 0.15, 1.0),
+    hosts=("table", "chair", "sofa", "desk"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+COUNTERTOP = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.countertop",
+    name="countertop",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("countertop", "counter", "worktop", "kitchen counter", "bar counter"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.50, 0.45, 0.02),
+    max_dimensions_m=(6.0, 1.20, 0.10),
+    hosts=("cabinet", "floor"),
+    is_structural=False,
+))
+
+# --- KITCHEN & HOME APPLIANCES ---
+MICROWAVE = _register(TaxonomyClass(
+    taxonomy_id="interior.appliance.microwave",
+    name="microwave",
+    domain=Domain.INTERIOR,
+    category="appliance",
+    aliases=("microwave", "microwave oven"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.40, 0.30, 0.25),
+    max_dimensions_m=(0.70, 0.55, 0.45),
+    hosts=("countertop", "shelf", "cabinet"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+OVEN = _register(TaxonomyClass(
+    taxonomy_id="interior.appliance.oven",
+    name="oven",
+    domain=Domain.INTERIOR,
+    category="appliance",
+    aliases=("oven", "stove", "range", "built-in oven"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.55, 0.50, 0.50),
+    max_dimensions_m=(1.20, 0.75, 1.10),
+    hosts=("floor", "cabinet"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+DISHWASHER = _register(TaxonomyClass(
+    taxonomy_id="interior.appliance.dishwasher",
+    name="dishwasher",
+    domain=Domain.INTERIOR,
+    category="appliance",
+    aliases=("dishwasher", "dish washer"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.55, 0.55, 0.75),
+    max_dimensions_m=(0.70, 0.65, 0.90),
+    hosts=("floor", "cabinet"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+WASHING_MACHINE = _register(TaxonomyClass(
+    taxonomy_id="interior.appliance.washing_machine",
+    name="washing_machine",
+    domain=Domain.INTERIOR,
+    category="appliance",
+    aliases=("washing machine", "washer", "dryer", "laundry washer"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.55, 0.50, 0.75),
+    max_dimensions_m=(0.75, 0.75, 1.05),
+    hosts=("floor",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+# --- DECOR & SOFT FURNISHINGS ---
+ARTWORK = _register(TaxonomyClass(
+    taxonomy_id="interior.decor.artwork",
+    name="artwork",
+    domain=Domain.INTERIOR,
+    category="decor",
+    aliases=("artwork", "painting", "picture frame", "framed art", "poster", "canvas", "wall art"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.15, 0.01, 0.15),
+    max_dimensions_m=(4.0, 0.10, 3.0),
+    hosts=("wall",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    common_confusion_classes=("television", "mirror", "window"),
+))
+
+MIRROR = _register(TaxonomyClass(
+    taxonomy_id="interior.decor.mirror",
+    name="mirror",
+    domain=Domain.INTERIOR,
+    category="decor",
+    aliases=("mirror", "wall mirror", "vanity mirror", "full length mirror"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.20, 0.01, 0.20),
+    max_dimensions_m=(3.0, 0.10, 2.5),
+    hosts=("wall", "wardrobe"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    common_confusion_classes=("artwork", "window"),
+))
+
+CURTAIN = _register(TaxonomyClass(
+    taxonomy_id="interior.decor.curtain",
+    name="curtain",
+    domain=Domain.INTERIOR,
+    category="decor",
+    aliases=("curtain", "curtains", "drapes", "drapery", "window blind", "roller blind"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.50, 0.02, 0.80),
+    max_dimensions_m=(6.0, 0.20, 4.0),
+    hosts=("wall", "window", "ceiling"),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+    common_confusion_classes=("window", "wall"),
+))
+
+CARPET = _register(TaxonomyClass(
+    taxonomy_id="interior.decor.carpet",
+    name="carpet",
+    domain=Domain.INTERIOR,
+    category="decor",
+    aliases=("carpet", "rug", "area rug", "mat", "floor runner"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.40, 0.40, 0.005),
+    max_dimensions_m=(10.0, 10.0, 0.03),
+    hosts=("floor",),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+    common_confusion_classes=("floor",),
+))
+
+PLANT_INDOOR = _register(TaxonomyClass(
+    taxonomy_id="interior.decor.plant",
+    name="plant",
+    domain=Domain.UNIVERSAL,
+    category="decor",
+    aliases=("indoor plant", "potted plant", "houseplant", "flowerpot", "vase with plant"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.10, 0.10, 0.15),
+    max_dimensions_m=(1.5, 1.5, 2.5),
+    hosts=("floor", "table", "desk", "window_sill"),
+    dimension_measurability=DimensionMeasurability.BOUNDED_PROXY,
+))
+
+# --- EXPANDED EXTERIOR ARCHITECTURE & CIRCULATION ---
+BUILDING = _register(TaxonomyClass(
+    taxonomy_id="exterior.architecture.building",
+    name="building",
+    domain=Domain.EXTERIOR,
+    category="architecture",
+    aliases=("building", "building structure", "house", "tower", "edifice", "multistorey building"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(3.0, 3.0, 3.0),
+    max_dimensions_m=(300.0, 300.0, 300.0),
+    can_contain_parts=True,
+    potential_parts=("building_facade", "roof", "balcony", "window", "door"),
+    is_structural=True,
+))
+
+COLUMN_EXTERIOR = _register(TaxonomyClass(
+    taxonomy_id="exterior.architecture.column",
+    name="column_exterior",
+    domain=Domain.EXTERIOR,
+    category="architecture",
+    aliases=("exterior column", "portico column", "pillar", "structural post"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.20, 0.20, 2.0),
+    max_dimensions_m=(2.5, 2.5, 30.0),
+    hosts=("ground", "footpath"),
+    is_structural=True,
+))
+
+CORNICE = _register(TaxonomyClass(
+    taxonomy_id="exterior.architecture.cornice",
+    name="cornice",
+    domain=Domain.EXTERIOR,
+    category="architecture",
+    aliases=("cornice", "eaves", "parapet cornice", "fascia", "roof overhang"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(1.0, 0.10, 0.10),
+    max_dimensions_m=(100.0, 1.5, 1.5),
+    hosts=("building_facade", "roof"),
+    is_structural=True,
+))
+
+STAIRCASING = _register(TaxonomyClass(
+    taxonomy_id="exterior.architecture.staircase",
+    name="staircase",
+    domain=Domain.UNIVERSAL,
+    category="architecture",
+    aliases=("staircase", "stairs", "steps", "outdoor stairs", "entrance stoop", "stairway"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.8, 0.6, 0.3),
+    max_dimensions_m=(15.0, 30.0, 20.0),
+    hosts=("ground", "building_facade", "floor"),
+    is_structural=True,
+))
+
+LANE = _register(TaxonomyClass(
+    taxonomy_id="exterior.circulation.lane",
+    name="lane",
+    domain=Domain.EXTERIOR,
+    category="circulation",
+    aliases=("traffic lane", "bus lane", "bike lane", "cycle track", "marked lane"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(1.5, 5.0, 0.01),
+    max_dimensions_m=(5.0, 500.0, 0.10),
+    hosts=("road",),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+))
+
+PAVING = _register(TaxonomyClass(
+    taxonomy_id="exterior.circulation.paving",
+    name="paving",
+    domain=Domain.EXTERIOR,
+    category="circulation",
+    aliases=("paving", "block paving", "cobblestone", "stone paving", "pavers", "plaza"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(1.0, 1.0, 0.02),
+    max_dimensions_m=(100.0, 100.0, 0.20),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+    is_structural=True,
+))
+
+# --- EXPANDED VEGETATION COMPONENTS ---
+TREE_TRUNK = _register(TaxonomyClass(
+    taxonomy_id="exterior.vegetation.trunk",
+    name="tree_trunk",
+    domain=Domain.EXTERIOR,
+    category="vegetation",
+    parent_class="exterior.vegetation.tree",
+    aliases=("tree trunk", "trunk", "bole", "tree stem"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.10, 0.10, 1.0),
+    max_dimensions_m=(4.0, 4.0, 40.0),
+    hosts=("ground",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+TREE_BRANCH = _register(TaxonomyClass(
+    taxonomy_id="exterior.vegetation.branch",
+    name="tree_branch",
+    domain=Domain.EXTERIOR,
+    category="vegetation",
+    parent_class="exterior.vegetation.tree",
+    aliases=("tree branch", "bough", "limb", "branches"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.05, 0.05, 0.5),
+    max_dimensions_m=(1.5, 1.5, 15.0),
+    hosts=("tree_trunk",),
+    dimension_measurability=DimensionMeasurability.BOUNDED_PROXY,
+))
+
+TREE_CANOPY = _register(TaxonomyClass(
+    taxonomy_id="exterior.vegetation.canopy",
+    name="tree_canopy",
+    domain=Domain.EXTERIOR,
+    category="vegetation",
+    parent_class="exterior.vegetation.tree",
+    aliases=("tree canopy", "canopy", "crown", "foliage", "leaves"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(1.0, 1.0, 1.0),
+    max_dimensions_m=(35.0, 35.0, 35.0),
+    hosts=("tree_trunk",),
+    dimension_measurability=DimensionMeasurability.BOUNDED_PROXY,
+))
+
+# --- STREET FURNITURE & UTILITY INFRASTRUCTURE ---
+BOLLARD = _register(TaxonomyClass(
+    taxonomy_id="exterior.street.bollard",
+    name="bollard",
+    domain=Domain.EXTERIOR,
+    category="street",
+    aliases=("bollard", "traffic bollard", "post bollard", "security post"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.10, 0.10, 0.6),
+    max_dimensions_m=(0.40, 0.40, 1.2),
+    hosts=("footpath", "road", "paving"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+BOUNDARY_WALL = _register(TaxonomyClass(
+    taxonomy_id="exterior.perimeter.wall",
+    name="boundary_wall",
+    domain=Domain.EXTERIOR,
+    category="perimeter",
+    aliases=("boundary wall", "perimeter wall", "retaining wall", "garden wall", "stone wall"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(1.0, 0.10, 0.5),
+    max_dimensions_m=(100.0, 1.0, 5.0),
+    hosts=("ground",),
+    is_structural=True,
+))
+
+MANHOLE = _register(TaxonomyClass(
+    taxonomy_id="exterior.utility.manhole",
+    name="manhole",
+    domain=Domain.EXTERIOR,
+    category="utility",
+    aliases=("manhole", "manhole cover", "inspection chamber", "sewer grate", "utility cover"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.30, 0.30, 0.02),
+    max_dimensions_m=(1.2, 1.2, 0.10),
+    hosts=("road", "footpath", "paving"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+FIRE_HYDRANT = _register(TaxonomyClass(
+    taxonomy_id="exterior.utility.fire_hydrant",
+    name="fire_hydrant",
+    domain=Domain.EXTERIOR,
+    category="utility",
+    aliases=("fire hydrant", "hydrant", "water hydrant"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.20, 0.20, 0.50),
+    max_dimensions_m=(0.60, 0.60, 1.10),
+    hosts=("footpath", "ground"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
 # --- EXTERIOR FAÇADES & BUILDINGS ---
 BUILDING_FACADE = _register(TaxonomyClass(
     taxonomy_id="exterior.architecture.building_facade",
     name="building_facade",
     domain=Domain.EXTERIOR,
     category="architecture",
-    aliases=("building", "facade", "building facade", "exterior wall", "storefront"),
+    aliases=("building facade", "facade", "facade wall", "exterior wall", "storefront"),
     expected_geometry=GeometryType.PLANE,
     min_dimensions_m=(2.0, 0.2, 2.5),
     max_dimensions_m=(200.0, 5.0, 150.0),
@@ -795,3 +1316,48 @@ def get_detection_queries_by_domain(domain: Domain | None = None) -> Mapping[str
             if a not in groups[cat]:
                 groups[cat].append(a)
     return {k: tuple(v) for k, v in groups.items()}
+
+
+def get_hierarchical_path(taxonomy_id: str) -> list[str]:
+    """Returns the dotted hierarchy path segments for a given taxonomy ID (e.g. ['interior', 'opening', 'door'])."""
+    return [segment.strip() for segment in taxonomy_id.split(".") if segment.strip()]
+
+
+def get_ancestor_classes(taxonomy_id: str) -> list[TaxonomyClass]:
+    """Returns the sequence of parent TaxonomyClasses from immediate parent to root."""
+    ancestors: list[TaxonomyClass] = []
+    current_id: str | None = taxonomy_id
+    visited = set()
+    while current_id and current_id in _TAXONOMY_REGISTRY and current_id not in visited:
+        visited.add(current_id)
+        current = _TAXONOMY_REGISTRY[current_id]
+        if current.parent_class and current.parent_class in _TAXONOMY_REGISTRY:
+            parent = _TAXONOMY_REGISTRY[current.parent_class]
+            ancestors.append(parent)
+            current_id = parent.taxonomy_id
+        else:
+            break
+    return ancestors
+
+
+def get_subparts_for_class(taxonomy_id: str) -> tuple[TaxonomyClass, ...]:
+    """Returns all registered TaxonomyClasses that designate parts or children of this class."""
+    subparts: list[TaxonomyClass] = []
+    for cls in _TAXONOMY_REGISTRY.values():
+        if cls.parent_class == taxonomy_id:
+            subparts.append(cls)
+    return tuple(subparts)
+
+
+def get_domain_prompts(domain: Domain) -> tuple[str, ...]:
+    """Generates comprehensive, non-redundant detection prompt queries for an entire domain."""
+    seen = set()
+    prompts: list[str] = []
+    for tax_cls in _TAXONOMY_REGISTRY.values():
+        if tax_cls.domain in (domain, Domain.UNIVERSAL):
+            for candidate in (tax_cls.name, *tax_cls.aliases[:2]):
+                if candidate not in seen:
+                    seen.add(candidate)
+                    prompts.append(candidate)
+    return tuple(prompts)
+

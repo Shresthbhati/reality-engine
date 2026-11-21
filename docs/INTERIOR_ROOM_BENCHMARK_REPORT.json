@@ -1,5 +1,5 @@
 {
-  "execution_date": "2026-11-21 10:21:56 UTC",
+  "execution_date": "2026-11-21 15:56:29 UTC",
   "dataset": "datasets/real_room_capture",
   "photos_processed": [
     "IMG_0000.jpg",
@@ -8,7 +8,7 @@
     "IMG_0003.jpg"
   ],
   "total_photos_count": 4,
-  "total_wall_time_s": 98.96,
+  "total_wall_time_s": 102.34,
   "device": "cuda:0",
   "registered_cameras_in_colmap": 21,
   "raw_observations_count": 35,
@@ -41,17 +41,17 @@
     "unmatched_observations_count": 0,
     "unlabelled_observations_count": 26,
     "per_class_metrics": {
+      "window": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
       "door": {
         "precision": 1.0,
         "recall": 0.3333,
         "f1": 0.5
       },
       "table": {
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0
-      },
-      "window": {
         "precision": 1.0,
         "recall": 1.0,
         "f1": 1.0
@@ -86,13 +86,13 @@
       "photo": "IMG_0000.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 29.181,
-          "infer_s": 0.71,
+          "load_s": 44.059,
+          "infer_s": 0.605,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0000.jpg.npy"
         },
         "detector": {
-          "load_s": 3.567,
-          "infer_s": 4.322,
+          "load_s": 2.288,
+          "infer_s": 1.472,
           "detections_count": 7,
           "labels": [
             "door",
@@ -106,13 +106,13 @@
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0000.jpg.json"
         },
         "sam": {
-          "load_s": 3.095,
-          "infer_s": 2.277,
+          "load_s": 1.522,
+          "infer_s": 1.344,
           "masks_count": 7,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0000.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 5.043,
+          "duration_s": 2.978,
           "candidates_evaluated": 7,
           "lifted_entities_count": 7
         }
@@ -122,13 +122,13 @@
       "photo": "IMG_0001.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 1.197,
-          "infer_s": 0.492,
+          "load_s": 0.781,
+          "infer_s": 0.546,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0001.jpg.npy"
         },
         "detector": {
-          "load_s": 5.01,
-          "infer_s": 1.381,
+          "load_s": 2.073,
+          "infer_s": 1.492,
           "detections_count": 7,
           "labels": [
             "door",
@@ -142,13 +142,13 @@
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0001.jpg.json"
         },
         "sam": {
-          "load_s": 1.443,
-          "infer_s": 1.318,
+          "load_s": 1.28,
+          "infer_s": 1.246,
           "masks_count": 7,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0001.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 5.405,
+          "duration_s": 3.875,
           "candidates_evaluated": 7,
           "lifted_entities_count": 7
         }
@@ -158,13 +158,13 @@
       "photo": "IMG_0002.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 0.533,
-          "infer_s": 0.37,
+          "load_s": 0.676,
+          "infer_s": 0.534,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0002.jpg.npy"
         },
         "detector": {
-          "load_s": 2.051,
-          "infer_s": 1.235,
+          "load_s": 1.461,
+          "infer_s": 1.124,
           "detections_count": 9,
           "labels": [
             "door",
@@ -180,13 +180,13 @@
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0002.jpg.json"
         },
         "sam": {
-          "load_s": 1.379,
-          "infer_s": 1.358,
+          "load_s": 1.221,
+          "infer_s": 1.436,
           "masks_count": 9,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0002.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 4.271,
+          "duration_s": 3.888,
           "candidates_evaluated": 9,
           "lifted_entities_count": 9
         }
@@ -196,13 +196,13 @@
       "photo": "IMG_0003.jpg",
       "stages": {
         "depth_anything": {
-          "load_s": 0.691,
-          "infer_s": 0.718,
+          "load_s": 0.813,
+          "infer_s": 0.688,
           "raw_depth_artifact": "artifacts\\interior_room_raw\\depth_IMG_0003.jpg.npy"
         },
         "detector": {
-          "load_s": 2.096,
-          "infer_s": 1.183,
+          "load_s": 1.928,
+          "infer_s": 1.124,
           "detections_count": 12,
           "labels": [
             "wall",
@@ -221,13 +221,13 @@
           "raw_detections_artifact": "artifacts\\interior_room_raw\\detections_IMG_0003.jpg.json"
         },
         "sam": {
-          "load_s": 1.244,
-          "infer_s": 1.49,
+          "load_s": 1.333,
+          "infer_s": 6.63,
           "masks_count": 12,
           "raw_masks_artifact": "artifacts\\interior_room_raw\\masks_IMG_0003.jpg.npz"
         },
         "metric_lifting": {
-          "duration_s": 6.597,
+          "duration_s": 6.655,
           "candidates_evaluated": 12,
           "lifted_entities_count": 12
         }

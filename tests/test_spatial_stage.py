@@ -37,7 +37,8 @@ def test_the_bridge_maps_the_real_scale_state_and_never_calls_gauge_or_relative_
 def test_a_gauge_result_emits_gauge_metric3d_records_not_synthetic_metres():
     from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
 
-    ent = PhysicalMergedEntity("e1", "chair", ("o1",), ("s",), (0, 0, 1), (1, 1, 1), (1, 0, 0, 0), None, 0.9, 1.0, 0.01, False)
+    ent = PhysicalMergedEntity("e1", "chair", ("o1",), ("s",), (0, 0, 1), (1, 1, 1), (1, 0, 0, 0), None, 0.9, 1.0, 0.01, False,
+                               scale_state="SFM_ALIGNED_UNMETRIC", scale_units="COLMAP_SFM_UNITS")
     res = SpatialSceneResult((ent,), (), {}, (), (), {}, scale_units="COLMAP_SFM_UNITS", scale_state="SFM_ALIGNED_UNMETRIC")
     recs = res.to_metric3d_observations()
     assert recs and all(r.scale_state is ScaleState.SFM_GAUGE and r.units == "sfm_units" for r in recs)

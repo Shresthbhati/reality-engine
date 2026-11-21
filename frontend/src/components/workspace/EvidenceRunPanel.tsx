@@ -14,6 +14,7 @@ import {
   listRejectedPredictions,
   exportEvidenceRun,
   mergeEvidenceEntities,
+  splitEvidenceEntity,
   reclassifyEvidenceEntity,
   type EvidenceEntityDetail,
   type EvidenceEntityRow,
@@ -82,6 +83,7 @@ export default function EvidenceRunPanel({
   const [ackUnscaled, setAckUnscaled] = useState(false);
   const [corrected, setCorrected] = useState("");
   const [mergeWith, setMergeWith] = useState("");
+  const [splitIds, setSplitIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const inspect = (id: string) =>
@@ -300,6 +302,35 @@ Merge anyway (duplicate detections of one object)?`)) {
                 </select>
                 <button type="submit" disabled={!mergeWith} className="text-[11px] rounded px-2 py-1 disabled:opacity-50" style={{ border: "1px solid var(--border)" }}>Merge</button>
               </form>
+              {detail.observations.filter((o) => o.observation.quantity === "bbox").length > 1 && (
+                <form
+                  className="flex flex-col gap-1"
+                  aria-label="Split this entity"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!runId || !selectedId || splitIds.length === 0) return;
+                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds)
+                      .then((r) => {
+                        setSplitIds([]);
+                        setNotice(`Split: ${splitIds.length} detection(s) moved to new entity ${r.new_entity_id}; both rebuilt from their own evidence; saved as version ${r.version_id}. Original evidence unchanged.`);
+                      })
+                      .catch((er) => setError(err(er, "Could not split.")));
+                  }}
+                >
+                  <span className="text-[11px]">These detections are a different object:</span>
+                  {detail.observations.filter((o) => o.observation.quantity === "bbox").map((o) => (
+                    <label key={o.observation.observation_id} className="text-[11px] flex gap-1 items-center">
+                      <input
+                        type="checkbox"
+                        checked={splitIds.includes(o.observation.observation_id)}
+                        onChange={(ev) => setSplitIds((s) => (ev.target.checked ? [...s, o.observation.observation_id] : s.filter((x) => x !== o.observation.observation_id)))}
+                      />
+                      {o.observation.engine_id} · {o.observation.source_id.split(/[\\/]/).pop()}
+                    </label>
+                  ))}
+                  <button type="submit" disabled={splitIds.length === 0} className="text-[11px] rounded px-2 py-1 disabled:opacity-50 self-start" style={{ border: "1px solid var(--border)" }}>Split off selected</button>
+                </form>
+              )}
               {notice && <span role="status">{notice}</span>}
             </section>
           )}

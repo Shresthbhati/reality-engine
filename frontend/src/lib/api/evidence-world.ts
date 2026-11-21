@@ -71,7 +71,8 @@ export interface RejectedPrediction {
 
 export interface EvidenceEntityDetail {
   entity: { id: string; name: string; transform: Record<string, unknown> | null; geometry_ids: string[] };
-  observations: { observation_id: string; status: string }[];
+  /** Matrix rows as the server sends them: the untouched observation nested under `observation`. */
+  observations: { status: string; observation: { observation_id: string; quantity: string; source_id: string; engine_id: string } }[];
   rejected_observations: unknown[];
   association_decisions: { a: string; b: string; outcome: string; reason: string }[];
   capture_requests: unknown[];
@@ -139,6 +140,21 @@ export function mergeEvidenceEntities(worldId: string, runId: string, entityId: 
   return apiPost<EvidenceMergeResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/merge`,
     { other_entity_id: otherEntityId, note, acknowledge_same_image: acknowledgeSameImage },
+  );
+}
+
+export interface EvidenceSplitResult {
+  version_id: string;
+  new_entity_id: string;
+  rebuilt_from_evidence: boolean;
+}
+
+/** Identity correction: "these detections are a different object". The server moves them (and their derived observations) to a NEW
+ * entity, rebuilds both from their own raw evidence and saves a new version; it refuses to leave the original with no detection. */
+export function splitEvidenceEntity(worldId: string, runId: string, entityId: string, detachObservationIds: string[], note = "") {
+  return apiPost<EvidenceSplitResult>(
+    `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/split`,
+    { detach_observation_ids: detachObservationIds, note },
   );
 }
 

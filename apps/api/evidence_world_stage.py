@@ -260,7 +260,10 @@ def run_for_job(
             after_stages=_depth_and_lift, relations_fn=relations_fn, surfaces_fn=surfaces_fn,
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
-        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
+        import traceback
+
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped,
+                "where": [ln.strip() for ln in traceback.format_exc().splitlines() if ln.lstrip().startswith("File ")][-4:]}
     facts = _facts(res.snapshot, job_id, skipped, status=res.status)
     facts["detection_pipeline"] = _detection_facts(mode, det_stage, det_note, adapters, res.snapshot)
     if facts["detection_pipeline"].get("problems") and facts["status"] == "complete":

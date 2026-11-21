@@ -3,6 +3,20 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-21 (later) -- FIRST REAL FURNISHED-INTERIOR RUN (7-Scenes "office" seq-01, 12 frames, production job, real COLMAP + Depth Anything V2)
+
+EXECUTED ON REAL DATA (local, not committed: 7-Scenes is research/non-commercial): 12/12 cameras registered; camera poses vs Kinect GT: 5.5 cm RMSE over a
+2.27 m path (similarity-aligned; GT is itself KinectFusion). 281/281 detections lifted (SfM gauge), 0 rejected; 142 entities persisted (81 positioned with box
+geometry, 52 with bbox evidence from >1 photograph, 37 positioned AND multi-view, 4 withheld as unresolved identity); fresh-process reload verified (v-33887076...,
+no integrity problems); readiness: partial, export_ready, metric_export_ready=False, physical_accuracy NOT_MEASURED. Against Kinect depth: positioned centres lie a median
+5.3 cm from the nearest surface point (73% within 10 cm); lifted extents vs Kinect extents over the same boxes: ratio median 1.09 (IQR 0.97-1.27), abs error median 6.4 cm,
+p90 23 cm. Reproduce: benchmarks/measured_rooms/run_office7_production.py then validate_office7_world.py (and validate_office7.py for poses).
+Real-data defects found and fixed: cameras keyed by Path vs str (all dropped); no intrinsics on a first job without EXIF; depth aligned to ALL sparse points (occluded
+included) instead of each image's own keypoint observations; boxes overshooting the image edge rejected; unresolved same-class overlaps blocked persistence of the whole world.
+NOT validated: detector class/identity accuracy (no labels), per-object extents beyond the lifting step, metric scale (unanchored; metres in the numbers above come from the GT
+similarity), anything beyond this one scene. NOT done: merge of the evidence world into the committed world (DECISION REQUIRED, DESIGN_DECISIONS 7), mask-based lifting, viewer/UI
+exercised in a browser, full test suite.
+
 ## 2026-11-21 -- Evidence world: depth wired into fusion, positioned entities, honest readiness, evidence-run UI (Claude half of the joint milestone)
 
 ROOT CAUSE of "48 entities, 0 positioned" (#356): detections (bbox) and depth records (raw .npy) both sat in the Evidence Matrix but NOTHING joined them --

@@ -35,16 +35,19 @@ from world_ir.camera import PinholeCamera
 _PHYSICAL_STATES = ("METRIC_SCALE_ALIGNED", "PHYSICALLY_ANCHORED")
 _MODEL_METRIC_STATES = ("METRIC_CALIBRATED", "METRIC_TRAINED_MODEL", "MODEL_CALIBRATED")
 _GAUGE_STATES = ("SFM_ALIGNED_UNMETRIC", "SFM_GAUGE")
+_RELATIVE_GAUGE_STATES = ("RELATIVE_GAUGE", "relative_gauge")
 _RELATIVE_STATES = ("RELATIVE_UNSCALED", "RELATIVE_DEPTH", "MODEL_RELATIVE_DEPTH", "RELATIVE", "relative")
 
 
 def classify_scale(
     scale_state: str, scale_units: str, is_metric_depth: bool, scale_source: str
 ) -> tuple[str, str | None]:
-    """``(scale_class, rejection_reason)``. Classes: physical_metric | model_metric | sfm_gauge. Anything undeclared, relative or
-    claiming physical metres without an anchor reference is refused with a reason (the raw evidence is the caller's to keep)."""
+    """``(scale_class, rejection_reason)``. Classes: physical_metric | model_metric | sfm_gauge | relative_gauge | synthetic. Anything undeclared,
+    unscaled relative or claiming physical metres without an anchor reference is refused with a reason (the raw evidence is the caller's to keep)."""
     if scale_state in (None, "", "UNDECLARED", "UNKNOWN"):
         return "", "UNDECLARED_SCALE: the caller must declare the depth scale class; nothing defaults to metres"
+    if scale_state in _RELATIVE_GAUGE_STATES or scale_units == "RELATIVE_UNITS":
+        return "relative_gauge", None
     if scale_state in _GAUGE_STATES or scale_units == "COLMAP_SFM_UNITS":
         return "sfm_gauge", None
     if scale_state == "SYNTHETIC_SCALE_ALIGNED" or scale_units == "SYNTHETIC_METRES":
@@ -194,6 +197,7 @@ class Metric3DLifter:
             "model_metric": "MODEL_ESTIMATED_METRES_UNVERIFIED",  # a network's own metres claim: usable, NOT physically verified
             "synthetic": "SYNTHETIC_METRES",
             "sfm_gauge": "COLMAP_SFM_UNITS",
+            "relative_gauge": "RELATIVE_UNITS",
         }[scale_class]
 
         # 2. Validate camera calibration and pose rigidity
@@ -542,6 +546,10 @@ class Metric3DLifter:
         elif "sfm" in entity.scale_units.lower() or entity.scale_state in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC"):
             s_state = ScaleState.SFM_GAUGE
             s_units = "sfm_units"
+            anchor_ref = None
+        elif "relative" in entity.scale_units.lower() or entity.scale_state in ("RELATIVE_GAUGE", "relative_gauge"):
+            s_state = ScaleState.RELATIVE_DEPTH
+            s_units = "relative_units"
             anchor_ref = None
         else:
             s_state = ScaleState.RELATIVE_DEPTH

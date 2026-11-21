@@ -523,3 +523,55 @@ def test_cross_view_ledger_records_all_refusal_reasons() -> None:
     assert "same_image_conflict" in reasons
     assert summary.refused_pairs_count >= 2
 
+
+def test_ray_cpa_triangulation_merges_cross_view_observations_with_scale_discrepancy() -> None:
+    """Verifies that viewing-ray CPA triangulation successfully merges cross-view observations
+    even when relative monocular depth caused unprojected 3D distance > 2m."""
+    intr1 = CameraIntrinsics(fx=800.0, fy=800.0, cx=400.0, cy=300.0, width=800, height=600)
+    intr2 = CameraIntrinsics(fx=800.0, fy=800.0, cx=400.0, cy=300.0, width=800, height=600)
+    # Cam 1 at (-1, 0, 0), Cam 2 at (1, 0, 0)
+    cam1 = PinholeCamera(intrinsics=intr1, extrinsics=CameraExtrinsics(Vec3(-1.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+    cam2 = PinholeCamera(intrinsics=intr2, extrinsics=CameraExtrinsics(Vec3(1.0, 0.0, 0.0), Quat(1.0, 0.0, 0.0, 0.0)))
+
+    # Real physical object at (0, 0, 4)
+    # Projection in Cam 1: X_cam = 0 - (-1) = 1, Z = 4 -> u = 800 * (1/4) + 400 = 600, v = 300
+    # Projection in Cam 2: X_cam = 0 - 1 = -1, Z = 4 -> u = 800 * (-1/4) + 400 = 200, v = 300
+    box1 = (550.0, 250.0, 650.0, 350.0)
+    box2 = (150.0, 250.0, 250.0, 350.0)
+
+    # Observations with unscaled monocular depth causing distance > 2.5m
+    obs1 = MultiViewEntityObservation(
+        observation_id="table_v1",
+        source_id="v1.jpg",
+        class_name="table",
+        position=(0.0, 0.0, 2.5),  # lifted at 2.5m
+        dimensions=(1.2, 0.8, 0.75),
+        confidence=0.88,
+        camera=cam1,
+        box_2d=box1,
+    )
+    obs2 = MultiViewEntityObservation(
+        observation_id="table_v2",
+        source_id="v2.jpg",
+        class_name="table",
+        position=(0.0, 0.0, 5.5),  # lifted at 5.5m (3.0m difference in Z!)
+        dimensions=(1.2, 0.8, 0.75),
+        confidence=0.91,
+        camera=cam2,
+        box_2d=box2,
+    )
+
+    associator = MultiViewAssociator()
+    entities, summary, decisions = associator.associate_observations([obs1, obs2])
+
+    assert len(entities) == 1
+    assert entities[0].is_multiview
+    assert set(entities[0].sources) == {"v1.jpg", "v2.jpg"}
+    assert summary.accepted_merges_count == 1
+    # Check that consensus position is close to the true triangulated intersection at (0, 0, 4)
+    pos = entities[0].position
+    assert abs(pos[0] - 0.0) < 0.2
+    assert abs(pos[1] - 0.0) < 0.2
+    assert abs(pos[2] - 4.0) < 0.3
+
+

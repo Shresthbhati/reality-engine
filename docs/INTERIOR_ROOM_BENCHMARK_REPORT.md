@@ -1,9 +1,9 @@
 # Interior Furnished Room Sequential Reconstruction Benchmark Report
 
-**Date:** 2026-11-20 07:04:53 UTC
+**Date:** 2026-11-21 10:21:56 UTC
 **Device:** `cuda:0`
 **Dataset:** `datasets/real_room_capture`
-**Total Wall Time:** 173.59 s
+**Total Wall Time:** 98.96 s
 **COLMAP Registered Cameras:** 21
 **Persisted WorldIR Artifact:** `artifacts\interior_room_reconstruction.worldir.json`
 
@@ -17,33 +17,33 @@ All model workloads ran sequentially with full GPU/host memory unloads between s
 3. **OWL-ViT Open-Vocabulary Detection:** Evaluated interior elements: walls, doors, windows, tables, chairs, beds, couches, fixtures.
 4. **SAM Instance Segmentation:** Generated instance masks for detected candidate regions.
 5. **Metric 3D Lifting:** Lifted 2D detections into 3D world space using calibrated pinhole geometry and yaw PCA bounding boxes.
-6. **Multi-View Physical Association:** Grouped 35 cross-view observations into 35 unique physical entities under strict physical constraints.
+6. **Multi-View Physical Association:** Grouped 35 cross-view observations into 12 unique physical entities under strict physical constraints.
 7. **WorldIR Compilation:** Reconciled canonical entities with evidence-calibrated confidence.
 
 ## 2. Reconstructed Entities Summary
 
 - **Total 2D/3D Lifted Observations:** 35
-- **Unique Physical Entities Reconstructed:** 35
-- **Multi-View Merged Entities:** 0 (observed across 2 to 1 photographs)
-- **Single-View Entities:** 35
-- **Association Merges Accepted:** 0
-- **Association Pairs Refused:** 595
+- **Unique Physical Entities Reconstructed:** 12
+- **Multi-View Merged Entities:** 12 (observed across 2 to 4 photographs)
+- **Single-View Entities:** 0
+- **Association Merges Accepted:** 23
+- **Association Pairs Refused:** 572
 - **WorldIR Schema Validation Errors:** 0 (structural schema compliance)
 
 ## 3. Multi-View Identity Association Benchmark Metrics
 
 - **Evaluation Status:** `COMPLETED`
-- **Total Cross-View Candidate Pairs Evaluated:** 23
-- **True Positives (Correctly Merged Pairs):** 0
+- **Total Cross-View Candidate Pairs Evaluated:** 29
+- **True Positives (Correctly Merged Pairs):** 8
 - **False Positives (False Merges):** 0
-- **False Negatives (False Splits):** 8
-- **Identity Precision:** 0.0000
-- **Identity Recall:** 0.0000
-- **Identity F1 Score:** 0.0000
+- **False Negatives (False Splits):** 2
+- **Identity Precision:** 1.0000
+- **Identity Recall:** 0.8000
+- **Identity F1 Score:** 0.8889
 - **False Merge Rate:** 0.0000
-- **False Split Rate:** 1.0000
+- **False Split Rate:** 0.2000
 - **Unmatched Observations:** 0
-- **Unlabelled Observations:** 27
+- **Unlabelled Observations:** 26
 
 ## 4. Physical Accuracy and Honest Ground Truth Disclosure
 

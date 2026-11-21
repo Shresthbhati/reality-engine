@@ -180,6 +180,96 @@ class AssociationBenchmarkReport:
         }
 
 
+def _camera_ray_for_box(
+    camera: PinholeCamera,
+    box_2d: Sequence[float],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Returns (origin, unit_direction) in world coordinates."""
+    u_mid = 0.5 * (float(box_2d[0]) + float(box_2d[2]))
+    v_mid = 0.5 * (float(box_2d[1]) + float(box_2d[3]))
+    fx, fy = camera.intrinsics.fx, camera.intrinsics.fy
+    cx, cy = camera.intrinsics.cx, camera.intrinsics.cy
+    dir_cam = np.array([(u_mid - cx) / fx, (v_mid - cy) / fy, 1.0], dtype=np.float64)
+    norm_c = float(np.linalg.norm(dir_cam))
+    if norm_c > 1e-9:
+        dir_cam /= norm_c
+
+    q = camera.extrinsics.rotation
+    w, x, y, z = float(q.w), float(q.x), float(q.y), float(q.z)
+    R_wc = np.array([
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ], dtype=np.float64)
+    dir_world = R_wc @ dir_cam
+    norm_w = float(np.linalg.norm(dir_world))
+    if norm_w > 1e-9:
+        dir_world /= norm_w
+
+    c = camera.extrinsics.position
+    origin = np.array([float(c.x), float(c.y), float(c.z)], dtype=np.float64)
+    return origin, dir_world
+
+
+def _compute_ray_cpa(
+    origin_a: np.ndarray,
+    dir_a: np.ndarray,
+    origin_b: np.ndarray,
+    dir_b: np.ndarray,
+) -> tuple[float, float, float, np.ndarray, np.ndarray]:
+    """Computes Closest Point of Approach (CPA) between two 3D viewing rays."""
+    w0 = origin_a - origin_b
+    a = float(np.dot(dir_a, dir_a))
+    b = float(np.dot(dir_a, dir_b))
+    c = float(np.dot(dir_b, dir_b))
+    d = float(np.dot(dir_a, w0))
+    e = float(np.dot(dir_b, w0))
+
+    denom = a * c - b * b
+    if denom < 1e-6:
+        s_c = 0.0
+        t_c = e / c if c > 1e-6 else 0.0
+    else:
+        s_c = (b * e - c * d) / denom
+        t_c = (a * e - b * d) / denom
+
+    p_a = origin_a + s_c * dir_a
+    p_b = origin_b + t_c * dir_b
+    dist = float(np.linalg.norm(p_a - p_b))
+    return dist, s_c, t_c, p_a, p_b
+
+
+def _verify_ray_reprojection(
+    p_tri: np.ndarray,
+    obs_a: MultiViewEntityObservation,
+    obs_b: MultiViewEntityObservation,
+    max_reproj_err_px: float,
+) -> bool:
+    """Verifies that triangulated point projects compatibly into both views."""
+    if obs_a.camera is None or obs_b.camera is None:
+        return False
+    p_vec = Vec3(float(p_tri[0]), float(p_tri[1]), float(p_tri[2]))
+    p_cam_a = obs_a.camera.extrinsics.world_to_camera(p_vec)
+    p_cam_b = obs_b.camera.extrinsics.world_to_camera(p_vec)
+    if p_cam_a.z <= 0.1 or p_cam_b.z <= 0.1:
+        return False
+    uv_a = obs_a.camera.project(p_vec)
+    uv_b = obs_b.camera.project(p_vec)
+    if uv_a is None or uv_b is None:
+        return False
+    cx_a = 0.5 * (obs_a.box_2d[0] + obs_a.box_2d[2])
+    cy_a = 0.5 * (obs_a.box_2d[1] + obs_a.box_2d[3])
+    cx_b = 0.5 * (obs_b.box_2d[0] + obs_b.box_2d[2])
+    cy_b = 0.5 * (obs_b.box_2d[1] + obs_b.box_2d[3])
+    err_a = math.hypot(uv_a[0] - cx_a, uv_a[1] - cy_a)
+    err_b = math.hypot(uv_b[0] - cx_b, uv_b[1] - cy_b)
+    in_box_a = (obs_a.box_2d[0] - 25 <= uv_a[0] <= obs_a.box_2d[2] + 25 and
+                obs_a.box_2d[1] - 25 <= uv_a[1] <= obs_a.box_2d[3] + 25)
+    in_box_b = (obs_b.box_2d[0] - 25 <= uv_b[0] <= obs_b.box_2d[2] + 25 and
+                obs_b.box_2d[1] - 25 <= uv_b[1] <= obs_b.box_2d[3] + 25)
+    return (err_a <= max_reproj_err_px or in_box_a) and (err_b <= max_reproj_err_px or in_box_b)
+
+
 def compute_cross_view_pair_score(
     obs_a: MultiViewEntityObservation,
     obs_b: MultiViewEntityObservation,
@@ -252,7 +342,34 @@ def compute_cross_view_pair_score(
                     basis={"reason": "uncertainty_incompatible", "mahalanobis_dist": round(m_dist, 2)},
                 )
 
-    if dist_3d > tol_3d:
+    has_cams = (
+        obs_a.camera is not None
+        and obs_b.camera is not None
+        and len(obs_a.box_2d) == 4
+        and len(obs_b.box_2d) == 4
+    )
+    ray_triangulated = False
+    reproj_tol_applied = max_reproj_err_px
+    if has_cams:
+        orig_a, dir_a = _camera_ray_for_box(obs_a.camera, obs_a.box_2d)
+        orig_b, dir_b = _camera_ray_for_box(obs_b.camera, obs_b.box_2d)
+        r_dist, s_c, t_c, p_a_r, p_b_r = _compute_ray_cpa(orig_a, dir_a, orig_b, dir_b)
+        ray_tol = max(0.40, min(1.2, 0.35 * mean_extent))
+        if s_c > 0.1 and t_c > 0.1 and r_dist <= ray_tol:
+            p_tri = 0.5 * (p_a_r + p_b_r)
+            if _verify_ray_reprojection(p_tri, obs_a, obs_b, max_reproj_err_px):
+                ray_triangulated = True
+                dist_3d = r_dist
+                sigma_3d = max(0.1, ray_tol / 2.5)
+                p_a = p_tri
+                p_b = p_tri
+                w_a = obs_a.box_2d[2] - obs_a.box_2d[0]
+                h_a = obs_a.box_2d[3] - obs_a.box_2d[1]
+                w_b = obs_b.box_2d[2] - obs_b.box_2d[0]
+                h_b = obs_b.box_2d[3] - obs_b.box_2d[1]
+                reproj_tol_applied = max(max_reproj_err_px, 0.5 * (math.hypot(w_a, h_a) + math.hypot(w_b, h_b)))
+
+    if dist_3d > tol_3d and not ray_triangulated:
         return PairScore(
             a=obs_a.observation_id,
             b=obs_b.observation_id,
@@ -287,14 +404,14 @@ def compute_cross_view_pair_score(
 
     if reproj_errors:
         mean_reproj_err = float(np.mean(reproj_errors))
-        if mean_reproj_err > max_reproj_err_px:
+        if mean_reproj_err > reproj_tol_applied:
             return PairScore(
                 a=obs_a.observation_id,
                 b=obs_b.observation_id,
                 score=0.0,
-                basis={"reason": "excessive_reprojection_error", "mean_reproj_px": round(mean_reproj_err, 2)},
+                basis={"reason": "excessive_reprojection_error", "mean_reproj_px": round(mean_reproj_err, 2), "tol_px": round(reproj_tol_applied, 2)},
             )
-        score_reproj = math.exp(-0.5 * (mean_reproj_err / max(1e-3, sigma_reproj)) ** 2)
+        score_reproj = math.exp(-0.5 * (mean_reproj_err / max(1e-3, 0.5 * reproj_tol_applied)) ** 2)
         has_reproj = True
     else:
         # Missing camera evidence remains missing; DO NOT INVENT A NEUTRAL 0.5 FALLBACK
@@ -370,6 +487,34 @@ def reconcile_associated_geometry(
         weights = np.ones(len(members)) / len(members)
 
     pos_fused = np.sum(positions * weights[:, None], axis=0)
+
+    # Check if ray triangulation provides a better consensus position for multi-view members
+    cams_and_boxes = [(m.camera, m.box_2d) for m in members if m.camera is not None and len(m.box_2d) == 4]
+    if len(cams_and_boxes) >= 2:
+        tri_points = []
+        for i in range(len(cams_and_boxes)):
+            for j in range(i + 1, len(cams_and_boxes)):
+                cam_i, box_i = cams_and_boxes[i]
+                cam_j, box_j = cams_and_boxes[j]
+                o_i, d_i = _camera_ray_for_box(cam_i, box_i)
+                o_j, d_j = _camera_ray_for_box(cam_j, box_j)
+                r_dist, s_i, t_j, p_i_r, p_j_r = _compute_ray_cpa(o_i, d_i, o_j, d_j)
+                if s_i > 0.1 and t_j > 0.1 and r_dist < 1.0:
+                    tri_points.append(0.5 * (p_i_r + p_j_r))
+        if tri_points:
+            pos_tri = np.mean(tri_points, axis=0)
+            errs_tri = []
+            errs_fused = []
+            for cam, box in cams_and_boxes:
+                cx, cy = 0.5 * (box[0] + box[2]), 0.5 * (box[1] + box[3])
+                uv_t = cam.project(Vec3(float(pos_tri[0]), float(pos_tri[1]), float(pos_tri[2])))
+                uv_f = cam.project(Vec3(float(pos_fused[0]), float(pos_fused[1]), float(pos_fused[2])))
+                if uv_t is not None:
+                    errs_tri.append(math.hypot(uv_t[0] - cx, uv_t[1] - cy))
+                if uv_f is not None:
+                    errs_fused.append(math.hypot(uv_f[0] - cx, uv_f[1] - cy))
+            if errs_tri and (not errs_fused or np.mean(errs_tri) < np.mean(errs_fused)):
+                pos_fused = pos_tri
 
     # 3. Robust median dimensions
     dims = np.array([m.dimensions for m in members], dtype=np.float64)

@@ -8,6 +8,7 @@ __pycache__/
 # never committed (docs/archive/audits/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md).
 datasets/*/
 !datasets/README.md
+benchmarks/measured_rooms/*/photos/
 
 # Exception: the committed reproducible real dataset (RECONSTRUCTION_
 # REAL_WORLD_ROBUSTNESS P0) -- a deterministic 32-photo subset of the

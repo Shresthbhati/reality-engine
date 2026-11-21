@@ -130,7 +130,16 @@ def determine(
     estimates: list[Estimate] = []
     excluded: list[tuple[str, str]] = []
     notes: list[str] = []
-    for oid in member_ids:
+    expanded_ids = list(member_ids)
+    for mid in member_ids:
+        try:
+            for a, b, _ in matrix.store.relations_of(mid):
+                other = b if a == mid else a
+                if other not in expanded_ids:
+                    expanded_ids.append(other)
+        except Exception:
+            pass
+    for oid in expanded_ids:
         o = matrix.store.get(oid)
         if o.quantity != quantity:
             continue
@@ -145,7 +154,9 @@ def determine(
         cov = (o.uncertainty or {}).get("covariance")
         cov_arr = None if cov is None else np.asarray(cov, dtype=float)
         if o.coordinate_system != target_frame:
-            if graph is None:
+            if {o.coordinate_system, target_frame} <= {"world", "world:canonical"}:
+                pass  # Equivalent canonical world frame representations
+            elif graph is None:
                 excluded.append(
                     (oid, f"frame {o.coordinate_system!r} differs from {target_frame!r} and no frame graph was given")
                 )

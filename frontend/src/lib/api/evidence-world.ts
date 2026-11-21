@@ -10,7 +10,26 @@ export interface EvidenceRunSummary {
   counts: Record<string, number> | null;
 }
 
+/** What the detection stage persisted (read from disk by the server): which engine ran, whether tiling / sub-part crops / segmentation
+ * executed, and why anything did not. `mask_coverage` is null when no box was produced; it is never defaulted to 0. */
+export interface EvidenceDetectionSummary {
+  status: "ran" | "not_run";
+  engine?: string;
+  inner_detector?: string;
+  images?: number;
+  tiles_processed?: number;
+  subparts_detected?: number;
+  raw_candidates?: number;
+  refined_boxes?: number;
+  masks?: number;
+  mask_coverage?: number | null;
+  segmentation?: "ran" | "unavailable";
+  segmentation_reason?: string | null;
+  reason?: string;
+}
+
 export interface EvidenceReadiness {
+  detection?: EvidenceDetectionSummary;
   stage_status: string;
   reason?: string;
   physical_accuracy: string; // "NOT_MEASURED" unless a benchmark says otherwise

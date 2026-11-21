@@ -254,6 +254,10 @@ def test_run_for_job_executes_the_pipeline_and_reports_what_it_did(tmp_path, pho
     assert {o.quantity for o in m.store.query()} == {"bbox", "detection_pipeline_summary"}
     assert any(run.engine_id == pdet.ENGINE_ID and run.status == "succeeded" for run in m.runs())  # the manager recorded the pipeline run
     assert m.verify() == []
+    rd = ew.readiness(_root(tmp_path))["detection"]  # the frontend's view, read back from disk
+    assert rd["status"] == "ran" and rd["engine"] == pdet.ENGINE_ID and rd["inner_detector"] == "scene_det" and rd["images"] == 1
+    assert rd["tiles_processed"] == dp["tiles_processed"] and rd["masks"] == dp["segmentation"]["masks"] and rd["mask_coverage"] == 1.0
+    assert rd["segmentation"] == "ran" and rd["segmentation_reason"] is None
 
 
 def test_run_for_job_marks_a_run_without_masks_partial_not_complete(tmp_path, photo):
@@ -264,6 +268,8 @@ def test_run_for_job_marks_a_run_without_masks_partial_not_complete(tmp_path, ph
 
     r = _job(tmp_path, photo, nosam, detection="pipeline", pipeline_options=OPTS)
     assert r["status"] == "partial" and any("segmentation did not run" in p for p in r["detection_pipeline"]["problems"])
+    rd = ew.readiness(_root(tmp_path))["detection"]
+    assert rd["segmentation"] == "unavailable" and "checkpoint missing" in rd["segmentation_reason"] and rd["masks"] == 0
 
 
 def test_run_for_job_falls_back_to_real_whole_image_detectors_and_says_so(tmp_path, photo):
@@ -282,6 +288,7 @@ def test_run_for_job_falls_back_to_real_whole_image_detectors_and_says_so(tmp_pa
 def test_caller_supplied_engines_keep_the_legacy_path_by_default(tmp_path, photo):
     r = _job(tmp_path, photo, _inputs())
     assert r["detection_pipeline"]["mode"] == "legacy" and r["detection_pipeline"]["problems"] == []
+    assert ew.readiness(_root(tmp_path))["detection"]["status"] == "not_run"  # no summary evidence: said so, not defaulted
 
 
 # ---------------------------------------------------------------------------------------------------------- lifting side

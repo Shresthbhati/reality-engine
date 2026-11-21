@@ -23,6 +23,28 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 
+def _peak_memory() -> dict:
+    """Measured, not estimated: the process's peak working set (this process ran the whole job) and torch's peak CUDA allocation.
+    Subprocess work (COLMAP) is not included; ``None`` = this platform does not report it."""
+    out: dict = {"peak_rss_mb": None, "peak_cuda_allocated_mb": None, "scope": "this python process (COLMAP subprocess excluded)"}
+    try:
+        import psutil
+
+        mi = psutil.Process().memory_info()
+        peak = getattr(mi, "peak_wset", None) or getattr(mi, "rss", None)
+        out["peak_rss_mb"] = round(peak / 2**20, 1) if peak else None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            out["peak_cuda_allocated_mb"] = round(torch.cuda.max_memory_allocated() / 2**20, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def main(frames: Path, out: Path) -> int:
     photos = sorted(frames.glob("frame-*.color.png"))
     if len(photos) < 6:
@@ -71,7 +93,7 @@ def main(frames: Path, out: Path) -> int:
             time.sleep(5)
         rd = c.get(f"/api/worlds/{wid}/evidence-world/{jid}/readiness", headers=H).json()
         run = {"job_id": jid, "world_id": wid, "session_id": sid, "tenant": "tenant-office7", "hashes": hashes,
-               "seconds": round(time.time() - t0, 1), "stage_timeline": stages, "job": job, "readiness": rd}
+               "seconds": round(time.time() - t0, 1), "stage_timeline": stages, "job": job, "readiness": rd, "peak_memory": _peak_memory()}
     (out / "run.json").write_text(json.dumps(run, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"status": job.get("status"), "seconds": run["seconds"], "readiness_world": rd.get("world")}, default=str))
     return 0 if job.get("status") in ("succeeded", "partial") else 1

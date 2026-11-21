@@ -153,7 +153,22 @@ export default function EvidenceRunPanel({
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
             <dt>Stage</dt><dd>{readiness.stage_status}</dd>
             <dt>Photographs</dt><dd>{readiness.evidence_received?.sources ?? "—"}</dd>
-            <dt>Entities with position</dt><dd>{w?.entities_with_position ?? 0} / {w?.entities ?? 0}</dd>
+            <dt>Entities with position</dt><dd>{w?.entities_with_position ?? "—"} / {w?.entities ?? "—"}</dd>
+            <dt>Entities with geometry</dt><dd>{w?.entities_with_geometry ?? "—"} / {w?.entities ?? "—"}</dd>
+            <dt>Detection</dt>
+            <dd data-testid="evidence-detection">
+              {readiness.detection?.status === "ran"
+                ? `${readiness.detection.refined_boxes ?? "—"} boxes from ${readiness.detection.raw_candidates ?? "—"} candidates; ${readiness.detection.tiles_processed ?? "—"} tiles, ${readiness.detection.subparts_detected ?? "—"} sub-parts`
+                : readiness.detection ? `not run${readiness.detection.reason ? `: ${readiness.detection.reason}` : ""}` : "—"}
+            </dd>
+            <dt>Masks</dt>
+            <dd>
+              {readiness.detection?.status === "ran"
+                ? readiness.detection.segmentation === "ran"
+                  ? `${readiness.detection.masks ?? "—"} (${readiness.detection.mask_coverage == null ? "—" : `${Math.round(readiness.detection.mask_coverage * 100)}%`} of boxes)`
+                  : `unavailable: ${readiness.detection.segmentation_reason ?? "no reason recorded"}`
+                : "—"}
+            </dd>
             <dt>Rejected predictions</dt><dd>{readiness.rejected_predictions ?? "—"}</dd>
             <dt>Scale</dt><dd>{readiness.scale?.status ?? "—"}</dd>
             <dt>Physical accuracy</dt><dd>{readiness.physical_accuracy}</dd>

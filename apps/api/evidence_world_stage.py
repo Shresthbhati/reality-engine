@@ -398,6 +398,23 @@ def head_version(root: Path) -> str | None:
     return versions[-1].version_id if versions else None
 
 
+def _detection_readiness(m: Any) -> dict[str, Any]:
+    """The detection stage as the PERSISTED evidence shows it (one ``detection_pipeline_summary`` per image). No summary means the
+    pipeline did not run for this run; coverage is None (never 0) when no box exists."""
+    sums = list(m.store.query(quantity="detection_pipeline_summary"))
+    if not sums:
+        return {"status": "not_run", "reason": "no detection-pipeline evidence: any detections came from whole-image detectors"}
+    stats = [s.predicted.get("execution_stats") or {} for s in sums]
+    segs = [s.predicted.get("segmentation") or {} for s in sums]
+    boxes, masks = sum(int(x.get("refined_box_count", 0)) for x in stats), sum(int(g.get("masks", 0)) for g in segs)
+    return {"status": "ran", "engine": sums[0].engine_id, "inner_detector": sums[0].predicted.get("inner_detector"), "images": len(sums),
+            "tiles_processed": sum(int(x.get("tiles_processed", 0)) for x in stats), "subparts_detected": sum(int(x.get("subparts_detected", 0)) for x in stats),
+            "raw_candidates": sum(int(x.get("raw_detection_count", 0)) for x in stats), "refined_boxes": boxes, "masks": masks,
+            "mask_coverage": round(masks / boxes, 4) if boxes else None,
+            "segmentation": "ran" if all(g.get("status") == "ran" for g in segs) else "unavailable",
+            "segmentation_reason": next((g.get("reason") for g in segs if g.get("status") != "ran"), None)}
+
+
 def readiness(root: Path) -> dict[str, Any]:
     """What the frontend may honestly say about one run, derived ONLY from what is persisted on disk (snapshot, evidence matrix,
     persisted world). Nothing is estimated, seeded or defaulted: an unreadable or missing piece is reported as such."""
@@ -422,6 +439,7 @@ def readiness(root: Path) -> dict[str, Any]:
             s = str((o.predicted or {}).get("scale_state", "unknown"))
             scale[s] = scale.get(s, 0) + 1
         out["rejected_predictions"] = len(m.rejected())
+        out["detection"] = _detection_readiness(m)
     except Exception as exc:  # noqa: BLE001
         out["scale_error"] = f"{type(exc).__name__}: {exc}"
     out["scale"] = {"records_by_scale_state": scale,

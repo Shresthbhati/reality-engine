@@ -23,7 +23,6 @@ import numpy as np
 from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialEntity3D
 from engine.multiengine.spatial_intelligence.taxonomy import (
     are_semantically_compatible,
-    resolve_taxonomy_class,
 )
 from world_ir.camera import PinholeCamera, Vec3
 
@@ -47,6 +46,9 @@ class CrossViewRayCandidate:
     camera: PinholeCamera
     lifted_entity: SpatialEntity3D | None = None
     appearance_features: tuple[float, ...] = ()
+    scale_state: str = "relative_depth"
+    scale_units: str = "relative"
+    is_physically_metric: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,17 +75,20 @@ class PhysicalMergedEntity:
     primary_class: str
     member_observation_ids: tuple[str, ...]
     sources: tuple[str, ...]
-    position_m: tuple[float, float, float]
-    dimensions_m: tuple[float, float, float]
+    position_m: tuple[float, float, float] | None
+    dimensions_m: tuple[float, float, float] | None
     orientation_quat_wxyz: tuple[float, float, float, float]
     surface_normal: tuple[float, float, float] | None
     confidence: float
     reprojection_residual_px: float
     ray_triangulation_residual_m: float
     is_multiview: bool
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED"
-    scale_units: str = "METRES"
+    scale_state: str = "relative_depth"
+    scale_units: str = "relative"
     is_physically_metric: bool = False
+    dimension_status: str = "UNKNOWN"  # DIRECT, ESTIMATED, PRIOR, UNKNOWN
+    covariance_xyz: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]] | None = None
+    competing_hypotheses: tuple[dict[str, Any], ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -92,8 +97,9 @@ class PhysicalMergedEntity:
             "primary_class": self.primary_class,
             "member_observation_ids": list(self.member_observation_ids),
             "sources": list(self.sources),
-            "position_m": [round(c, 4) for c in self.position_m],
-            "dimensions_m": [round(d, 4) for d in self.dimensions_m],
+            "position_m": [round(c, 4) for c in self.position_m] if self.position_m is not None else None,
+            "dimensions_m": [round(d, 4) for d in self.dimensions_m] if self.dimensions_m is not None else None,
+            "dimension_status": self.dimension_status,
             "orientation_quat_wxyz": [round(q, 4) for q in self.orientation_quat_wxyz],
             "surface_normal": [round(n, 4) for n in self.surface_normal] if self.surface_normal else None,
             "confidence": round(self.confidence, 4),
@@ -103,6 +109,8 @@ class PhysicalMergedEntity:
             "scale_state": self.scale_state,
             "scale_units": self.scale_units,
             "is_physically_metric": self.is_physically_metric,
+            "covariance_xyz": [[round(v, 6) for v in row] for row in self.covariance_xyz] if self.covariance_xyz is not None else None,
+            "competing_hypotheses": list(self.competing_hypotheses),
             "details": self.details,
         }
 
@@ -153,6 +161,9 @@ def build_camera_ray(
     camera: PinholeCamera,
     lifted_entity: SpatialEntity3D | None = None,
     appearance_features: Sequence[float] | None = None,
+    scale_state: str | None = None,
+    scale_units: str | None = None,
+    is_physically_metric: bool | None = None,
 ) -> CrossViewRayCandidate:
     """Builds a CrossViewRayCandidate from a 2D bounding box and calibrated camera."""
     u_mid = 0.5 * (float(box_2d[0]) + float(box_2d[2]))
@@ -177,6 +188,19 @@ def build_camera_ray(
 
     cam_pos = np.array([camera.extrinsics.position.x, camera.extrinsics.position.y, camera.extrinsics.position.z], dtype=np.float64)
 
+    eff_scale_state = (
+        scale_state if scale_state is not None
+        else (lifted_entity.scale_state if lifted_entity is not None else "relative_depth")
+    )
+    eff_scale_units = (
+        scale_units if scale_units is not None
+        else (lifted_entity.scale_units if lifted_entity is not None else "relative")
+    )
+    eff_is_metric = (
+        is_physically_metric if is_physically_metric is not None
+        else (lifted_entity.is_physically_metric if lifted_entity is not None else False)
+    )
+
     return CrossViewRayCandidate(
         observation_id=observation_id,
         source_image_id=source_image_id,
@@ -187,7 +211,157 @@ def build_camera_ray(
         camera=camera,
         lifted_entity=lifted_entity,
         appearance_features=tuple(appearance_features or ()),
+        scale_state=eff_scale_state,
+        scale_units=eff_scale_units,
+        is_physically_metric=eff_is_metric,
     )
+
+
+def triangulate_multiview_rays(
+    rays: Sequence[CrossViewRayCandidate],
+    max_condition_number: float = 1000.0,
+    min_triangulation_angle_deg: float = 2.0,
+    min_depth_m: float = 0.05,
+    max_depth_m: float = 40.0,
+    huber_delta_m: float = 0.20,
+) -> tuple[tuple[float, float, float] | None, float, float, np.ndarray | None, dict[str, Any]]:
+    """Robust N-view ray triangulation using SVD/least-squares with Huber re-weighting.
+
+    Solves for 3D point p minimizing sum of squared perpendicular distances to rays:
+        min_p sum_i ||(I - d_i d_i^T) (p - c_i)||^2
+        => (sum_i P_i) p = sum_i P_i c_i, where P_i = I - d_i d_i^T.
+
+    Returns:
+        (triangulated_position_tuple, mean_ray_residual_m, mean_reprojection_px, covariance_3x3, metadata)
+    """
+    n = len(rays)
+    if n < 2:
+        return None, 0.0, 0.0, None, {"fail_reason": "fewer_than_2_rays"}
+
+    # 1. Check max pairwise angle
+    max_angle_deg = 0.0
+    for i in range(n):
+        for j in range(i + 1, n):
+            cos_a = float(np.dot(rays[i].direction, rays[j].direction))
+            cos_a = max(-1.0, min(1.0, cos_a))
+            deg = math.degrees(math.acos(cos_a))
+            if deg > max_angle_deg:
+                max_angle_deg = deg
+
+    if max_angle_deg < min_triangulation_angle_deg:
+        return None, 0.0, 0.0, None, {
+            "fail_reason": "near_parallel_rays",
+            "max_angle_deg": round(max_angle_deg, 2),
+        }
+
+    # 2. Build linear system A p = b
+    A = np.zeros((3, 3), dtype=np.float64)
+    b = np.zeros(3, dtype=np.float64)
+    P_matrices: list[np.ndarray] = []
+
+    for r in rays:
+        d = r.direction / np.linalg.norm(r.direction)
+        c = r.origin
+        P_i = np.eye(3, dtype=np.float64) - np.outer(d, d)
+        P_matrices.append(P_i)
+        A += P_i
+        b += P_i @ c
+
+    # 3. Check condition number of A
+    try:
+        _, S, _ = np.linalg.svd(A)
+        cond_num = float(S[0] / max(1e-12, S[2]))
+        if S[2] < 1e-4 or cond_num > max_condition_number:
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "ill_conditioned_geometry",
+                "condition_number": round(cond_num, 2),
+            }
+        p_init = np.linalg.solve(A, b)
+    except Exception as e:
+        return None, 0.0, 0.0, None, {"fail_reason": f"solver_error: {e}"}
+
+    # 4. Check positive depth along all rays
+    depths: list[float] = []
+    for r in rays:
+        depth = float(np.dot(p_init - r.origin, r.direction))
+        depths.append(depth)
+        if depth < min_depth_m:
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "ray_intersection_behind_camera",
+                "depths": [round(d, 3) for d in depths],
+            }
+        if depth > max_depth_m:
+            return None, 0.0, 0.0, None, {
+                "fail_reason": "excessive_scene_depth",
+                "depths": [round(d, 3) for d in depths],
+            }
+
+    p_sol = p_init
+
+    # 5. Huber re-weighting if n >= 3
+    if n >= 3:
+        A_w = np.zeros((3, 3), dtype=np.float64)
+        b_w = np.zeros(3, dtype=np.float64)
+        for i, r in enumerate(rays):
+            c = r.origin
+            P_i = P_matrices[i]
+            res_vec = P_i @ (p_init - c)
+            res_norm = float(np.linalg.norm(res_vec))
+            w = huber_delta_m / res_norm if res_norm > huber_delta_m else 1.0
+            A_w += w * P_i
+            b_w += w * (P_i @ c)
+        try:
+            p_hub = np.linalg.solve(A_w, b_w)
+            all_valid = True
+            for r in rays:
+                d = float(np.dot(p_hub - r.origin, r.direction))
+                if d < min_depth_m or d > max_depth_m:
+                    all_valid = False
+                    break
+            if all_valid:
+                p_sol = p_hub
+        except Exception:
+            pass
+
+    # 6. Reprojection error across all supporting views
+    p_vec = Vec3(float(p_sol[0]), float(p_sol[1]), float(p_sol[2]))
+    reproj_errors: list[float] = []
+    for r in rays:
+        uv = r.camera.project(p_vec)
+        if uv is None:
+            return None, 0.0, 0.0, None, {"fail_reason": "reprojection_behind_camera"}
+        cx = 0.5 * (r.box_2d[0] + r.box_2d[2])
+        cy = 0.5 * (r.box_2d[1] + r.box_2d[3])
+        err = math.hypot(uv[0] - cx, uv[1] - cy)
+        reproj_errors.append(err)
+
+    mean_reproj = float(np.mean(reproj_errors)) if reproj_errors else 0.0
+
+    # 7. Ray residuals
+    ray_residuals: list[float] = []
+    for i, r in enumerate(rays):
+        P_i = P_matrices[i]
+        res = float(np.linalg.norm(P_i @ (p_sol - r.origin)))
+        ray_residuals.append(res)
+    mean_ray_res = float(np.mean(ray_residuals)) if ray_residuals else 0.0
+
+    # 8. Spatial Covariance Matrix
+    sigma_ang = 0.005
+    A_reg = A + 1e-4 * np.eye(3)
+    inv_A = np.linalg.inv(A_reg)
+    mean_depth = float(np.mean(depths))
+    cov_3x3 = (sigma_ang * mean_depth) ** 2 * inv_A
+
+    p_tuple = (float(p_sol[0]), float(p_sol[1]), float(p_sol[2]))
+    meta = {
+        "depths": [round(d, 3) for d in depths],
+        "condition_number": round(cond_num, 2),
+        "max_angle_deg": round(max_angle_deg, 2),
+        "reproj_errors_px": [round(e, 2) for e in reproj_errors],
+        "ray_residuals_m": [round(r, 4) for r in ray_residuals],
+    }
+
+    return p_tuple, mean_ray_res, mean_reproj, cov_3x3, meta
 
 
 def evaluate_cross_view_pair(
@@ -208,7 +382,20 @@ def evaluate_cross_view_pair(
             reason="same_image_conflict",
         )
 
-    # 2. Semantic compatibility
+    # 2. Scale state compatibility check
+    sa = ray_a.scale_state.lower()
+    sb = ray_b.scale_state.lower()
+    if sa != sb and "unknown" not in (sa, sb):
+        return PairScore(
+            obs_a_id=ray_a.observation_id,
+            obs_b_id=ray_b.observation_id,
+            score=0.0,
+            outcome=AssociationOutcome.REFUSED,
+            reason="incompatible_scale_states",
+            basis={"scale_a": ray_a.scale_state, "scale_b": ray_b.scale_state},
+        )
+
+    # 3. Semantic compatibility
     if not are_semantically_compatible(ray_a.class_name, ray_b.class_name):
         return PairScore(
             obs_a_id=ray_a.observation_id,
@@ -219,7 +406,7 @@ def evaluate_cross_view_pair(
             basis={"class_a": ray_a.class_name, "class_b": ray_b.class_name},
         )
 
-    # 3. Baseline check: cameras must not be co-located
+    # 4. Baseline check: cameras must not be co-located
     cam_baseline = float(np.linalg.norm(ray_a.origin - ray_b.origin))
     if cam_baseline < 0.05:
         # Near-zero baseline, cannot triangulate rays
@@ -232,13 +419,35 @@ def evaluate_cross_view_pair(
             basis={"baseline_m": round(cam_baseline, 4)},
         )
 
-    # 4. Ray-Ray CPA and Triangulation
+    # 5. Minimum triangulation angle check: rays must not be near-parallel
+    cos_angle = float(np.dot(ray_a.direction, ray_b.direction))
+    cos_angle = max(-1.0, min(1.0, cos_angle))
+    angle_deg = math.degrees(math.acos(cos_angle))
+    if angle_deg < 2.0:
+        return PairScore(
+            obs_a_id=ray_a.observation_id,
+            obs_b_id=ray_b.observation_id,
+            score=0.0,
+            outcome=AssociationOutcome.REFUSED,
+            reason="near_parallel_rays",
+            basis={"angle_deg": round(angle_deg, 2)},
+        )
+
+    # 6. Ray-Ray CPA and Triangulation
     dist_ray, s_a, t_b, p_a, p_b = compute_ray_cpa(
         ray_a.origin, ray_a.direction, ray_b.origin, ray_b.direction
     )
 
-    # Rays must intersect in FRONT of both cameras (positive depth parameter)
-    if s_a <= 0.1 or t_b <= 0.1:
+    # Rays must intersect in FRONT of both cameras (positive depth parameter > 0.05m)
+    if s_a <= 0.05 or t_b <= 0.05:
+        return PairScore(
+            obs_a_id=ray_a.observation_id,
+            obs_b_id=ray_b.observation_id,
+            score=0.0,
+            outcome=AssociationOutcome.REFUSED,
+            reason="ray_intersection_behind_camera",
+            basis={"s_depth_a": round(s_a, 3), "t_depth_b": round(t_b, 3)},
+        )
         return PairScore(
             obs_a_id=ray_a.observation_id,
             obs_b_id=ray_b.observation_id,
@@ -499,45 +708,98 @@ class MultiViewIntelligenceEngine:
             sources = tuple(sorted(set(m.source_image_id for m in members)))
             is_multi = len(sources) >= 2
 
-            # Compute reconciled position
-            pts_pool = cluster_positions.get(root_id, [])
-            if pts_pool:
-                arr = np.array(pts_pool, dtype=np.float64)
-                fused_pos = tuple(float(c) for c in np.median(arr, axis=0))
-            else:
-                first_m = members[0]
-                p_approx = first_m.origin + 2.0 * first_m.direction
-                fused_pos = (float(p_approx[0]), float(p_approx[1]), float(p_approx[2]))
+            # Compute reconciled position using multi-view triangulation when available
+            fused_pos: tuple[float, float, float] | None = None
+            fused_cov: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]] | None = None
+            mean_ray_res = 0.0
+            mean_rep_res = 0.0
+            triangulation_meta: dict[str, Any] = {}
 
-            # Dimensions
-            dims_list = [m.lifted_entity.dimensions_m for m in members if m.lifted_entity]
+            if is_multi:
+                p_tri, r_res, rep_res, cov_mat, meta = triangulate_multiview_rays(members)
+                if p_tri is not None:
+                    fused_pos = p_tri
+                    mean_ray_res = r_res
+                    mean_rep_res = rep_res
+                    triangulation_meta = meta
+                    if cov_mat is not None:
+                        fused_cov = (
+                            (float(cov_mat[0, 0]), float(cov_mat[0, 1]), float(cov_mat[0, 2])),
+                            (float(cov_mat[1, 0]), float(cov_mat[1, 1]), float(cov_mat[1, 2])),
+                            (float(cov_mat[2, 0]), float(cov_mat[2, 1]), float(cov_mat[2, 2])),
+                        )
+
+            # If multi-ray triangulation was not possible, check lifted observations or pairwise pools
+            if fused_pos is None:
+                lifted_positions = [
+                    m.lifted_entity.position_m for m in members
+                    if m.lifted_entity and m.lifted_entity.position_m is not None
+                ]
+                if lifted_positions:
+                    arr = np.array(lifted_positions, dtype=np.float64)
+                    fused_pos = tuple(float(c) for c in np.median(arr, axis=0))
+                    for m in members:
+                        if m.lifted_entity and m.lifted_entity.covariance_xyz:
+                            fused_cov = m.lifted_entity.covariance_xyz
+                            break
+                elif cluster_positions.get(root_id):
+                    arr = np.array(cluster_positions[root_id], dtype=np.float64)
+                    fused_pos = tuple(float(c) for c in np.median(arr, axis=0))
+                else:
+                    # ZERO FABRICATION: Missing 3D position remains None
+                    fused_pos = None
+
+            # Dimensions: observed only, never taxonomy min as reconstructed measurement
+            dims_list = [
+                m.lifted_entity.dimensions_m for m in members
+                if m.lifted_entity and m.lifted_entity.dimensions_m is not None
+            ]
             if dims_list:
                 d_arr = np.array(dims_list, dtype=np.float64)
-                fused_dims = tuple(float(d) for d in np.median(d_arr, axis=0))
+                fused_dims: tuple[float, float, float] | None = tuple(float(d) for d in np.median(d_arr, axis=0))
+                dim_status = "DIRECT" if any(m.lifted_entity.mask_pixels_count > 50 for m in members if m.lifted_entity) else "ESTIMATED"
             else:
-                tax_node = resolve_taxonomy_class(primary_cls)
-                fused_dims = tax_node.min_dimensions_m
+                fused_dims = None
+                dim_status = "UNKNOWN"
 
-            # Orientation & Normal & Scale contract
+            # Orientation & Normal
             orient = (1.0, 0.0, 0.0, 0.0)
             norm = None
-            scale_state = "SYNTHETIC_SCALE_ALIGNED"
-            is_metric = False
             for m in members:
-                if m.lifted_entity:
-                    scale_state = m.lifted_entity.scale_state
-                    is_metric = m.lifted_entity.is_physically_metric
-                    if m.lifted_entity.surface_normal:
-                        norm = m.lifted_entity.surface_normal
-                        orient = m.lifted_entity.orientation_quat_wxyz
-                        break
+                if m.lifted_entity and m.lifted_entity.surface_normal:
+                    norm = m.lifted_entity.surface_normal
+                    orient = m.lifted_entity.orientation_quat_wxyz
+                    break
 
-            mean_ray_res = float(np.mean(cluster_ray_residuals[root_id])) if cluster_ray_residuals[root_id] else 0.0
-            mean_rep_res = float(np.mean(cluster_reproj_residuals[root_id])) if cluster_reproj_residuals[root_id] else 0.0
+            # Scale state derivation: strict preservation across members, never default to synthetic
+            member_scales = [m.scale_state.lower() for m in members]
+            if any(s == "metric_anchored" for s in member_scales):
+                scale_state = "metric_anchored"
+                scale_units = "m"
+                is_metric = True
+            elif any(s == "synthetic_scale_aligned" for s in member_scales):
+                scale_state = "synthetic_scale_aligned"
+                scale_units = "synthetic_m"
+                is_metric = False
+            elif any(s == "sfm_gauge" for s in member_scales):
+                scale_state = "sfm_gauge"
+                scale_units = "sfm_units"
+                is_metric = False
+            else:
+                scale_state = "relative_depth"
+                scale_units = "relative"
+                is_metric = False
+
+            if not mean_ray_res and cluster_ray_residuals[root_id]:
+                mean_ray_res = float(np.mean(cluster_ray_residuals[root_id]))
+            if not mean_rep_res and cluster_reproj_residuals[root_id]:
+                mean_rep_res = float(np.mean(cluster_reproj_residuals[root_id]))
 
             # Confidence boosted by multi-view evidence
             base_conf = 0.6 if is_multi else 0.45
             calibrated_conf = min(0.95, base_conf + 0.15 * (len(sources) - 1))
+            if mean_rep_res > 50.0:
+                calibrated_conf = max(0.2, calibrated_conf - 0.2)
 
             merged_entities.append(PhysicalMergedEntity(
                 canonical_entity_id=f"phys_{root_id}",
@@ -553,11 +815,14 @@ class MultiViewIntelligenceEngine:
                 ray_triangulation_residual_m=mean_ray_res,
                 is_multiview=is_multi,
                 scale_state=scale_state,
-                scale_units="METRES",
+                scale_units=scale_units,
                 is_physically_metric=is_metric,
+                dimension_status=dim_status,
+                covariance_xyz=fused_cov,
                 details={
                     "view_count": len(sources),
                     "observation_count": len(member_ids),
+                    "triangulation_meta": triangulation_meta,
                 },
             ))
 

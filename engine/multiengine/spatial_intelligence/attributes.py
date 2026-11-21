@@ -10,7 +10,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -134,6 +134,7 @@ class EntityVisualAttributes:
     condition: ObjectCondition = ObjectCondition.UNKNOWN
     is_reflective: bool = False
     is_transparent: bool = False
+    confidence_basis: str = "deterministic_cielab_texture_analysis"
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -148,8 +149,36 @@ class EntityVisualAttributes:
             "condition": self.condition.value,
             "is_reflective": self.is_reflective,
             "is_transparent": self.is_transparent,
+            "confidence_basis": self.confidence_basis,
             "details": self.details,
         }
+
+
+@runtime_checkable
+class VisualAttributePredictor(Protocol):
+    """Abstract protocol for model-backed visual attribute predictors (e.g. CLIP, ViT, SAM-PBR)."""
+
+    def predict_attributes(
+        self,
+        image_rgb: np.ndarray,
+        box_2d: Sequence[float],
+        mask_2d: np.ndarray | None = None,
+        class_hint: str = "",
+    ) -> EntityVisualAttributes:
+        ...
+
+
+class DeterministicAttributePredictor:
+    """Evidence-based attribute predictor computing CIELAB colors, gradient texture, and specular reflectance."""
+
+    def predict_attributes(
+        self,
+        image_rgb: np.ndarray,
+        box_2d: Sequence[float],
+        mask_2d: np.ndarray | None = None,
+        class_hint: str = "",
+    ) -> EntityVisualAttributes:
+        return extract_visual_attributes(image_rgb, box_2d, mask_2d=mask_2d, class_hint=class_hint)
 
 
 def extract_visual_attributes(

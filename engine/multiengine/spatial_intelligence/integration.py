@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -73,7 +74,8 @@ class SpatialSceneResult:
     association_decisions: tuple[PairScore, ...]
     refusal_reasons: dict[str, int]
     active_capture_plan: ActiveCapturePlan | None = None
-    scale_units: str = "METRES"
+    scale_state: str = "relative_depth"
+    scale_units: str = "relative"
     is_physically_metric: bool = False
 
     def to_world_ir(self, world_id: str = "world_spatial_intelligence") -> WorldIR:
@@ -93,11 +95,9 @@ class SpatialSceneResult:
                 )
             )
 
-            w_ent = Entity(
-                id=rent.canonical_entity_id,
-                type=ent_type,
-                name=tax_cls.name.replace("_", " ").title(),
-                transform={
+            transform: dict[str, Any] | None = None
+            if rent.position_m is not None:
+                transform = {
                     "position": {"x": rent.position_m[0], "y": rent.position_m[1], "z": rent.position_m[2]},
                     "orientation": {
                         "w": rent.orientation_quat_wxyz[0],
@@ -106,20 +106,28 @@ class SpatialSceneResult:
                         "z": rent.orientation_quat_wxyz[3],
                     },
                     "frame_id": "world",
-                },
+                }
+
+            w_ent = Entity(
+                id=rent.canonical_entity_id,
+                type=ent_type,
+                name=tax_cls.name.replace("_", " ").title(),
+                transform=transform,
                 provenance=Provenance.RECONSTRUCTED,
                 confidence=rent.confidence,
                 confidence_basis="multiview_epipolar_triangulation_consensus",
                 custom_properties={
                     "taxonomy_id": tax_cls.taxonomy_id,
-                    "dimensions_w_d_h": list(rent.dimensions_m),
+                    "dimensions_w_d_h": list(rent.dimensions_m) if rent.dimensions_m is not None else None,
+                    "dimension_status": rent.dimension_status,
                     "is_multiview": rent.is_multiview,
                     "sources": list(rent.sources),
                     "member_observation_ids": list(rent.member_observation_ids),
                     "reprojection_residual_px": rent.reprojection_residual_px,
                     "ray_triangulation_residual_m": rent.ray_triangulation_residual_m,
-                    "scale_units": self.scale_units,
-                    "is_physically_metric": self.is_physically_metric,
+                    "scale_state": rent.scale_state,
+                    "scale_units": rent.scale_units,
+                    "is_physically_metric": rent.is_physically_metric,
                 },
             )
 
@@ -178,34 +186,39 @@ class SpatialSceneResult:
         """Emits standard Metric3DObservation records for the metric3d.v1 contract."""
         records: list[Metric3DObservation] = []
         for rent in self.merged_entities:
-            s_state = ScaleState.SYNTHETIC_SCALE_ALIGNED if not self.is_physically_metric else ScaleState.METRIC_ANCHORED
-            s_units = "synthetic_m" if not self.is_physically_metric else "m"
+            try:
+                s_state = ScaleState(rent.scale_state)
+            except Exception:
+                s_state = ScaleState.RELATIVE_DEPTH
+            s_units = rent.scale_units
 
-            # 3D Position
-            records.append(Metric3DObservation(
-                engine_id="spatial_intelligence",
-                architecture_id="epipolar_triangulation",
-                checkpoint_id="none",
-                source_id=rent.canonical_entity_id,
-                quantity="position",
-                scale_state=s_state,
-                units=s_units,
-                value=tuple(float(v) for v in rent.position_m),
-                frame="world:canonical",
-            ))
+            # 3D Position (only if observed or triangulated)
+            if rent.position_m is not None:
+                records.append(Metric3DObservation(
+                    engine_id="spatial_intelligence",
+                    architecture_id="epipolar_triangulation",
+                    checkpoint_id="none",
+                    source_id=rent.canonical_entity_id,
+                    quantity="position",
+                    scale_state=s_state,
+                    units=s_units,
+                    value=tuple(float(v) for v in rent.position_m),
+                    frame="world:canonical",
+                ))
 
-            # 3D Dimensions
-            records.append(Metric3DObservation(
-                engine_id="spatial_intelligence",
-                architecture_id="epipolar_triangulation",
-                checkpoint_id="none",
-                source_id=rent.canonical_entity_id,
-                quantity="bounds_extents",
-                scale_state=s_state,
-                units=s_units,
-                value=tuple(float(v) for v in rent.dimensions_m),
-                frame="world:canonical",
-            ))
+            # 3D Dimensions (only if observed)
+            if rent.dimensions_m is not None:
+                records.append(Metric3DObservation(
+                    engine_id="spatial_intelligence",
+                    architecture_id="epipolar_triangulation",
+                    checkpoint_id="none",
+                    source_id=rent.canonical_entity_id,
+                    quantity="bounds_extents",
+                    scale_state=s_state,
+                    units=s_units,
+                    value=tuple(float(v) for v in rent.dimensions_m),
+                    frame="world:canonical",
+                ))
 
         return records
 
@@ -215,8 +228,8 @@ def reconstruct_spatial_scene(
     cameras: Mapping[str, PinholeCamera],
     depth_maps: Mapping[str, np.ndarray] | None = None,
     images_rgb: Mapping[str, np.ndarray] | None = None,
-    scale_state: str = "SYNTHETIC_SCALE_ALIGNED",
-    scale_units: str = "METRES",
+    scale_state: str = "relative_depth",
+    scale_units: str = "relative",
     is_physically_metric: bool = False,
     max_ray_distance_m: float = 0.35,
     max_reproj_err_px: float = 100.0,
@@ -313,6 +326,7 @@ def reconstruct_spatial_scene(
         association_decisions=tuple(decisions),
         refusal_reasons=refusal_reasons,
         active_capture_plan=capture_plan,
+        scale_state=scale_state,
         scale_units=scale_units,
         is_physically_metric=is_physically_metric,
     )

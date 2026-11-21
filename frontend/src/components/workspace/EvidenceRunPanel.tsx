@@ -12,6 +12,7 @@ import {
   listEvidenceEntities,
   listEvidenceRuns,
   listRejectedPredictions,
+  exportEvidenceRun,
   reclassifyEvidenceEntity,
   type EvidenceEntityDetail,
   type EvidenceEntityRow,
@@ -77,6 +78,7 @@ export default function EvidenceRunPanel({
     };
   }, [worldId, runId]);
 
+  const [ackUnscaled, setAckUnscaled] = useState(false);
   const [corrected, setCorrected] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -169,6 +171,36 @@ export default function EvidenceRunPanel({
             >
               View this run&apos;s world in 3D
             </button>
+          )}
+          {readiness.export_ready && runId && (
+            <div className="flex flex-col gap-1 text-[11px]">
+              {!readiness.metric_export_ready && (
+                <label className="flex gap-1 items-center">
+                  <input type="checkbox" checked={ackUnscaled} onChange={(e) => setAckUnscaled(e.target.checked)} />
+                  I understand this geometry is not in metres
+                </label>
+              )}
+              <button
+                type="button"
+                className="rounded px-2 py-1 self-start disabled:opacity-50"
+                style={{ border: "1px solid var(--border)" }}
+                disabled={!readiness.metric_export_ready && !ackUnscaled}
+                onClick={() =>
+                  exportEvidenceRun(worldId, runId, "glb", ackUnscaled)
+                    .then((r) => {
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(r.blob);
+                      a.download = `${runId}.glb`;
+                      a.click();
+                      URL.revokeObjectURL(a.href);
+                      setNotice(`Exported ${r.exported} entities (${r.skipped} skipped). Scale: ${r.scale}.`);
+                    })
+                    .catch((e) => setError(err(e, "Export failed.")))
+                }
+              >
+                Export GLB
+              </button>
+            </div>
           )}
           {readiness.export_scale_warning && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{readiness.export_scale_warning}</p>}
           {readiness.export_not_ready_reason && <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{readiness.export_not_ready_reason}</p>}

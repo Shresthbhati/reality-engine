@@ -71,6 +71,26 @@ export async function listEvidenceEntities(worldId: string, runId: string): Prom
 }
 export const getEvidenceEntity = (worldId: string, runId: string, entityId: string) =>
   apiGet<EvidenceEntityDetail>(`${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}`);
+/** Export the run's persisted world. The server refuses (409) when nothing is positioned, and refuses non-metric geometry unless
+ * `acknowledgeUnscaled` is set. Returns the file plus what the server said about its scale. */
+export async function exportEvidenceRun(worldId: string, runId: string, format: string, acknowledgeUnscaled: boolean) {
+  const res = await fetch(`${base(worldId)}/${encodeURIComponent(runId)}/export`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ format, acknowledge_unscaled: acknowledgeUnscaled }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Export refused (HTTP ${res.status}).`);
+  }
+  return {
+    blob: await res.blob(),
+    scale: res.headers.get("x-export-scale") ?? "unknown",
+    exported: Number(res.headers.get("x-entities-exported") ?? 0),
+    skipped: Number(res.headers.get("x-entities-skipped") ?? 0),
+  };
+}
+
 export interface EvidenceCorrectionResult {
   version_id: string;
   parent_version_id: string;

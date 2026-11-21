@@ -530,3 +530,56 @@ per run, built from the Evidence Matrix by the canonical bridge).
   verified vertical-slice path; (c) leaves the user with two inconsistent worlds. RECOMMENDATION: (a), after the frame/unit check passes on a real
   furnished-interior run. DEPENDENCIES: that real run, which does not exist yet (see RELEASE.md open facts).
 
+
+### 8. Spatial intelligence in the production path (PR #361 deliverable; status: IMPLEMENTED + EXECUTED ON REAL DATA, not physically validated)
+
+**Execution trace (upload -> inspected world).** Every row is a call that runs in the real job; verified by the real run below.
+
+| # | Transition | File : function |
+|---|---|---|
+| 1 | upload | `apps/api/routes_misc.py:create_upload` (`POST /api/uploads`) |
+| 2 | start job | `apps/api/routes_sessions.py:reconstruct_session` -> `jobrunner.enqueue_job(RECONSTRUCT_SESSION)` |
+| 3 | ingestion / quality | `apps/api/jobs.py:seg_evidence_resolve`, `seg_evidence_quality` |
+| 4 | calibration + SfM | `jobs.py:seg_reconstruct` (COLMAP session) -> `_registered_camera_poses`, `_evidence_intrinsics`, `_evidence_observations` |
+| 5 | evidence stage | `jobs.py` (after `committing_version`) -> `apps/api/evidence_world_stage.py:run_for_job` |
+| 6 | **detector + segmenter + DetectionPipeline** | `run_for_job` -> `adapters/pipeline_detection.install` -> `ExecutionManager.run` -> `PipelineDetectionEngineAdapter.infer` -> `DetectionPipeline.run_pipeline` (tiles, sub-part crops, class filter, duplicate suppression, SAM masks via `AdapterSegmenter`) |
+| 7 | raw preservation | executor `_persist_matrix`: `bbox` (+RLE mask), per-image `detection_pipeline_summary` (every raw candidate with disposition), run output artifact, checkpoint sha256 in the run record |
+| 8 | depth + scale alignment | `run_for_job._depth_and_lift` -> `_run_depth` (cache) -> `lift_stage.align_depth_record` |
+| 9 | spatial lifting + multi-view association | `engine/multiengine/spatial_stage.py:run_spatial_stage` -> `spatial_intelligence.reconstruct_spatial_scene` (masks via `_lift_mask`); identity via `make_scene_pair_scorer` |
+| 10 | relationships | `make_scene_relations_fn` (structural kinds only, acyclic) |
+| 11 | canonical entities + WorldIR | `evidence_flow.run_evidence_flow` -> `derive_entities` -> `worldir_bridge.convert`; surfaces via `surfaces.build_surface_entities` |
+| 12 | validate + persist + reload | `evidence_world_stage.persist_world` (validate -> `WorldStore.save_version` -> verify -> reload-compare) |
+| 13 | API inspection | `apps/api/routes_evidence_world.py` (`/readiness`, `/entities`, `/world`, `/rejected`, correct, export, `/manifest`) |
+| 14 | frontend | `EvidenceRunPanel.tsx` -> `SpatialWorkstation` viewer (`onViewWorld`) |
+
+NOT INTEGRATED before this change: row 6 (`DetectionPipeline` had no production caller; the job ran whole-image detectors only, with no tiling, no micro crops and no segmentation) and mask use in row 9. Both are now wired. Still not integrated: `SpatialSceneResult.to_metric3d_observations` (its records lack `raw_artifact_ref`, so metric3d.v1 refuses them; the stage writes its own contract-valid records), and the vertical-slice world (section 7).
+
+**Guards.** `RuleBasedDetectorAdapter` / `ThresholdSegmenterAdapter` raise `ProductionAdapterError`; test-double predictions and virtual sources are refused; an unavailable detector makes the engine UNAVAILABLE; a missing or failed segmenter is recorded and the run is `partial` with the reason; if the pipeline cannot be installed the run falls back to the real whole-image detectors and says so (`partial`).
+
+**Shared interface (PROPOSED to Gemini; not yet acknowledged by Gemini).** (1) Scale provenance is per merged entity (`scale_state`, `scale_units`, `is_physically_metric`); one mapper `integration._metric3d_scale` turns it into `ScaleState` (gauge never becomes relative depth or metres). (2) A detection reaches association as `DetectionInput` built from a `bbox` observation (`mask_2d` decoded from its RLE). (3) `to_metric3d_observations` needs a `raw_artifact_ref`. (4) Whole-image labels from `clean_and_split_detection_label` split compound prompts ("electrical socket" -> "electrical", "socket") in the real run: owned by the detector adapter, needs a decision. Gemini's association maths was not changed.
+
+**Real production run (run 13).** 12 original Microsoft 7-Scenes "office" Kinect photographs (640x480, not committed); real COLMAP, depth_anything, OWL-ViT and SAM; `RE_DETECTION_TILE_SIZE=320` so tiling executes on small frames.
+
+| Measure | Observed |
+|---|---|
+| images / cameras registered | 12 / 12 |
+| detector passes / queries / tiles | 96 / 2,352 / 72 (sub-parts detected: 0; no host with taxonomy sub-parts was found) |
+| raw candidates -> refined boxes | 121 -> 46 |
+| segmentation coverage | 46 of 46 (SAM, 0 failures); masks used by lifting: 46 |
+| boxes by class | desk 21, chair 18, workstation 12, switchboard plate 7, wall 5, floor 4, air vent 3, cabinet 3, television 2, shelf 2, others 1-2 |
+| bbox evidence by engine | detection_pipeline 46; owlvit 25 and grounding_dino 20 (added by the refinement loop's reprocessing) |
+| lifted / rejected | 46 / 0; association: 34 merged, 99 refused |
+| entities | 19 (12 object, 7 surface); 8 multi-view, 11 single-view; 19 positioned, 19 with geometry; 0 withheld |
+| scale | `sfm_gauge` on all 19; physical accuracy NOT_MEASURED; not metric-exportable (export needs `acknowledge_unscaled`) |
+| validation | `valid`; persisted version `v-fcfc027e50294667`; fresh-process reload: 0 integrity problems |
+| runtime / peak memory | 462.6 s; peak RSS 4,702 MB, peak CUDA 1,074 MB (this process; COLMAP subprocess excluded) |
+
+Against Kinect ground truth (`validate_office7_world.py`; the ground truth is itself centimetre-level): camera-centre RMSE 5.5 cm; entity centre to nearest Kinect surface median 3.9 cm (84% within 10 cm, 100% within 25 cm); 6 planes with median plane residual 1.8-2.9 cm; lifted/Kinect extent ratio median 0.81, absolute error median 10.7 cm (p90 46 cm).
+
+**Honest reading.** The pipeline keeps far fewer objects than the previous whole-image run (12 object entities against 80): class-aware filtering cut 121 candidates to 46, so recall is lower; precision and class correctness are NOT measured (no class ground truth). The extent ratio fell from 1.02 to 0.81 because lifting now uses the SAM mask (the object) while the validator compares with the Kinect extent of the whole box region: the two numbers are not comparable, so no accuracy claim is made either way. 11 of 19 entities are single-view.
+
+**Found on the real run and fixed.** `refine_flow._consistency` raised `KeyError` once reprocessing ran, because lifted entities carry non-detection members (runs 11 and 12 failed; regression test `test_refinement_consistency_check_tolerates_derived_position_and_dimension_members`).
+
+**Tests.** `python -m pytest tests/test_detection_pipeline_engine.py tests/test_lift_stage_e2e.py tests/test_spatial_stage.py tests/test_run_manifest.py tests/test_depth_cache.py tests/test_surfaces.py tests/test_evidence_world_api.py tests/test_spatial_intelligence.py tests/test_multiengine_evidence_flow.py tests/test_colmap_observations.py tests/test_office7_validation.py -q -p no:cacheprovider` -> 113 passed, 1 skipped. The real run is reproduced by `RE_DETECTION_TILE_SIZE=320 RE_EVIDENCE_WORLD_DEPTH_ENGINES=depth_anything python benchmarks/measured_rooms/run_office7_production.py <frames> <out>` followed by `validate_office7_world.py <out> <frames>`.
+
+**Remaining blockers.** Class and identity accuracy unmeasured (needs labelled ground truth); metric scale needs an anchor; sub-part crops did not fire on this scene; compound-label splitting (above); Gemini acknowledgement of the shared interface; browser verification of the panel; merge of the evidence world into the committed world (section 7); the full test suite was not run.

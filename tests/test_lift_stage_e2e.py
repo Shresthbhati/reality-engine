@@ -224,3 +224,17 @@ def test_without_cameras_nothing_is_lifted_and_the_reason_is_recorded(tmp_path, 
     r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=photos, base=tmp_path / "ws",
                        flow_inputs=_inputs(_Depth(_per_view())), depth_engines=["fake_depth"], points3d=_points())
     assert "no registered cameras" in r["lifting"]["reason"] and r["lifting"]["status"] == "skipped"
+
+
+def test_surface_entities_cite_the_depth_records_they_were_fitted_from(tmp_path, photos):
+    from worldstore.store import WorldStore
+
+    r = _run(tmp_path, photos, _Depth(_per_view()), points3d=_points())
+    assert r["world_ir"]["status"] == "persisted"
+    store = WorldStore(_root(tmp_path) / ew.WORLDSTORE_REL)
+    w = store.load_version(ew.head_version(_root(tmp_path)))
+    surfaces = [e for k, e in w.entities.items() if k.startswith("surf-")]
+    assert surfaces
+    for e in surfaces:
+        assert e.observations and {o.metadata["quantity"] for o in e.observations} == {"depth_relative"}  # traceable to the aligned depth maps
+        assert all("fitted_from:aligned_depth_map" in o.metadata["roles"] for o in e.observations)

@@ -371,6 +371,72 @@ def test_split_refuses_bad_requests_and_cannot_empty_the_original(client, tmp_pa
     assert client.post(url, json={"detach_observation_ids": every_bbox[:1]}, headers=B).status_code in (403, 404)
 
 
+def _commit_head(tmp_path, wid, version_id="v-head1"):
+    """A committed HEAD for the world (a small wall/door world), written the way the app does: WorldStore version + DB mirror row + HEAD pointer."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from apps.api.models import World, WorldVersion
+    from tests.test_world_proposals import base_world
+    from worldstore.store import WorldStore
+
+    w = base_world()
+    w.id = wid
+    stored = WorldStore(tmp_path / "ws").save_version(w, parent=None, version_id=version_id)
+    eng = create_engine(f"sqlite:///{(tmp_path / 'app.db').as_posix()}")
+    with Session(eng) as db:
+        db.add(WorldVersion(id=stored.version_id, world_id=wid, artifact_uri=stored.artifact_uri, artifact_hash=stored.artifact_hash,
+                            source_session_ids=[], changed_entity_ids=[], changed_geometry_ids=[], label="as-built"))
+        db.flush()
+        db.get(World, wid).current_version_id = stored.version_id
+        db.commit()
+    eng.dispose()
+    return version_id
+
+
+def test_propose_is_refused_until_the_frame_is_proven_and_never_commits(client, tmp_path):
+    from apps.api import evidence_world_stage as ew
+
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    url = _url(wid, "run-c", "propose")
+    assert client.post(url, json={}, headers=A).status_code == 409  # no committed version at all
+    head = _commit_head(tmp_path, wid)
+    r = client.post(url, json={}, headers=A)
+    assert r.status_code == 409 and "frame not proven" in r.json()["detail"]  # HEAD exists but nothing ties this run to it
+    assert ew.record_committed_version("tenant-a", wid, "run-c", "v-some-other-version", base=tmp_path / "ws")
+    assert client.post(url, json={}, headers=A).status_code == 409  # the run accompanied a different version than HEAD
+    assert client.get(f"/api/worlds/{wid}/proposals", headers=A).json()["proposals"] == []
+    assert client.post(url, json={}, headers=B).status_code in (403, 404)
+    assert head
+
+
+def test_propose_then_accept_adds_the_evidence_entities_and_leaves_heads_own_untouched(client, tmp_path):
+    from apps.api import evidence_world_stage as ew
+    from worldstore.store import WorldStore
+
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    head = _commit_head(tmp_path, wid)
+    assert ew.record_committed_version("tenant-a", wid, "run-c", head, base=tmp_path / "ws")
+    r = client.post(_url(wid, "run-c", "propose"), json={"note": "promote"}, headers=A)
+    assert r.status_code == 201, r.text
+    out = r.json()
+    ev_ids = set(client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"])
+    prop = out["proposal"]
+    assert out["added_entities"] == len(ev_ids) and out["frame_check"]["head_version"] == head
+    assert {a["entity_id"] for a in prop["assessments"]} == ev_ids and {a["kind"] for a in prop["assessments"]} == {"added"}
+    # nothing is committed by proposing: HEAD is still the original version
+    assert [v["version_id"] if isinstance(v, dict) else v for v in [client.get(f"/api/worlds/{wid}", headers=A).json().get("current_version_id")]] == [head]
+    acc = client.post(f"/api/worlds/{wid}/proposals/{prop['proposal_id']}/accept", json={"entity_ids": sorted(ev_ids)}, headers=A)
+    assert acc.status_code == 200, acc.text
+    merged = WorldStore(tmp_path / "ws").load_version(acc.json()["version_id"])
+    assert ev_ids <= set(merged.entities) and {"wall-a", "wall-b", "door"} <= set(merged.entities)
+    sample = next(iter(ev_ids))
+    assert merged.entities[sample].custom_properties["promoted_from_evidence_run"] == "run-c"
+    assert merged.entities[sample].custom_properties["evidence_world_version"]  # provenance back to the evidence run
+
+
 def test_run_ids_cannot_traverse_out_of_the_world_directory(client, tmp_path):
     wid = _world(client, A)
     _seed(tmp_path, "tenant-a", wid)

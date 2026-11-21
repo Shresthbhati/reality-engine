@@ -191,6 +191,70 @@ async def export_run_world(
         "X-Physical-Accuracy": str(rd.get("physical_accuracy"))})
 
 
+class ProposeBody(BaseModel):
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/propose", status_code=201)
+async def propose_run_world(
+    world_id: str, run_id: str, body: ProposeBody, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Propose the run's evidence entities to the world's committed HEAD through the adoption protocol (section 6 of the design
+    decisions). NOTHING is committed here: the result is a pending change proposal (``/api/worlds/{id}/proposals``) whose per-entity
+    assessments the user reviews and accepts, entity by entity. The candidate is HEAD plus the evidence entities, geometries and
+    materials; HEAD's own entities are untouched.
+
+    Refused (409) unless the evidence world's frame and units are PROVEN to be HEAD's: HEAD must have been committed by the very job
+    that produced this run (one COLMAP model, one canonical frame, one scale state), the persisted evidence version must verify, and no
+    id may collide with HEAD's. A HEAD from another job could be in another frame, and mixing frames would place objects wrongly."""
+    from apps.api import worldstore_service
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, committed_version, head_version
+    from apps.api.models import WorldVersion
+    from worldstore.proposals import ProposalError, propose_update
+    from worldstore.store import WorldStore
+    from world_ir.world_v1 import WorldIR
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    w = await db.get(World, world_id)
+    if not w.current_version_id:
+        raise HTTPException(409, "the world has no committed version to propose against")
+    head_row = await db.get(WorldVersion, w.current_version_id)
+    recorded = committed_version(d)
+    if head_row is None or recorded != w.current_version_id:
+        raise HTTPException(409, f"frame not proven: HEAD is {w.current_version_id}, but this run's evidence accompanied "
+                                 f"{recorded or 'no recorded version'}; evidence from another solve (or a world that has evolved since) may be in a "
+                                 "different frame or scale, so it is not mixed in")
+    vid = head_version(d)
+    if not vid:
+        raise HTTPException(409, "this run has no persisted evidence world")
+    ev_store = WorldStore(d / WORLDSTORE_REL)
+    problems = ev_store.verify_version(vid)
+    if problems:
+        raise HTTPException(409, f"the persisted evidence world fails verification: {problems[:3]}")
+    evidence = ev_store.load_version(vid)
+    store = worldstore_service.get_store()
+    candidate = WorldIR.from_dict(store.load_version(w.current_version_id).to_dict())
+    clash = sorted((set(evidence.entities) & set(candidate.entities)) | (set(evidence.geometries) & set(candidate.geometries))
+                   | (set(evidence.materials) & set(candidate.materials)))
+    if clash:
+        raise HTTPException(409, f"ids already exist in HEAD, nothing proposed: {clash[:5]}")
+    scale_states = sorted({str((e.transform or {}).get("scale_state") or "undeclared") for e in evidence.entities.values()})
+    for k, e in evidence.entities.items():
+        ent_copy = Entity.from_dict(e.to_dict())
+        ent_copy.custom_properties = {**(ent_copy.custom_properties or {}), "promoted_from_evidence_run": run_id, "evidence_world_version": vid}
+        candidate.entities[k] = ent_copy
+    candidate.geometries.update(evidence.geometries)
+    candidate.materials.update(evidence.materials)
+    try:
+        p = propose_update(store, w.current_version_id, candidate, list(head_row.source_session_ids or []))
+    except ProposalError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"proposal": p.to_dict(), "added_entities": len(evidence.entities), "evidence_version": vid,
+            "frame_check": {"basis": "HEAD was committed by the same job as this evidence run (one COLMAP model and canonical frame)",
+                            "head_version": w.current_version_id, "evidence_scale_states": scale_states, "note": body.note.strip() or None},
+            "next": f"review, then POST /api/worlds/{world_id}/proposals/{p.proposal_id}/accept (entity_ids to pick a subset)"}
+
+
 class MergeBody(BaseModel):
     other_entity_id: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)

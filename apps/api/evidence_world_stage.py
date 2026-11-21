@@ -226,7 +226,8 @@ def run_for_job(
             def surfaces_fn(matrix: Any):
                 from engine.multiengine.surfaces import build_surface_entities
 
-                return build_surface_entities(scene_state.get("aligned") or {}, matrix, job_id)
+                return build_surface_entities(scene_state.get("aligned") or {}, matrix, job_id,
+                                              depth_observations=scene_state.get("aligned_depth_observations"))
             scoring_note = {**(scoring_note or {}), "spatial_intelligence": {"method": "multi-view ray triangulation", "fallback": "3D box IoU"}}
 
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:
@@ -387,6 +388,29 @@ def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
                 "reload_verified": True, "validation": "valid", **counts}
     except Exception as exc:  # noqa: BLE001 -- recorded, never a silent success and never a failed job
         return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+
+
+COMMITTED_VERSION_FILE = "committed_version.json"
+
+
+def record_committed_version(team_id: str | None, world_id: str, job_id: str, version_id: str, *, base: Path | None = None) -> bool:
+    """Record, beside the run's evidence, the committed world version the SAME job adopted (one COLMAP model, one canonical frame, one
+    scale state). Returns False when the run has no evidence directory. It is the proof ``propose`` needs that the evidence world and
+    the committed world share a frame."""
+    root = evidence_root(team_id, world_id, job_id, base=base)
+    if not root.is_dir():
+        return False
+    tmp = root / (COMMITTED_VERSION_FILE + ".tmp")
+    tmp.write_text(json.dumps({"job_id": job_id, "committed_version_id": version_id}), encoding="utf-8")
+    os.replace(tmp, root / COMMITTED_VERSION_FILE)
+    return True
+
+
+def committed_version(root: Path) -> str | None:
+    try:
+        return json.loads((root / COMMITTED_VERSION_FILE).read_text(encoding="utf-8")).get("committed_version_id")
+    except (OSError, ValueError):
+        return None
 
 
 def head_version(root: Path) -> str | None:

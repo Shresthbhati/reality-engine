@@ -1324,6 +1324,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 f"adopted version '{version_row.id}' failed read-back verification: {reasons}"
             )
 
+        if holder.get("evidence_world"):  # tie this run's evidence world to the version committed beside it (frame / scale are then shared)
+            try:
+                _evw.record_committed_version(world.team_id, world.id, job.id, version_row.id)
+            except Exception as exc:  # noqa: BLE001 -- bookkeeping only: without it the evidence world simply cannot be proposed to HEAD
+                log.warning("job %s: could not record the committed version beside the evidence run: %s", job.id, exc)
+
         # The version is adopted AND reads back cleanly: only now does this run's COLMAP state become
         # the base for the next incremental registration. A failure to persist it is not a job
         # failure (the next run simply falls back to a full reconstruction).

@@ -148,7 +148,8 @@ def observed_mesh(points: np.ndarray, centres: np.ndarray, *, scene_depth: float
         os.remove(path)
 
 
-def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix: Any, run_id: str, *, with_mesh: bool = True):
+def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix: Any, run_id: str, *, with_mesh: bool = True,
+                           depth_observations: Mapping[str, str] | None = None):
     """``(entities, geometries, notes, report)`` for the evidence world's observed surfaces. A geometry failure is recorded in
     ``report``, never faked and never raised."""
     from provenance import Provenance
@@ -164,6 +165,10 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
         return [], [], [], {**report, "status": "skipped", "reason": f"only {len(pts)} depth points"}
     scene_depth = float(np.median(np.concatenate([d[np.isfinite(d) & (d > 0.05)].ravel()[::50] for d, _ in aligned.values()])))
     names = sorted(aligned)
+    # the entities cite the depth records their points came from (only those aligned maps), so a reviewer can trace a plane to evidence
+    from engine.multiengine.worldir_bridge import _world_observation
+
+    cites = [_world_observation(matrix, oid, ["fitted_from:aligned_depth_map"]) for oid in sorted(set((depth_observations or {}).values()))]
     cloud_ref, _ = matrix.artifacts.put(json.dumps({"points": np.round(pts[::10], 4).tolist(), "frame": "job (+Y up)", "units": "sfm_units"}).encode("utf-8"))
     ents: list[Any] = []
     geoms: list[Any] = []
@@ -193,7 +198,7 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
             id=sid, type=etype, name=p.kind.replace("_", " ").title(),
             transform={"position": {"x": float(c[0]), "y": float(c[1]), "z": float(c[2])}, "frame_id": "world", "scale_state": "sfm_gauge",
                        "units": "sfm_units", "physically_metric": False},
-            geometry_ids=[geom.id], provenance=Provenance.ESTIMATED, confidence=None, semantic_labels=[f"architecture/{p.kind}"],
+            geometry_ids=[geom.id], provenance=Provenance.ESTIMATED, confidence=None, semantic_labels=[f"architecture/{p.kind}"], observations=list(cites),
             custom_properties={"surface": {"kind": p.kind, "observed": True, "extent": "observed hull only (lower bound)", "images_contributing": seen_by,
                                             "run_id": run_id}},
             external_references=(ExternalReference("model_output", cloud_ref, "fused_depth_point_cloud",
@@ -216,7 +221,7 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
             ents.append(Entity(id="surf-observed-mesh", type=EntityType.STRUCTURE, name="Observed surface mesh", geometry_ids=[g.id],
                                transform={"position": {"x": float(mc[0]), "y": float(mc[1]), "z": float(mc[2])}, "frame_id": "world",
                                           "scale_state": "sfm_gauge", "units": "sfm_units", "physically_metric": False},
-                               provenance=Provenance.ESTIMATED, confidence=None, semantic_labels=["architecture/observed_surface_mesh"],
+                               provenance=Provenance.ESTIMATED, confidence=None, semantic_labels=["architecture/observed_surface_mesh"], observations=list(cites),
                                custom_properties={"surface": {"kind": "observed_mesh", "observed": True, "run_id": run_id}}))
             geoms.append(g)
             report["mesh"] = {"status": "built", "vertices": nv, "triangles": nt, "sha256": digest}

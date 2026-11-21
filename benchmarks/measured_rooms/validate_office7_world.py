@@ -87,6 +87,40 @@ def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: 
           f"absolute error median {np.median(a) * 100:.1f} cm, p90 {np.percentile(a, 90) * 100:.1f} cm")
 
 
+def _surface_check(world, gt_points: np.ndarray, s: float, R: np.ndarray, t: np.ndarray) -> None:
+    """Does the Kinect see a real surface where each persisted plane says there is one? For every plane geometry: the Kinect points inside
+    the plane's observed footprint and within 5 cm of it (support count) and their median distance to it. A real plane has thousands of
+    supporting points at ~1-2 cm; a spurious one has few. Says nothing about the plane's CLASS (floor vs table) -- the Kinect frame has
+    no known up axis."""
+    from scipy.spatial import Delaunay
+
+    in_job = (gt_points - t) @ R / s  # Kinect points expressed in the job frame
+    rows = []
+    for e in world.entities.values():
+        if not e.id.startswith("surf-") or not e.geometry_ids:
+            continue
+        q = world.geometries[e.geometry_ids[0]].quality_metrics or {}
+        if "plane" not in q:
+            continue
+        n, off = np.asarray(q["plane"]["normal"], float), float(q["plane"]["offset"])
+        hull = np.asarray(q["observed_hull"], float)
+        a = np.cross(n, [1.0, 0.0, 0.0] if abs(n[0]) < 0.9 else [0.0, 1.0, 0.0])
+        a /= np.linalg.norm(a)
+        b = np.cross(n, a)
+        c = hull.mean(0)
+        to2 = lambda P: np.stack([(P - c) @ a, (P - c) @ b], 1)  # noqa: E731
+        try:
+            inside = Delaunay(to2(hull)).find_simplex(to2(in_job)) >= 0
+        except Exception:  # noqa: BLE001
+            continue
+        dist = np.abs(in_job @ n - off) * s * 100  # cm
+        near = inside & (dist < 5.0)
+        rows.append((e.id, int(near.sum()), float(np.median(dist[near])) if near.any() else None, int(inside.sum())))
+    print("SURFACES vs Kinect (plane id: Kinect points within 5 cm of the plane inside its observed footprint, median residual cm, footprint points):")
+    for r in rows:
+        print(f"  {r[0]}: {r[1]} pts, median {r[2]:.1f} cm, of {r[3]} in footprint" if r[2] is not None else f"  {r[0]}: 0 pts (no Kinect surface on this plane)")
+
+
 def main(run_dir: Path, frames: Path) -> int:
     from apps.api.evidence_world_stage import head_version
     from worldstore.store import WorldStore
@@ -128,7 +162,8 @@ def main(run_dir: Path, frames: Path) -> int:
         ok = (z > 0.2) & (z < 5)
         pc = np.stack([(u[ok] - cx) * z[ok] / fx, (v[ok] - cy) * z[ok] / fy, z[ok]], 1)
         pts.append(pc @ P[:3, :3].T + P[:3, 3])
-    tree = cKDTree(np.vstack(pts))
+    G = np.vstack(pts)
+    tree = cKDTree(G)
     ents = [e for e in w.entities.values() if (e.transform or {}).get("position")]
     pos = np.array([[e.transform["position"][k] for k in "xyz"] for e in ents])
     d, _ = tree.query(s * pos @ R.T + t)
@@ -136,6 +171,7 @@ def main(run_dir: Path, frames: Path) -> int:
           f"p75 {np.percentile(d, 75) * 100:.1f} cm, p90 {np.percentile(d, 90) * 100:.1f} cm; within 10 cm {(d < 0.10).mean() * 100:.0f}%, "
           f"within 25 cm {(d < 0.25).mean() * 100:.0f}%")
     _dimension_check(run, run_dir, ev_root, frames, orig, s, R, t)
+    _surface_check(w, G, s, R, t)
     multi = [e for e in w.entities.values() if len({o.data_uri for o in e.observations if o.metadata.get("quantity") == "bbox"}) > 1]
     print(f"entities with bbox evidence from >1 photograph: {len(multi)} of {len(w.entities)} (single-view {len(w.entities) - len(multi)}); "
           f"positioned and multi-view: {sum(1 for e in multi if (e.transform or {}).get('position'))}")

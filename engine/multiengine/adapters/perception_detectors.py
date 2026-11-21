@@ -25,6 +25,22 @@ from engine.multiengine.observation import ObservationDraft
 from perception.detection.extensible_prompter import ExtensiblePrompter, ScaleFilter
 
 
+def get_balanced_default_prompts(prompter: ExtensiblePrompter | None = None, domain: str = "all") -> list[str]:
+    """Curated fine-grained default prompts covering architecture, furniture, fixtures, hardware, and exterior elements."""
+    indoor_core = [
+        "door", "window", "wall", "ceiling", "floor", "chair", "table", "sofa", "bed", "cabinet",
+        "desk", "electrical socket", "light switch", "lamp", "door handle", "faucet", "shelf",
+    ]
+    outdoor_core = [
+        "building facade", "window", "door", "entrance", "roof", "balcony", "cornice", "stair", "column", "wall",
+    ]
+    if domain == "indoor":
+        return indoor_core
+    if domain == "outdoor":
+        return outdoor_core
+    return list(dict.fromkeys(indoor_core + outdoor_core))
+
+
 def clean_and_split_detection_label(
     label: str | Any,
     known_queries: Sequence[str] | None = None,
@@ -221,7 +237,9 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         if payload_queries and isinstance(payload_queries, list):
             prompt_text = ". ".join(str(q).strip().rstrip(".") for q in payload_queries) + "."
         else:
-            prompt_text = ". ".join(self._prompter.get_prompts(scale=ScaleFilter.MESO)[:10]) + "."
+            domain_val = request.payload.get("domain", "all") if request.payload else "all"
+            prompts = get_balanced_default_prompts(self._prompter, domain_val)
+            prompt_text = ". ".join(prompts) + "."
 
         thresh = float(request.payload.get("threshold", 0.25)) if request.payload else 0.25
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
@@ -462,7 +480,8 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         if payload_queries and isinstance(payload_queries, list):
             prompts = [str(q) for q in payload_queries]
         else:
-            prompts = self._prompter.get_prompts(scale=ScaleFilter.MESO)[:16]
+            domain_val = request.payload.get("domain", "all") if request.payload else "all"
+            prompts = get_balanced_default_prompts(self._prompter, domain_val)
         thresh = float(request.payload.get("threshold", 0.05)) if request.payload else 0.05
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 

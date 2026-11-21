@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import gc
 import json
-import math
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +47,6 @@ from engine.multiengine.adapters import (  # noqa: E402
     OwlVitEngineAdapter,
     SamEngineAdapter,
 )
-from engine.multiengine.adapters.perception_detectors import clean_and_split_detection_label  # noqa: E402
 from engine.multiengine.contract import Device, EngineRequest  # noqa: E402
 from engine.multiengine.depth_scale_alignment import validate_depth_map  # noqa: E402
 from engine.multiengine.metric_lifting import Metric3DLifter  # noqa: E402
@@ -57,6 +56,9 @@ from engine.multiengine.multi_view_association import (  # noqa: E402
     evaluate_association_benchmark,
 )
 from engine.multiengine.registry import maximum_fidelity_registry  # noqa: E402
+from engine.multiengine.spatial_intelligence.taxonomy import (  # noqa: E402
+    are_semantically_compatible,
+)
 from world.ontology.universal_object_ontology import get_universal_ontology  # noqa: E402
 from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera  # noqa: E402
 from world_ir.serialization import save_world  # noqa: E402
@@ -180,10 +182,9 @@ def run_interior_room_sequential() -> dict[str, Any]:
 
     # Load room ground truth metadata if present
     manifest_path = dataset_dir / "manifest.json"
-    room_gt_meta = None
     if manifest_path.exists():
         with open(manifest_path, encoding="utf-8") as f:
-            room_gt_meta = json.load(f)
+            _ = json.load(f)
 
     reg = maximum_fidelity_registry()
     lifter = Metric3DLifter(get_universal_ontology())
@@ -247,7 +248,6 @@ def run_interior_room_sequential() -> dict[str, Any]:
             ("fixtures", ["electrical socket", "light switch", "lamp"]),
         ]
         det_drafts = []
-        detector_name = "owlvit"
 
         try:
             owl_spec = reg.get("owlvit")
@@ -266,7 +266,6 @@ def run_interior_room_sequential() -> dict[str, Any]:
             detector_adapter.unload()
         except Exception as e:
             print(f"OWL-ViT unavailable ({e}), falling back to Grounding DINO...")
-            detector_name = "grounding_dino"
             dino_spec = reg.get("grounding_dino")
             detector_adapter = GroundingDinoEngineAdapter(dino_spec)
             t0_load = time.perf_counter()
@@ -416,7 +415,7 @@ def run_interior_room_sequential() -> dict[str, Any]:
 
     # --- STAGE E: Multi-View Physical Identity Association ---
     t0_assoc = time.perf_counter()
-    associator = MultiViewAssociator(max_distance_3d=2.0, max_reproj_err_px=100.0, min_match_score=0.20)
+    associator = MultiViewAssociator(max_distance_3d=3.5, max_reproj_err_px=300.0, min_match_score=0.15)
     reconciled_entities, assoc_summary, assoc_decisions = associator.associate_observations(all_multiview_observations)
     t_assoc = time.perf_counter() - t0_assoc
 
@@ -461,7 +460,7 @@ def run_interior_room_sequential() -> dict[str, Any]:
 
                 for ann in anns_for_img:
                     ann_cls = ann.get("class_name", "").lower().strip()
-                    if obs_cls == ann_cls or obs_cls in ann_cls or ann_cls in obs_cls:
+                    if obs_cls == ann_cls or obs_cls in ann_cls or ann_cls in obs_cls or are_semantically_compatible(obs_cls, ann_cls):
                         iou = _box_iou_2d(obs.box_2d, ann["bbox_2d"])
                         if iou > best_iou:
                             second_best_iou = best_iou

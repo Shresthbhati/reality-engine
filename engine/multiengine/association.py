@@ -87,13 +87,17 @@ def entity_key(member_ids: Iterable[str]) -> str:
 
 
 def ontology_label_compat(ontology: Any | None = None) -> LabelCompat:
-    """Labels are compatible when they resolve to the same ontology class, one is an ancestor of the other, or either is the
+    """Labels are compatible when they resolve to the same ontology class, one is an ancestor of the other,
+    they are semantically compatible under taxonomy aliases, or either is the
     ontology's unknown-object fallback (an unclassified detection cannot contradict a classified one)."""
     from perception.ontology import FALLBACK_PATH, get_default_ontology
+    from engine.multiengine.spatial_intelligence.taxonomy import are_semantically_compatible
 
     onto = ontology or get_default_ontology()
 
     def compat(la: str, lb: str) -> bool:
+        if are_semantically_compatible(la, lb):
+            return True
         na, nb = onto.resolve_or_unknown(la), onto.resolve_or_unknown(lb)
         if FALLBACK_PATH in (na.path, nb.path) or na.path == nb.path:
             return True

@@ -186,16 +186,157 @@ def run_for_job(
         )
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
-    facts = _facts(res.snapshot, job_id, skipped, status=res.status)
-    facts["world_ir"] = persist_world(root, job_id, res.bridge)
-    if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
-        facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
+
     wanted = list(depth_engines) if depth_engines is not None else [
         e.strip() for e in os.environ.get(ENV_DEPTH_ENGINES, "").split(",") if e.strip()
     ]
+    if not wanted and usable and ("depth_anything" in adapters or "midas" in adapters):
+        wanted = ["depth_anything"] if "depth_anything" in adapters else ["midas"]
+
+    depth_reports = []
     if wanted and res.status != "cancelled":
-        facts["depth"] = _run_depth(root, job_id, real, wanted, adapters)
+        depth_reports = _run_depth(root, job_id, real, wanted, adapters)
+
+    # 3D spatial lifting if registered cameras and depth maps are available
+    if usable and res.status != "cancelled":
+        from engine.multiengine.evidence_matrix import EvidenceMatrix
+        matrix = EvidenceMatrix(root)
+        depth_maps = _extract_depth_maps(root, real)
+        if depth_maps:
+            lifted_n = _lift_detections_for_cameras(matrix, usable, depth_maps, job_id)
+            if lifted_n > 0:
+                from engine.multiengine.evidence_flow import derive_entities
+                from engine.multiengine.worldir_bridge import convert
+                from world.ontology.universal_object_ontology import get_universal_ontology
+                onto = get_universal_ontology()
+                identity_reg = IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json")
+                derived = derive_entities(
+                    matrix, active=None, registry=registry, onto=onto, pair_scorer=scorer,
+                    identity=identity_reg, record=True,
+                )
+                res.bridge = convert(derived.canonicals, matrix, ontology=onto)
+                res.canonicals = derived.canonicals
+                res.snapshot["counts"]["lifted_entities"] = lifted_n
+
+    facts = _facts(res.snapshot, job_id, skipped, status=res.status)
+    if depth_reports:
+        facts["depth"] = depth_reports
+    facts["world_ir"] = persist_world(root, job_id, res.bridge)
+    if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
+        facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
     return facts
+
+
+def _extract_depth_maps(root: Path, sources: Sequence[str]) -> dict[str, Any]:
+    import io
+
+    import numpy as np
+
+    from engine.multiengine.evidence_matrix import EvidenceMatrix
+
+    matrix = EvidenceMatrix(root)
+    maps: dict[str, np.ndarray] = {}
+    for o in matrix.store.query(task="metric3d"):
+        if o.source_id not in sources or o.source_id in maps:
+            continue
+        pred = o.predicted or {}
+        raw_ref = pred.get("raw_artifact_ref")
+        if raw_ref:
+            try:
+                raw_bytes = matrix.artifacts.get(raw_ref)
+                arr = np.load(io.BytesIO(raw_bytes))
+                if isinstance(arr, np.ndarray) and arr.ndim == 2:
+                    maps[o.source_id] = arr
+            except Exception:
+                pass
+    return maps
+
+
+def _lift_detections_for_cameras(
+    matrix: Any,
+    usable_cameras: Mapping[str, Any],
+    depth_maps: Mapping[str, Any],
+    job_id: str,
+) -> int:
+    """Lifts 2D bounding boxes into 3D using calibrated cameras and available depth maps."""
+    from engine.multiengine.metric_lifting import Metric3DLifter
+    from engine.multiengine.observation import make_observation
+    from world.ontology.universal_object_ontology import get_universal_ontology
+
+    lifter = Metric3DLifter(get_universal_ontology())
+    bbox_obs = [o for o in matrix.store.query(quantity="bbox") if matrix.status(o.observation_id) != "rejected"]
+    lifted_count = 0
+
+    for o in bbox_obs:
+        src = o.source_id
+        if src not in usable_cameras or src not in depth_maps:
+            continue
+        cam = usable_cameras[src]
+        depth_arr = depth_maps[src]
+        box = o.image_region
+        if not box or len(box) < 4:
+            continue
+        lbl = str(o.predicted.get("label", "object"))
+
+        is_synthetic = "synthetic" in src.lower() or "synthetic" in str(getattr(cam, "custom_properties", {})).lower()
+        is_physical = bool(getattr(cam, "is_physically_metric", False))
+        scale_source = str(getattr(cam, "scale_source", ""))
+
+        if is_physical and scale_source:
+            scale_state = "PHYSICALLY_ANCHORED"
+            scale_units = "METRES"
+            is_metric = True
+        elif is_synthetic:
+            scale_state = "SYNTHETIC_SCALE_ALIGNED"
+            scale_units = "SYNTHETIC_METRES"
+            is_metric = False
+        else:
+            scale_state = "SFM_GAUGE"
+            scale_units = "COLMAP_SFM_UNITS"
+            is_metric = False
+
+        lifted = lifter.lift_detection(
+            entity_id=f"lift-{o.observation_id}",
+            class_name=lbl,
+            box_2d=box,
+            depth_map=depth_arr,
+            camera=cam,
+            target_frame="world",
+            is_metric_depth=is_metric,
+            scale_state=scale_state,
+            scale_units=scale_units,
+            scale_source=scale_source,
+            confidence=o.confidence,
+            source_id=src,
+        )
+        if lifted is None:
+            lifted = lifter.lift_detection(
+                entity_id=f"lift-{o.observation_id}",
+                class_name=lbl,
+                box_2d=box,
+                depth_map=depth_arr,
+                camera=cam,
+                target_frame="world",
+                is_metric_depth=False,
+                scale_state="RELATIVE_GAUGE",
+                scale_units="RELATIVE_UNITS",
+                confidence=o.confidence,
+                source_id=src,
+            )
+        if lifted is not None:
+            drafts = lifter.to_observation_drafts(lifted)
+            for d in drafts:
+                eng_obs = make_observation(
+                    d,
+                    engine_id="metric_3d_lifter",
+                    model_version="1.0",
+                    execution_config={"job_id": job_id, "method": "pca_horizontal_quantile"},
+                )
+                matrix.store.add(eng_obs)
+                matrix.store.link(eng_obs.observation_id, o.observation_id, "lifted_from")
+            lifted_count += 1
+
+    return lifted_count
 
 
 WORLDSTORE_REL = "worldstore"

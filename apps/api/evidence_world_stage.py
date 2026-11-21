@@ -21,6 +21,7 @@ from typing import Any
 
 ENV_FLAG = "RE_EVIDENCE_WORLD"
 ENV_DEPTH_ENGINES = "RE_EVIDENCE_WORLD_DEPTH_ENGINES"
+ENV_DETECTION = "RE_EVIDENCE_WORLD_DETECTION"  # "pipeline" (default for real engines: tiling + sub-part crops + SAM masks) | "legacy"
 ENV_LIFT = "RE_EVIDENCE_WORLD_LIFT"  # "spatial" (default: spatial_intelligence package) | "legacy" (box lifter + 3D-IoU association)
 SNAPSHOT_REL = "snapshot.json"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -138,8 +139,15 @@ def run_for_job(
     depth_engines: Sequence[str] | None = None,
     points3d: Sequence[Sequence[float]] | None = None,
     observations: Mapping[str, Mapping[str, Any]] | None = None,
+    detection: str | None = None,
+    pipeline_options: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the flow on the job's evidence files and return the compact facts for the job report.
+
+    ``detection`` ("pipeline" | "legacy"; default: the ``RE_EVIDENCE_WORLD_DETECTION`` env, else "pipeline" for the real engines and
+    "legacy" when the caller supplies its own ``flow_inputs``) selects how detections are produced. "pipeline" runs the
+    ``detection_pipeline`` engine (tiled inference, sub-part crops, class filtering, SAM masks over the REAL registered detector);
+    if it cannot be installed the run falls back to the legacy whole-image detectors and says so (status ``partial``).
 
     ``depth_engines`` (default: the ``RE_EVIDENCE_WORLD_DEPTH_ENGINES`` env, comma separated; empty = none) runs those depth
     adapters ONE AT A TIME after the detection flow and persists their ``metric3d.v1`` records + raw depth arrays in the same
@@ -166,6 +174,15 @@ def run_for_job(
         return {"status": "skipped", "reason": "no readable evidence image files", "skipped_sources": skipped, "run_id": job_id}
     try:
         registry, adapters, probe = (flow_inputs or _default_flow_inputs)()
+        mode = (detection or os.environ.get(ENV_DETECTION) or ("legacy" if flow_inputs is not None else "pipeline")).strip().lower()
+        det_stage, det_note = StageSpec(Task.DETECTION), None
+        if mode == "pipeline":
+            from engine.multiengine.adapters import pipeline_detection
+
+            try:
+                det_stage = StageSpec(Task.DETECTION, only=(pipeline_detection.install(registry, adapters, **dict(pipeline_options or {})),))
+            except Exception as exc:  # noqa: BLE001 -- explicit: the run continues on the legacy real detectors and is marked partial
+                det_note = f"detection pipeline not installed ({type(exc).__name__}: {exc}); whole-image detectors were used instead"
         scorer, scoring_note = None, None
         usable = {p: c for p, c in (cameras or {}).items() if p in real}
         if len(usable) >= 2:  # a cross-view score needs registered cameras for at least two of the images
@@ -237,7 +254,7 @@ def run_for_job(
             return {**lift, "depth": depth, "engine": "legacy box lifter"}
 
         res = run_evidence_flow(
-            root, job_id, real, registry=registry, adapters=adapters, stages=[StageSpec(Task.DETECTION)],
+            root, job_id, real, registry=registry, adapters=adapters, stages=[det_stage],
             should_cancel=should_cancel, probe=probe, pair_scorer=scorer, scoring_note=scoring_note,
             identity_registry=IdentityRegistry(world_root(team_id, world_id, base=base) / "identities.json"),
             after_stages=_depth_and_lift, relations_fn=relations_fn, surfaces_fn=surfaces_fn,
@@ -245,6 +262,9 @@ def run_for_job(
     except Exception as exc:  # noqa: BLE001 -- the optional stage must never fail the job; the failure is recorded
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "run_id": job_id, "skipped_sources": skipped}
     facts = _facts(res.snapshot, job_id, skipped, status=res.status)
+    facts["detection_pipeline"] = _detection_facts(mode, det_stage, det_note, adapters, res.snapshot)
+    if facts["detection_pipeline"].get("problems") and facts["status"] == "complete":
+        facts["status"] = "partial"  # a missing pipeline / missing masks is never reported as a finished detection stage
     facts["world_ir"] = persist_world(root, job_id, res.bridge)
     if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
         facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
@@ -514,6 +534,31 @@ def _run_depth(root: Path, job_id: str, sources: Sequence[str], engines: Sequenc
                                          cache=DepthCache(root.parent / "depth-cache")))
     (root / "depth_report.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
     return reports
+
+
+def _detection_facts(mode: str, stage: Any, note: str | None, adapters: Mapping[str, Any], snap: Mapping[str, Any]) -> dict[str, Any]:
+    """What the detection stage actually did: which engine ran, whether tiling / sub-part crops / segmentation executed, and every
+    reason it is not a complete detection (``problems``). Read from the adapter that executed, never inferred."""
+    if note is not None or mode != "pipeline":
+        return {"mode": "legacy", "status": "not_run", "reason": note or "whole-image detectors by request", "problems": [note] if note else []}
+    from engine.multiengine.adapters.pipeline_detection import ENGINE_ID
+
+    eng_status = next((s["engines"].get(ENGINE_ID) for s in snap.get("stages", []) if s.get("task") == "detection"), None)
+    adapter = adapters.get(ENGINE_ID)
+    out: dict[str, Any] = {"mode": "pipeline", "status": eng_status or "unknown", "problems": []}
+    if eng_status != "succeeded" or adapter is None or not adapter.last_facts:
+        out["problems"].append(f"the detection pipeline did not succeed (engine status: {eng_status})")
+        return out
+    f = adapter.last_facts
+    out.update({k: v for k, v in f.items() if k != "images"})
+    out["per_image"] = [{k: i.get(k) for k in ("source", "image_size", "tiles_processed", "subparts_detected", "raw_detection_count",
+                                                "filtered_detection_count", "refined_box_count", "masks", "seconds")} for i in f["images"]]
+    seg = f["segmentation"]
+    if seg["status"] != "ran":
+        out["problems"].append(f"segmentation did not run: {seg['reason']}")
+    elif seg["sam_failures"]:
+        out["problems"].append(f"{seg['sam_failures']} box(es) could not be segmented and carry no mask")
+    return out
 
 
 def _facts(snap: Mapping[str, Any], job_id: str, skipped: int, *, status: str | None = None) -> dict[str, Any]:

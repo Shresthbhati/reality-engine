@@ -99,6 +99,26 @@ def _bump(d: dict[str, int], key: str, n: int = 1) -> None:
     d[key] = d.get(key, 0) + n
 
 
+def _lift_mask(enc: Any, photo_wh: tuple[int, int], depth_wh: tuple[int, int]) -> np.ndarray | None:
+    """Decode a persisted RLE mask (photograph resolution) and resample it (nearest) to the depth map's resolution. A mask that
+    does not decode or does not match the photograph is NOT used (the box stands alone); nothing is repaired or guessed."""
+    if not isinstance(enc, dict):
+        return None
+    from PIL import Image
+
+    from engine.multiengine.mask_codec import decode_mask
+
+    try:
+        m = decode_mask(enc)
+    except Exception:  # noqa: BLE001
+        return None
+    if (m.shape[1], m.shape[0]) != tuple(photo_wh):
+        return None
+    if tuple(photo_wh) == tuple(depth_wh):
+        return m
+    return np.asarray(Image.fromarray(m.astype(np.uint8) * 255).resize(depth_wh, Image.NEAREST)) > 0
+
+
 def run_spatial_stage(
     matrix: EvidenceMatrix,
     *,
@@ -194,10 +214,13 @@ def run_spatial_stage(
         depth_maps[src] = al.aligned_depth_map
         images[src] = np.asarray(rgb.resize((K.width, K.height)))
         image_of[src] = (iw, ih, drec, d_info)
+        dh, dw = depth_maps[src].shape[:2]
         for b in bxs:
             box = [b.image_region[0] * sx, b.image_region[1] * sy, b.image_region[2] * sx, b.image_region[3] * sy]
+            mask = _lift_mask(b.predicted.get("mask"), (iw, ih), (dw, dh))  # the segmenter's mask at depth resolution, or None (box only)
+            report["masks_used"] = report.get("masks_used", 0) + (mask is not None)
             det_inputs.append(DetectionInput(detection_id=b.observation_id, source_image_id=src, class_name=str(b.predicted["label"]),
-                                             box_2d=box, confidence=float(b.confidence if b.confidence is not None else 0.5)))
+                                             box_2d=box, confidence=float(b.confidence if b.confidence is not None else 0.5), mask_2d=mask))
             det_obs[b.observation_id] = b
     if not det_inputs:
         refused = sum(i["rejected"] for i in report["images"])

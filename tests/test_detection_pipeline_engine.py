@@ -302,3 +302,39 @@ def test_lift_mask_resamples_and_refuses_what_it_cannot_trust():
     assert _lift_mask(enc, (90, 40), (80, 40)) is None  # not the photograph's resolution: not used
     assert _lift_mask(None, (80, 40), (80, 40)) is None
     assert _lift_mask({**enc, "runs": [1]}, (80, 40), (80, 40)) is None  # corrupt: the box stands alone
+
+
+# ---------------------------------------------------------------------------------------------------------- refinement vs lifted members
+def test_refinement_consistency_check_tolerates_derived_position_and_dimension_members(tmp_path):
+    """Regression (found on the real run): after lifting, an entity's members include position/dimension observations that belong to
+    no detection group; the refiner's consistency check used to raise KeyError as soon as reprocessing produced a candidate."""
+    import os
+
+    from engine.multiengine.evidence_flow import derive_entities
+    from engine.multiengine.evidence_matrix import EvidenceMatrix
+    from engine.multiengine.refine_flow import FlowRefiner
+    from perception.ontology import get_default_ontology
+    from tests.test_lift_stage_e2e import DX, _camera, _Depth, _inputs, _per_view, _points
+
+    ps = []
+    for i, name in enumerate(("a.png", "b.png")):
+        p = tmp_path / "src" / name
+        p.parent.mkdir(exist_ok=True)
+        Image.new("RGB", (800, 600), (120 + i, 120, 120)).save(p)
+        ps.append(str(p))
+    cams = {p: _camera(DX[os.path.basename(p)]) for p in ps}
+    r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-1", sources=ps, base=tmp_path / "ws", flow_inputs=_inputs(_Depth(_per_view())),
+                       depth_engines=["fake_depth"], cameras=cams, points3d=_points())
+    assert r["lifting"]["lifted"] == 2
+    m = EvidenceMatrix(tmp_path / "ws" / "evidence-world" / "t1" / "w1" / "job-1")
+    reg, _, _ = _inputs(_Depth(_per_view()))()
+    onto = get_default_ontology()
+    refiner = FlowRefiner(matrix=m, manager=None, registry=reg, onto=onto, pair_scorer=None, tolerances=None, identity=None,
+                          overlap_tolerance_m=None, max_iterations=1)
+    refiner._baseline_label_conflicts = 0
+    from engine.multiengine.refine_flow import RefineState
+
+    state = RefineState(frozenset(o.observation_id for o in m.store.query(quantity="bbox")))
+    d = derive_entities(m, state.active, registry=reg, onto=onto, pair_scorer=None, tolerances=None, identity=None, overlap_tolerance_m=None, record=False)
+    assert any(len(c.members) > 1 and any(m.store.get(x).quantity != "bbox" for x in c.members) for c in d.canonicals)  # derived members exist
+    assert refiner._consistency(state) == []

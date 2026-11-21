@@ -14,7 +14,7 @@ from engine.math import Quat, Vec3
 from engine.multiengine.metric3d import ScaleState
 from engine.multiengine.spatial_intelligence.integration import SpatialSceneResult
 from engine.multiengine.spatial_stage import R_UP, _quat_to_R, _R_to_quat, to_working_camera
-from tests.test_lift_stage_e2e import DX, F, H, W, _camera, _Depth, _inputs, _per_view, _points, photos  # noqa: F401
+from tests.test_lift_stage_e2e import DX, F, H, W, _camera, _chair, _Depth, _inputs, _per_view, _points, photos  # noqa: F401
 from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
 
 
@@ -90,3 +90,47 @@ def test_the_production_stage_uses_spatial_intelligence_and_writes_its_results_i
 def test_the_legacy_lifter_remains_selectable_and_says_so(tmp_path, photos, monkeypatch):  # noqa: F811
     monkeypatch.setenv(ew.ENV_LIFT, "legacy")
     assert _run(tmp_path, photos)["lifting"]["engine"] == "legacy box lifter"
+
+
+def _rel(a, b, kind, conf=0.8):
+    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialRelationKind, SpatialRelationship
+
+    return SpatialRelationship(a, b, SpatialRelationKind(kind), conf, 0.5, "test basis")
+
+
+def test_relations_keep_only_structural_kinds_and_never_form_a_support_cycle():
+    from types import SimpleNamespace as NS
+
+    from engine.multiengine.spatial_stage import make_scene_relations_fn
+    from world_ir.schema_v1 import RelationshipKind
+
+    cans = [NS(entity_id=e, members=(f"d{e}",)) for e in "ABC"]
+    state = {"relationships": [_rel("dA", "dB", "adjacent_to"), _rel("dA", "dB", "facing"),            # fixed-metre kinds: dropped
+                               _rel("dA", "dB", "supported_by", 0.9),                                  # A rests on B
+                               _rel("dB", "dC", "supported_by", 0.8),                                  # B rests on C
+                               _rel("dC", "dA", "supported_by", 0.7),                                  # C rests on A: would close a cycle
+                               _rel("dA", "dC", "mounted_on", 0.6)]}
+    out = make_scene_relations_fn(state)(cans, None)
+    kinds = {(r.source_entity_id, r.kind.value, r.target_entity_id) for r in out}
+    assert kinds == {("A", "supported_by", "B"), ("B", "supported_by", "C"), ("A", "mounted_on", "C")}
+    assert not any(r.kind is RelationshipKind.ADJACENT_TO for r in out) and all("spatial_intelligence relation" in r.basis for r in out)
+
+
+def test_persistence_drops_an_impossible_support_cycle_keeps_both_entities_and_records_it():
+    from provenance import Provenance
+    from world_ir.schema_v1 import Relationship, RelationshipKind
+    from world_ir.validation import validate_world_ir
+    from world_ir.world_v1 import WorldIR
+
+    w = WorldIR(id="t", name="t")
+    for i, (lo, hi) in enumerate([((0, 0, 0), (1, 1, 1)), ((5, 5, 5), (6, 6, 6))]):
+        e, g = _chair(i, lo, hi, 1)
+        w.entities[e.id], w.geometries[g.id] = e, g
+    for a, b in (("ent-0", "ent-1"), ("ent-1", "ent-0")):
+        w.entities[a].relationships.append(Relationship(RelationshipKind.SUPPORTED_BY, b, confidence=None, provenance=Provenance.INFERRED))
+    if not any("cyclic_support" in str(x) for x in validate_world_ir(w).errors):
+        pytest.skip("this schema version does not flag the cycle")
+    ew._withhold_unresolved_duplicates(w)
+    assert set(w.entities) == {"ent-0", "ent-1"} and validate_world_ir(w).errors == []
+    assert all(not r.kind.value.startswith("support") for e in w.entities.values() for r in e.relationships)
+    assert w.metadata["withheld_relationships"][0]["entities"] == ["ent-0", "ent-1"] or w.metadata["withheld_relationships"][0]["entities"] == ["ent-1", "ent-0"]

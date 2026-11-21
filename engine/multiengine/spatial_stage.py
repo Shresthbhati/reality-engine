@@ -328,16 +328,41 @@ def make_scene_relations_fn(state: dict[str, Any]):
              "contains": RelationshipKind.CONTAINS, "part_of": RelationshipKind.PART_OF, "adjacent_to": RelationshipKind.ADJACENT_TO,
              "facing": RelationshipKind.ADJACENT_TO}
 
+    # Kept: relations that follow from contact / hosting / composition. Dropped: ``adjacent_to`` and ``facing`` -- the package's thresholds
+    # are fixed metre distances (0.8-1.2), which relate almost every pair of objects in a room (11k relations for 91 entities on the
+    # real office run); scale-aware adjacency comes from ``spatial_relations.derive_relations`` instead.
+    structural = {"mounted_on", "supported_by", "supports", "contains", "part_of"}
+
     def fn(canonicals, matrix) -> list:
         owner = {m: ce.entity_id for ce in canonicals for m in ce.members}
+        parent_of: dict[str, set[str]] = {}  # child -> supporters, to keep vertical support ACYCLIC
+
+        def reaches(src: str, dst: str) -> bool:
+            stack, seen_n = [src], set()
+            while stack:
+                n = stack.pop()
+                if n == dst:
+                    return True
+                if n not in seen_n:
+                    seen_n.add(n)
+                    stack.extend(parent_of.get(n, ()))
+            return False
+
         out, seen = [], set()
-        for rel in state.get("relationships", []):
+        for rel in sorted(state.get("relationships", []), key=lambda r: (-r.confidence, r.source_id, r.target_id)):
+            if rel.relation.value not in structural:
+                continue
             a, b = owner.get(rel.source_id), owner.get(rel.target_id)
             if a is None or b is None or a == b:
                 continue
             kind = kinds.get(rel.relation.value, RelationshipKind.ATTACHED_TO)
             if (a, kind, b) in seen:
                 continue
+            if kind in (RelationshipKind.SUPPORTED_BY, RelationshipKind.SUPPORTS):
+                child, parent = (a, b) if kind is RelationshipKind.SUPPORTED_BY else (b, a)
+                if reaches(parent, child):  # accepting it would create a support cycle: the weaker (later) claim is refused
+                    continue
+                parent_of.setdefault(child, set()).add(parent)
             seen.add((a, kind, b))
             out.append(SpatialRelation(a, kind, b, f"spatial_intelligence relation '{rel.relation.value}' ({rel.basis}); distance {rel.distance_m:.3g} "
                                                     "in gauge units; thresholds are metre-calibrated heuristics",

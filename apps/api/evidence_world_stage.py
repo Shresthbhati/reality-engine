@@ -253,6 +253,7 @@ def run_for_job(
 WORLDSTORE_REL = "worldstore"
 
 
+_CYCLE_RE = re.compile(r"cross_entity_cyclic_support: cyclic vertical support relationship detected between (\S+) and (\S+)")
 _DUP_RE = re.compile(r"invariant_6_duplicate_entity: entities (\S+) and (\S+) are the same class and overlap (\d+)%")
 
 
@@ -268,8 +269,18 @@ def _withhold_unresolved_duplicates(world: Any, max_rounds: int = 20) -> list[di
     withheld: list[dict[str, Any]] = []
     for _ in range(max_rounds):
         errs = [str(i) for i in validate_world_ir(world).errors]
+        cycles = [m.groups() for m in (_CYCLE_RE.search(e) for e in errs) if m]
+        for a, b in cycles:  # a vertical-support cycle is physically impossible: drop the support claims between the pair, keep both entities
+            from world_ir.schema_v1 import RelationshipKind as _RK
+
+            for x, y in ((a, b), (b, a)):
+                if x in world.entities:
+                    world.entities[x].relationships = [r for r in world.entities[x].relationships
+                                                       if not (r.target_id == y and r.kind in (_RK.SUPPORTED_BY, _RK.SUPPORTS))]
+            world.metadata.setdefault("withheld_relationships", []).append(
+                {"entities": [a, b], "reason": "vertical support relationships between them formed a cycle (impossible); claims dropped, entities kept"})
         pairs = [m.groups() for m in (_DUP_RE.search(e) for e in errs) if m]
-        if not pairs:
+        if not pairs and not cycles:
             break
         dropped: set[str] = set()
         for a, b, pct in pairs:

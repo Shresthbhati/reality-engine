@@ -247,9 +247,20 @@ def fuse_depth_to_surface(views: Sequence[FusionView], *, voxel_fraction: float 
             removed_specks = int(cluster_n[small].sum())
             mesh.remove_triangles_by_mask(np.isin(tri_clusters, small))
             mesh.remove_unreferenced_vertices()
+    removed_zero_area = 0
+    if len(mesh.triangles):  # marching cubes can leave numerically zero-area slivers that Open3D's own cleanup keeps: remove them explicitly
+        tv, tf = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
+        tri = tv[tf]
+        area = 0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+        zero = area <= 1e-12
+        removed_zero_area = int(zero.sum())
+        if removed_zero_area:
+            mesh.remove_triangles_by_mask(zero)
+            mesh.remove_unreferenced_vertices()
     vertices, faces = np.asarray(mesh.vertices), np.asarray(mesh.triangles)
     validity = _validate_mesh(vertices, faces)
     validity["removed_floating_specks_triangles"] = removed_specks
+    validity["removed_zero_area_triangles"] = removed_zero_area
     report = {**base, "per_view": per_view, "mesh": validity}
     if len(faces) == 0:
         return FusionResult("ran", "fusion executed but the fused volume contains no surface", report)

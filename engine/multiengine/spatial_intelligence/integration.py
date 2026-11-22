@@ -74,6 +74,21 @@ class DetectionInput:
     track_id: str | None = None
 
 
+def _metric3d_scale(scale_state: str, scale_units: str, is_physically_metric: bool) -> tuple[ScaleState, str]:
+    """(ScaleState, units) for the metric3d.v1 contract from the REAL scale state: SfM-gauge and relative outputs are never labelled
+    synthetic metres, and only a physically anchored result is labelled metres. An unrecognised state makes no scale claim."""
+    if is_physically_metric:
+        return ScaleState.METRIC_ANCHORED, "m"
+    name = str(scale_state).upper()
+    if name in ("SFM_GAUGE", "SFM_ALIGNED_UNMETRIC") or "SFM" in str(scale_units).upper():
+        return ScaleState.SFM_GAUGE, "sfm_units"
+    if name.startswith("RELATIVE") or name in ("MODEL_RELATIVE_DEPTH", "RELATIVE"):
+        return ScaleState.RELATIVE_DEPTH, "relative"
+    if name.startswith("SYNTHETIC") or "SYNTHETIC" in str(scale_units).upper():
+        return ScaleState.SYNTHETIC_SCALE_ALIGNED, "synthetic_m"
+    return ScaleState.UNKNOWN, "unknown"
+
+
 @dataclass
 class SpatialSceneResult:
     """Unified result container of perception, spatial intelligence, and multi-view association."""
@@ -91,6 +106,9 @@ class SpatialSceneResult:
     model_inventory: dict[str, Any] = field(default_factory=dict)
     frame_provenance: dict[str, Any] = field(default_factory=dict)
     execution_telemetry: dict[str, Any] = field(default_factory=dict)
+
+    def metric3d_scale(self) -> tuple[ScaleState, str]:
+        return _metric3d_scale(self.scale_state, self.scale_units, self.is_physically_metric)
 
     def to_world_ir(self, world_id: str = "world_spatial_intelligence") -> WorldIR:
         """Converts the reconstructed physical entities and spatial relationships into a validated WorldIR."""
@@ -237,24 +255,9 @@ class SpatialSceneResult:
 
         records: list[Metric3DObservation] = []
         for rent in self.merged_entities:
-            try:
-                s_state = ScaleState(rent.scale_state)
-            except Exception:
-                s_state = ScaleState.RELATIVE_DEPTH
-
-            # Truthful units alignment: metres ONLY for METRIC_ANCHORED
-            if s_state == ScaleState.METRIC_ANCHORED:
-                s_units = "m"
-                anchor_ref = rent.physical_anchor_ref
-            elif s_state == ScaleState.SYNTHETIC_SCALE_ALIGNED:
-                s_units = "synthetic_m"
-                anchor_ref = None
-            elif s_state == ScaleState.SFM_GAUGE:
-                s_units = "sfm_units"
-                anchor_ref = None
-            else:
-                s_units = "relative"
-                anchor_ref = None
+            # Truthful units alignment from the REAL scale state (shared helper): metres ONLY for a physically anchored result
+            s_state, s_units = _metric3d_scale(rent.scale_state, rent.scale_units, rent.is_physically_metric)
+            anchor_ref = rent.physical_anchor_ref if s_state == ScaleState.METRIC_ANCHORED else None
 
             # Raw artifact reference provenance: persist byte-exact JSON if matrix is available
             if matrix is not None and hasattr(matrix, "artifacts"):

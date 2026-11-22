@@ -413,6 +413,9 @@ def assemble_interior_scene(
             topo = promote_building_topology(building, remapped_rooms, world)
             res.room_entity_ids = list(topo.room_ids)
             res.storey_entity_ids = list(topo.storey_ids)
+            from perception.architecture.topology import connect_rooms
+
+            connect_rooms(world, res.room_links, topo.room_entity_by_graph_id)  # evidenced passages become CONNECTS in the WorldIR
         else:
             res.storeys_skipped = (
                 "room boundary entities not all promoted -- room/storey "

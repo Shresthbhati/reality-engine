@@ -21,6 +21,9 @@ class StageSpec:
     resource_class: ResourceClass
     required: bool  # required + failed -> job FAILED; optional + failed -> PARTIAL
     inputs: tuple[str, ...] | None = None  # artifact names this stage reads; None = assume all earlier ones (lineage)
+    requires_outputs: tuple[str, ...] = ()  # artifact names a succeeded/degraded stage MUST produce; missing -> the stage is failed
+    idempotent: bool = False  # safe to re-run after an exception (no external side effect that a second run would duplicate)
+    retries: int = 0  # extra attempts after an exception; honoured ONLY when ``idempotent``
 
 
 @dataclass

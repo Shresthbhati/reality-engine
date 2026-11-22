@@ -22,6 +22,8 @@ import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStat
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
+import EvidenceRunPanel from "@/components/workspace/EvidenceRunPanel";
+import type { WorldIR } from "@/types/worldir";
 import MapPlotView from "@/components/map/MapPlotView";
 import {
   useWorlds,
@@ -106,6 +108,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [evidencePanelOpen, setEvidencePanelOpen] = useState(false);
+  // a persisted evidence-run WorldIR shown in the viewport; a CANDIDATE, never the committed world (DESIGN_DECISIONS section 7)
+  const [evidenceView, setEvidenceView] = useState<{ runId: string; world: WorldIR } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
@@ -460,6 +465,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     window.addEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
     window.addEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
     window.addEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+    const handleOpenEvidencePanelEvent = () => setEvidencePanelOpen(true);
+    window.addEventListener("open-evidence-panel", handleOpenEvidencePanelEvent);
     window.addEventListener("trigger-export", handleTriggerExportEvent as EventListener);
 
     return () => {
@@ -470,6 +477,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
       window.removeEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
       window.removeEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+      window.removeEventListener("open-evidence-panel", handleOpenEvidencePanelEvent);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
   }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport]);
@@ -693,10 +701,10 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         <main className={cn("relative h-full min-w-0 flex-1 overflow-hidden bg-[var(--bg-base)]", !showCentre && "hidden")}>
           {viewMode === "3d" ? (
             <World3DViewport
-              world={activeWorldIR}
-              points={activePoints}
-              cameras={activeCameras}
-              mesh={activeMesh}
+              world={evidenceView?.world ?? activeWorldIR}
+              points={evidenceView ? null : activePoints}
+              cameras={evidenceView ? null : activeCameras}
+              mesh={evidenceView ? null : activeMesh}
               structurePoints={structurePoints}
               captureQuality={captureQuality}
               selectedEntityId={selectedEntityId}
@@ -744,6 +752,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
 
           {exportPanelOpen && <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />}
+          {evidencePanelOpen && (
+            <EvidenceRunPanel worldId={worldId} onClose={() => setEvidencePanelOpen(false)} onViewWorld={(runId, world) => setEvidenceView({ runId, world })} />
+          )}
+          {evidenceView && (
+            <div role="status" className="absolute top-2 left-1/2 -translate-x-1/2 z-20 text-xs rounded px-3 py-1 flex gap-3 items-center"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+              Viewing evidence run {evidenceView.runId}: a candidate world, not the committed version. Positions may be in SfM units, not metres.
+              <button type="button" className="underline" onClick={() => setEvidenceView(null)}>Back to the committed world</button>
+            </div>
+          )}
 
           {exportError && (
             <div

@@ -184,6 +184,8 @@ class FlowRefiner:
         for ce in d.canonicals:
             per_source: dict[str, set[str]] = {}
             for oid in ce.members:
+                if oid not in group_of:  # derived evidence (lifted position / dimensions, attributes) is not a detection: no group to compare
+                    continue
                 per_source.setdefault(self.m.store.get(oid).source_id, set()).add(group_of[oid])
             for src, groups in per_source.items():
                 if len(groups) > 1:

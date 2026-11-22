@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 577
+Total: 589
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -231,6 +231,7 @@ Total: 577
 - `tests/test_colmap_coverage.py`
 - `tests/test_colmap_deterministic_b12.py`
 - `tests/test_colmap_matcher_flags.py`
+- `tests/test_colmap_observations.py`
 - `tests/test_colmap_session.py`
 - `tests/test_colour_accuracy_task13_8.py`
 - `tests/test_colour_survival.py`
@@ -269,6 +270,7 @@ Total: 577
 - `tests/test_dependency_graph.py`
 - `tests/test_deployment_and_docs.py`
 - `tests/test_depth_anything_backend.py`
+- `tests/test_depth_cache.py`
 - `tests/test_depth_consistency.py`
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
@@ -288,6 +290,7 @@ Total: 577
 - `tests/test_detail_worldstore.py`
 - `tests/test_detection_backends.py`
 - `tests/test_detection_masks.py`
+- `tests/test_detection_pipeline_engine.py`
 - `tests/test_detection_policy.py`
 - `tests/test_device.py`
 - `tests/test_dimension_gates.py`
@@ -390,6 +393,7 @@ Total: 577
 - `tests/test_lazy_query.py`
 - `tests/test_licenses.py`
 - `tests/test_lie_algebra.py`
+- `tests/test_lift_stage_e2e.py`
 - `tests/test_lifting_scale_safety.py`
 - `tests/test_lighting_estimator.py`
 - `tests/test_living_room_acceptance_12_steps.py`
@@ -466,6 +470,7 @@ Total: 577
 - `tests/test_observation_table.py`
 - `tests/test_observations_roundtrip.py`
 - `tests/test_ocr_attributes.py`
+- `tests/test_office7_validation.py`
 - `tests/test_oneformer_no_fabrication.py`
 - `tests/test_onnx_quantizer.py`
 - `tests/test_ontology_extension.py`
@@ -527,6 +532,7 @@ Total: 577
 - `tests/test_proposals_pipeline.py`
 - `tests/test_provenance.py`
 - `tests/test_provenance_graph.py`
+- `tests/test_quality_gate.py`
 - `tests/test_quality_report.py`
 - `tests/test_quality_report_stage.py`
 - `tests/test_query_after_incremental_update.py`
@@ -567,6 +573,7 @@ Total: 577
 - `tests/test_room_schedule_csv.py`
 - `tests/test_room_semantics.py`
 - `tests/test_run_accuracy_benchmark.py`
+- `tests/test_run_manifest.py`
 - `tests/test_run_record.py`
 - `tests/test_runtime_foundation.py`
 - `tests/test_sam2_backend.py`
@@ -603,12 +610,15 @@ Total: 577
 - `tests/test_spatial_intelligence.py`
 - `tests/test_spatial_reasoning.py`
 - `tests/test_spatial_reasoning_rule8.py`
+- `tests/test_spatial_relations.py`
 - `tests/test_spatial_relationships_task8_4.py`
+- `tests/test_spatial_stage.py`
 - `tests/test_spatial_tiles.py`
 - `tests/test_spatial_tiles_boundary.py`
 - `tests/test_spatial_tiling.py`
 - `tests/test_specialist_truth_labels.py`
 - `tests/test_stacked_storey_reconstruction.py`
+- `tests/test_stage_contract.py`
 - `tests/test_stage_dense.py`
 - `tests/test_stage_depth.py`
 - `tests/test_stage_ladder.py`
@@ -627,6 +637,7 @@ Total: 577
 - `tests/test_surface_appearance.py`
 - `tests/test_surface_layout.py`
 - `tests/test_surface_quality_analysis.py`
+- `tests/test_surfaces.py`
 - `tests/test_sync_consumers.py`
 - `tests/test_synthetic_indoor.py`
 - `tests/test_synthetic_rgbd.py`
@@ -705,6 +716,7 @@ Total: 577
 - `tests/test_world_runtime.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
+- `tests/test_world_topology_checks.py`
 - `tests/test_worldir_bridge_uncertainty_roundtrip.py`
 - `tests/test_worldir_confidence_contract.py`
 - `tests/test_worldir_coordinate_like_properties.py`

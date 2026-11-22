@@ -63,6 +63,10 @@ def classify_scale(
     return "", f"UNSUPPORTED_SCALE_STATE: {scale_state!r}"
 
 
+class _AxisAligned(Exception):
+    """Control flow only: the caller asked for world-axis extents instead of a PCA-oriented box."""
+
+
 @dataclass(frozen=True)
 class LiftedEntity3D:
     """A metric 3D entity reconstructed from 2D perception + metric depth."""
@@ -172,6 +176,7 @@ class Metric3DLifter:
         raw_artifact_ref: str = "",
         confidence: float | None = None,
         source_id: str = "camera0",
+        axis_aligned: bool = False,
     ) -> LiftedEntity3D | None:
         """Lifts a single 2D detection or mask into a 3D entity in the target frame.
 
@@ -309,6 +314,10 @@ class Metric3DLifter:
         orientation_tuple: tuple[float, float, float, float] | None = None
 
         try:
+            if axis_aligned:
+                # dimensions are the extents along the WORLD x/y/z axes (what an axis-aligned box consumer reads), independent of
+                # which axis is vertical in this frame; the object's own orientation is therefore not claimed
+                raise _AxisAligned
             eigvals, eigvecs = np.linalg.eigh(cov_xy)
             sorted_indices = np.argsort(eigvals)
             lam0 = float(eigvals[sorted_indices[0]])
@@ -333,6 +342,10 @@ class Metric3DLifter:
                 quat = Quat(math.cos(half_yaw), 0.0, 0.0, math.sin(half_yaw))
                 orientation_tuple = (float(quat.w), float(quat.x), float(quat.y), float(quat.z))
                 orientation_reason = "pca_principal_eigenvector"
+        except _AxisAligned:
+            is_orientation_known = False
+            orientation_reason = "axis_aligned_extents_requested"
+            yaw = 0.0
         except Exception as e:
             is_orientation_known = False
             orientation_reason = f"pca_eigenvalue_solver_failure: {e}"

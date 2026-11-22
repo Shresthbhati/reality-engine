@@ -105,6 +105,18 @@ def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, sort_keys=True, default=_default))
 
 
+def scale_of(matrix: EvidenceMatrix, observation_ids: Sequence[str]) -> dict[str, Any]:
+    """What the supporting observations say about the SCALE of a resolved value: ``{"scale_state", "units", "physically_metric"}`` when
+    every supporting observation is a ``metric3d.v1`` record with the same state, ``{}`` otherwise (a legacy observation without a scale
+    declaration makes no scale claim, so none is added). A world reader can therefore never mistake SfM-gauge units for metres."""
+    states = {str((matrix.store.get(o).predicted or {}).get("scale_state") or "") for o in observation_ids}
+    if len(states) != 1 or "" in states:
+        return {}
+    (state,) = states
+    units = {"sfm_gauge": "sfm_units", "metric_anchored": "m", "synthetic_scale_aligned": "synthetic_m", "relative_depth": "relative"}.get(state)
+    return {} if units is None else {"scale_state": state, "units": units, "physically_metric": state == "metric_anchored"}
+
+
 def _ontology_parts(path: str) -> tuple[str, str | None]:
     segs = [s for s in path.replace(".", "/").split("/") if s]
     return (segs[0] if segs else "unknown"), (segs[1] if len(segs) > 2 else None)
@@ -209,6 +221,7 @@ def convert(
         if pos and pos.status == "resolved" and pos.value is not None and len(pos.value) == 3:
             x, y, z = pos.value
             transform = {"position": {"x": x, "y": y, "z": z}, "frame_id": pos.frame}
+            transform.update(scale_of(matrix, pos.supporting))
 
         geometry_ids: list[str] = []
         if (
@@ -228,6 +241,7 @@ def convert(
                     "model": "axis-aligned box centred on the resolved position with the resolved [w, d, h]; "
                              "orientation and component shape are not modelled by this box",
                     "derived_from": {"position": sorted(pos.supporting), "dimensions": sorted(dims.supporting)},
+                    "scale": scale_of(matrix, pos.supporting) or None,
                     # propagated, evidence-derived uncertainty; None = none could be derived (never a stand-in value)
                     "uncertainty": {"position": pos.uncertainty, "dimensions": dims.uncertainty},
                 }),

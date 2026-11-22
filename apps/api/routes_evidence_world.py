@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import AuthContext, enforce_project_isolation, get_auth_context
@@ -111,14 +112,14 @@ async def get_persisted_world(
     world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     """The persisted, verified canonical WorldIR of the run. No persisted world is a 404 -- never an empty successful world."""
-    from apps.api.evidence_world_stage import WORLDSTORE_REL
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
     from worldstore.store import WorldStore, WorldStoreError
 
     d = _run_dir(await _world_dir(db, world_id, auth), run_id)
-    versions = sorted((d / WORLDSTORE_REL / "versions").glob("*.json")) if (d / WORLDSTORE_REL / "versions").is_dir() else []
-    if not versions:
+    vid = head_version(d)
+    if not vid:
         raise HTTPException(404, "No persisted world for this run")
-    store, vid = WorldStore(d / WORLDSTORE_REL), versions[-1].stem
+    store = WorldStore(d / WORLDSTORE_REL)
     try:
         problems = store.verify_version(vid)
         if problems:
@@ -126,6 +127,379 @@ async def get_persisted_world(
         return {"version_id": vid, "world": store.load_version(vid).to_dict()}
     except WorldStoreError as exc:
         raise HTTPException(500, f"persisted world is unreadable: {exc}") from None
+
+
+@evidence_world_router.get("/{run_id}/manifest")
+async def get_manifest(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """The run's reproducibility manifest plus a fresh integrity check against the disk (inputs, manifest hash, persisted world hash)."""
+    from engine.multiengine import run_manifest
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    f = d / run_manifest.MANIFEST_FILE
+    if not f.is_file():
+        raise HTTPException(404, "No manifest for this run")
+    try:
+        return {"manifest": json.loads(f.read_text(encoding="utf-8")), "verification": run_manifest.verify(d)}
+    except ValueError:
+        raise HTTPException(500, "manifest is unreadable") from None
+
+
+class ExportBody(BaseModel):
+    format: str = Field(min_length=1, max_length=40)
+    acknowledge_unscaled: bool = False
+
+
+_EXPORT_MEDIA = {"gltf": "model/gltf+json", "glb": "model/gltf-binary", "obj": "model/obj", "ply": "application/x-ply", "stl": "model/stl",
+                 "usda": "text/plain", "geojson": "application/geo+json", "cityjson": "application/json"}
+
+
+@evidence_world_router.post("/{run_id}/export")
+async def export_run_world(
+    world_id: str, run_id: str, body: ExportBody, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> Response:
+    """Export the run's persisted world ONLY when it meets the export requirements, derived from persisted data (``readiness``):
+    409 when no entity has a measured position (nothing to place), 409 when the geometry is not in metres unless the caller sets
+    ``acknowledge_unscaled`` (the file then carries unitless/gauge values and the response says so in ``X-Export-Scale``). The exporter's
+    own skipped entities are reported in headers, never hidden."""
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version, readiness
+    from sdk import reality
+    from world_ir.artifact_store import FileArtifactStore
+    from worldstore.store import WorldStore
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    rd = readiness(d)
+    if not rd.get("export_ready"):
+        raise HTTPException(409, f"not exportable: {rd.get('export_not_ready_reason') or rd.get('reason') or rd['world'].get('reason') or 'readiness gate not met'}")
+    if not rd.get("metric_export_ready") and not body.acknowledge_unscaled:
+        raise HTTPException(409, f"{rd.get('export_scale_warning')} Re-send with acknowledge_unscaled=true to export gauge-unit geometry.")
+    vid = head_version(d)
+    world = WorldStore(d / WORLDSTORE_REL).load_version(vid)
+    try:
+        content, report = reality.export(world, body.format, artifact_store=FileArtifactStore(d / "export-artifacts"))
+    except reality.UnsupportedExportFormatError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(501, f"{body.format} export is unavailable on this server: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    data = json.dumps(content, sort_keys=True).encode("utf-8") if isinstance(content, dict) else content.encode("utf-8") if isinstance(content, str) else content
+    return Response(content=data, media_type=_EXPORT_MEDIA.get(body.format, "application/octet-stream"), headers={
+        "X-Export-Version": vid, "X-Export-Scale": "metric" if rd.get("metric_export_ready") else "sfm_units-NOT-metres",
+        "X-Entities-Exported": str(len(report.entities_exported)), "X-Entities-Skipped": str(len(report.entities_skipped)),
+        "X-Physical-Accuracy": str(rd.get("physical_accuracy"))})
+
+
+class ProposeBody(BaseModel):
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/propose", status_code=201)
+async def propose_run_world(
+    world_id: str, run_id: str, body: ProposeBody, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Propose the run's evidence entities to the world's committed HEAD through the adoption protocol (section 6 of the design
+    decisions). NOTHING is committed here: the result is a pending change proposal (``/api/worlds/{id}/proposals``) whose per-entity
+    assessments the user reviews and accepts, entity by entity. The candidate is HEAD plus the evidence entities, geometries and
+    materials; HEAD's own entities are untouched.
+
+    Refused (409) unless the evidence world's frame and units are PROVEN to be HEAD's: HEAD must have been committed by the very job
+    that produced this run (one COLMAP model, one canonical frame, one scale state), the persisted evidence version must verify, and no
+    id may collide with HEAD's. A HEAD from another job could be in another frame, and mixing frames would place objects wrongly."""
+    from apps.api import worldstore_service
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, committed_version, head_version
+    from apps.api.models import WorldVersion
+    from worldstore.proposals import ProposalError, propose_update
+    from worldstore.store import WorldStore
+    from world_ir.world_v1 import WorldIR
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    w = await db.get(World, world_id)
+    if not w.current_version_id:
+        raise HTTPException(409, "the world has no committed version to propose against")
+    head_row = await db.get(WorldVersion, w.current_version_id)
+    recorded = committed_version(d)
+    if head_row is None or recorded != w.current_version_id:
+        raise HTTPException(409, f"frame not proven: HEAD is {w.current_version_id}, but this run's evidence accompanied "
+                                 f"{recorded or 'no recorded version'}; evidence from another solve (or a world that has evolved since) may be in a "
+                                 "different frame or scale, so it is not mixed in")
+    vid = head_version(d)
+    if not vid:
+        raise HTTPException(409, "this run has no persisted evidence world")
+    ev_store = WorldStore(d / WORLDSTORE_REL)
+    problems = ev_store.verify_version(vid)
+    if problems:
+        raise HTTPException(409, f"the persisted evidence world fails verification: {problems[:3]}")
+    evidence = ev_store.load_version(vid)
+    store = worldstore_service.get_store()
+    candidate = WorldIR.from_dict(store.load_version(w.current_version_id).to_dict())
+    clash = sorted((set(evidence.entities) & set(candidate.entities)) | (set(evidence.geometries) & set(candidate.geometries))
+                   | (set(evidence.materials) & set(candidate.materials)))
+    if clash:
+        raise HTTPException(409, f"ids already exist in HEAD, nothing proposed: {clash[:5]}")
+    scale_states = sorted({str((e.transform or {}).get("scale_state") or "undeclared") for e in evidence.entities.values()})
+    for k, e in evidence.entities.items():
+        ent_copy = Entity.from_dict(e.to_dict())
+        ent_copy.custom_properties = {**(ent_copy.custom_properties or {}), "promoted_from_evidence_run": run_id, "evidence_world_version": vid}
+        candidate.entities[k] = ent_copy
+    candidate.geometries.update(evidence.geometries)
+    candidate.materials.update(evidence.materials)
+    try:
+        p = propose_update(store, w.current_version_id, candidate, list(head_row.source_session_ids or []))
+    except ProposalError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"proposal": p.to_dict(), "added_entities": len(evidence.entities), "evidence_version": vid,
+            "frame_check": {"basis": "HEAD was committed by the same job as this evidence run (one COLMAP model and canonical frame)",
+                            "head_version": w.current_version_id, "evidence_scale_states": scale_states, "note": body.note.strip() or None},
+            "next": f"review, then POST /api/worlds/{world_id}/proposals/{p.proposal_id}/accept (entity_ids to pick a subset)"}
+
+
+class MergeBody(BaseModel):
+    other_entity_id: str = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+    acknowledge_same_image: bool = False
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/merge")
+async def merge_entities_route(
+    world_id: str, run_id: str, entity_id: str, body: MergeBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User identity correction: "``other_entity_id`` is the same physical object as ``entity_id``". The merged entity is REBUILT from the
+    raw evidence of both (position / dimensions / class / material are re-determined from the union of their observations in the Evidence
+    Matrix, not copied), keeps ``entity_id`` (stable id), and is saved as a NEW immutable version; the absorbed entity's relationships are
+    re-pointed, the user's decision is recorded, and the snapshot / matrix are never modified. Refused (422) when the two share an image
+    (one object cannot appear twice in one photograph) unless ``acknowledge_same_image`` is set, and when the rebuilt world would be invalid."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.association import AssociatedEntity
+    from engine.multiengine.canonical import build_canonical_entity
+    from engine.multiengine.worldir_bridge import convert
+    from engine.multiengine.api_facade import get_default_ontology
+    from world_ir.validation import validate_world_ir
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    if body.other_entity_id == entity_id:
+        raise HTTPException(422, "an entity cannot be merged with itself")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        ka, kb = f"ent-{entity_id}", f"ent-{body.other_entity_id}"
+        ea, eb = world.entities.get(ka), world.entities.get(kb)
+        if ea is None or eb is None:
+            raise HTTPException(404, "Entity not found")
+        ev_a, ev_b = (ea.custom_properties.get("evidence") or {}), (eb.custom_properties.get("evidence") or {})
+        if not ev_a.get("members") or not ev_b.get("members"):
+            raise HTTPException(422, "only entities built from evidence can be merged")
+        matrix = _matrix(d)
+        union = sorted(set(ev_a["members"]) | set(ev_b["members"]))
+        bbox_ids = [m for m in union if matrix.store.get(m).quantity == "bbox"]
+        by_source: dict[str, int] = {}
+        for m in bbox_ids:
+            src = matrix.store.get(m).source_id
+            by_source[src] = by_source.get(src, 0) + 1
+        shared = sorted({matrix.store.get(m).source_id for m in ev_a["members"] if matrix.store.get(m).quantity == "bbox"}
+                        & {matrix.store.get(m).source_id for m in ev_b["members"] if matrix.store.get(m).quantity == "bbox"})
+        if shared and not body.acknowledge_same_image:
+            raise HTTPException(422, f"both entities were detected in the same photograph(s) {shared}: one object cannot appear twice in one image. "
+                                     "Re-send with acknowledge_same_image=true if these are duplicate detections of one object.")
+        labels = {m: str(matrix.store.get(m).predicted["label"]) for m in bbox_ids if isinstance(matrix.store.get(m).predicted.get("label"), str)}
+        onto = get_default_ontology()
+        ae = AssociatedEntity(entity_key=entity_id, members=tuple(union), labels=tuple(sorted(set(labels.values()))),
+                              sources=tuple(sorted({matrix.store.get(m).source_id for m in union})))
+        ce = build_canonical_entity(ae, matrix, target_frame="world", tolerances={}, labels=labels, registry=None, ontology=onto, association=None)
+        rebuilt = convert([ce], matrix, ontology=onto)
+        new_ent = rebuilt.entities[ka]
+        decision = {"kind": "merge", "basis": "user", "entity_id": ka, "absorbed_entity_id": kb, "note": body.note.strip() or None,
+                    "user_id": str(getattr(auth, "user_id", "") or "user"), "members_before": {ka: ev_a["members"], kb: ev_b["members"]},
+                    "acknowledged_same_image": bool(shared)}
+        new_ent.custom_properties["user_decision"] = decision
+        new_ent.custom_properties["merged_from"] = [kb]
+        for gid in list(ea.geometry_ids) + list(eb.geometry_ids):
+            world.geometries.pop(gid, None)
+        del world.entities[kb]
+        world.entities[ka] = new_ent
+        world.geometries.update(rebuilt.geometries)
+        world.materials.update(rebuilt.materials)
+        for e in world.entities.values():  # relationships that pointed at the absorbed entity now point at the survivor
+            seen = set()
+            fixed = []
+            for r in e.relationships:
+                if r.target_id == kb:
+                    r.target_id = ka
+                key = (r.kind, r.target_id)
+                if e.id == r.target_id or key in seen:
+                    continue
+                seen.add(key)
+                fixed.append(r)
+            e.relationships = fixed
+        world.metadata["user_decisions"] = list(world.metadata.get("user_decisions") or []) + [decision]
+        errors = [str(i) for i in validate_world_ir(world).errors]
+        if errors:
+            raise HTTPException(422, f"the merged world would be invalid and was not saved: {errors[:3]}")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the merged version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the merged version: {exc}") from None
+    pos, dims = ce.determinations.get("position"), ce.determinations.get("dimensions")
+    return {"version_id": vid, "parent_version_id": head, "entity_id": entity_id, "absorbed_entity_id": body.other_entity_id,
+            "members": len(union), "rebuilt_from_evidence": True, "position_status": pos.status if pos else "absent",
+            "dimensions_status": dims.status if dims else "absent", "decision": decision}
+
+
+class SplitBody(BaseModel):
+    detach_observation_ids: list[str] = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/split")
+async def split_entity_route(
+    world_id: str, run_id: str, entity_id: str, body: SplitBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User identity correction: "these detections are NOT the same object as the rest". The listed detection observations move to a NEW
+    entity; every observation derived from a moved detection (its lifted position / dimensions, its material claim: same image + same box)
+    moves with it. BOTH entities are rebuilt from their own raw evidence, the original keeps its id, the decision is recorded, and a new
+    immutable version is saved. Refused when nothing would stay behind, when an id is not one of the entity's detections, or when the rebuilt
+    world would be invalid. The new entity starts without relationships: nothing is inferred about it."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.association import AssociatedEntity
+    from engine.multiengine.canonical import build_canonical_entity
+    from engine.multiengine.worldir_bridge import convert
+    from engine.multiengine.api_facade import get_default_ontology
+    from world_ir.validation import validate_world_ir
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        ka = f"ent-{entity_id}"
+        ea = world.entities.get(ka)
+        if ea is None:
+            raise HTTPException(404, "Entity not found")
+        members = list((ea.custom_properties.get("evidence") or {}).get("members") or [])
+        if not members:
+            raise HTTPException(422, "only entities built from evidence can be split")
+        matrix = _matrix(d)
+        bbox = [m for m in members if matrix.store.get(m).quantity == "bbox"]
+        detach = set(body.detach_observation_ids)
+        if not detach <= set(bbox):
+            raise HTTPException(422, f"not detections of this entity: {sorted(detach - set(bbox))[:5]}")
+        if len(detach) == len(bbox):
+            raise HTTPException(422, "nothing would stay in the original entity; to re-label it use reclassify")
+        region = {(matrix.store.get(m).source_id, tuple(matrix.store.get(m).image_region)): m for m in bbox if matrix.store.get(m).image_region is not None}
+        moved = set(detach)
+        for m in members:  # derived observations follow their detection (same image + same box)
+            if m in bbox:
+                continue
+            o = matrix.store.get(m)
+            owner = region.get((o.source_id, tuple(o.image_region))) if o.image_region is not None else None
+            if owner in detach:
+                moved.add(m)
+        stay = [m for m in members if m not in moved]
+        new_key = "ent_" + hashlib.sha256("|".join(sorted(moved)).encode("utf-8")).hexdigest()[:24]
+        onto = get_default_ontology()
+
+        def build(key: str, ids: list[str]):
+            lab = {m: str(matrix.store.get(m).predicted["label"]) for m in ids
+                   if matrix.store.get(m).quantity == "bbox" and isinstance(matrix.store.get(m).predicted.get("label"), str)}
+            ae = AssociatedEntity(entity_key=key, members=tuple(sorted(ids)), labels=tuple(sorted(set(lab.values()))),
+                                  sources=tuple(sorted({matrix.store.get(m).source_id for m in ids})))
+            return build_canonical_entity(ae, matrix, target_frame="world", tolerances={}, labels=lab, registry=None, ontology=onto, association=None)
+
+        ce_stay, ce_new = build(entity_id, stay), build(new_key, sorted(moved))
+        rebuilt = convert([ce_stay, ce_new], matrix, ontology=onto)
+        kn = f"ent-{new_key}"
+        decision = {"kind": "split", "basis": "user", "entity_id": ka, "new_entity_id": kn, "note": body.note.strip() or None,
+                    "user_id": str(getattr(auth, "user_id", "") or "user"), "moved_observation_ids": sorted(moved), "kept_observation_ids": sorted(stay)}
+        old_rels = list(ea.relationships)
+        for gid in ea.geometry_ids:
+            world.geometries.pop(gid, None)
+        stayed, born = rebuilt.entities[ka], rebuilt.entities[kn]
+        stayed.relationships = [r for r in old_rels if r.target_id != kn]  # the survivor keeps its claims; the new entity inherits none
+        stayed.custom_properties["user_decision"] = decision
+        born.custom_properties["user_decision"] = decision
+        born.custom_properties["split_from"] = ka
+        world.entities[ka], world.entities[kn] = stayed, born
+        world.geometries.update(rebuilt.geometries)
+        world.materials.update(rebuilt.materials)
+        world.metadata["user_decisions"] = list(world.metadata.get("user_decisions") or []) + [decision]
+        errors = [str(i) for i in validate_world_ir(world).errors]
+        if errors:
+            raise HTTPException(422, f"the split world would be invalid and was not saved: {errors[:3]}")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the split version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the split version: {exc}") from None
+    return {"version_id": vid, "parent_version_id": head, "entity_id": entity_id, "new_entity_id": new_key, "kept_members": len(stay),
+            "moved_members": len(moved), "rebuilt_from_evidence": True, "decision": decision}
+
+
+class ReclassifyBody(BaseModel):
+    new_class: str = Field(min_length=1, max_length=200)
+    note: str = Field("", max_length=1000)
+
+
+@evidence_world_router.post("/{run_id}/entities/{entity_id}/reclassify")
+async def reclassify_entity_route(
+    world_id: str, run_id: str, entity_id: str, body: ReclassifyBody, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """User correction on the run's persisted world: a NEW immutable version whose parent is the previous head. The entity keeps its
+    evidence block, observations and external references untouched (checked before returning); the old class and the user's decision are
+    recorded on the entity and in the world's decisions. The snapshot and the Evidence Matrix are never modified."""
+    import hashlib
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from world_ir.corrections import CorrectionError, reclassify_entity
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    store = WorldStore(d / WORLDSTORE_REL)
+    try:
+        world = store.load_version(head)
+        eid = f"ent-{entity_id}"
+        ent = world.entities.get(eid)
+        if ent is None:
+            raise HTTPException(404, "Entity not found")
+        before = (dict(ent.custom_properties.get("evidence") or {}), [o.id for o in ent.observations], list(ent.external_references))
+        try:
+            decision = reclassify_entity(world, eid, body.new_class, body.note, user_id=str(getattr(auth, "user_id", "") or ""))
+        except CorrectionError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        ent = world.entities[eid]
+        preserved = before == (dict(ent.custom_properties.get("evidence") or {}), [o.id for o in ent.observations], list(ent.external_references))
+        if not preserved:  # a correction must never touch the evidence: refuse rather than save a world that lost it
+            raise HTTPException(500, "correction would have altered the entity's evidence; nothing was saved")
+        vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        store.save_version(world, parent=head, version_id=vid)
+        problems = store.verify_version(vid)
+        if problems or store.load_version(vid).to_dict() != world.to_dict():
+            raise HTTPException(500, f"the corrected version failed verification: {problems[:3]}")
+    except WorldStoreError as exc:
+        raise HTTPException(409, f"could not save the corrected version: {exc}") from None
+    return {"version_id": vid, "parent_version_id": head, "decision": decision, "original_evidence_preserved": True}
 
 
 @evidence_world_router.get("/{run_id}/entities")

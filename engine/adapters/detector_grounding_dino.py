@@ -119,13 +119,17 @@ class GroundingDinoDetectorAdapter(BaseEngineAdapter):
 
                 outputs = self._model(**inputs_tensor)
                 target_sizes = [(h, w)]
+                input_ids = inputs_tensor.input_ids
                 results = self._processor.post_process_grounded_object_detection(
                     outputs=outputs,
-                    input_ids=inputs_tensor.input_ids,
+                    input_ids=input_ids,
                     box_threshold=box_threshold,
                     text_threshold=text_threshold,
                     target_sizes=target_sizes,
                 )[0]
+                del inputs_tensor, outputs
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 boxes = results["boxes"].cpu().numpy()
                 scores = results["scores"].cpu().numpy()

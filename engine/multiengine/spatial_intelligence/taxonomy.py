@@ -722,6 +722,34 @@ COUNTERTOP = _register(TaxonomyClass(
     is_structural=False,
 ))
 
+TABLE_TOP = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.table_top",
+    name="table_top",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    parent_class="interior.furniture.table",
+    aliases=("table top", "tabletop", "desk top", "surface"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.4, 0.4, 0.01),
+    max_dimensions_m=(4.0, 2.0, 0.15),
+    hosts=("table", "desk"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+CHAIR_SEAT = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.chair_seat",
+    name="chair_seat",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    parent_class="interior.furniture.chair",
+    aliases=("chair seat", "seat cushion", "seat"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.3, 0.3, 0.02),
+    max_dimensions_m=(0.8, 0.8, 0.20),
+    hosts=("chair",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
 # --- KITCHEN & HOME APPLIANCES ---
 MICROWAVE = _register(TaxonomyClass(
     taxonomy_id="interior.appliance.microwave",

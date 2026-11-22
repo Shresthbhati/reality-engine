@@ -453,3 +453,82 @@ def test_benchmark_split_dev_and_test_separation() -> None:
         assert "IMG_0020.jpg" in test_images
 
 
+def test_scale_breakdown_metrics() -> None:
+    """Verifies small, medium, and large object scale breakdowns in evaluate_detections."""
+    gt_boxes = [
+        GroundTruthBox(entity_id="g_small", class_name="socket", box_2d=(10.0, 10.0, 30.0, 30.0), image_id="img_1"),    # area = 400 (< 1024)
+        GroundTruthBox(entity_id="g_med", class_name="lamp", box_2d=(50.0, 50.0, 100.0, 100.0), image_id="img_1"),      # area = 2500 (1024..9216)
+        GroundTruthBox(entity_id="g_large", class_name="table", box_2d=(100.0, 100.0, 300.0, 300.0), image_id="img_1"),  # area = 40000 (> 9216)
+    ]
+
+    class MockPred:
+        def __init__(self, class_name: str, box_2d: tuple[float, float, float, float], conf: float):
+            self.class_name = class_name
+            self.box_2d = box_2d
+            self.confidence = conf
+            self.source_image_id = "img_1"
+
+    preds = [
+        MockPred("socket", (11.0, 11.0, 29.0, 29.0), 0.90),      # TP small
+        MockPred("lamp", (51.0, 51.0, 99.0, 99.0), 0.85),        # TP medium
+        MockPred("chair", (400.0, 400.0, 600.0, 600.0), 0.70),   # FP large
+    ]
+
+    metrics = evaluate_detections(gt_boxes, preds, iou_threshold=0.50)
+    sb = metrics.scale_breakdown
+    assert "small" in sb and "medium" in sb and "large" in sb
+    assert sb["small"]["true_positives"] == 1
+    assert sb["small"]["false_positives"] == 0
+    assert sb["small"]["precision"] == 1.0
+    assert sb["medium"]["true_positives"] == 1
+    assert sb["large"]["true_positives"] == 0
+    assert sb["large"]["false_positives"] == 1
+
+
+def test_confidence_calibration_ece_and_brier() -> None:
+    """Verifies Expected Calibration Error (ECE) and Brier Score metrics."""
+    gt_boxes = [
+        GroundTruthBox(entity_id="g1", class_name="table", box_2d=(10.0, 10.0, 100.0, 100.0), image_id="img_1"),
+    ]
+
+    class MockPred:
+        def __init__(self, class_name: str, box_2d: tuple[float, float, float, float], conf: float):
+            self.class_name = class_name
+            self.box_2d = box_2d
+            self.confidence = conf
+            self.source_image_id = "img_1"
+
+    # Perfect prediction with confidence 1.0
+    preds_perfect = [MockPred("table", (10.0, 10.0, 100.0, 100.0), 1.0)]
+    m_perf = evaluate_detections(gt_boxes, preds_perfect, iou_threshold=0.50)
+    assert m_perf.brier_score == pytest.approx(0.0)
+    assert m_perf.expected_calibration_error == pytest.approx(0.0)
+
+    # Overconfident false positive (conf=1.0, match=0) -> brier = 1.0, ece = 1.0
+    preds_bad = [MockPred("chair", (200.0, 200.0, 300.0, 300.0), 1.0)]
+    m_bad = evaluate_detections(gt_boxes, preds_bad, iou_threshold=0.50)
+    assert m_bad.brier_score == pytest.approx(1.0)
+    assert m_bad.expected_calibration_error == pytest.approx(1.0)
+
+
+def test_temporal_tracker_large_shift_continuity() -> None:
+    """Verifies that inter-frame shifts up to 300px maintain track continuity without fragmentation."""
+    from engine.multiengine.spatial_intelligence.association import TemporalIdentityTracker
+    from engine.multiengine.spatial_intelligence.detection_pipeline import DetectionBox
+
+    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=350.0)
+
+    # Frame 0: object at (100, 100, 300, 300) -> center (200, 200)
+    obs_f0 = [DetectionBox(box_id="b0", class_name="chair", box_2d=(100.0, 100.0, 300.0, 300.0), confidence=0.9)]
+    asgn0 = tracker.process_frame_observations(frame_index=0, timestamp_sec=0.0, observations=obs_f0)
+    track_id = asgn0["b0"]
+
+    # Frame 1: shifted by 200px due to camera movement -> center (400, 200)
+    obs_f1 = [DetectionBox(box_id="b1", class_name="chair", box_2d=(300.0, 100.0, 500.0, 300.0), confidence=0.9)]
+    asgn1 = tracker.process_frame_observations(frame_index=1, timestamp_sec=0.1, observations=obs_f1)
+
+    # Must preserve identity despite 200px shift
+    assert asgn1["b1"] == track_id
+    assert len(tracker.active_tracks) == 1
+
+

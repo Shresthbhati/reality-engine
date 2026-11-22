@@ -1048,6 +1048,7 @@ class TemporalTrack:
     age_frames: int = 0
     missed_frames: int = 0
     is_physical_identity: bool = False
+    termination_reason: str = "active"
     provenance: str = "temporal_observation_tracking"
 
     @property
@@ -1061,9 +1062,9 @@ class TemporalTrack:
         """Estimates centroid position forward in time using 2D velocity."""
         cx, cy = self.centroid
         vx, vy = self.velocity_2d
-        # Bound velocity extrapolation to avoid wild leaps on sudden frame drops
-        vx_clamped = max(-300.0, min(300.0, vx))
-        vy_clamped = max(-300.0, min(300.0, vy))
+        # Bound velocity extrapolation to accommodate camera pan without wild leaps on drops
+        vx_clamped = max(-2500.0, min(2500.0, vx))
+        vy_clamped = max(-2500.0, min(2500.0, vy))
         dt_clamped = max(0.0, min(1.0, dt_sec))
         return (cx + vx_clamped * dt_clamped, cy + vy_clamped * dt_clamped)
 
@@ -1076,6 +1077,7 @@ class TemporalTrack:
             "frame_indices": self.frame_indices,
             "age_frames": self.age_frames,
             "missed_frames": self.missed_frames,
+            "termination_reason": self.termination_reason,
             "velocity_2d": [round(v, 2) for v in self.velocity_2d],
             "is_physical_identity": self.is_physical_identity,
             "provenance": self.provenance,
@@ -1088,8 +1090,8 @@ class TemporalIdentityTracker:
     def __init__(
         self,
         max_missed_frames: int = 5,
-        min_iou_match: float = 0.20,
-        max_centroid_shift_px: float = 120.0,
+        min_iou_match: float = 0.15,
+        max_centroid_shift_px: float = 350.0,
     ) -> None:
         self.max_missed_frames = max_missed_frames
         self.min_iou_match = min_iou_match
@@ -1151,7 +1153,7 @@ class TemporalIdentityTracker:
         matched_obs_ids: set[str] = set()
 
         for score, obs, track in candidate_matches:
-            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", "")))
+            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", getattr(obs, "entity_id", ""))))
             if obs_id in matched_obs_ids or track.track_id in matched_tracks:
                 continue
 
@@ -1183,7 +1185,7 @@ class TemporalIdentityTracker:
 
         # Unmatched observations spawn new tracks
         for obs in observations:
-            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", "")))
+            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", getattr(obs, "entity_id", ""))))
             if obs_id not in matched_obs_ids:
                 new_tid = f"track_{self._next_track_idx:04d}"
                 self._next_track_idx += 1
@@ -1201,6 +1203,7 @@ class TemporalIdentityTracker:
                     age_frames=1,
                     missed_frames=0,
                     is_physical_identity=False,
+                    termination_reason="active",
                     provenance="temporal_observation_tracking",
                 )
                 self.active_tracks[new_tid] = new_track
@@ -1213,6 +1216,7 @@ class TemporalIdentityTracker:
                 track.missed_frames += 1
                 if track.missed_frames > self.max_missed_frames:
                     track.active = False
+                    track.termination_reason = "missed_frames_limit"
                     to_close.append(tid)
 
         for tid in to_close:

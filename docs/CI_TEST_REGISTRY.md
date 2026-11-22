@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 594
+Total: 595
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -719,6 +719,7 @@ Total: 594
 - `tests/test_world_proposals.py`
 - `tests/test_world_query.py`
 - `tests/test_world_runtime.py`
+- `tests/test_world_scale.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
 - `tests/test_world_topology_checks.py`

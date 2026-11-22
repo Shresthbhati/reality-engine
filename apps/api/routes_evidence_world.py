@@ -194,6 +194,80 @@ async def export_run_world(
         "X-Physical-Accuracy": str(rd.get("physical_accuracy")), "X-Quality-Verdict": str(q.get("verdict", "UNKNOWN"))})
 
 
+class DistanceAnchorBody(BaseModel):
+    anchor_id: str = Field(min_length=1, max_length=120)
+    point_a: list[float] = Field(min_length=3, max_length=3)  # reconstruction (gauge) coordinates of the first endpoint
+    point_b: list[float] = Field(min_length=3, max_length=3)
+    measured: float
+    sigma: float
+    unit: str = Field(max_length=4)
+    source: str = Field(max_length=200)
+    measured_at: str = Field(max_length=40)
+    provenance: str = Field(max_length=500)
+    endpoint_sigma_gauge: float = 0.0
+    held_out: bool = False
+
+
+class PointAnchorBody(BaseModel):
+    anchor_id: str = Field(min_length=1, max_length=120)
+    recon_xyz: list[float] = Field(min_length=3, max_length=3)
+    physical_xyz: list[float] = Field(min_length=3, max_length=3)  # metres
+    sigma_m: float
+    source: str = Field(max_length=200)
+    measured_at: str = Field(max_length=40)
+    provenance: str = Field(max_length=500)
+    held_out: bool = False
+
+
+class CalibrateBody(BaseModel):
+    distance_anchors: list[DistanceAnchorBody] = Field(default_factory=list, max_length=200)
+    point_anchors: list[PointAnchorBody] = Field(default_factory=list, max_length=500)
+    expected_version_id: str | None = Field(None, max_length=200)
+
+
+@evidence_world_router.post("/{run_id}/calibrate")
+async def calibrate_run_world(
+    world_id: str, run_id: str, body: CalibrateBody, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Physically anchor the run's world from independent measurements. The anchors are fitted and tested on held-out anchors
+    (``scale_anchors``); only a calibration that is ``validated`` or ``unvalidated`` (>= 2 consistent anchors, none held out) is applied, and
+    it is applied as a NEW immutable version whose parent is the gauge version (``world_scale``). Anything else is refused (409) with the
+    full calibration record -- insufficient or failed anchors never change the world. A world that is already calibrated is refused (409):
+    scaling it again would multiply the scale twice."""
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.scale_anchors import AnchorError, DistanceAnchor, PointAnchor, calibrate_distances, calibrate_points
+    from engine.multiengine.world_scale import AlreadyCalibrated, CalibrationRefused, CAL_KEY, commit_calibrated_version
+    from worldstore.store import WorldStore, WorldStoreError
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    head = head_version(d)
+    if not head:
+        raise HTTPException(404, "No persisted world for this run")
+    _require_fresh(head, body.expected_version_id)
+    if bool(body.distance_anchors) == bool(body.point_anchors):
+        raise HTTPException(422, "send either distance_anchors or point_anchors (exactly one kind), not both and not neither")
+    store = WorldStore(d / WORLDSTORE_REL)
+    if (store.load_version(head).metadata or {}).get(CAL_KEY):
+        raise HTTPException(409, "this world already carries a physical calibration; it will not be scaled twice")
+    try:
+        if body.distance_anchors:
+            cal = calibrate_distances([DistanceAnchor(**{**a.model_dump(), "point_a": tuple(a.point_a), "point_b": tuple(a.point_b)}) for a in body.distance_anchors])
+        else:
+            cal = calibrate_points([PointAnchor(**{**a.model_dump(), "recon_xyz": tuple(a.recon_xyz), "physical_xyz": tuple(a.physical_xyz)}) for a in body.point_anchors])
+    except AnchorError as exc:
+        raise HTTPException(422, f"invalid anchor: {exc}") from exc
+    if not cal.applicable:
+        raise HTTPException(409, {"message": f"calibration {cal.status}: {cal.reason}; the world was not changed", "calibration": cal.to_dict()})
+    try:
+        vid, record = commit_calibrated_version(store, head, cal, artifacts=_matrix(d).artifacts)
+    except AlreadyCalibrated as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (CalibrationRefused, WorldStoreError) as exc:
+        raise HTTPException(422, f"the calibration could not be applied and no version was saved: {exc}") from exc
+    return {"version_id": vid, "parent_version_id": head, "status": cal.status, "scale_m_per_gauge": cal.scale_m_per_gauge,
+            "scale_sigma": cal.scale_sigma, "calibration_id": record["id"], "applied": record["applied"], "warnings": cal.warnings}
+
+
 class ProposeBody(BaseModel):
     note: str = Field("", max_length=1000)
 

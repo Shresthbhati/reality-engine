@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 590
+Total: 591
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -491,6 +491,7 @@ Total: 590
 - `tests/test_pair_registration.py`
 - `tests/test_parametric_fits.py`
 - `tests/test_parametric_templates_task8_3.py`
+- `tests/test_part_of_in_flow.py`
 - `tests/test_partitioned_persistence.py`
 - `tests/test_pbr_material_classification.py`
 - `tests/test_pcl_core.py`

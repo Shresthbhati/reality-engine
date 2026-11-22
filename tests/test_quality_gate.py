@@ -11,7 +11,8 @@ def _ok(**over):
          "completeness": {"covered": 3, "of": 3}, "physical_accuracy": "SURVEYED",  # reference-backed only: no real run has either
          "coverage": {"topology": {"errors": 0, "warnings": 0, "world_validation_errors": 0},
                       "source_traceability": {"covered": 3, "of": 3}, "provenance_declared": {"covered": 3, "of": 3},
-                      "uncertainty_propagated": {"covered": 3, "of": 3, "fraction": 1.0},
+                      "uncertainty_position": {"covered": 3, "of": 3, "fraction": 1.0},
+                      "uncertainty_dimensions": {"covered": 3, "of": 3, "fraction": 1.0},
                       "multiview_association": {"covered": 1, "of": 3, "fraction": 0.3333}},
          "detection": {"status": "ran", "segmentation": "ran", "images": 2, "images_with_detections": 2},
          "scale": {"status": "physically_anchored", "physical_metric": True, "records_by_scale_state": {"metric_anchored": 3}}}
@@ -88,10 +89,12 @@ def test_detection_coverage_is_independent_of_segmentation():
 
 def test_uncertainty_is_its_own_dimension_a_missing_one_is_never_compensated_by_other_passes():
     base = _ok()["coverage"]
-    partial = assess(_ok(coverage={**base, "uncertainty_propagated": {"covered": 2, "of": 3}}))
-    assert partial["verdict"] == "PARTIAL" and any("uncertainty_propagated" in x for x in partial["reasons"])
-    unmeasured = assess(_ok(coverage={**base, "uncertainty_propagated": {"covered": 0, "of": 0}}))
-    assert unmeasured["verdict"] == "PARTIAL" and any("uncertainty_propagated not measured" in x for x in unmeasured["reasons"])
+    # the REAL office run: position uncertainty derived everywhere, dimension uncertainty nowhere -> only the dimension gate fails
+    real = assess(_ok(coverage={**base, "uncertainty_dimensions": {"covered": 0, "of": 3}}))
+    assert real["verdict"] == "PARTIAL" and any("uncertainty_dimensions" in x for x in real["reasons"])
+    assert not any("uncertainty_position" in x for x in real["reasons"])
+    unmeasured = assess(_ok(coverage={**base, "uncertainty_position": {"covered": 0, "of": 0}}))
+    assert unmeasured["verdict"] == "PARTIAL" and any("uncertainty_position not measured" in x for x in unmeasured["reasons"])
 
 
 def test_an_unresolved_conflict_keeps_the_world_partial():

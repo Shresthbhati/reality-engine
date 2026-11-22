@@ -476,7 +476,9 @@ def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, 
         "source_traceability": frac(sum(1 for e in ents if images(e)), len(ents)),
         "provenance_declared": frac(sum(1 for e in ents if e.provenance != Provenance.UNKNOWN), len(ents)),
         "unresolved_conflicts": {"entities": len(conflicted), "hypotheses": sum(len(h) for h in conflicted.values())},
-        "uncertainty_propagated": frac(sum(1 for g in with_unc if all(v is not None for v in g.quality_metrics["uncertainty"].values())), len(with_unc)),
+        # reported separately: position uncertainty can be derived from the lift's covariance while dimension uncertainty has no source
+        "uncertainty_position": frac(sum(1 for g in with_unc if g.quality_metrics["uncertainty"].get("position") is not None), len(with_unc)),
+        "uncertainty_dimensions": frac(sum(1 for g in with_unc if g.quality_metrics["uncertainty"].get("dimensions") is not None), len(with_unc)),
         "topology": {"errors": sum(1 for i in topo if i.severity.value == "error"), "warnings": sum(1 for i in topo if i.severity.value == "warning"),
                      "world_validation_errors": len(rep.errors)},
     }

@@ -48,7 +48,8 @@ def test_uncertainty_counts_only_geometries_whose_position_and_dimension_uncerta
               Geometry(id="g3", type=GeometryType.BOX)):  # g3 carries no uncertainty block: not part of the denominator
         w.geometries[g.id] = g
     c = _coverage(w, placed=[], sized=[])
-    assert (c["uncertainty_propagated"]["covered"], c["uncertainty_propagated"]["of"]) == (1, 2)  # a None is "not derived", never a stand-in
+    assert (c["uncertainty_position"]["covered"], c["uncertainty_position"]["of"]) == (2, 2)
+    assert (c["uncertainty_dimensions"]["covered"], c["uncertainty_dimensions"]["of"]) == (1, 2)  # a None is "not derived", never a stand-in
 
 
 def test_competing_hypotheses_are_counted_as_unresolved_conflicts():

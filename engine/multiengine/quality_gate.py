@@ -85,12 +85,13 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
         bad = int(t.get("errors", 0)) + int(t.get("world_validation_errors", 0))
         gates.append(_gate("topology_validity", {"errors": bad, "warnings": t.get("warnings", 0)}, PASS if bad == 0 else FAIL,
                            "the persisted world validates with no topology or structural errors (warnings are reported, not failed)"))
-        up = cov.get("uncertainty_propagated")
-        if up is None or not up.get("of"):
-            gates.append(_gate("uncertainty_propagated", None, NOT_MEASURED, "no geometry carries an evidence-derived uncertainty block"))
-        else:
-            gates.append(_gate("uncertainty_propagated", f"{up.get('covered')}/{up.get('of')}", PASS if up["covered"] == up["of"] else FAIL,
-                               "every geometry's position and dimension uncertainty was derived from evidence (none is a stand-in)"))
+        for key, what in (("uncertainty_position", "position"), ("uncertainty_dimensions", "dimension")):
+            up = cov.get(key)
+            if up is None or not up.get("of"):
+                gates.append(_gate(key, None, NOT_MEASURED, "no geometry carries an evidence-derived uncertainty block"))
+            else:
+                gates.append(_gate(key, f"{up.get('covered')}/{up.get('of')}", PASS if up["covered"] == up["of"] else FAIL,
+                                   f"every geometry's {what} uncertainty was derived from evidence (none is a stand-in)"))
         uc = cov.get("unresolved_conflicts")
         if uc is not None:
             gates.append(_gate("unresolved_conflicts", f"{uc.get('entities', 0)} entities / {uc.get('hypotheses', 0)} competing hypotheses",

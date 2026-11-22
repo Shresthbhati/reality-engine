@@ -1029,7 +1029,12 @@ def evaluate_cross_view_pair(
 
 @dataclass
 class TemporalTrack:
-    """Continuous temporal track of a physical entity across consecutive video frames."""
+    """Continuous temporal track of an observation sequence across video frames.
+
+    NOTE: Temporal track IDs represent video-frame continuity and tracking evidence,
+    NOT proof of 3D physical identity. Multi-view physical identity requires 3D cross-view
+    epipolar geometry and cluster consistency verification.
+    """
 
     track_id: str
     class_name: str
@@ -1039,8 +1044,11 @@ class TemporalTrack:
     timestamps_sec: list[float] = field(default_factory=list)
     last_box_2d: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     last_appearance: tuple[float, ...] = ()
+    velocity_2d: tuple[float, float] = (0.0, 0.0)  # (vx, vy) pixels per second
     age_frames: int = 0
     missed_frames: int = 0
+    is_physical_identity: bool = False
+    provenance: str = "temporal_observation_tracking"
 
     @property
     def centroid(self) -> tuple[float, float]:
@@ -1048,6 +1056,16 @@ class TemporalTrack:
             0.5 * (self.last_box_2d[0] + self.last_box_2d[2]),
             0.5 * (self.last_box_2d[1] + self.last_box_2d[3]),
         )
+
+    def predicted_centroid(self, dt_sec: float) -> tuple[float, float]:
+        """Estimates centroid position forward in time using 2D velocity."""
+        cx, cy = self.centroid
+        vx, vy = self.velocity_2d
+        # Bound velocity extrapolation to avoid wild leaps on sudden frame drops
+        vx_clamped = max(-300.0, min(300.0, vx))
+        vy_clamped = max(-300.0, min(300.0, vy))
+        dt_clamped = max(0.0, min(1.0, dt_sec))
+        return (cx + vx_clamped * dt_clamped, cy + vy_clamped * dt_clamped)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1058,11 +1076,14 @@ class TemporalTrack:
             "frame_indices": self.frame_indices,
             "age_frames": self.age_frames,
             "missed_frames": self.missed_frames,
+            "velocity_2d": [round(v, 2) for v in self.velocity_2d],
+            "is_physical_identity": self.is_physical_identity,
+            "provenance": self.provenance,
         }
 
 
 class TemporalIdentityTracker:
-    """Associates observations across sequential video frames to maintain temporal identity."""
+    """Associates observations across sequential video frames with velocity prediction and appearance cues."""
 
     def __init__(
         self,
@@ -1097,18 +1118,33 @@ class TemporalIdentityTracker:
             obs_cls = obs.class_name
             obs_cx = 0.5 * (obs_box[0] + obs_box[2])
             obs_cy = 0.5 * (obs_box[1] + obs_box[3])
+            obs_app = tuple(getattr(obs, "appearance_features", ()))
 
             for track in self.active_tracks.values():
                 if not are_semantically_compatible(obs_cls, track.class_name):
                     continue
 
-                iou = compute_box_iou(obs_box, track.last_box_2d)
-                tcx, tcy = track.centroid
+                # Compute motion-compensated centroid distance
+                dt = max(0.001, timestamp_sec - (track.timestamps_sec[-1] if track.timestamps_sec else timestamp_sec))
+                tcx, tcy = track.predicted_centroid(dt)
                 c_dist = math.hypot(obs_cx - tcx, obs_cy - tcy)
 
+                # 2D IoU with previous box
+                iou = compute_box_iou(obs_box, track.last_box_2d)
+
+                # Appearance cosine similarity if available
+                app_score = 0.5
+                if obs_app and track.last_appearance and len(obs_app) == len(track.last_appearance):
+                    u = np.asarray(obs_app, dtype=float)
+                    v = np.asarray(track.last_appearance, dtype=float)
+                    nu, nv = np.linalg.norm(u), np.linalg.norm(v)
+                    if nu > 1e-6 and nv > 1e-6:
+                        app_score = float(np.clip(np.dot(u, v) / (nu * nv), 0.0, 1.0))
+
+                # Allow match if either IoU meets floor or predicted centroid distance is within range
                 if iou >= self.min_iou_match or c_dist <= self.max_centroid_shift_px:
                     dist_score = max(0.0, 1.0 - (c_dist / self.max_centroid_shift_px))
-                    match_score = 0.6 * iou + 0.4 * dist_score
+                    match_score = 0.45 * iou + 0.35 * dist_score + 0.20 * app_score
                     candidate_matches.append((match_score, obs, track))
 
         candidate_matches.sort(key=lambda x: x[0], reverse=True)
@@ -1123,10 +1159,23 @@ class TemporalIdentityTracker:
             matched_obs_ids.add(obs_id)
             matched_tracks.add(track.track_id)
 
+            # Update velocity
+            dt = max(0.001, timestamp_sec - (track.timestamps_sec[-1] if track.timestamps_sec else timestamp_sec))
+            new_cx = 0.5 * (obs.box_2d[0] + obs.box_2d[2])
+            new_cy = 0.5 * (obs.box_2d[1] + obs.box_2d[3])
+            old_cx, old_cy = track.centroid
+            vx = (new_cx - old_cx) / dt
+            vy = (new_cy - old_cy) / dt
+            # Smooth velocity (EMA)
+            alpha = 0.6
+            smoothed_vx = alpha * vx + (1.0 - alpha) * track.velocity_2d[0]
+            smoothed_vy = alpha * vy + (1.0 - alpha) * track.velocity_2d[1]
+
             track.observation_ids.append(obs_id)
             track.frame_indices.append(frame_index)
             track.timestamps_sec.append(timestamp_sec)
             track.last_box_2d = tuple(obs.box_2d)
+            track.velocity_2d = (smoothed_vx, smoothed_vy)
             if hasattr(obs, "appearance_features") and obs.appearance_features:
                 track.last_appearance = tuple(obs.appearance_features)
             track.age_frames += 1
@@ -1148,13 +1197,16 @@ class TemporalIdentityTracker:
                     timestamps_sec=[timestamp_sec],
                     last_box_2d=tuple(obs.box_2d),
                     last_appearance=app,
+                    velocity_2d=(0.0, 0.0),
                     age_frames=1,
                     missed_frames=0,
+                    is_physical_identity=False,
+                    provenance="temporal_observation_tracking",
                 )
                 self.active_tracks[new_tid] = new_track
                 obs_to_track[obs_id] = new_tid
 
-        # Update missed frames for unobserved tracks
+        # Update missed frames for unobserved tracks (coasting)
         to_close: list[str] = []
         for tid, track in self.active_tracks.items():
             if tid not in matched_tracks:

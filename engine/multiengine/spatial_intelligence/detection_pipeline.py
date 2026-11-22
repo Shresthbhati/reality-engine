@@ -437,10 +437,14 @@ def suppress_duplicates_preserving_parts(
             )
 
             is_part_relation = (
+                det.parent_box_id == existing.box_id or
+                existing.parent_box_id == det.box_id or
                 tax_det.parent_class == tax_existing.taxonomy_id or
                 tax_existing.parent_class == tax_det.taxonomy_id or
                 tax_det.name in tax_existing.potential_parts or
                 tax_existing.name in tax_det.potential_parts or
+                tax_existing.name in tax_det.hosts or
+                tax_det.name in tax_existing.hosts or
                 (det.scale != existing.scale and (det_in_existing or existing_in_det))
             )
 
@@ -535,75 +539,28 @@ def refine_instance_mask(
     sub_rgb = rgb_image[rmin:rmax + 1, cmin:cmax + 1] if rgb_image is not None and rgb_image.shape[:2] == (h, w) else None
     sh, sw = sub_refined.shape[:2]
 
-    # Connected component labeling via simple BFS flood fill
-    visited = np.zeros((sh, sw), dtype=bool)
-    components: list[list[tuple[int, int]]] = []
+    # Vectorized connected component labeling and filtering via scipy.ndimage (C-optimized)
+    import scipy.ndimage as ndi
 
-    for r in range(sh):
-        for c in range(sw):
-            if sub_refined[r, c] and not visited[r, c]:
-                comp_pixels: list[tuple[int, int]] = []
-                queue = [(r, c)]
-                visited[r, c] = True
-                while queue:
-                    cr, cc = queue.pop()
-                    comp_pixels.append((cr, cc))
-                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                        nr, nc = cr + dr, cc + dc
-                        if 0 <= nr < sh and 0 <= nc < sw:
-                            if sub_refined[nr, nc] and not visited[nr, nc]:
-                                visited[nr, nc] = True
-                                queue.append((nr, nc))
-                components.append(comp_pixels)
+    lbls, num_features = ndi.label(sub_refined)
+    if num_features > 0:
+        counts = np.bincount(lbls.ravel())
+        small_comps = np.where(counts < min_component_area_px)[0]
+        if len(small_comps) > 0:
+            mask_remove = np.isin(lbls, small_comps)
+            sub_refined[mask_remove] = False
 
-    # Filter small speckles
-    for comp in components:
-        if len(comp) < min_component_area_px:
-            for r, c in comp:
-                sub_refined[r, c] = False
-
-    # Hole detection on inverted sub-mask
-    inv_visited = np.zeros((sh, sw), dtype=bool)
-    border_queue: list[tuple[int, int]] = []
-    for r in range(sh):
-        for c in (0, sw - 1):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                inv_visited[r, c] = True
-                border_queue.append((r, c))
-    for c in range(sw):
-        for r in (0, sh - 1):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                inv_visited[r, c] = True
-                border_queue.append((r, c))
-
-    while border_queue:
-        cr, cc = border_queue.pop()
-        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            nr, nc = cr + dr, cc + dc
-            if 0 <= nr < sh and 0 <= nc < sw:
-                if not sub_refined[nr, nc] and not inv_visited[nr, nc]:
-                    inv_visited[nr, nc] = True
-                    border_queue.append((nr, nc))
-
-    # Any unvisited background pixel is an interior hole
-    for r in range(sh):
-        for c in range(sw):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                hole_pixels: list[tuple[int, int]] = []
-                hq = [(r, c)]
-                inv_visited[r, c] = True
-                while hq:
-                    hr, hc = hq.pop()
-                    hole_pixels.append((hr, hc))
-                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                        nr, nc = hr + dr, hc + dc
-                        if 0 <= nr < sh and 0 <= nc < sw:
-                            if not sub_refined[nr, nc] and not inv_visited[nr, nc]:
-                                inv_visited[nr, nc] = True
-                                hq.append((nr, nc))
-                if len(hole_pixels) <= max_fill_hole_area_px:
-                    for hr, hc in hole_pixels:
-                        sub_refined[hr, hc] = True
+    # Vectorized hole detection and filling via binary_fill_holes
+    filled = ndi.binary_fill_holes(sub_refined)
+    holes = filled ^ sub_refined
+    if np.any(holes):
+        hlbls, num_holes = ndi.label(holes)
+        if num_holes > 0:
+            hcounts = np.bincount(hlbls.ravel())
+            small_holes = np.where((hcounts <= max_fill_hole_area_px) & (hcounts > 0))[0]
+            if len(small_holes) > 0:
+                mask_fill = np.isin(hlbls, small_holes)
+                sub_refined[mask_fill] = True
 
     # Boundary gradient edge snapping if RGB sub-image is provided
     if sub_rgb is not None and sub_rgb.shape[:2] == (sh, sw) and sh > 2 and sw > 2:
@@ -1008,3 +965,7 @@ class DetectionPipeline:
             parent_part_tree=parent_part_tree,
             execution_stats=stats,
         )
+
+
+UniversalPerceptionPipeline = DetectionPipeline
+

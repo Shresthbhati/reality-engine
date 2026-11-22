@@ -52,18 +52,32 @@ def clean_and_split_detection_label(
     if not s or s.lower() in ("none", "null", "unknown", "object", "undefined"):
         return []
 
-    # If known queries supplied, look for matching tokens
+    # If known queries supplied, look for matching tokens (longest/most specific first)
     if known_queries:
         queries_clean = [str(q).strip().lower() for q in known_queries if str(q).strip()]
         s_lower = s.lower()
         # Direct exact match
         if s_lower in queries_clean:
             return [s_lower]
-        # Check which known queries appear in the compound string
+
+        # Match longest queries first, avoiding fragmented sub-word re-matching
+        sorted_queries = sorted(set(queries_clean), key=len, reverse=True)
         matched: list[str] = []
-        for q in queries_clean:
-            if f" {q} " in f" {s_lower} " or s_lower.startswith(f"{q} ") or s_lower.endswith(f" {q}"):
+        covered_spans: list[tuple[int, int]] = []
+
+        import re
+
+        for q in sorted_queries:
+            # Word-boundary match for the query
+            pattern = r"(?:^|\b)" + re.escape(q) + r"(?:\b|$)"
+            for m in re.finditer(pattern, s_lower):
+                start, end = m.span()
+                # Check if this span is already covered by a longer match
+                if any(cs <= start and end <= ce for cs, ce in covered_spans):
+                    continue
                 matched.append(q)
+                covered_spans.append((start, end))
+
         if matched:
             return matched
 

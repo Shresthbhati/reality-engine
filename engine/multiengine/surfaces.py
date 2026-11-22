@@ -252,3 +252,100 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
         elif report["mesh"] is None:
             report["mesh"] = {"status": "not_built", "reason": "too few points or no triangles formed"}
     return ents, geoms, [f"surfaces: {len(ents)} observed surface entities; nothing beyond the observed extent is inferred"], report
+
+
+# --------------------------------------------------------------------------------------------------- objects <-> architecture
+#: ontology-path fragments of objects that sit IN a wall (opening) or ON a wall (fixture). Anything else is never related to a wall here.
+_IN_WALL = ("architecture/door", "architecture/window", "door", "window")
+_ON_WALL = ("vent", "ac_unit", "switch", "socket", "outlet", "mirror", "picture", "wall_light", "sconce", "thermostat", "intercom")
+_NOT_HOSTED = ("handle", "hinge", "lock", "knob", "curtain", "furniture", "chair", "table", "sofa", "plant", "lamp")
+
+
+def _obj_path(e: Any) -> str:
+    ev = (getattr(e, "custom_properties", None) or {}).get("evidence") or {}
+    return str((ev.get("ontology") or {}).get("path") or " ".join(getattr(e, "semantic_labels", []) or [])).lower()
+
+
+def _point_polygon_distance(p: np.ndarray, poly: np.ndarray, normal: np.ndarray) -> float:
+    """Distance (in the plane) from point ``p`` to the polygon ``poly`` (0 when inside). 3D points; the polygon lies in the plane of ``normal``."""
+    n = normal / np.linalg.norm(normal)
+    a = np.cross(n, [1.0, 0, 0] if abs(n[0]) < 0.9 else [0, 1.0, 0])
+    a /= np.linalg.norm(a)
+    b = np.cross(n, a)
+    o = poly.mean(0)
+    P = np.stack([(poly - o) @ a, (poly - o) @ b], 1)
+    q = np.array([(p - o) @ a, (p - o) @ b])
+    inside = False
+    for i in range(len(P)):
+        x1, y1 = P[i]
+        x2, y2 = P[(i + 1) % len(P)]
+        if (y1 > q[1]) != (y2 > q[1]) and q[0] < (x2 - x1) * (q[1] - y1) / (y2 - y1 + 1e-300) + x1:
+            inside = not inside
+    if inside:
+        return 0.0
+    best = np.inf
+    for i in range(len(P)):
+        s, e = P[i], P[(i + 1) % len(P)]
+        d = e - s
+        t = np.clip(((q - s) @ d) / (d @ d + 1e-300), 0, 1)
+        best = min(best, float(np.linalg.norm(q - (s + t * d))))
+    return best
+
+
+def relate_objects_to_surfaces(entities: Mapping[str, Any], geometries: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Relate hosted-class objects to the WALL they sit in / on, from MEASURED geometry only; mutates the object entities' relationships.
+
+    An object is related to a wall when (1) its box reaches the wall's fitted plane -- the centre-to-plane distance is at most the box's
+    half-extent along the plane normal plus 3x the plane-fit residual -- and (2) its centre lies over the wall's OBSERVED hull (within one
+    half-extent of it). Every length is in SfM-gauge units; nothing is converted to metres. An object that fails either test gets NO relation
+    (it is not guessed onto the nearest wall). Doors / windows become ``embedded_in`` (an opening), fixtures ``mounted_on``."""
+    from provenance import Provenance
+    from world_ir.schema_v1 import Relationship, RelationshipKind
+
+    walls = []
+    for e in entities.values():
+        if str(e.id).startswith("surf-wall-") and e.geometry_ids:
+            g = geometries.get(e.geometry_ids[0])
+            q = (getattr(g, "quality_metrics", None) or {}) if g is not None else {}
+            if q.get("plane") and q.get("observed_hull"):
+                walls.append((e.id, np.asarray(q["plane"]["normal"], float), float(q["plane"]["offset"]),
+                              np.asarray(q["observed_hull"], float), float(q.get("rms_residual") or 0.0)))
+    added: list[dict[str, Any]] = []
+    for oid, obj in entities.items():
+        if str(oid).startswith("surf-") or not str(oid).startswith("ent-"):
+            continue
+        path = _obj_path(obj)
+        if any(x in path for x in _NOT_HOSTED) and not any(x in path for x in _IN_WALL + _ON_WALL):
+            continue
+        in_wall = any(x in path for x in _IN_WALL) and "handle" not in path
+        on_wall = (not in_wall) and any(x in path for x in _ON_WALL)
+        if not (in_wall or on_wall) or not obj.geometry_ids:
+            continue
+        g = geometries.get(obj.geometry_ids[0])
+        if g is None or g.bounds_min is None or g.bounds_max is None:
+            continue  # no measured extent: nothing to test, nothing is guessed
+        lo, hi = np.array([g.bounds_min.x, g.bounds_min.y, g.bounds_min.z]), np.array([g.bounds_max.x, g.bounds_max.y, g.bounds_max.z])
+        c, ext = (lo + hi) / 2.0, np.abs(hi - lo)
+        best = None
+        for wid, n, d, hull, rms in walls:
+            n = n / np.linalg.norm(n)
+            half = 0.5 * float(np.abs(n) @ ext)
+            tol = half + 3.0 * rms
+            dist = abs(float(n @ c) - d)
+            if dist > tol:
+                continue
+            lateral = _point_polygon_distance(c - (float(n @ c) - d) * n, hull, n)
+            if lateral > 0.5 * float(ext.max()):
+                continue
+            if best is None or dist < best[0]:
+                best = (dist, wid, tol, lateral, rms)
+        if best is None:
+            continue
+        dist, wid, tol, lateral, rms = best
+        kind = RelationshipKind.EMBEDDED_IN if in_wall else RelationshipKind.MOUNTED_ON
+        obj.relationships.append(Relationship(kind=kind, target_id=wid, confidence=None, provenance=Provenance.ESTIMATED, metadata={
+            "basis": "the object's measured box reaches the wall's fitted plane and lies over its observed extent",
+            "centre_to_plane_gauge": round(dist, 5), "tolerance_gauge": round(tol, 5), "lateral_offset_from_observed_hull_gauge": round(lateral, 5),
+            "plane_rms_gauge": round(rms, 6), "scale_state": "sfm_gauge", "confidence_state": "not_measured"}))
+        added.append({"object": oid, "kind": kind.value, "wall": wid, "centre_to_plane_gauge": round(dist, 5)})
+    return added

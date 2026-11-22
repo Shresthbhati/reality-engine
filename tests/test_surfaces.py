@@ -107,3 +107,44 @@ def test_the_mesh_preserves_holes_and_is_stored_as_an_artifact(monkeypatch):
     g = next(x for x in geoms if x.type is GeometryType.MESH)
     assert m.artifacts.get(g.data_uri)[:3] == b"PLY" or m.artifacts.get(g.data_uri)[:3] == b"ply"
     assert "holes" in g.quality_metrics["unknown"]
+
+
+def _hosted_world():
+    """A wall at z=5 (observed x in [-2,2], y in [-1.2,1.3]) and four objects: a window IN it, a socket ON it, a window far off the plane, a chair."""
+    from world_ir.schema_v1 import Entity, Geometry, Vector3
+    from provenance import Provenance
+
+    hull = [[-2, -1.2, 5], [2, -1.2, 5], [2, 1.3, 5], [-2, 1.3, 5]]
+    wall_g = Geometry(id="geom-surf-wall-1", type=GeometryType.PLANE, bounds_min=Vector3(-2, -1.2, 5), bounds_max=Vector3(2, 1.3, 5),
+                      quality_metrics={"plane": {"normal": [0, 0, 1], "offset": 5.0}, "observed_hull": hull, "rms_residual": 0.002})
+    wall = Entity(id="surf-wall-1", type=EntityType.WALL, geometry_ids=["geom-surf-wall-1"])
+
+    def obj(eid, path, lo, hi):
+        g = Geometry(id=f"geom-{eid}", type=GeometryType.BOX, bounds_min=Vector3(*lo), bounds_max=Vector3(*hi), provenance=Provenance.ESTIMATED)
+        e = Entity(id=eid, type=EntityType.UNKNOWN, geometry_ids=[g.id], custom_properties={"evidence": {"ontology": {"path": path}}})
+        return e, g
+
+    objs = [obj("ent-win", "architecture/window", (-0.5, 0.0, 4.9), (0.5, 1.0, 5.05)), obj("ent-sock", "fixture/socket", (1.0, -1.0, 4.97), (1.1, -0.9, 5.02)),
+            obj("ent-farwin", "architecture/window", (-0.5, 0.0, 3.0), (0.5, 1.0, 3.1)), obj("ent-chair", "furniture/chair", (0, -1.2, 4.9), (0.5, -0.5, 5.1))]
+    ents = {wall.id: wall, **{e.id: e for e, _ in objs}}
+    geoms = {wall_g.id: wall_g, **{g.id: g for _, g in objs}}
+    return ents, geoms
+
+
+def test_hosted_objects_are_related_to_the_wall_only_when_measured_geometry_reaches_it():
+    ents, geoms = _hosted_world()
+    out = surfaces.relate_objects_to_surfaces(ents, geoms)
+    got = {o["object"]: o["kind"] for o in out}
+    assert got == {"ent-win": "embedded_in", "ent-sock": "mounted_on"}  # the far window and the chair get NO relation (not guessed onto the wall)
+    rel = ents["ent-win"].relationships[0]
+    assert rel.target_id == "surf-wall-1" and rel.metadata["scale_state"] == "sfm_gauge" and rel.confidence is None
+    assert ents["ent-farwin"].relationships == [] and ents["ent-chair"].relationships == []
+
+
+def test_an_object_beside_the_observed_wall_extent_is_not_attached():
+    ents, geoms = _hosted_world()
+    from world_ir.schema_v1 import Vector3
+
+    g = geoms["geom-ent-sock"]
+    g.bounds_min, g.bounds_max = Vector3(6.0, -1.0, 4.97), Vector3(6.1, -0.9, 5.02)  # on the plane but 4 units past the observed hull
+    assert "ent-sock" not in {o["object"] for o in surfaces.relate_objects_to_surfaces(ents, geoms)}

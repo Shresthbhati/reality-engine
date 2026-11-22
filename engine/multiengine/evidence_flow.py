@@ -401,6 +401,11 @@ def run_evidence_flow(
             for g in s_geoms:
                 bridge.geometries[g.id] = g
             bridge.notes.extend(s_notes)
+            from engine.multiengine.surfaces import relate_objects_to_surfaces
+
+            hosted = relate_objects_to_surfaces(bridge.entities, bridge.geometries)
+            if isinstance(surface_report, dict):
+                surface_report["hosted_objects"] = hosted
         except Exception as exc:  # noqa: BLE001 -- recorded in the snapshot, never silent and never fatal to the objects
             surface_report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()

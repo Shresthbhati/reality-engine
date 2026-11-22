@@ -14,7 +14,7 @@ def _ok(**over):
          "coverage": {"topology": {"errors": 0, "warnings": 0, "world_validation_errors": 0},
                       "source_traceability": {"covered": 3, "of": 3}, "provenance_declared": {"covered": 3, "of": 3},
                       "uncertainty_position": {"covered": 3, "of": 3, "fraction": 1.0},
-                      "uncertainty_dimensions": {"covered": 3, "of": 3, "fraction": 1.0},
+                      "uncertainty_dimensions": {"covered": 3, "of": 3, "fraction": 1.0, "calibrated": True},
                       "multiview_association": {"covered": 1, "of": 3, "fraction": 0.3333}},
          "detection": {"status": "ran", "segmentation": "ran", "images": 2, "images_with_detections": 2},
          "scale": {"status": "physically_anchored", "physical_metric": True, "records_by_scale_state": {"metric_anchored": 3}}}
@@ -137,3 +137,12 @@ def test_broken_evidence_integrity_is_failed_and_unverified_integrity_is_never_r
 
 def test_partial_stage_is_never_ready():
     assert assess(_ok(stage_status="partial"))["verdict"] == "PARTIAL"
+
+
+def test_dimension_uncertainty_that_is_only_an_uncalibrated_lower_bound_never_passes():
+    base = _ok()["coverage"]
+    lb = assess(_ok(coverage={**base, "uncertainty_dimensions": {"covered": 3, "of": 3, "fraction": 1.0}}))  # no "calibrated": the production state
+    gate = {g["name"]: g for g in lb["gates"]}["uncertainty_dimensions"]
+    assert gate["status"] == "not_measured" and "lower bound" in gate["measured"] and lb["verdict"] == "PARTIAL"
+    ok = assess(_ok())
+    assert {g["name"]: g for g in ok["gates"]}["uncertainty_dimensions"]["status"] == "pass" and ok["verdict"] == "READY"

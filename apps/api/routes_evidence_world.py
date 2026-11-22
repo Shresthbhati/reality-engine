@@ -332,6 +332,17 @@ async def propose_run_world(
             "next": f"review, then POST /api/worlds/{world_id}/proposals/{p.proposal_id}/accept (entity_ids to pick a subset)"}
 
 
+def _refuse_if_calibrated(d: Path, head: str) -> None:
+    """A correction REBUILDS an entity from the raw (gauge-scale) evidence. On a metric-calibrated version that would put a gauge entity
+    next to metric ones, so it is refused: correct the gauge version first, then calibrate (calibration is the last step)."""
+    from apps.api.evidence_world_stage import WORLDSTORE_REL
+    from worldstore.store import WorldStore
+
+    if (WorldStore(d / WORLDSTORE_REL).load_version(head).metadata or {}).get("scale_calibration"):
+        raise HTTPException(409, "this version is metric-calibrated and corrections are rebuilt from gauge-scale evidence; make corrections on the "
+                                 "gauge version, then calibrate")
+
+
 def _require_fresh(head: str, expected: str | None) -> None:
     """A correction made while looking at version X must not silently land on a newer version: when the caller says which version it
     saw (``expected_version_id``) and HEAD has moved, refuse (409) so the user reloads and re-decides."""
@@ -371,6 +382,7 @@ async def merge_entities_route(
     if not head:
         raise HTTPException(404, "No persisted world for this run")
     _require_fresh(head, getattr(body, "expected_version_id", None))
+    _refuse_if_calibrated(d, head)
     if body.other_entity_id == entity_id:
         raise HTTPException(422, "an entity cannot be merged with itself")
     store = WorldStore(d / WORLDSTORE_REL)
@@ -473,6 +485,7 @@ async def split_entity_route(
     if not head:
         raise HTTPException(404, "No persisted world for this run")
     _require_fresh(head, getattr(body, "expected_version_id", None))
+    _refuse_if_calibrated(d, head)
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)
@@ -566,6 +579,7 @@ async def reclassify_entity_route(
     if not head:
         raise HTTPException(404, "No persisted world for this run")
     _require_fresh(head, getattr(body, "expected_version_id", None))
+    _refuse_if_calibrated(d, head)
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)

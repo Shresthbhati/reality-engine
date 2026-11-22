@@ -168,3 +168,75 @@ def test_persistence_drops_an_impossible_support_cycle_keeps_both_entities_and_r
     assert set(w.entities) == {"ent-0", "ent-1"} and validate_world_ir(w).errors == []
     assert all(not r.kind.value.startswith("support") for e in w.entities.values() for r in e.relationships)
     assert w.metadata["withheld_relationships"][0]["entities"] == ["ent-0", "ent-1"] or w.metadata["withheld_relationships"][0]["entities"] == ["ent-1", "ent-0"]
+
+
+def test_dimension_uncertainty_is_bootstrapped_from_the_detections_own_points_and_withheld_when_there_are_too_few():
+    """Synthetic points with a known extent: the estimator recovers it, its covariance is positive semi-definite and shrinks with more points,
+    and fewer than MIN_EXTENT_POINTS yields None (unknown), never a stand-in value."""
+    from engine.multiengine import spatial_stage as ss
+
+    rng = np.random.default_rng(1)
+
+    def box(n):  # a 2 x 1 x 0.5 box of points
+        return rng.uniform([0, 0, 0], [2.0, 1.0, 0.5], (n, 3))
+
+    ext, cov = ss._extent_covariance(box(2000), seed=1)
+    assert ext == pytest.approx([1.8, 0.9, 0.45], abs=0.06)  # 5-95 percentile of a uniform edge: 90 % of the side
+    assert np.all(np.linalg.eigvalsh(cov) >= -1e-12) and np.all(np.diag(cov) > 0)
+    _, cov_small = ss._extent_covariance(box(400), seed=1)
+    assert np.trace(cov_small) > np.trace(cov)  # more points, tighter estimator
+    assert ss._extent_covariance(box(ss.MIN_EXTENT_POINTS - 1), seed=1) is None
+
+
+def _flat_camera():
+    from engine.math import Quat, Vec3
+    from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
+
+    return PinholeCamera(CameraIntrinsics(fx=100.0, fy=100.0, cx=50.0, cy=50.0, width=100, height=100), CameraExtrinsics(Vec3(0, 0, 0), Quat(1, 0, 0, 0)))
+
+
+def _det(box, mask=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(box_2d=box, mask_2d=mask)
+
+
+def test_detection_points_respect_the_mask_drop_depth_outliers_and_refuse_sparse_or_empty_sets():
+    from engine.multiengine import spatial_stage as ss
+
+    cam = _flat_camera()
+    depth = np.full((100, 100), 2.0, np.float32)
+    box = (10, 10, 90, 90)
+    full = ss._detection_points_job(_det(box), depth, cam, max_points=10**6)
+    half = np.zeros((100, 100), bool)
+    half[:, :50] = True
+    left = ss._detection_points_job(_det(box, half), depth, cam, max_points=10**6)  # a mask restricts the points to ITS instance, not the whole box
+    assert len(left) < len(full) and left[:, 0].max() < full[:, 0].max()
+    spiky = depth.copy()
+    spiky[20:24, 20:24] = 9.0  # stray far depths (mask edge / flying pixels)
+    with_spikes = ss._detection_points_job(_det(box), spiky, cam, max_points=10**6)
+    assert len(with_spikes) == len(full) - 16  # robust filter drops exactly the outliers
+    empty_mask = np.zeros((100, 100), bool)
+    assert len(ss._detection_points_job(_det(box, empty_mask), depth, cam)) == 0
+    nan_depth = np.full((100, 100), np.nan, np.float32)
+    nan_depth[40:42, 40:42] = 2.0
+    sparse = ss._detection_points_job(_det(box), nan_depth, cam)
+    assert len(sparse) == 4 and ss._extent_covariance(sparse, seed=0) is None  # occluded / invalid depth: too few points, so no extent
+    assert len(ss._detection_points_job(_det((200, 200, 300, 300)), depth, cam)) == 0  # a box entirely outside the depth map
+
+
+def test_a_flat_or_single_depth_detection_gives_a_finite_psd_covariance_not_nan():
+    from engine.multiengine import spatial_stage as ss
+
+    flat = np.column_stack([np.random.default_rng(2).uniform(0, 1, 500), np.random.default_rng(3).uniform(0, 1, 500), np.full(500, 2.0)])
+    ext, cov = ss._extent_covariance(flat, seed=0)
+    assert ext[2] == pytest.approx(0.0, abs=1e-12) and np.isfinite(cov).all() and np.all(np.linalg.eigvalsh(cov) >= -1e-12)
+
+
+def test_an_invalid_covariance_is_refused_by_the_observation_contract():
+    from engine.multiengine.metric3d import Metric3DObservation, ScaleState
+
+    base = dict(quantity="dimensions", value=(1.0, 1.0, 1.0), engine_id="e", architecture_id="a", checkpoint_id="c", source_id="s", units="sfm_units",
+                scale_state=ScaleState.SFM_GAUGE, frame="world", camera_id="s")
+    for bad in (((1, 0, 0), (0, 1, 0), (0, 0, float("nan"))), ((1, 0, 0), (0, -1, 0), (0, 0, 1)), ((1, 2, 0), (0, 1, 0), (0, 0, 1))):
+        assert Metric3DObservation(covariance=bad, **base).problems(), bad

@@ -560,3 +560,13 @@ def test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_onc
 
     store = WorldStore(tmp_path / "ws" / "evidence-world" / "tenant-a" / wid / "run-c2" / "worldstore")
     assert store.parents(res["version_id"]) == [gauge] and store.verify_version(gauge) == []  # the unscaled world is preserved and intact
+
+
+def test_corrections_on_a_metric_calibrated_version_are_refused_with_guidance(client, tmp_path):
+    wid = _gauge_run(client, tmp_path, "run-c3")
+    anchors = [_dist(i, *p, held=(i == 3)) for i, p in enumerate(_PAIRS)]
+    assert client.post(_url(wid, "run-c3", "calibrate"), json={"distance_anchors": anchors}, headers=A).status_code == 200
+    ents = client.get(_url(wid, "run-c3", "entities"), headers=A).json()["entities"]
+    ids = [e["entity_id"] for e in ents if e["ontology_path"] != "architecture/fused_surface"][:2]
+    r = client.post(_url(wid, "run-c3", "entities", ids[0], "merge"), json={"other_entity_id": ids[-1]}, headers=A)
+    assert r.status_code == 409 and "gauge version" in r.json()["detail"], r.text

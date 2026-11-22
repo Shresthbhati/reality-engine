@@ -60,7 +60,7 @@ def calibration_id(cal: ScaleCalibration, parent_version: str) -> str:
     return "cal-" + hashlib.sha256(blob).hexdigest()[:12]
 
 
-def _propagate(unc: Any, extent: Any, s: float, rel: float | None) -> Any:
+def _propagate(unc: Any, extent: Any, s: float, rel: float | None, rot: np.ndarray | None = None) -> Any:
     """1-sigma uncertainty after scaling by ``s``: sqrt((s*sigma)^2 + (extent * s * rel)^2), where ``rel`` is the scale's own relative sigma
     and ``extent`` is the dimension itself (dimension uncertainty) or the distance from the anchors' centroid (position uncertainty).
     A shape that cannot be propagated is kept scaled but flagged -- never silently dropped, never invented."""
@@ -75,6 +75,19 @@ def _propagate(unc: Any, extent: Any, s: float, rel: float | None) -> Any:
         if rel is None or not all(_num(e) for e in ext):
             return [{"sigma_m": s * float(u), "scale_term": "not_propagated"} for u in unc]
         return [float(math.hypot(s * float(u), abs(float(e)) * s * rel)) for u, e in zip(unc, ext, strict=True)]
+    if isinstance(unc, dict) and isinstance(unc.get("covariance"), list):
+        # A stated covariance: Sigma' = s^2 Sigma + (s rel)^2 e e^T -- one coherent scale error multiplies the whole vector (rank one)
+        cov = np.asarray(unc["covariance"], float)
+        r = np.eye(cov.shape[0]) if rot is None or rot.shape[0] != cov.shape[0] else rot  # a rotated frame rotates a POSITION covariance
+        out = {**unc, "covariance": (s * s * r @ cov @ r.T).tolist(), "scaled_by": s}
+        e = np.asarray(extent, float) if isinstance(extent, (list, tuple)) and len(extent) == cov.shape[0] else None
+        if rel is not None and e is not None:
+            re = r @ e
+            out["covariance"] = (s * s * r @ cov @ r.T + (s * rel) ** 2 * np.outer(re, re)).tolist()
+            out["scale_term"] = "propagated"
+        else:
+            out["scale_term"] = "not_propagated"
+        return out
     return {"original": unc, "scale_term": "unrecognised_shape_not_propagated"}
 
 
@@ -88,6 +101,36 @@ def _transform_mesh(artifacts: Any, uri: str, tf: Sim3) -> tuple[str, str, np.nd
     mesh.apply_transform(m)
     new_uri, digest = artifacts.put(mesh.export(file_type="ply"))
     return new_uri, digest, mesh.bounds[0], mesh.bounds[1]
+
+
+def _scale_determinations(dets: dict[str, Any], tf: Sim3, rel: float | None, cid: str, frame_id: str | None,
+                          centroid: np.ndarray | None = None) -> dict[str, Any]:
+    """The entity's cached position / dimensions determinations (value, candidates, covariance) follow the calibrated geometry, so a reader
+    of ``determinations`` and a reader of ``transform`` never disagree. The gauge originals are kept under ``pre_calibration``."""
+    out = copy.deepcopy(dets)
+    s = float(tf.scale)
+    for q in ("position", "dimensions"):
+        d = out.get(q)
+        if not isinstance(d, dict):
+            continue
+        d["pre_calibration"] = {"value": copy.deepcopy(dets[q].get("value")), "uncertainty": copy.deepcopy(dets[q].get("uncertainty")),
+                                "frame": dets[q].get("frame")}
+
+        def conv(v: Any) -> Any:
+            if not (isinstance(v, (list, tuple)) and len(v) == 3 and all(_num(x) for x in v)):
+                return v
+            return tf.apply(np.asarray(v, float))[0].tolist() if q == "position" else (s * np.asarray(v, float)).tolist()
+
+        d["value"] = conv(d.get("value"))
+        d["candidates"] = [{**c, "value": conv(c.get("value"))} if isinstance(c, dict) else c for c in d.get("candidates") or []]
+        val = d.get("value")
+        ext = val if q == "dimensions" else (None if centroid is None or not _num(dets[q].get("value", [None])[0]) else
+                                             (np.asarray(dets[q]["value"], float) - centroid).tolist())
+        d["uncertainty"] = _propagate(d.get("uncertainty"), ext, s, rel, tf.R if q == "position" else None)
+        d["scale_state"], d["units"], d["calibration_id"] = METRIC, "m", cid
+        if q == "position" and frame_id:
+            d["frame"] = frame_id
+    return out
 
 
 def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str, artifacts: Any = None,
@@ -131,7 +174,9 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
             unc = qm.get("uncertainty")
             if isinstance(unc, dict):
                 ref = float(np.linalg.norm(centre - centroid)) if centroid is not None else None
-                qm["uncertainty"] = {"position": _propagate(unc.get("position"), ref, s, rel),
+                pos_unc = unc.get("position")
+                ref_vec = (centre - centroid).tolist() if centroid is not None and isinstance(pos_unc, dict) else ref
+                qm["uncertainty"] = {"position": _propagate(pos_unc, ref_vec, s, rel, R),
                                      "dimensions": _propagate(unc.get("dimensions"), dims.tolist(), s, rel),
                                      "propagated_from_gauge": unc, "scale_sigma_rel": rel}
                 counts["uncertainties"] += 1
@@ -160,6 +205,9 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
             counts["meshes"] += 1
         else:
             raise CalibrationRefused(f"geometry {g.id} has type {g.type}; no consistent transform is defined for it")
+        if isinstance(qm.get("scale"), dict):  # the nested label of the source observations' scale must not keep saying gauge
+            pre["scale"] = qm["scale"]
+            qm["scale"] = {"scale_state": METRIC, "units": "m", "calibration_id": cid}
         qm.update({"scale_state": METRIC, "units": "m", "calibration_id": cid, "pre_calibration": pre})
         if frame_id:
             qm["frame_id"] = frame_id
@@ -167,6 +215,12 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
 
     for e in w.entities.values():
         tr = e.transform
+        if cal.transform is not None and tr and any(k in tr for k in ("rotation", "orientation", "quaternion", "rotation_wxyz")):
+            raise CalibrationRefused(f"entity {e.id} carries an orientation; composing it with the calibration rotation is not implemented, "
+                                     "and leaving it unrotated would misplace the object")
+        ev = (e.custom_properties or {}).get("evidence")
+        if isinstance(ev, dict) and isinstance(ev.get("determinations"), dict):
+            ev["determinations"] = _scale_determinations(ev["determinations"], tf, rel, cid, frame_id, centroid)
         if tr and tr.get("position"):
             p = tr["position"]
             q = tf.apply(np.array([p["x"], p["y"], p["z"]], float))[0]
@@ -183,6 +237,9 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
             if keys:
                 r.metadata["scale_state"], r.metadata["calibration_id"] = METRIC, cid
                 counts["relationships"] += 1
+            elif r.metadata is not None and "scale_state" not in r.metadata:  # prose basis with embedded lengths: say which units they are in
+                r.metadata["basis_numbers_in"] = "sfm_gauge_units (pre-calibration); multiply by scale_m_per_gauge for metres"
+                r.metadata["calibration_id"] = cid
 
     cam_out = {k: tf.apply(np.asarray(v, float))[0].tolist() for k, v in cameras.items()} if cameras else None
     record = {"id": cid, "parent_version": parent_version, "scale_m_per_gauge": s, "scale_sigma": cal.scale_sigma, "scale_sigma_rel": rel,
@@ -214,5 +271,9 @@ def commit_calibrated_version(store: Any, parent_version: str, cal: ScaleCalibra
         pass  # a concurrent identical request won the race; the content is identical by construction
     problems = store.verify_version(vid)
     if problems:
-        raise CalibrationRefused(f"calibrated version failed integrity verification: {problems[:2]}")
+        try:  # an unverifiable version must never be reachable as HEAD
+            store.quarantine_version(vid)
+        except Exception:  # noqa: BLE001
+            pass
+        raise CalibrationRefused(f"calibrated version failed integrity verification and was quarantined: {problems[:2]}")
     return vid, record

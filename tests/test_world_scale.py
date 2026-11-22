@@ -161,3 +161,44 @@ def test_a_calibration_estimated_from_points_applies_end_to_end():
     arts = _Arts()
     w, rec = apply_calibration(_world(arts), cal, parent_version="v0", artifacts=arts)
     assert cal.status == "validated" and w.metadata["scale_state"] == "metric_anchored" and rec["scale_m_per_gauge"] == pytest.approx(S, rel=5e-3)
+
+
+def test_cached_determinations_nested_scale_labels_and_relationship_prose_follow_the_calibration():
+    """Audit regression: after calibration NO cached spatial quantity may still read as gauge next to a metric transform."""
+    arts = _Arts()
+    w0 = _world(arts)
+    w0.entities["ent-box"].custom_properties["evidence"] = {"determinations": {
+        "position": {"status": "resolved", "frame": "world", "value": [1.0, 0.5, 4.7],
+                     "uncertainty": {"method": "source_covariance", "covariance": [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.01]]}},
+        "dimensions": {"status": "resolved", "frame": "world", "value": [1.0, 1.0, 0.6], "uncertainty": None}}}
+    w0.geometries["geom-box"].quality_metrics["scale"] = {"scale_state": "sfm_gauge", "units": "sfm_units"}
+    w0.entities["ent-box"].relationships.append(Relationship(kind=RelationshipKind.OVERLAPS, target_id="surf-wall-1",
+                                                             metadata={"basis": "boxes overlap by 0.05 (all axes)"}))
+    for cal in (_cal(), _cal("points")):
+        w, rec = apply_calibration(copy_world(w0), cal, parent_version="v0", artifacts=arts)
+        det = w.entities["ent-box"].custom_properties["evidence"]["determinations"]
+        pos = w.entities["ent-box"].transform["position"]
+        assert np.allclose(det["position"]["value"], [pos["x"], pos["y"], pos["z"]])  # the cache and the transform agree
+        assert det["position"]["scale_state"] == "metric_anchored" and det["position"]["pre_calibration"]["value"] == [1.0, 0.5, 4.7]
+        assert np.allclose(det["dimensions"]["value"], [2.0, 2.0, 1.2])
+        cov = np.asarray(det["position"]["uncertainty"]["covariance"])
+        assert det["position"]["uncertainty"]["scale_term"] == "propagated" and np.all(np.linalg.eigvalsh(cov) >= -1e-12)
+        assert w.geometries["geom-box"].quality_metrics["scale"]["scale_state"] == "metric_anchored"
+        assert w.geometries["geom-box"].quality_metrics["pre_calibration"]["scale"]["scale_state"] == "sfm_gauge"
+        ov = next(r for r in w.entities["ent-box"].relationships if r.kind is RelationshipKind.OVERLAPS)
+        assert "sfm_gauge_units" in ov.metadata["basis_numbers_in"]
+
+
+def copy_world(w):
+    import copy
+
+    return copy.deepcopy(w)
+
+
+def test_an_entity_orientation_with_a_rotating_calibration_is_refused_rather_than_left_unrotated():
+    arts = _Arts()
+    w = _world(arts)
+    w.entities["ent-box"].transform["orientation"] = {"w": 1, "x": 0, "y": 0, "z": 0}
+    with pytest.raises(CalibrationRefused, match="orientation"):
+        apply_calibration(w, _cal("points"), parent_version="v0", artifacts=arts)
+    apply_calibration(w, _cal(), parent_version="v0", artifacts=arts)  # a pure scale needs no rotation of the orientation: allowed

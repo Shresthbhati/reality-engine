@@ -34,6 +34,7 @@ class SegmentReport:
     """What a segment reports back: any warnings make the stage ``degraded`` (graded PARTIAL)."""
     warnings: list[str] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
+    outputs: dict[str, str] = field(default_factory=dict)  # logical artifact name -> sha256, persisted with the stage result
 
 
 class SegmentStage:
@@ -50,7 +51,7 @@ class SegmentStage:
             raise
         return StageResult(
             name=self.spec.name, status="degraded" if report.warnings else "succeeded", inputs_hash="",
-            outputs={}, metrics=dict(report.metrics), warnings=list(report.warnings), error=None,
+            outputs=dict(report.outputs), metrics=dict(report.metrics), warnings=list(report.warnings), error=None,
             started_at=started, ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
         )
 

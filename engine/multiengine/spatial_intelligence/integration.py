@@ -119,14 +119,18 @@ class SpatialSceneResult:
                 custom_properties={
                     "taxonomy_id": tax_cls.taxonomy_id,
                     "dimensions": list(rent.dimensions) if rent.dimensions is not None else None,
-                    "dimensions_m": list(rent.dimensions) if (rent.is_physically_metric or rent.scale_state == "synthetic_scale_aligned") and rent.dimensions is not None else None,
+                    "dimensions_m": list(rent.dimensions) if (rent.is_physically_anchored and rent.dimensions is not None) else None,
+                    "dimensions_synthetic": list(rent.dimensions) if (rent.scale_state == "synthetic_scale_aligned" and rent.dimensions is not None) else None,
+                    "dimensions_gauge": list(rent.dimensions) if (rent.scale_state == "sfm_gauge" and rent.dimensions is not None) else None,
                     "dimension_status": rent.dimension_status,
                     "is_multiview": rent.is_multiview,
                     "sources": list(rent.sources),
                     "member_observation_ids": list(rent.member_observation_ids),
                     "reprojection_residual_px": rent.reprojection_residual_px,
                     "triangulation_residual": rent.triangulation_residual,
-                    "ray_triangulation_residual_m": rent.triangulation_residual if (rent.is_physically_metric or rent.scale_state == "synthetic_scale_aligned") else None,
+                    "ray_triangulation_residual_m": rent.triangulation_residual if rent.is_physically_anchored else None,
+                    "ray_triangulation_residual_synthetic": rent.triangulation_residual if rent.scale_state == "synthetic_scale_aligned" else None,
+                    "ray_triangulation_residual_gauge": rent.triangulation_residual if rent.scale_state == "sfm_gauge" else None,
                     "residual_units": rent.residual_units,
                     "covariance_units": rent.covariance_units,
                     "scale_state": rent.scale_state,
@@ -176,7 +180,11 @@ class SpatialSceneResult:
                     confidence=rel.confidence,
                     provenance=Provenance.INFERRED,
                     metadata={
-                        "distance_m": rel.distance_m,
+                        "distance": rel.distance,
+                        "distance_m": rel.distance_m if rel.distance_units == "m" else None,
+                        "distance_synthetic": rel.distance if rel.distance_units == "synthetic_m" else None,
+                        "distance_gauge": rel.distance if rel.distance_units == "sfm_units" else None,
+                        "distance_units": rel.distance_units,
                         "basis": rel.basis,
                         "relation_name": rel.relation.value,
                     },
@@ -189,8 +197,15 @@ class SpatialSceneResult:
 
         return world
 
-    def to_metric3d_observations(self) -> list[Metric3DObservation]:
+    def to_metric3d_observations(
+        self,
+        matrix: Any | None = None,
+        raw_artifact_ref: str | None = None,
+        run_id: str = "run_spatial_reconstruction",
+    ) -> list[Metric3DObservation]:
         """Emits standard Metric3DObservation records for the metric3d.v1 contract."""
+        import json
+
         records: list[Metric3DObservation] = []
         for rent in self.merged_entities:
             try:
@@ -201,42 +216,120 @@ class SpatialSceneResult:
             # Truthful units alignment: metres ONLY for METRIC_ANCHORED
             if s_state == ScaleState.METRIC_ANCHORED:
                 s_units = "m"
+                anchor_ref = rent.physical_anchor_ref
             elif s_state == ScaleState.SYNTHETIC_SCALE_ALIGNED:
                 s_units = "synthetic_m"
+                anchor_ref = None
             elif s_state == ScaleState.SFM_GAUGE:
                 s_units = "sfm_units"
+                anchor_ref = None
             else:
                 s_units = "relative"
+                anchor_ref = None
+
+            # Raw artifact reference provenance: persist byte-exact JSON if matrix is available
+            if matrix is not None and hasattr(matrix, "artifacts"):
+                ent_payload = json.dumps(rent.to_dict(), sort_keys=True).encode("utf-8")
+                rec_raw_ref, _ = matrix.artifacts.put(ent_payload)
+            elif raw_artifact_ref is not None:
+                rec_raw_ref = raw_artifact_ref
+            else:
+                rec_raw_ref = f"artifact://spatial_intelligence/{rent.canonical_entity_id}"
+
+            cov_tuple = rent.covariance_xyz
 
             # 3D Position (only if observed or triangulated)
             if rent.position is not None:
-                records.append(Metric3DObservation(
+                obs_pos = Metric3DObservation(
                     engine_id="spatial_intelligence",
                     architecture_id="epipolar_triangulation",
-                    checkpoint_id="none",
+                    checkpoint_id="none:geometric-algorithm",
                     source_id=rent.canonical_entity_id,
                     quantity="position",
                     scale_state=s_state,
                     units=s_units,
                     value=tuple(float(v) for v in rent.position),
                     frame=rent.coordinate_frame or "world:canonical",
-                ))
+                    metric_anchor_ref=anchor_ref,
+                    confidence=round(rent.confidence, 4),
+                    confidence_basis="heuristic",
+                    covariance=cov_tuple,
+                    raw_artifact_ref=rec_raw_ref,
+                )
+                probs = obs_pos.problems()
+                if probs:
+                    obs_pos = Metric3DObservation(
+                        engine_id="spatial_intelligence",
+                        architecture_id="epipolar_triangulation",
+                        checkpoint_id="none:geometric-algorithm",
+                        source_id=rent.canonical_entity_id,
+                        quantity="position",
+                        scale_state=s_state,
+                        units=s_units,
+                        value=tuple(float(v) for v in rent.position),
+                        frame=rent.coordinate_frame or "world:canonical",
+                        metric_anchor_ref=anchor_ref,
+                        confidence=round(rent.confidence, 4),
+                        confidence_basis="heuristic",
+                        covariance=cov_tuple,
+                        raw_artifact_ref=rec_raw_ref,
+                        validation_status="rejected",
+                        rejection_reason="; ".join(probs),
+                    )
+                records.append(obs_pos)
 
             # 3D Dimensions (only if observed)
             if rent.dimensions is not None:
-                records.append(Metric3DObservation(
+                obs_dims = Metric3DObservation(
                     engine_id="spatial_intelligence",
                     architecture_id="epipolar_triangulation",
-                    checkpoint_id="none",
+                    checkpoint_id="none:geometric-algorithm",
                     source_id=rent.canonical_entity_id,
                     quantity="bounds_extents",
                     scale_state=s_state,
                     units=s_units,
                     value=tuple(float(v) for v in rent.dimensions),
                     frame=rent.coordinate_frame or "world:canonical",
-                ))
+                    metric_anchor_ref=anchor_ref,
+                    confidence=round(rent.confidence, 4),
+                    confidence_basis="heuristic",
+                    raw_artifact_ref=rec_raw_ref,
+                )
+                probs = obs_dims.problems()
+                if probs:
+                    obs_dims = Metric3DObservation(
+                        engine_id="spatial_intelligence",
+                        architecture_id="epipolar_triangulation",
+                        checkpoint_id="none:geometric-algorithm",
+                        source_id=rent.canonical_entity_id,
+                        quantity="bounds_extents",
+                        scale_state=s_state,
+                        units=s_units,
+                        value=tuple(float(v) for v in rent.dimensions),
+                        frame=rent.coordinate_frame or "world:canonical",
+                        metric_anchor_ref=anchor_ref,
+                        confidence=round(rent.confidence, 4),
+                        confidence_basis="heuristic",
+                        raw_artifact_ref=rec_raw_ref,
+                        validation_status="rejected",
+                        rejection_reason="; ".join(probs),
+                    )
+                records.append(obs_dims)
 
         return records
+
+    def ingest_metric3d(
+        self,
+        matrix: Any,
+        *,
+        run_id: str = "run_spatial_reconstruction",
+        model_version: str = "spatial_intelligence.v1",
+    ) -> dict[str, list[str]]:
+        """Ingests Metric3DObservation records directly through the real EvidenceMatrix."""
+        from engine.multiengine.metric3d import ingest
+
+        records = self.to_metric3d_observations(matrix=matrix, run_id=run_id)
+        return ingest(matrix, records, run_id=run_id, model_version=model_version)
 
 
 def reconstruct_spatial_scene(

@@ -44,13 +44,24 @@ class SpatialRelationship:
     basis: str = ""
     distance_units: str = "m"
     details: dict[str, Any] = field(default_factory=dict)
-    distance_m: float = 0.0
+    distance_m: float | None = None
 
     def __post_init__(self) -> None:
-        if self.distance == 0.0 and self.distance_m != 0.0:
-            object.__setattr__(self, "distance", self.distance_m)
-        elif self.distance_m == 0.0 and self.distance != 0.0:
-            object.__setattr__(self, "distance_m", self.distance)
+        if self.distance_units == "m":
+            if self.distance_m is not None:
+                object.__setattr__(self, "distance", float(self.distance_m))
+            else:
+                object.__setattr__(self, "distance_m", float(self.distance))
+        else:
+            object.__setattr__(self, "distance_m", None)
+
+    @property
+    def distance_synthetic(self) -> float | None:
+        return self.distance if self.distance_units == "synthetic_m" else None
+
+    @property
+    def distance_gauge(self) -> float | None:
+        return self.distance if self.distance_units == "sfm_units" else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,7 +70,9 @@ class SpatialRelationship:
             "relation": self.relation.value,
             "confidence": round(self.confidence, 3),
             "distance": round(self.distance, 3),
-            "distance_m": round(self.distance, 3) if self.distance_units in ("m", "synthetic_m") else None,
+            "distance_m": round(self.distance, 3) if self.distance_units == "m" else None,
+            "distance_synthetic": round(self.distance, 3) if self.distance_units == "synthetic_m" else None,
+            "distance_gauge": round(self.distance, 3) if self.distance_units == "sfm_units" else None,
             "distance_units": self.distance_units,
             "basis": self.basis,
             "details": self.details,
@@ -407,7 +420,7 @@ def infer_spatial_relationships(
             elif is_relative:
                 dist_units = "relative"
             else:
-                dist_units = "m" if ent_a.is_physically_metric else "synthetic_m"
+                dist_units = "m" if (ent_a.is_physically_metric and scale_a == "metric_anchored") else "synthetic_m"
 
             cls_b = ent_b.class_name.lower()
             pos_b = np.array(ent_b.position_m)

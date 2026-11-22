@@ -54,19 +54,69 @@ class CaptureRequest:
     target_entity_ids: tuple[str, ...]
     target_class: str
     target_position: tuple[float, float, float] | None = None
-    recommended_camera_pos_m: tuple[float, float, float] | None = None
-    recommended_look_at_m: tuple[float, float, float] | None = None
-    suggested_distance_m: float = 0.0
+    recommended_camera_pos: tuple[float, float, float] | None = None
+    recommended_look_at: tuple[float, float, float] | None = None
+    suggested_distance: float = 0.0
     guidance_text: str = ""
     is_scale_request: bool = False
     details: dict[str, Any] = field(default_factory=dict)
-    target_position_m: tuple[float, float, float] | None = None
 
-    def __post_init__(self) -> None:
-        if self.target_position is None and self.target_position_m is not None:
-            object.__setattr__(self, "target_position", self.target_position_m)
-        elif self.target_position_m is None and self.target_position is not None:
-            object.__setattr__(self, "target_position_m", self.target_position)
+    def __init__(
+        self,
+        request_id: str,
+        issue_type: CaptureIssueType,
+        priority: CapturePriority,
+        target_entity_ids: tuple[str, ...] | Sequence[str],
+        target_class: str,
+        target_position: tuple[float, float, float] | None = None,
+        recommended_camera_pos: tuple[float, float, float] | None = None,
+        recommended_look_at: tuple[float, float, float] | None = None,
+        suggested_distance: float = 0.0,
+        guidance_text: str = "",
+        is_scale_request: bool = False,
+        details: dict[str, Any] | None = None,
+        target_position_m: tuple[float, float, float] | None = None,
+        recommended_camera_pos_m: tuple[float, float, float] | None = None,
+        recommended_look_at_m: tuple[float, float, float] | None = None,
+        suggested_distance_m: float | None = None,
+    ) -> None:
+        eff_pos = target_position if target_position is not None else target_position_m
+        eff_cam = recommended_camera_pos if recommended_camera_pos is not None else recommended_camera_pos_m
+        eff_look = recommended_look_at if recommended_look_at is not None else recommended_look_at_m
+        eff_dist = suggested_distance if suggested_distance != 0.0 else (suggested_distance_m if suggested_distance_m is not None else 0.0)
+
+        object.__setattr__(self, "request_id", request_id)
+        object.__setattr__(self, "issue_type", issue_type)
+        object.__setattr__(self, "priority", priority)
+        object.__setattr__(self, "target_entity_ids", tuple(target_entity_ids))
+        object.__setattr__(self, "target_class", target_class)
+        object.__setattr__(self, "target_position", eff_pos)
+        object.__setattr__(self, "recommended_camera_pos", eff_cam)
+        object.__setattr__(self, "recommended_look_at", eff_look)
+        object.__setattr__(self, "suggested_distance", float(eff_dist))
+        object.__setattr__(self, "guidance_text", guidance_text)
+        object.__setattr__(self, "is_scale_request", bool(is_scale_request))
+        object.__setattr__(self, "details", details if details is not None else {})
+
+    @property
+    def is_scale_calibrated(self) -> bool:
+        return bool(self.details.get("scale_calibrated", False))
+
+    @property
+    def target_position_m(self) -> tuple[float, float, float] | None:
+        return self.target_position if self.is_scale_calibrated else None
+
+    @property
+    def recommended_camera_pos_m(self) -> tuple[float, float, float] | None:
+        return self.recommended_camera_pos if self.is_scale_calibrated else None
+
+    @property
+    def recommended_look_at_m(self) -> tuple[float, float, float] | None:
+        return self.recommended_look_at if self.is_scale_calibrated else None
+
+    @property
+    def suggested_distance_m(self) -> float:
+        return self.suggested_distance if self.is_scale_calibrated else 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,10 +126,13 @@ class CaptureRequest:
             "target_entity_ids": list(self.target_entity_ids),
             "target_class": self.target_class,
             "target_position": [round(c, 3) for c in self.target_position] if self.target_position is not None else None,
-            "target_position_m": [round(c, 3) for c in self.target_position_m] if self.target_position_m is not None else None,
-            "recommended_camera_pos_m": [round(c, 3) for c in self.recommended_camera_pos_m] if self.recommended_camera_pos_m else None,
-            "recommended_look_at_m": [round(c, 3) for c in self.recommended_look_at_m] if self.recommended_look_at_m else None,
-            "suggested_distance_m": round(self.suggested_distance_m, 2),
+            "target_position_m": [round(c, 3) for c in self.target_position] if (self.is_scale_calibrated and self.target_position is not None) else None,
+            "recommended_camera_pos": [round(c, 3) for c in self.recommended_camera_pos] if self.recommended_camera_pos else None,
+            "recommended_camera_pos_m": [round(c, 3) for c in self.recommended_camera_pos] if (self.is_scale_calibrated and self.recommended_camera_pos) else None,
+            "recommended_look_at": [round(c, 3) for c in self.recommended_look_at] if self.recommended_look_at else None,
+            "recommended_look_at_m": [round(c, 3) for c in self.recommended_look_at] if (self.is_scale_calibrated and self.recommended_look_at) else None,
+            "suggested_distance": round(self.suggested_distance, 2),
+            "suggested_distance_m": round(self.suggested_distance, 2) if self.is_scale_calibrated else 0.0,
             "guidance_text": self.guidance_text,
             "is_scale_request": self.is_scale_request,
             "details": self.details,

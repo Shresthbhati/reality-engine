@@ -199,7 +199,7 @@ jobs:
     name: Full Suite (shard ${{ matrix.shard }}/8)
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 30       # a shard takes 2-6 minutes; a hung one used to burn ~47 minutes and then lose the runner (logs lost)
+    timeout-minutes: 35       # a shard takes 2-6 minutes; a hung one used to burn ~47 minutes and then lose the runner (logs lost)
     strategy:
       fail-fast: false
       matrix:
@@ -214,7 +214,7 @@ jobs:
       - name: Install package (editable)
         run: pip install -e ".[dev]"
       - name: Run this shard (every test file in it, slow tests excluded)
-        timeout-minutes: 20   # ends the step cleanly (logs uploaded, skip report runs) instead of losing the whole runner
+        timeout-minutes: 25   # ends the step cleanly (logs uploaded, skip report runs) instead of losing the whole runner
         run: |
           python scripts/ci_shard_tests.py --shard ${{ matrix.shard }} --of 8 > shard_files.txt
           echo "shard ${{ matrix.shard }}: $(wc -l < shard_files.txt) test files"

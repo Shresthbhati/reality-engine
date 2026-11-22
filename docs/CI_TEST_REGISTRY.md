@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 576
+Total: 577
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -657,6 +657,7 @@ Total: 576
 - `tests/test_universal_fusion_14_stages.py`
 - `tests/test_universal_ingestion_extensions.py`
 - `tests/test_universal_object_ontology.py`
+- `tests/test_universal_perception.py`
 - `tests/test_universal_pipeline.py`
 - `tests/test_unreachable_sfm_mvs_wiring.py`
 - `tests/test_upload_integrity_contract.py`

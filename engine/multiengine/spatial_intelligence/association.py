@@ -51,6 +51,8 @@ class CrossViewRayCandidate:
     is_physically_metric: bool = False
     coordinate_frame: str = "world:canonical"
     physical_anchor_ref: str | None = None
+    track_id: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 def validate_ray_candidate(candidate: CrossViewRayCandidate) -> list[str]:
@@ -366,6 +368,8 @@ def build_camera_ray(
     is_physically_metric: bool | None = None,
     coordinate_frame: str = "world:canonical",
     physical_anchor_ref: str | None = None,
+    track_id: str | None = None,
+    details: dict[str, Any] | None = None,
 ) -> CrossViewRayCandidate:
     """Builds a CrossViewRayCandidate from a 2D bounding box and calibrated camera."""
     u_mid = 0.5 * (float(box_2d[0]) + float(box_2d[2]))
@@ -444,6 +448,8 @@ def build_camera_ray(
         is_physically_metric=eff_is_metric,
         coordinate_frame=coordinate_frame,
         physical_anchor_ref=eff_anchor_ref,
+        track_id=track_id,
+        details=dict(details or {}),
     )
 
 
@@ -970,6 +976,36 @@ def evaluate_cross_view_pair(
     if app_sim is not None:
         composite *= (0.7 + 0.3 * max(0.0, app_sim))
 
+    # Check temporal track relationship if available
+    if ray_a.track_id and ray_b.track_id:
+        if ray_a.track_id != ray_b.track_id:
+            frames_a = set(ray_a.details.get("track_frames", []))
+            frames_b = set(ray_b.details.get("track_frames", []))
+            if frames_a and frames_b and (frames_a & frames_b):
+                return PairScore(
+                    obs_a_id=ray_a.observation_id,
+                    obs_b_id=ray_b.observation_id,
+                    score=0.0,
+                    outcome=AssociationOutcome.REFUSED,
+                    reason="distinct_cooccurring_temporal_tracks",
+                    basis={"track_a": ray_a.track_id, "track_b": ray_b.track_id},
+                )
+        else:
+            # Same temporal track: boost composite confidence
+            composite = min(0.99, composite + 0.15)
+
+    basis_dict = {
+        "score_ray": round(score_ray, 4),
+        "score_reproj": round(score_reproj, 4),
+        "dist_ray": round(dist_ray, 4),
+        "mean_reproj_px": round(mean_reproj, 2),
+        "s_a": round(s_a, 3),
+        "t_b": round(t_b, 3),
+    }
+    if ray_a.track_id and ray_b.track_id and ray_a.track_id == ray_b.track_id:
+        basis_dict["temporal_track_continuity"] = True
+        basis_dict["track_id"] = ray_a.track_id
+
     return PairScore(
         obs_a_id=ray_a.observation_id,
         obs_b_id=ray_b.observation_id,
@@ -983,15 +1019,154 @@ def evaluate_cross_view_pair(
         ray_distance_gauge=ray_dist_gauge_val,
         reprojection_err_px=mean_reproj,
         appearance_sim=app_sim,
-        basis={
-            "score_ray": round(score_ray, 4),
-            "score_reproj": round(score_reproj, 4),
-            "dist_ray": round(dist_ray, 4),
-            "mean_reproj_px": round(mean_reproj, 2),
-            "s_a": round(s_a, 3),
-            "t_b": round(t_b, 3),
-        },
+        basis=basis_dict,
     )
+
+
+# ============================================================================
+# TEMPORAL IDENTITY TRACKING FOR SEQUENTIAL VIDEO AND FRAMES
+# ============================================================================
+
+@dataclass
+class TemporalTrack:
+    """Continuous temporal track of a physical entity across consecutive video frames."""
+
+    track_id: str
+    class_name: str
+    active: bool = True
+    observation_ids: list[str] = field(default_factory=list)
+    frame_indices: list[int] = field(default_factory=list)
+    timestamps_sec: list[float] = field(default_factory=list)
+    last_box_2d: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    last_appearance: tuple[float, ...] = ()
+    age_frames: int = 0
+    missed_frames: int = 0
+
+    @property
+    def centroid(self) -> tuple[float, float]:
+        return (
+            0.5 * (self.last_box_2d[0] + self.last_box_2d[2]),
+            0.5 * (self.last_box_2d[1] + self.last_box_2d[3]),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": self.track_id,
+            "class_name": self.class_name,
+            "active": self.active,
+            "observation_count": len(self.observation_ids),
+            "frame_indices": self.frame_indices,
+            "age_frames": self.age_frames,
+            "missed_frames": self.missed_frames,
+        }
+
+
+class TemporalIdentityTracker:
+    """Associates observations across sequential video frames to maintain temporal identity."""
+
+    def __init__(
+        self,
+        max_missed_frames: int = 5,
+        min_iou_match: float = 0.20,
+        max_centroid_shift_px: float = 120.0,
+    ) -> None:
+        self.max_missed_frames = max_missed_frames
+        self.min_iou_match = min_iou_match
+        self.max_centroid_shift_px = max_centroid_shift_px
+        self.active_tracks: dict[str, TemporalTrack] = {}
+        self.closed_tracks: dict[str, TemporalTrack] = {}
+        self._next_track_idx = 1
+
+    def process_frame_observations(
+        self,
+        frame_index: int,
+        timestamp_sec: float,
+        observations: Sequence[Any],
+    ) -> dict[str, str]:
+        """Matches current frame observations with active tracks; returns {obs_id: track_id}."""
+        from engine.multiengine.spatial_intelligence.detection_pipeline import compute_box_iou
+
+        obs_to_track: dict[str, str] = {}
+        matched_tracks: set[str] = set()
+
+        # Score all candidate pairs (obs, track)
+        candidate_matches: list[tuple[float, Any, TemporalTrack]] = []
+
+        for obs in observations:
+            obs_box = tuple(obs.box_2d)
+            obs_cls = obs.class_name
+            obs_cx = 0.5 * (obs_box[0] + obs_box[2])
+            obs_cy = 0.5 * (obs_box[1] + obs_box[3])
+
+            for track in self.active_tracks.values():
+                if not are_semantically_compatible(obs_cls, track.class_name):
+                    continue
+
+                iou = compute_box_iou(obs_box, track.last_box_2d)
+                tcx, tcy = track.centroid
+                c_dist = math.hypot(obs_cx - tcx, obs_cy - tcy)
+
+                if iou >= self.min_iou_match or c_dist <= self.max_centroid_shift_px:
+                    dist_score = max(0.0, 1.0 - (c_dist / self.max_centroid_shift_px))
+                    match_score = 0.6 * iou + 0.4 * dist_score
+                    candidate_matches.append((match_score, obs, track))
+
+        candidate_matches.sort(key=lambda x: x[0], reverse=True)
+        matched_obs_ids: set[str] = set()
+
+        for score, obs, track in candidate_matches:
+            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", "")))
+            if obs_id in matched_obs_ids or track.track_id in matched_tracks:
+                continue
+
+            obs_to_track[obs_id] = track.track_id
+            matched_obs_ids.add(obs_id)
+            matched_tracks.add(track.track_id)
+
+            track.observation_ids.append(obs_id)
+            track.frame_indices.append(frame_index)
+            track.timestamps_sec.append(timestamp_sec)
+            track.last_box_2d = tuple(obs.box_2d)
+            if hasattr(obs, "appearance_features") and obs.appearance_features:
+                track.last_appearance = tuple(obs.appearance_features)
+            track.age_frames += 1
+            track.missed_frames = 0
+
+        # Unmatched observations spawn new tracks
+        for obs in observations:
+            obs_id = getattr(obs, "observation_id", getattr(obs, "box_id", getattr(obs, "detection_id", "")))
+            if obs_id not in matched_obs_ids:
+                new_tid = f"track_{self._next_track_idx:04d}"
+                self._next_track_idx += 1
+                app = tuple(obs.appearance_features) if hasattr(obs, "appearance_features") and obs.appearance_features else ()
+                new_track = TemporalTrack(
+                    track_id=new_tid,
+                    class_name=obs.class_name,
+                    active=True,
+                    observation_ids=[obs_id],
+                    frame_indices=[frame_index],
+                    timestamps_sec=[timestamp_sec],
+                    last_box_2d=tuple(obs.box_2d),
+                    last_appearance=app,
+                    age_frames=1,
+                    missed_frames=0,
+                )
+                self.active_tracks[new_tid] = new_track
+                obs_to_track[obs_id] = new_tid
+
+        # Update missed frames for unobserved tracks
+        to_close: list[str] = []
+        for tid, track in self.active_tracks.items():
+            if tid not in matched_tracks:
+                track.missed_frames += 1
+                if track.missed_frames > self.max_missed_frames:
+                    track.active = False
+                    to_close.append(tid)
+
+        for tid in to_close:
+            self.closed_tracks[tid] = self.active_tracks.pop(tid)
+
+        return obs_to_track
 
 
 class MultiViewIntelligenceEngine:

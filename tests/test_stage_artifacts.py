@@ -41,6 +41,15 @@ def test_a_stage_deadline_fails_the_real_job_with_the_reason_and_adopts_nothing(
     assert client.get(f"/api/worlds/{wid}/status").json()["has_model"] is False  # no false successful world
 
 
+def test_generous_deadlines_leave_the_real_job_succeeding_through_the_threaded_stage_path(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("RE_STAGE_TIMEOUTS_S", "evidence_resolve=600,reconstruct=600,compile_validate=600,changeset_commit=600")
+    sid, _ = _chain_setup(client, tmp_path, monkeypatch)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=120.0)
+    assert job["status"] == "succeeded", job
+    names = {s["name"]: s["status"] for s in client.get(f"/api/jobs/{job['id']}/stages").json()["items"]}
+    assert names["compile_validate"] == "succeeded" and names["changeset_commit"] in ("succeeded", "degraded")
+
+
 def test_compile_validate_publishes_the_world_as_a_resolvable_artifact_with_matching_bytes(client, tmp_path, monkeypatch):
     sid, _ = _chain_setup(client, tmp_path, monkeypatch)
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=120.0)

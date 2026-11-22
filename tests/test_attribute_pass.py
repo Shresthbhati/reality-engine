@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace as NS
 
 import numpy as np
+import pytest
 
 from perception.detection.attribute_pass import attribute_phrase, run_attribute_pass
 from world_ir.observation_table import ObservationTable

@@ -509,6 +509,9 @@ def readiness(root: Path) -> dict[str, Any]:
                 out["export_not_ready_reason"] = "no entity has a measured position yet; exporters would place nothing"
     except Exception as exc:  # noqa: BLE001
         out["world"] = {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+    from engine.multiengine.quality_gate import assess
+
+    out["quality"] = assess(out)  # READY / PARTIAL / BLOCKED / FAILED, from the measurements above only
     return out
 
 

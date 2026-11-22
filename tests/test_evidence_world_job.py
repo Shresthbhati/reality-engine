@@ -38,6 +38,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _fake_inputs(monkeypatch, *, raise_exc=None, on_first_infer=None):
     from apps.api import evidence_world_stage as ew
 
+    # synthetic detectors stand in for the whole-image engines; the production default (tiled pipeline + SAM) needs the real models
+    monkeypatch.setenv(ew.ENV_DETECTION, "legacy")
+
     def inputs():
         if raise_exc is not None:
             raise raise_exc

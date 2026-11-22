@@ -9084,6 +9084,1732 @@
         }
       }
     },
+    "/api/engines": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "List Engines",
+        "operationId": "list_engines_api_engines_get",
+        "parameters": [
+          {
+            "name": "all",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "All"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Engines Api Engines Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/stages": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "List Pipeline Stages",
+        "description": "Lists the 13 defined stages of the Sequential Maximum-Fidelity Pipeline.",
+        "operationId": "list_pipeline_stages_api_engines_stages_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Pipeline Stages Api Engines Stages Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/quality-gates": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Standard Quality Gates",
+        "operationId": "standard_quality_gates_api_engines_quality_gates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Standard Quality Gates Api Engines Quality Gates Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/catalogue": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Get Target Model Catalogue",
+        "description": "Queries the 125-slot target model catalogue across the 10 reconstruction domains.",
+        "operationId": "get_target_model_catalogue_api_engines_catalogue_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "commercial_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Commercial Only"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Target Model Catalogue Api Engines Catalogue Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/catalogue/{slot_id}": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Get Catalogue Slot",
+        "operationId": "get_catalogue_slot_api_engines_catalogue__slot_id__get",
+        "parameters": [
+          {
+            "name": "slot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Catalogue Slot Api Engines Catalogue  Slot Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/ontology": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Get Ontology Summary",
+        "description": "Exposes the Universal Object & Part Ontology schema.",
+        "operationId": "get_ontology_summary_api_engines_ontology_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Ontology Summary Api Engines Ontology Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/reconstruct": {
+      "post": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Execute Reconstruction",
+        "description": "Execute sequential Maximum-Fidelity multi-model reconstruction session (global administrators only).",
+        "operationId": "execute_reconstruction_api_engines_reconstruct_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconstructRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Reconstruction Api Engines Reconstruct Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/universal-reconstruct": {
+      "post": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Execute Universal Reconstruction",
+        "description": "Execute complete 14-stage universal multi-engine reconstruction & fusion on real evidence.",
+        "operationId": "execute_universal_reconstruction_api_engines_universal_reconstruct_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UniversalReconstructRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Universal Reconstruction Api Engines Universal Reconstruct Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/evidence-matrix": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "List Evidence Matrix",
+        "description": "Query Shared Evidence Matrix and verify immutable artifact integrity.",
+        "operationId": "list_evidence_matrix_api_engines_evidence_matrix_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Evidence Matrix Api Engines Evidence Matrix Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/evidence": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "List Evidence",
+        "description": "Query the process-wide Evidence Store (global administrators only: it mixes every caller's observations).",
+        "operationId": "list_evidence_api_engines_evidence_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Evidence Api Engines Evidence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/{engine_id}": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Get Engine",
+        "operationId": "get_engine_api_engines__engine_id__get",
+        "parameters": [
+          {
+            "name": "engine_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Engine Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Engine Api Engines  Engine Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_api_worlds__world_id__evidence_world_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Runs Api Worlds  World Id  Evidence World Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_api_worlds__world_id__evidence_world__run_id__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Run Api Worlds  World Id  Evidence World  Run Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/readiness": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Readiness",
+        "description": "Honest product-facing state of one run, derived only from persisted data (see ``evidence_world_stage.readiness``).",
+        "operationId": "get_readiness_api_worlds__world_id__evidence_world__run_id__readiness_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Readiness Api Worlds  World Id  Evidence World  Run Id  Readiness Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/world": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Persisted World",
+        "description": "The persisted, verified canonical WorldIR of the run. No persisted world is a 404 -- never an empty successful world.",
+        "operationId": "get_persisted_world_api_worlds__world_id__evidence_world__run_id__world_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Persisted World Api Worlds  World Id  Evidence World  Run Id  World Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/manifest": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Manifest",
+        "description": "The run's reproducibility manifest plus a fresh integrity check against the disk (inputs, manifest hash, persisted world hash).",
+        "operationId": "get_manifest_api_worlds__world_id__evidence_world__run_id__manifest_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Manifest Api Worlds  World Id  Evidence World  Run Id  Manifest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/export": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Export Run World",
+        "description": "Export the run's persisted world ONLY when it meets the export requirements, derived from persisted data (``readiness``):\n409 when no entity has a measured position (nothing to place), 409 when the geometry is not in metres unless the caller sets\n``acknowledge_unscaled`` (the file then carries unitless/gauge values and the response says so in ``X-Export-Scale``). The exporter's\nown skipped entities are reported in headers, never hidden.",
+        "operationId": "export_run_world_api_worlds__world_id__evidence_world__run_id__export_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/propose": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Propose Run World",
+        "description": "Propose the run's evidence entities to the world's committed HEAD through the adoption protocol (section 6 of the design\ndecisions). NOTHING is committed here: the result is a pending change proposal (``/api/worlds/{id}/proposals``) whose per-entity\nassessments the user reviews and accepts, entity by entity. The candidate is HEAD plus the evidence entities, geometries and\nmaterials; HEAD's own entities are untouched.\n\nRefused (409) unless the evidence world's frame and units are PROVEN to be HEAD's: HEAD must have been committed by the very job\nthat produced this run (one COLMAP model, one canonical frame, one scale state), the persisted evidence version must verify, and no\nid may collide with HEAD's. A HEAD from another job could be in another frame, and mixing frames would place objects wrongly.",
+        "operationId": "propose_run_world_api_worlds__world_id__evidence_world__run_id__propose_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Propose Run World Api Worlds  World Id  Evidence World  Run Id  Propose Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/merge": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Merge Entities Route",
+        "description": "User identity correction: \"``other_entity_id`` is the same physical object as ``entity_id``\". The merged entity is REBUILT from the\nraw evidence of both (position / dimensions / class / material are re-determined from the union of their observations in the Evidence\nMatrix, not copied), keeps ``entity_id`` (stable id), and is saved as a NEW immutable version; the absorbed entity's relationships are\nre-pointed, the user's decision is recorded, and the snapshot / matrix are never modified. Refused (422) when the two share an image\n(one object cannot appear twice in one photograph) unless ``acknowledge_same_image`` is set, and when the rebuilt world would be invalid.",
+        "operationId": "merge_entities_route_api_worlds__world_id__evidence_world__run_id__entities__entity_id__merge_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Merge Entities Route Api Worlds  World Id  Evidence World  Run Id  Entities  Entity Id  Merge Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/split": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Split Entity Route",
+        "description": "User identity correction: \"these detections are NOT the same object as the rest\". The listed detection observations move to a NEW\nentity; every observation derived from a moved detection (its lifted position / dimensions, its material claim: same image + same box)\nmoves with it. BOTH entities are rebuilt from their own raw evidence, the original keeps its id, the decision is recorded, and a new\nimmutable version is saved. Refused when nothing would stay behind, when an id is not one of the entity's detections, or when the rebuilt\nworld would be invalid. The new entity starts without relationships: nothing is inferred about it.",
+        "operationId": "split_entity_route_api_worlds__world_id__evidence_world__run_id__entities__entity_id__split_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Split Entity Route Api Worlds  World Id  Evidence World  Run Id  Entities  Entity Id  Split Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/reclassify": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Reclassify Entity Route",
+        "description": "User correction on the run's persisted world: a NEW immutable version whose parent is the previous head. The entity keeps its\nevidence block, observations and external references untouched (checked before returning); the old class and the user's decision are\nrecorded on the entity and in the world's decisions. The snapshot and the Evidence Matrix are never modified.",
+        "operationId": "reclassify_entity_route_api_worlds__world_id__evidence_world__run_id__entities__entity_id__reclassify_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReclassifyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reclassify Entity Route Api Worlds  World Id  Evidence World  Run Id  Entities  Entity Id  Reclassify Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/entities": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "List Entities",
+        "operationId": "list_entities_api_worlds__world_id__evidence_world__run_id__entities_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Entities Api Worlds  World Id  Evidence World  Run Id  Entities Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Entity",
+        "description": "One canonical entity traced to its original images and model predictions: supporting rows, rejected/excluded rows with\ntheir reasons, the association decisions involving it, the conflicts naming it, and a fresh matrix re-verification.",
+        "operationId": "get_entity_api_worlds__world_id__evidence_world__run_id__entities__entity_id__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Entity Api Worlds  World Id  Evidence World  Run Id  Entities  Entity Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/rows": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "List Rows",
+        "description": "Evidence Matrix rows (rejected ones included): raw observation + context + raw/calibrated confidence + status.",
+        "operationId": "list_rows_api_worlds__world_id__evidence_world__run_id__rows_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "engine_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Engine Id"
+            }
+          },
+          {
+            "name": "quantity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quantity"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Rows Api Worlds  World Id  Evidence World  Run Id  Rows Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/runs": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "List Engine Runs",
+        "description": "Every engine execution, failed / unavailable / cancelled ones included, with model, checkpoint and raw output artifact.",
+        "operationId": "list_engine_runs_api_worlds__world_id__evidence_world__run_id__runs_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Engine Runs Api Worlds  World Id  Evidence World  Run Id  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/rejected": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "List Rejected",
+        "description": "Predictions engines returned that failed observation validation: raw, with the reason. They never support an entity.",
+        "operationId": "list_rejected_api_worlds__world_id__evidence_world__run_id__rejected_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Rejected Api Worlds  World Id  Evidence World  Run Id  Rejected Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/associations": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Handler",
+        "operationId": "handler_api_worlds__world_id__evidence_world__run_id__associations_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Handler Api Worlds  World Id  Evidence World  Run Id  Associations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/conflicts": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Handler",
+        "operationId": "handler_api_worlds__world_id__evidence_world__run_id__conflicts_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Handler Api Worlds  World Id  Evidence World  Run Id  Conflicts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/capture-requests": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Handler",
+        "operationId": "handler_api_worlds__world_id__evidence_world__run_id__capture_requests_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Handler Api Worlds  World Id  Evidence World  Run Id  Capture Requests Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/hierarchy": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Handler",
+        "operationId": "handler_api_worlds__world_id__evidence_world__run_id__hierarchy_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Handler Api Worlds  World Id  Evidence World  Run Id  Hierarchy Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/refinement": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Handler",
+        "operationId": "handler_api_worlds__world_id__evidence_world__run_id__refinement_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Handler Api Worlds  World Id  Evidence World  Run Id  Refinement Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/artifacts/{digest}": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Artifact",
+        "description": "Raw bytes of an artifact (e.g. a run's complete raw model output) -- only artifacts THIS run's matrix references.",
+        "operationId": "get_artifact_api_worlds__world_id__evidence_world__run_id__artifacts__digest__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Digest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/extract-asset": {
       "post": {
         "tags": [
@@ -14191,7 +15917,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -14208,7 +15934,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -14383,7 +16109,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14397,7 +16123,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14411,7 +16137,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14437,7 +16163,7 @@
           },
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14494,7 +16220,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -16524,6 +18250,26 @@
         ],
         "title": "EvidenceItemIn"
       },
+      "ExportBody": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Format"
+          },
+          "acknowledge_unscaled": {
+            "type": "boolean",
+            "title": "Acknowledge Unscaled",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "format"
+        ],
+        "title": "ExportBody"
+      },
       "ExportRequest": {
         "properties": {
           "format": {
@@ -17287,6 +19033,32 @@
         "type": "object",
         "title": "MepDetectRequest"
       },
+      "MergeBody": {
+        "properties": {
+          "other_entity_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Other Entity Id"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          },
+          "acknowledge_same_image": {
+            "type": "boolean",
+            "title": "Acknowledge Same Image",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "other_entity_id"
+        ],
+        "title": "MergeBody"
+      },
       "MergeCorrectionIn": {
         "properties": {
           "primary_entity_id": {
@@ -17677,6 +19449,18 @@
         ],
         "title": "PoseIn"
       },
+      "ProposeBody": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ProposeBody"
+      },
       "ProposeIn": {
         "properties": {
           "candidate": {
@@ -17697,6 +19481,27 @@
           "candidate"
         ],
         "title": "ProposeIn"
+      },
+      "ReclassifyBody": {
+        "properties": {
+          "new_class": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "New Class"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_class"
+        ],
+        "title": "ReclassifyBody"
       },
       "ReclassifyCorrectionIn": {
         "properties": {
@@ -17737,6 +19542,35 @@
           "new_class"
         ],
         "title": "ReclassifyCorrectionIn"
+      },
+      "ReconstructRequest": {
+        "properties": {
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "List of source image paths or virtual identifiers"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Capture and sensor metadata"
+          },
+          "allow_unestablished_licence": {
+            "type": "boolean",
+            "title": "Allow Unestablished Licence",
+            "description": "Whether non-commercial or unestablished licences are permitted",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "sources"
+        ],
+        "title": "ReconstructRequest"
       },
       "RefineIn": {
         "properties": {
@@ -18350,6 +20184,30 @@
         "type": "object",
         "title": "SplatGenerateRequest"
       },
+      "SplitBody": {
+        "properties": {
+          "detach_observation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Detach Observation Ids"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "detach_observation_ids"
+        ],
+        "title": "SplitBody"
+      },
       "SplitCorrectionIn": {
         "properties": {
           "entity_id": {
@@ -18553,6 +20411,61 @@
         "title": "TransformIn",
         "description": "p_to = R(rotation) p_from + translation. Rotation is a unit quaternion (w, x, y, z)."
       },
+      "UniversalReconstructRequest": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "Reconstruction session ID"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "List of source image paths or virtual identifiers"
+          },
+          "camera_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Camera Metadata",
+            "description": "Camera calibration, intrinsics, and extrinsics"
+          },
+          "target_hierarchy_level": {
+            "type": "string",
+            "title": "Target Hierarchy Level",
+            "description": "Target spatial scale (city, building, room, object)",
+            "default": "room"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids",
+            "description": "Specific pre-ingested evidence IDs in Evidence Matrix to fuse"
+          },
+          "run_sequential_engines": {
+            "type": "boolean",
+            "title": "Run Sequential Engines",
+            "description": "Whether to execute available sequential engines to produce real observations",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "sources"
+        ],
+        "title": "UniversalReconstructRequest"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -18576,13 +20489,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

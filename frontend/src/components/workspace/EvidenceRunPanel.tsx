@@ -153,6 +153,16 @@ export default function EvidenceRunPanel({
             {partial || w?.status !== "persisted" ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
             <span>{evidenceHeadline(readiness)}</span>
           </div>
+          {readiness.quality && (
+            <div className="text-[11px] rounded p-2" style={{ background: "var(--surface-sunken)" }} data-testid="evidence-quality">
+              <strong>{readiness.quality.verdict}</strong>
+              {readiness.quality.reasons.length > 0 && (
+                <ul className="list-disc pl-4 mt-1">
+                  {readiness.quality.reasons.map((r) => <li key={r}>{r}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
             <dt>Stage</dt><dd>{readiness.stage_status}</dd>
             <dt>Photographs</dt><dd>{readiness.evidence_received?.sources ?? "—"}</dd>

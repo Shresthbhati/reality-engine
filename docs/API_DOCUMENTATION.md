@@ -105,6 +105,20 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/drawings/presets`**: List Drawing Presets
 - **`GET /api/worlds/{world_id}/drawings/render/svg`**: Render Drawing Svg
 
+### engines
+
+- **`GET /api/engines`**: List Engines
+- **`GET /api/engines/catalogue`**: Get Target Model Catalogue
+- **`GET /api/engines/catalogue/{slot_id}`**: Get Catalogue Slot
+- **`GET /api/engines/evidence`**: List Evidence
+- **`GET /api/engines/evidence-matrix`**: List Evidence Matrix
+- **`GET /api/engines/ontology`**: Get Ontology Summary
+- **`GET /api/engines/quality-gates`**: Standard Quality Gates
+- **`POST /api/engines/reconstruct`**: Execute Reconstruction
+- **`GET /api/engines/stages`**: List Pipeline Stages
+- **`POST /api/engines/universal-reconstruct`**: Execute Universal Reconstruction
+- **`GET /api/engines/{engine_id}`**: Get Engine
+
 ### evidence
 
 - **`GET /api/evidence`**: List Evidence
@@ -117,6 +131,30 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/evidence/quality`**: List Quality
 - **`PUT /api/evidence/{evidence_id}/decision`**: Put Decision
 - **`GET /api/evidence/{evidence_id}/quality`**: Get Quality
+
+### evidence-world
+
+- **`GET /api/worlds/{world_id}/evidence-world`**: List Runs
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}`**: Get Run
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/artifacts/{digest}`**: Get Artifact
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/associations`**: Handler
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/capture-requests`**: Handler
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/conflicts`**: Handler
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/entities`**: List Entities
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}`**: Get Entity
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/merge`**: Merge Entities Route
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/reclassify`**: Reclassify Entity Route
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/entities/{entity_id}/split`**: Split Entity Route
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/export`**: Export Run World
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/hierarchy`**: Handler
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/manifest`**: Get Manifest
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/propose`**: Propose Run World
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/readiness`**: Get Readiness
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/refinement`**: Handler
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/rejected`**: List Rejected
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/rows`**: List Rows
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/runs`**: List Engine Runs
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/world`**: Get Persisted World
 
 ### export
 

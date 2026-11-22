@@ -277,7 +277,7 @@ async def merge_entities_route(
     from engine.multiengine.association import AssociatedEntity
     from engine.multiengine.canonical import build_canonical_entity
     from engine.multiengine.worldir_bridge import convert
-    from perception.ontology import get_default_ontology
+    from engine.multiengine.api_facade import get_default_ontology
     from world_ir.validation import validate_world_ir
     from worldstore.store import WorldStore, WorldStoreError
 
@@ -377,7 +377,7 @@ async def split_entity_route(
     from engine.multiengine.association import AssociatedEntity
     from engine.multiengine.canonical import build_canonical_entity
     from engine.multiengine.worldir_bridge import convert
-    from perception.ontology import get_default_ontology
+    from engine.multiengine.api_facade import get_default_ontology
     from world_ir.validation import validate_world_ir
     from worldstore.store import WorldStore, WorldStoreError
 

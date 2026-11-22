@@ -28,7 +28,15 @@ export interface EvidenceDetectionSummary {
   reason?: string;
 }
 
+/** Verdict derived server-side from persisted measurements only (engine/multiengine/quality_gate.py). */
+export interface EvidenceQuality {
+  verdict: "READY" | "PARTIAL" | "BLOCKED" | "FAILED";
+  reasons: string[];
+  gates: { name: string; measured: unknown; status: "pass" | "fail" | "not_measured"; basis: string }[];
+}
+
 export interface EvidenceReadiness {
+  quality?: EvidenceQuality;
   detection?: EvidenceDetectionSummary;
   stage_status: string;
   reason?: string;

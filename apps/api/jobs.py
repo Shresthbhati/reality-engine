@@ -312,7 +312,7 @@ def _evidence_intrinsics(record: dict | None, session: ColmapSession | None) -> 
     try:
         est = _colmap_estimated_intrinsics(session, tuple(size))
         if est is None:
-            from reconstruction.colmap_intrinsics import median_intrinsics, read_colmap_cameras
+            from engine.multiengine.api_facade import median_intrinsics, read_colmap_cameras
 
             found = median_intrinsics(read_colmap_cameras(session.staging / "sparse" / "0"), tuple(size))
             est = None if found is None else found[0]
@@ -329,7 +329,7 @@ def _evidence_observations(session: ColmapSession | None, poses, idmap: dict) ->
     """``({source path: {xy, xyz}}, facts)``: each registered image's own keypoint observations, re-expressed in the job's frame by a
     similarity recovered (and residual-checked) from the camera centres. ``({}, facts-with-reason)`` when the model is unreadable or
     the frames cannot be reconciled; the lift stage then falls back to its occlusion-unaware reference and says so."""
-    from reconstruction.colmap_observations import observations_in_job_frame, read_model
+    from engine.multiengine.api_facade import observations_in_job_frame, read_model
 
     if session is None:
         return {}, {"status": "refused", "reason": "no COLMAP session"}

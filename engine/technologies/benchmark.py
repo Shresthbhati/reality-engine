@@ -16,6 +16,7 @@ Enforces Universal Spatial Intelligence Engineering Directive (Rule 2):
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib.metadata as importlib_metadata
 import json
@@ -65,18 +66,30 @@ NOT_MEASURED_VRAM = "not measured: CUDA not used/available"
 INTERNAL_LABEL = "internal re-implementation; not the upstream project's performance"
 
 
-def _resolve_installed_version(python_modules: Tuple[str, ...]) -> Optional[str]:
-    """Real installed package version via importlib.metadata, or None."""
+@functools.lru_cache(maxsize=1)
+def _get_packages_distributions() -> dict[str, list[str]]:
     try:
-        dist_map = importlib_metadata.packages_distributions()
+        return importlib_metadata.packages_distributions()
     except Exception:
-        dist_map = {}
+        return {}
+
+
+@functools.lru_cache(maxsize=128)
+def _get_package_version(dist: str) -> str | None:
+    try:
+        return importlib_metadata.version(dist)
+    except Exception:
+        return None
+
+
+def _resolve_installed_version(python_modules: Tuple[str, ...]) -> str | None:
+    """Real installed package version via importlib.metadata, or None."""
+    dist_map = _get_packages_distributions()
     for mod in python_modules:
         for dist in [*dist_map.get(mod.split(".")[0], []), mod]:
-            try:
-                return importlib_metadata.version(dist)
-            except Exception:
-                continue
+            ver = _get_package_version(dist)
+            if ver is not None:
+                return ver
     return None
 
 

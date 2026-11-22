@@ -20,6 +20,11 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
+
 from engine.multiengine.spatial_intelligence.taxonomy import (
     Domain,
     TaxonomyClass,
@@ -48,7 +53,15 @@ class DetectionBox:
     source_image_id: str = ""
     mask_2d: np.ndarray | None = None
     parent_box_id: str | None = None
+    child_box_ids: tuple[str, ...] = ()
     scale: DetectionScale = DetectionScale.STANDARD
+    mask_polygon: tuple[tuple[float, float], ...] | None = None
+    mask_area_px: int = 0
+    is_truncated: bool = False
+    occlusion_level: str = "none"  # "none", "partial", "heavy"
+    frame_index: int | None = None
+    timestamp_sec: float | None = None
+    shot_id: int | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -92,9 +105,88 @@ class DetectionBox:
             "source_engine": self.source_engine,
             "source_image_id": self.source_image_id,
             "parent_box_id": self.parent_box_id,
+            "child_box_ids": list(self.child_box_ids),
             "scale": self.scale.value,
             "area_px": round(self.area, 1),
+            "mask_area_px": self.mask_area_px,
+            "is_truncated": self.is_truncated,
+            "occlusion_level": self.occlusion_level,
+            "frame_index": self.frame_index,
+            "timestamp_sec": round(self.timestamp_sec, 4) if self.timestamp_sec is not None else None,
+            "shot_id": self.shot_id,
+            "polygon_point_count": len(self.mask_polygon) if self.mask_polygon else 0,
         }
+
+
+def extract_polygon_from_mask(mask_2d: np.ndarray, max_points: int = 32) -> tuple[tuple[float, float], ...] | None:
+    """Extracts a simplified polygonal boundary representation from a binary 2D mask."""
+    if mask_2d.ndim != 2 or not np.any(mask_2d):
+        return None
+
+    if cv2 is not None:
+        mask_u8 = (mask_2d.astype(np.uint8)) * 255
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        largest = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest) < 4.0:
+            return None
+        epsilon = max(1.0, 0.02 * cv2.arcLength(largest, True))
+        approx = cv2.approxPolyDP(largest, epsilon, True)
+        pts = [(float(pt[0][0]), float(pt[0][1])) for pt in approx]
+        if len(pts) > max_points:
+            indices = np.linspace(0, len(pts) - 1, max_points, dtype=int)
+            pts = [pts[i] for i in indices]
+        return tuple(pts)
+    else:
+        rows, cols = np.where(mask_2d)
+        if len(rows) < 4:
+            return None
+        rmin, rmax = float(np.min(rows)), float(np.max(rows))
+        cmin, cmax = float(np.min(cols)), float(np.max(cols))
+        return (
+            (cmin, rmin),
+            (cmax, rmin),
+            (cmax, rmax),
+            (cmin, rmax),
+        )
+
+
+def detect_box_truncation(
+    box_2d: tuple[float, float, float, float],
+    image_width: int,
+    image_height: int,
+    margin: float = 3.0,
+) -> bool:
+    """Checks if a bounding box touches or is truncated by image boundaries."""
+    x1, y1, x2, y2 = box_2d
+    return (
+        x1 <= margin or
+        y1 <= margin or
+        x2 >= image_width - margin or
+        y2 >= image_height - margin
+    )
+
+
+def estimate_box_occlusion(
+    box_2d: tuple[float, float, float, float],
+    mask_2d: np.ndarray | None,
+) -> str:
+    """Estimates occlusion severity (none, partial, heavy) from mask-to-box area ratio."""
+    if mask_2d is None:
+        return "none"
+    w = max(0.0, box_2d[2] - box_2d[0])
+    h = max(0.0, box_2d[3] - box_2d[1])
+    box_area = w * h
+    if box_area <= 1e-4:
+        return "none"
+    mask_area = float(np.sum(mask_2d.astype(bool)))
+    ratio = mask_area / box_area
+    if ratio < 0.20:
+        return "heavy"
+    elif ratio < 0.55:
+        return "partial"
+    return "none"
 
 
 # ============================================================================
@@ -638,6 +730,54 @@ class ThresholdSegmenterAdapter:
         return mask
 
 
+class AdapterDetectorWrapper:
+    """Wraps an engine BaseEngineAdapter into the DetectorAdapter protocol."""
+
+    def __init__(self, adapter: Any, score_threshold: float = 0.20) -> None:
+        self.adapter = adapter
+        self.score_threshold = score_threshold
+
+    def detect(self, image_rgb: np.ndarray, text_prompts: Sequence[str]) -> list[DetectionBox]:
+        h, w = image_rgb.shape[:2]
+        res = self.adapter.predict(
+            [image_rgb],
+            options={"queries": list(text_prompts), "score_threshold": self.score_threshold},
+        )
+        boxes: list[DetectionBox] = []
+        if res.success and res.predictions:
+            img_dets = res.predictions[0].get("detections", [])
+            for idx, d in enumerate(img_dets):
+                xyxy = d.get("box_xyxy", [0.0, 0.0, 0.0, 0.0])
+                cls_name = d.get("label", "unknown").replace(" ", "_")
+                score = float(d.get("score", 0.5))
+                boxes.append(DetectionBox(
+                    box_id=f"{self.adapter.engine_name}_{idx}",
+                    class_name=cls_name,
+                    box_2d=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
+                    confidence=score,
+                    source_engine=self.adapter.engine_name,
+                ))
+        return boxes
+
+
+class AdapterSegmenterWrapper:
+    """Wraps a SAM or instance segmenter BaseEngineAdapter into the SegmenterAdapter protocol."""
+
+    def __init__(self, adapter: Any) -> None:
+        self.adapter = adapter
+
+    def segment_box(self, image_rgb: np.ndarray, box_2d: tuple[float, float, float, float]) -> np.ndarray | None:
+        res = self.adapter.predict(
+            {"image": image_rgb, "boxes": [[float(c) for c in box_2d]]},
+            options={},
+        )
+        if res.success and res.raw_output:
+            raw_masks = res.raw_output
+            if raw_masks and len(raw_masks) > 0:
+                return raw_masks[0]
+        return None
+
+
 @dataclass(frozen=True)
 class PipelineResult:
     """Structured result of full detection, tiling, and mask refinement pipeline."""
@@ -681,6 +821,9 @@ class DetectionPipeline:
         image_id: str = "img_001",
         run_tiling: bool = True,
         detect_subparts: bool = True,
+        frame_index: int | None = None,
+        timestamp_sec: float | None = None,
+        shot_id: int | None = None,
     ) -> PipelineResult:
         """Executes the full perception workflow on an input RGB image."""
         h, w = image_rgb.shape[:2]
@@ -704,6 +847,9 @@ class DetectionPipeline:
                 mask_2d=b.mask_2d,
                 parent_box_id=b.parent_box_id,
                 scale=DetectionScale.STANDARD,
+                frame_index=frame_index,
+                timestamp_sec=timestamp_sec,
+                shot_id=shot_id,
                 attributes=b.attributes,
             ))
 
@@ -727,6 +873,9 @@ class DetectionPipeline:
                         mask_2d=md.mask_2d,
                         parent_box_id=md.parent_box_id,
                         scale=DetectionScale.MICRO,
+                        frame_index=frame_index,
+                        timestamp_sec=timestamp_sec,
+                        shot_id=shot_id,
                         attributes=md.attributes,
                     ))
 
@@ -760,6 +909,9 @@ class DetectionPipeline:
                             source_image_id=image_id,
                             parent_box_id=cand.box_id,
                             scale=DetectionScale.MICRO,
+                            frame_index=frame_index,
+                            timestamp_sec=timestamp_sec,
+                            shot_id=shot_id,
                             attributes={"host_class": cand.class_name},
                         ))
                         subparts_detected += 1
@@ -782,6 +934,11 @@ class DetectionPipeline:
             else:
                 refined_mask = mask
 
+            is_trunc = detect_box_truncation(det.box_2d, w, h)
+            occ_lvl = estimate_box_occlusion(det.box_2d, refined_mask)
+            poly = extract_polygon_from_mask(refined_mask) if refined_mask is not None else None
+            mask_area = int(np.sum(refined_mask.astype(bool))) if refined_mask is not None else 0
+
             refined_boxes.append(DetectionBox(
                 box_id=det.box_id,
                 class_name=det.class_name,
@@ -792,14 +949,48 @@ class DetectionPipeline:
                 mask_2d=refined_mask,
                 parent_box_id=det.parent_box_id,
                 scale=det.scale,
+                mask_polygon=poly,
+                mask_area_px=mask_area,
+                is_truncated=is_trunc,
+                occlusion_level=occ_lvl,
+                frame_index=frame_index,
+                timestamp_sec=timestamp_sec,
+                shot_id=shot_id,
                 attributes=det.attributes,
             ))
 
-        # 8. Build parent-part tree
+        # 8. Build parent-part tree and link child_box_ids to parent boxes
         parent_part_tree: dict[str, list[str]] = {}
         for b in refined_boxes:
             if b.parent_box_id:
                 parent_part_tree.setdefault(b.parent_box_id, []).append(b.box_id)
+
+        final_boxes: list[DetectionBox] = []
+        for b in refined_boxes:
+            ch_ids = tuple(parent_part_tree.get(b.box_id, []))
+            if ch_ids != b.child_box_ids:
+                final_boxes.append(DetectionBox(
+                    box_id=b.box_id,
+                    class_name=b.class_name,
+                    box_2d=b.box_2d,
+                    confidence=b.confidence,
+                    source_engine=b.source_engine,
+                    source_image_id=b.source_image_id,
+                    mask_2d=b.mask_2d,
+                    parent_box_id=b.parent_box_id,
+                    child_box_ids=ch_ids,
+                    scale=b.scale,
+                    mask_polygon=b.mask_polygon,
+                    mask_area_px=b.mask_area_px,
+                    is_truncated=b.is_truncated,
+                    occlusion_level=b.occlusion_level,
+                    frame_index=b.frame_index,
+                    timestamp_sec=b.timestamp_sec,
+                    shot_id=b.shot_id,
+                    attributes=b.attributes,
+                ))
+            else:
+                final_boxes.append(b)
 
         stats = {
             "image_size": [w, h],
@@ -807,13 +998,13 @@ class DetectionPipeline:
             "subparts_detected": subparts_detected,
             "raw_detection_count": len(raw_accum),
             "filtered_detection_count": len(filtered_dets),
-            "refined_box_count": len(refined_boxes),
+            "refined_box_count": len(final_boxes),
         }
 
         return PipelineResult(
             image_id=image_id,
             raw_detections=tuple(raw_accum),
-            refined_boxes=tuple(refined_boxes),
+            refined_boxes=tuple(final_boxes),
             parent_part_tree=parent_part_tree,
             execution_stats=stats,
         )

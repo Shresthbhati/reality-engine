@@ -56,15 +56,25 @@ def run_stages(
             if on_start:
                 on_start(spec)
             started = datetime.now(timezone.utc)
-            try:
-                result = stage.run(ctx)
-                result.inputs_hash = inputs_hash
-            except Exception as exc:  # noqa: BLE001 - recorded as a failed StageResult, never swallowed
-                result = StageResult(
-                    name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={},
-                    warnings=[], error=repr(exc), started_at=started,
-                    ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
-                )
+            attempts = 1 + (max(0, spec.retries) if spec.idempotent else 0)  # a non-idempotent stage is never re-run
+            for attempt in range(1, attempts + 1):
+                try:
+                    result = stage.run(ctx)
+                    result.inputs_hash = inputs_hash
+                    break
+                except Exception as exc:  # noqa: BLE001 - recorded as a failed StageResult, never swallowed
+                    result = StageResult(
+                        name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={},
+                        warnings=[], error=repr(exc), started_at=started,
+                        ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
+                    )
+                    if should_cancel():
+                        break
+            if attempt > 1:
+                result.metrics["attempts"] = float(attempt)
+            missing = [n for n in spec.requires_outputs if n not in result.outputs]
+            if result.status in ("succeeded", "degraded") and missing:  # success is never reported with required outputs absent
+                result.status, result.error = "failed", f"required outputs missing: {', '.join(missing)}"
             checkpoints.record(ctx.job_id, result)
         manifest.stages.append(result)
         manifest.lineage.add(spec.name, spec.inputs if spec.inputs is not None else tuple(ctx.artifacts), result.outputs)

@@ -1406,6 +1406,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 abandoned),
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
             pipeline_profile=PROFILE_NAME, pipeline_version=PIPELINE_VERSION,
+            stage_timeouts=_stage_timeouts(),
         )
 
     try:
@@ -1599,6 +1600,20 @@ def _heartbeat_interval_seconds() -> float:
         return max(0.2, float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS", "5.0")))
     except ValueError:
         return 5.0
+
+
+def _stage_timeouts() -> dict[str, float]:
+    """Per-stage deadlines from ``RE_STAGE_TIMEOUTS_S`` (``name=seconds,name=seconds``). Unset = no per-stage deadline (the job-level
+    timeout still applies). A malformed entry is skipped and logged, never fatal."""
+    out: dict[str, float] = {}
+    for part in (os.environ.get("RE_STAGE_TIMEOUTS_S") or "").split(","):
+        name, _, secs = part.strip().partition("=")
+        try:
+            if name and float(secs) > 0:
+                out[name.strip()] = float(secs)
+        except ValueError:
+            log.warning("ignoring malformed RE_STAGE_TIMEOUTS_S entry %r", part)
+    return out
 
 
 def _job_timeout_seconds() -> float:

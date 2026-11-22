@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 587
+Total: 588
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -715,6 +715,7 @@ Total: 587
 - `tests/test_world_runtime.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
+- `tests/test_world_topology_checks.py`
 - `tests/test_worldir_bridge_uncertainty_roundtrip.py`
 - `tests/test_worldir_confidence_contract.py`
 - `tests/test_worldir_coordinate_like_properties.py`

@@ -769,6 +769,80 @@ def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
                     "invariant_7_surface_without_space", f"surface {eid} ({e.type.value}) references no space (room/corridor)"))
 
 
+_CONTAINED_BY = {"part_of", "inside", "embedded_in"}  # entity -> container
+_CONTAINS = {"contains"}  # container -> entity
+_SPACE_LINKS = {"connects", "adjoins", "adjacent_to"}
+
+
+def _kind(rel) -> str:
+    return str(getattr(rel.kind, "value", rel.kind))
+
+
+def _check_topology(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """Graph-level topology: containment must be acyclic and non-reflexive (ERROR); rooms that form more than one connected
+    component under connects/adjoins/adjacent_to are reported as a WARNING with the component sizes -- a partial capture may honestly
+    lack the connecting evidence, so it is never invented and never an error."""
+    contain: dict = {}
+    for eid in sorted(world.entities):
+        for rel in getattr(world.entities[eid], "relationships", None) or []:
+            k, t = _kind(rel), rel.target_id
+            if t == eid and k != "unknown":
+                _err(issues, "topology_self_relationship", f"entity {eid} has a {k} relationship to itself")
+            elif t in world.entities and k in _CONTAINED_BY:
+                contain.setdefault(eid, set()).add(t)
+            elif t in world.entities and k in _CONTAINS:
+                contain.setdefault(t, set()).add(eid)
+    state: dict = {}
+
+    def visit(n: str, stack: list) -> None:
+        state[n] = 1
+        for m in sorted(contain.get(n, ())):
+            if state.get(m) == 1:
+                cyc = stack[stack.index(m):] + [m] if m in stack else [n, m]
+                _err(issues, "topology_containment_cycle", "containment cycle: " + " -> ".join(cyc))
+            elif m not in state:
+                visit(m, stack + [m])
+        state[n] = 2
+
+    for n in sorted(contain):
+        if n not in state:
+            visit(n, [n])
+
+    rooms = [e for e in sorted(world.entities) if str(getattr(world.entities[e].type, "value", world.entities[e].type)) == "room"]
+    if len(rooms) < 2:
+        return
+    adj: dict = {r: set() for r in rooms}
+    for eid in sorted(world.entities):
+        ent = world.entities[eid]
+        linked = [rel.target_id for rel in getattr(ent, "relationships", None) or [] if _kind(rel) in _SPACE_LINKS and rel.target_id in world.entities]
+        if eid in adj:  # room <-> room links
+            for t in linked:
+                if t in adj:
+                    adj[eid].add(t)
+                    adj[t].add(eid)
+        else:  # a door/opening/stair linking two or more rooms joins them
+            rs = [t for t in linked if t in adj]
+            for a in rs:
+                adj[a].update(x for x in rs if x != a)
+    seen: set = set()
+    comps: list = []
+    for r in rooms:
+        if r in seen:
+            continue
+        comp, todo = [], [r]
+        while todo:
+            x = todo.pop()
+            if x not in seen:
+                seen.add(x)
+                comp.append(x)
+                todo.extend(adj[x] - seen)
+        comps.append(sorted(comp))
+    if len(comps) > 1:
+        issues.append(ValidationIssue(ValidationSeverity.WARNING, "topology_disconnected_rooms",
+                                      f"{len(rooms)} rooms form {len(comps)} disconnected groups (sizes {sorted(len(c) for c in comps)}); "
+                                      "no connecting door/opening/adjacency is evidenced between them"))
+
+
 def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     """Full validation: structural self-check + geometric/provenance
     depth. Deterministic issue ordering (sorted entity/geometry ids,
@@ -793,6 +867,7 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_interior_boundary_references(world, issues)
     _check_single_storey_membership(world, issues)
     _check_cross_entity_consistency(world, issues)
+    _check_topology(world, issues)
     _check_confidence_vectors(world, issues)
     _check_invariants(world, issues)
 

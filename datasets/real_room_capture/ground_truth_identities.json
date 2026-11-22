@@ -71,6 +71,62 @@
         0.3,
         0.5
       ]
+    },
+    "gt_door_handle_front": {
+      "class_name": "door_handle",
+      "parent_entity_id": "gt_door_front_center",
+      "position": [
+        2.85,
+        0.05,
+        1.0
+      ],
+      "dimensions": [
+        0.15,
+        0.05,
+        0.08
+      ]
+    },
+    "gt_window_frame_left": {
+      "class_name": "window_frame",
+      "parent_entity_id": "gt_window_left_center",
+      "position": [
+        0.0,
+        2.0,
+        1.4
+      ],
+      "dimensions": [
+        0.15,
+        1.3,
+        1.1
+      ]
+    },
+    "gt_table_top_center": {
+      "class_name": "table_top",
+      "parent_entity_id": "gt_table_center",
+      "position": [
+        2.5,
+        0.375,
+        2.35
+      ],
+      "dimensions": [
+        1.5,
+        0.75,
+        0.05
+      ]
+    },
+    "gt_chair_seat_table": {
+      "class_name": "chair_seat",
+      "parent_entity_id": "gt_chair_table",
+      "position": [
+        1.8,
+        0.45,
+        2.2
+      ],
+      "dimensions": [
+        0.5,
+        0.5,
+        0.08
+      ]
     }
   },
   "image_annotations": {
@@ -83,7 +139,26 @@
           907.0,
           2168.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1564.0,
+            907.0
+          ],
+          [
+            2168.0,
+            907.0
+          ],
+          [
+            2168.0,
+            1814.0
+          ],
+          [
+            1564.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -93,7 +168,26 @@
           967.0,
           556.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            153.0,
+            967.0
+          ],
+          [
+            556.0,
+            967.0
+          ],
+          [
+            556.0,
+            1571.0
+          ],
+          [
+            153.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -103,7 +197,26 @@
           1361.0,
           2269.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1814.0
+          ],
+          [
+            1463.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -113,7 +226,26 @@
           1361.0,
           1443.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1814.0
+          ],
+          [
+            1121.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -123,7 +255,146 @@
           1120.0,
           1926.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1806.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1361.0
+          ],
+          [
+            1806.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2098.0,
+          1287.0,
+          2153.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2098.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1357.0
+          ],
+          [
+            2098.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          138.0,
+          952.0,
+          571.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            138.0,
+            952.0
+          ],
+          [
+            571.0,
+            952.0
+          ],
+          [
+            571.0,
+            1586.0
+          ],
+          [
+            138.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1451.0
+          ],
+          [
+            1463.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1121.0,
+          1521.0,
+          1443.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1601.0
+          ],
+          [
+            1121.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0001.jpg": [
@@ -135,7 +406,26 @@
           907.0,
           2256.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1652.0,
+            907.0
+          ],
+          [
+            2256.0,
+            907.0
+          ],
+          [
+            2256.0,
+            1814.0
+          ],
+          [
+            1652.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -145,7 +435,26 @@
           967.0,
           644.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            241.0,
+            967.0
+          ],
+          [
+            644.0,
+            967.0
+          ],
+          [
+            644.0,
+            1571.0
+          ],
+          [
+            241.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -155,7 +464,26 @@
           1361.0,
           2357.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1551.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1814.0
+          ],
+          [
+            1551.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -165,7 +493,26 @@
           1361.0,
           1531.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1209.0,
+            1361.0
+          ],
+          [
+            1531.0,
+            1361.0
+          ],
+          [
+            1531.0,
+            1814.0
+          ],
+          [
+            1209.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -175,7 +522,146 @@
           1120.0,
           2014.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1894.0,
+            1120.0
+          ],
+          [
+            2014.0,
+            1120.0
+          ],
+          [
+            2014.0,
+            1361.0
+          ],
+          [
+            1894.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2186.0,
+          1287.0,
+          2241.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2186.0,
+            1287.0
+          ],
+          [
+            2241.0,
+            1287.0
+          ],
+          [
+            2241.0,
+            1357.0
+          ],
+          [
+            2186.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          226.0,
+          952.0,
+          659.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            226.0,
+            952.0
+          ],
+          [
+            659.0,
+            952.0
+          ],
+          [
+            659.0,
+            1586.0
+          ],
+          [
+            226.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1551.0,
+          1361.0,
+          2357.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1551.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1451.0
+          ],
+          [
+            1551.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1209.0,
+          1521.0,
+          1531.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1209.0,
+            1521.0
+          ],
+          [
+            1531.0,
+            1521.0
+          ],
+          [
+            1531.0,
+            1601.0
+          ],
+          [
+            1209.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0002.jpg": [
@@ -187,7 +673,26 @@
           907.0,
           2100.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1496.0,
+            907.0
+          ],
+          [
+            2100.0,
+            907.0
+          ],
+          [
+            2100.0,
+            1814.0
+          ],
+          [
+            1496.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -197,7 +702,26 @@
           967.0,
           488.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            85.0,
+            967.0
+          ],
+          [
+            488.0,
+            967.0
+          ],
+          [
+            488.0,
+            1571.0
+          ],
+          [
+            85.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -207,7 +731,26 @@
           1361.0,
           2201.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1395.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1814.0
+          ],
+          [
+            1395.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -217,7 +760,26 @@
           1361.0,
           1375.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1053.0,
+            1361.0
+          ],
+          [
+            1375.0,
+            1361.0
+          ],
+          [
+            1375.0,
+            1814.0
+          ],
+          [
+            1053.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -227,7 +789,146 @@
           1120.0,
           1858.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1738.0,
+            1120.0
+          ],
+          [
+            1858.0,
+            1120.0
+          ],
+          [
+            1858.0,
+            1361.0
+          ],
+          [
+            1738.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2030.0,
+          1287.0,
+          2085.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2030.0,
+            1287.0
+          ],
+          [
+            2085.0,
+            1287.0
+          ],
+          [
+            2085.0,
+            1357.0
+          ],
+          [
+            2030.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          70.0,
+          952.0,
+          503.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            70.0,
+            952.0
+          ],
+          [
+            503.0,
+            952.0
+          ],
+          [
+            503.0,
+            1586.0
+          ],
+          [
+            70.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1395.0,
+          1361.0,
+          2201.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1395.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1451.0
+          ],
+          [
+            1395.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1053.0,
+          1521.0,
+          1375.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1053.0,
+            1521.0
+          ],
+          [
+            1375.0,
+            1521.0
+          ],
+          [
+            1375.0,
+            1601.0
+          ],
+          [
+            1053.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0003.jpg": [
@@ -239,7 +940,26 @@
           907.0,
           2168.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1564.0,
+            907.0
+          ],
+          [
+            2168.0,
+            907.0
+          ],
+          [
+            2168.0,
+            1814.0
+          ],
+          [
+            1564.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -249,7 +969,26 @@
           967.0,
           556.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            153.0,
+            967.0
+          ],
+          [
+            556.0,
+            967.0
+          ],
+          [
+            556.0,
+            1571.0
+          ],
+          [
+            153.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -259,7 +998,26 @@
           1361.0,
           2269.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1814.0
+          ],
+          [
+            1463.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -269,7 +1027,26 @@
           1361.0,
           1443.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1814.0
+          ],
+          [
+            1121.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -279,7 +1056,146 @@
           1120.0,
           1926.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1806.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1361.0
+          ],
+          [
+            1806.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2098.0,
+          1287.0,
+          2153.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2098.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1357.0
+          ],
+          [
+            2098.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          138.0,
+          952.0,
+          571.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            138.0,
+            952.0
+          ],
+          [
+            571.0,
+            952.0
+          ],
+          [
+            571.0,
+            1586.0
+          ],
+          [
+            138.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1451.0
+          ],
+          [
+            1463.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1121.0,
+          1521.0,
+          1443.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1601.0
+          ],
+          [
+            1121.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0004.jpg": [
@@ -291,7 +1207,26 @@
           907.0,
           2468.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1864.0,
+            907.0
+          ],
+          [
+            2468.0,
+            907.0
+          ],
+          [
+            2468.0,
+            1814.0
+          ],
+          [
+            1864.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -301,7 +1236,26 @@
           967.0,
           856.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            453.0,
+            967.0
+          ],
+          [
+            856.0,
+            967.0
+          ],
+          [
+            856.0,
+            1571.0
+          ],
+          [
+            453.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -311,7 +1265,26 @@
           1361.0,
           2569.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1814.0
+          ],
+          [
+            1763.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -321,7 +1294,26 @@
           1361.0,
           1743.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1814.0
+          ],
+          [
+            1421.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -331,7 +1323,146 @@
           1120.0,
           2226.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2106.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1361.0
+          ],
+          [
+            2106.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2398.0,
+          1287.0,
+          2453.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2398.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1357.0
+          ],
+          [
+            2398.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          438.0,
+          952.0,
+          871.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            438.0,
+            952.0
+          ],
+          [
+            871.0,
+            952.0
+          ],
+          [
+            871.0,
+            1586.0
+          ],
+          [
+            438.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1451.0
+          ],
+          [
+            1763.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1421.0,
+          1521.0,
+          1743.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1601.0
+          ],
+          [
+            1421.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0005.jpg": [
@@ -343,7 +1474,26 @@
           907.0,
           2162.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1558.0,
+            907.0
+          ],
+          [
+            2162.0,
+            907.0
+          ],
+          [
+            2162.0,
+            1814.0
+          ],
+          [
+            1558.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -353,7 +1503,26 @@
           967.0,
           550.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            147.0,
+            967.0
+          ],
+          [
+            550.0,
+            967.0
+          ],
+          [
+            550.0,
+            1571.0
+          ],
+          [
+            147.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -363,7 +1532,26 @@
           1361.0,
           2263.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1457.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1814.0
+          ],
+          [
+            1457.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -373,7 +1561,26 @@
           1361.0,
           1437.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1115.0,
+            1361.0
+          ],
+          [
+            1437.0,
+            1361.0
+          ],
+          [
+            1437.0,
+            1814.0
+          ],
+          [
+            1115.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -383,7 +1590,146 @@
           1120.0,
           1920.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1800.0,
+            1120.0
+          ],
+          [
+            1920.0,
+            1120.0
+          ],
+          [
+            1920.0,
+            1361.0
+          ],
+          [
+            1800.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2092.0,
+          1287.0,
+          2147.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2092.0,
+            1287.0
+          ],
+          [
+            2147.0,
+            1287.0
+          ],
+          [
+            2147.0,
+            1357.0
+          ],
+          [
+            2092.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          132.0,
+          952.0,
+          565.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            132.0,
+            952.0
+          ],
+          [
+            565.0,
+            952.0
+          ],
+          [
+            565.0,
+            1586.0
+          ],
+          [
+            132.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1457.0,
+          1361.0,
+          2263.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1457.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1451.0
+          ],
+          [
+            1457.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1115.0,
+          1521.0,
+          1437.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1115.0,
+            1521.0
+          ],
+          [
+            1437.0,
+            1521.0
+          ],
+          [
+            1437.0,
+            1601.0
+          ],
+          [
+            1115.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0006.jpg": [
@@ -395,7 +1741,26 @@
           907.0,
           2468.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1864.0,
+            907.0
+          ],
+          [
+            2468.0,
+            907.0
+          ],
+          [
+            2468.0,
+            1814.0
+          ],
+          [
+            1864.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -405,7 +1770,26 @@
           967.0,
           856.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            453.0,
+            967.0
+          ],
+          [
+            856.0,
+            967.0
+          ],
+          [
+            856.0,
+            1571.0
+          ],
+          [
+            453.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -415,7 +1799,26 @@
           1361.0,
           2569.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1814.0
+          ],
+          [
+            1763.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -425,7 +1828,26 @@
           1361.0,
           1743.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1814.0
+          ],
+          [
+            1421.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -435,7 +1857,146 @@
           1120.0,
           2226.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2106.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1361.0
+          ],
+          [
+            2106.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2398.0,
+          1287.0,
+          2453.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2398.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1357.0
+          ],
+          [
+            2398.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          438.0,
+          952.0,
+          871.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            438.0,
+            952.0
+          ],
+          [
+            871.0,
+            952.0
+          ],
+          [
+            871.0,
+            1586.0
+          ],
+          [
+            438.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1451.0
+          ],
+          [
+            1763.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1421.0,
+          1521.0,
+          1743.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1601.0
+          ],
+          [
+            1421.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0007.jpg": [
@@ -447,7 +2008,26 @@
           907.0,
           2168.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1564.0,
+            907.0
+          ],
+          [
+            2168.0,
+            907.0
+          ],
+          [
+            2168.0,
+            1814.0
+          ],
+          [
+            1564.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -457,7 +2037,26 @@
           967.0,
           556.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            153.0,
+            967.0
+          ],
+          [
+            556.0,
+            967.0
+          ],
+          [
+            556.0,
+            1571.0
+          ],
+          [
+            153.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -467,7 +2066,26 @@
           1361.0,
           2269.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1814.0
+          ],
+          [
+            1463.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -477,7 +2095,26 @@
           1361.0,
           1443.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1814.0
+          ],
+          [
+            1121.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -487,7 +2124,146 @@
           1120.0,
           1926.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1806.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1361.0
+          ],
+          [
+            1806.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2098.0,
+          1287.0,
+          2153.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2098.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1357.0
+          ],
+          [
+            2098.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          138.0,
+          952.0,
+          571.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            138.0,
+            952.0
+          ],
+          [
+            571.0,
+            952.0
+          ],
+          [
+            571.0,
+            1586.0
+          ],
+          [
+            138.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1451.0
+          ],
+          [
+            1463.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1121.0,
+          1521.0,
+          1443.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1601.0
+          ],
+          [
+            1121.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0008.jpg": [
@@ -499,7 +2275,26 @@
           907.0,
           2380.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1776.0,
+            907.0
+          ],
+          [
+            2380.0,
+            907.0
+          ],
+          [
+            2380.0,
+            1814.0
+          ],
+          [
+            1776.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -509,7 +2304,26 @@
           967.0,
           768.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            365.0,
+            967.0
+          ],
+          [
+            768.0,
+            967.0
+          ],
+          [
+            768.0,
+            1571.0
+          ],
+          [
+            365.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -519,7 +2333,26 @@
           1361.0,
           2481.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1675.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1814.0
+          ],
+          [
+            1675.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -529,7 +2362,26 @@
           1361.0,
           1655.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1333.0,
+            1361.0
+          ],
+          [
+            1655.0,
+            1361.0
+          ],
+          [
+            1655.0,
+            1814.0
+          ],
+          [
+            1333.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -539,7 +2391,146 @@
           1120.0,
           2138.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2018.0,
+            1120.0
+          ],
+          [
+            2138.0,
+            1120.0
+          ],
+          [
+            2138.0,
+            1361.0
+          ],
+          [
+            2018.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2310.0,
+          1287.0,
+          2365.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2310.0,
+            1287.0
+          ],
+          [
+            2365.0,
+            1287.0
+          ],
+          [
+            2365.0,
+            1357.0
+          ],
+          [
+            2310.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          350.0,
+          952.0,
+          783.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            350.0,
+            952.0
+          ],
+          [
+            783.0,
+            952.0
+          ],
+          [
+            783.0,
+            1586.0
+          ],
+          [
+            350.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1675.0,
+          1361.0,
+          2481.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1675.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1451.0
+          ],
+          [
+            1675.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1333.0,
+          1521.0,
+          1655.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1333.0,
+            1521.0
+          ],
+          [
+            1655.0,
+            1521.0
+          ],
+          [
+            1655.0,
+            1601.0
+          ],
+          [
+            1333.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0009.jpg": [
@@ -551,7 +2542,26 @@
           907.0,
           2318.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1714.0,
+            907.0
+          ],
+          [
+            2318.0,
+            907.0
+          ],
+          [
+            2318.0,
+            1814.0
+          ],
+          [
+            1714.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -561,7 +2571,26 @@
           967.0,
           706.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            303.0,
+            967.0
+          ],
+          [
+            706.0,
+            967.0
+          ],
+          [
+            706.0,
+            1571.0
+          ],
+          [
+            303.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -571,7 +2600,26 @@
           1361.0,
           2419.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1613.0,
+            1361.0
+          ],
+          [
+            2419.0,
+            1361.0
+          ],
+          [
+            2419.0,
+            1814.0
+          ],
+          [
+            1613.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -581,7 +2629,26 @@
           1361.0,
           1593.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1271.0,
+            1361.0
+          ],
+          [
+            1593.0,
+            1361.0
+          ],
+          [
+            1593.0,
+            1814.0
+          ],
+          [
+            1271.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -591,7 +2658,146 @@
           1120.0,
           2076.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1956.0,
+            1120.0
+          ],
+          [
+            2076.0,
+            1120.0
+          ],
+          [
+            2076.0,
+            1361.0
+          ],
+          [
+            1956.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2248.0,
+          1287.0,
+          2303.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2248.0,
+            1287.0
+          ],
+          [
+            2303.0,
+            1287.0
+          ],
+          [
+            2303.0,
+            1357.0
+          ],
+          [
+            2248.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          288.0,
+          952.0,
+          721.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            288.0,
+            952.0
+          ],
+          [
+            721.0,
+            952.0
+          ],
+          [
+            721.0,
+            1586.0
+          ],
+          [
+            288.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1613.0,
+          1361.0,
+          2419.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1613.0,
+            1361.0
+          ],
+          [
+            2419.0,
+            1361.0
+          ],
+          [
+            2419.0,
+            1451.0
+          ],
+          [
+            1613.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1271.0,
+          1521.0,
+          1593.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1271.0,
+            1521.0
+          ],
+          [
+            1593.0,
+            1521.0
+          ],
+          [
+            1593.0,
+            1601.0
+          ],
+          [
+            1271.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0010.jpg": [
@@ -603,7 +2809,26 @@
           907.0,
           2225.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1621.0,
+            907.0
+          ],
+          [
+            2225.0,
+            907.0
+          ],
+          [
+            2225.0,
+            1814.0
+          ],
+          [
+            1621.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -613,7 +2838,26 @@
           967.0,
           613.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            210.0,
+            967.0
+          ],
+          [
+            613.0,
+            967.0
+          ],
+          [
+            613.0,
+            1571.0
+          ],
+          [
+            210.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -623,7 +2867,26 @@
           1361.0,
           2326.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1520.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1814.0
+          ],
+          [
+            1520.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -633,7 +2896,26 @@
           1361.0,
           1500.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1178.0,
+            1361.0
+          ],
+          [
+            1500.0,
+            1361.0
+          ],
+          [
+            1500.0,
+            1814.0
+          ],
+          [
+            1178.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -643,7 +2925,146 @@
           1120.0,
           1983.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1863.0,
+            1120.0
+          ],
+          [
+            1983.0,
+            1120.0
+          ],
+          [
+            1983.0,
+            1361.0
+          ],
+          [
+            1863.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2155.0,
+          1287.0,
+          2210.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2155.0,
+            1287.0
+          ],
+          [
+            2210.0,
+            1287.0
+          ],
+          [
+            2210.0,
+            1357.0
+          ],
+          [
+            2155.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          195.0,
+          952.0,
+          628.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            195.0,
+            952.0
+          ],
+          [
+            628.0,
+            952.0
+          ],
+          [
+            628.0,
+            1586.0
+          ],
+          [
+            195.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1520.0,
+          1361.0,
+          2326.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1520.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1451.0
+          ],
+          [
+            1520.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1178.0,
+          1521.0,
+          1500.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1178.0,
+            1521.0
+          ],
+          [
+            1500.0,
+            1521.0
+          ],
+          [
+            1500.0,
+            1601.0
+          ],
+          [
+            1178.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0011.jpg": [
@@ -655,7 +3076,26 @@
           907.0,
           2168.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1564.0,
+            907.0
+          ],
+          [
+            2168.0,
+            907.0
+          ],
+          [
+            2168.0,
+            1814.0
+          ],
+          [
+            1564.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -665,7 +3105,26 @@
           967.0,
           556.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            153.0,
+            967.0
+          ],
+          [
+            556.0,
+            967.0
+          ],
+          [
+            556.0,
+            1571.0
+          ],
+          [
+            153.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -675,7 +3134,26 @@
           1361.0,
           2269.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1814.0
+          ],
+          [
+            1463.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -685,7 +3163,26 @@
           1361.0,
           1443.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1361.0
+          ],
+          [
+            1443.0,
+            1814.0
+          ],
+          [
+            1121.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -695,7 +3192,146 @@
           1120.0,
           1926.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1806.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1120.0
+          ],
+          [
+            1926.0,
+            1361.0
+          ],
+          [
+            1806.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2098.0,
+          1287.0,
+          2153.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2098.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1287.0
+          ],
+          [
+            2153.0,
+            1357.0
+          ],
+          [
+            2098.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          138.0,
+          952.0,
+          571.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            138.0,
+            952.0
+          ],
+          [
+            571.0,
+            952.0
+          ],
+          [
+            571.0,
+            1586.0
+          ],
+          [
+            138.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1463.0,
+          1361.0,
+          2269.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1463.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1361.0
+          ],
+          [
+            2269.0,
+            1451.0
+          ],
+          [
+            1463.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1121.0,
+          1521.0,
+          1443.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1121.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1521.0
+          ],
+          [
+            1443.0,
+            1601.0
+          ],
+          [
+            1121.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0012.jpg": [
@@ -707,7 +3343,26 @@
           907.0,
           2468.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1864.0,
+            907.0
+          ],
+          [
+            2468.0,
+            907.0
+          ],
+          [
+            2468.0,
+            1814.0
+          ],
+          [
+            1864.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -717,7 +3372,26 @@
           967.0,
           856.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            453.0,
+            967.0
+          ],
+          [
+            856.0,
+            967.0
+          ],
+          [
+            856.0,
+            1571.0
+          ],
+          [
+            453.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -727,7 +3401,26 @@
           1361.0,
           2569.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1814.0
+          ],
+          [
+            1763.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -737,7 +3430,26 @@
           1361.0,
           1743.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1814.0
+          ],
+          [
+            1421.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -747,7 +3459,146 @@
           1120.0,
           2226.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2106.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1361.0
+          ],
+          [
+            2106.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2398.0,
+          1287.0,
+          2453.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2398.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1357.0
+          ],
+          [
+            2398.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          438.0,
+          952.0,
+          871.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            438.0,
+            952.0
+          ],
+          [
+            871.0,
+            952.0
+          ],
+          [
+            871.0,
+            1586.0
+          ],
+          [
+            438.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1451.0
+          ],
+          [
+            1763.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1421.0,
+          1521.0,
+          1743.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1601.0
+          ],
+          [
+            1421.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0013.jpg": [
@@ -759,7 +3610,26 @@
           907.0,
           2380.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1776.0,
+            907.0
+          ],
+          [
+            2380.0,
+            907.0
+          ],
+          [
+            2380.0,
+            1814.0
+          ],
+          [
+            1776.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -769,7 +3639,26 @@
           967.0,
           768.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            365.0,
+            967.0
+          ],
+          [
+            768.0,
+            967.0
+          ],
+          [
+            768.0,
+            1571.0
+          ],
+          [
+            365.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -779,7 +3668,26 @@
           1361.0,
           2481.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1675.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1814.0
+          ],
+          [
+            1675.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -789,7 +3697,26 @@
           1361.0,
           1655.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1333.0,
+            1361.0
+          ],
+          [
+            1655.0,
+            1361.0
+          ],
+          [
+            1655.0,
+            1814.0
+          ],
+          [
+            1333.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -799,7 +3726,146 @@
           1120.0,
           2138.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2018.0,
+            1120.0
+          ],
+          [
+            2138.0,
+            1120.0
+          ],
+          [
+            2138.0,
+            1361.0
+          ],
+          [
+            2018.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2310.0,
+          1287.0,
+          2365.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2310.0,
+            1287.0
+          ],
+          [
+            2365.0,
+            1287.0
+          ],
+          [
+            2365.0,
+            1357.0
+          ],
+          [
+            2310.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          350.0,
+          952.0,
+          783.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            350.0,
+            952.0
+          ],
+          [
+            783.0,
+            952.0
+          ],
+          [
+            783.0,
+            1586.0
+          ],
+          [
+            350.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1675.0,
+          1361.0,
+          2481.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1675.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1361.0
+          ],
+          [
+            2481.0,
+            1451.0
+          ],
+          [
+            1675.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1333.0,
+          1521.0,
+          1655.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1333.0,
+            1521.0
+          ],
+          [
+            1655.0,
+            1521.0
+          ],
+          [
+            1655.0,
+            1601.0
+          ],
+          [
+            1333.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0014.jpg": [
@@ -811,7 +3877,26 @@
           907.0,
           2100.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1496.0,
+            907.0
+          ],
+          [
+            2100.0,
+            907.0
+          ],
+          [
+            2100.0,
+            1814.0
+          ],
+          [
+            1496.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -821,7 +3906,26 @@
           967.0,
           488.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            85.0,
+            967.0
+          ],
+          [
+            488.0,
+            967.0
+          ],
+          [
+            488.0,
+            1571.0
+          ],
+          [
+            85.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -831,7 +3935,26 @@
           1361.0,
           2201.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1395.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1814.0
+          ],
+          [
+            1395.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -841,7 +3964,26 @@
           1361.0,
           1375.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1053.0,
+            1361.0
+          ],
+          [
+            1375.0,
+            1361.0
+          ],
+          [
+            1375.0,
+            1814.0
+          ],
+          [
+            1053.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -851,7 +3993,146 @@
           1120.0,
           1858.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1738.0,
+            1120.0
+          ],
+          [
+            1858.0,
+            1120.0
+          ],
+          [
+            1858.0,
+            1361.0
+          ],
+          [
+            1738.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2030.0,
+          1287.0,
+          2085.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2030.0,
+            1287.0
+          ],
+          [
+            2085.0,
+            1287.0
+          ],
+          [
+            2085.0,
+            1357.0
+          ],
+          [
+            2030.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          70.0,
+          952.0,
+          503.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            70.0,
+            952.0
+          ],
+          [
+            503.0,
+            952.0
+          ],
+          [
+            503.0,
+            1586.0
+          ],
+          [
+            70.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1395.0,
+          1361.0,
+          2201.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1395.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1361.0
+          ],
+          [
+            2201.0,
+            1451.0
+          ],
+          [
+            1395.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1053.0,
+          1521.0,
+          1375.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1053.0,
+            1521.0
+          ],
+          [
+            1375.0,
+            1521.0
+          ],
+          [
+            1375.0,
+            1601.0
+          ],
+          [
+            1053.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0015.jpg": [
@@ -863,7 +4144,26 @@
           907.0,
           2287.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1683.0,
+            907.0
+          ],
+          [
+            2287.0,
+            907.0
+          ],
+          [
+            2287.0,
+            1814.0
+          ],
+          [
+            1683.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -873,7 +4173,26 @@
           967.0,
           675.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            272.0,
+            967.0
+          ],
+          [
+            675.0,
+            967.0
+          ],
+          [
+            675.0,
+            1571.0
+          ],
+          [
+            272.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -883,7 +4202,26 @@
           1361.0,
           2388.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1582.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1814.0
+          ],
+          [
+            1582.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -893,7 +4231,26 @@
           1361.0,
           1562.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1240.0,
+            1361.0
+          ],
+          [
+            1562.0,
+            1361.0
+          ],
+          [
+            1562.0,
+            1814.0
+          ],
+          [
+            1240.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -903,7 +4260,146 @@
           1120.0,
           2045.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1925.0,
+            1120.0
+          ],
+          [
+            2045.0,
+            1120.0
+          ],
+          [
+            2045.0,
+            1361.0
+          ],
+          [
+            1925.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2217.0,
+          1287.0,
+          2272.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2217.0,
+            1287.0
+          ],
+          [
+            2272.0,
+            1287.0
+          ],
+          [
+            2272.0,
+            1357.0
+          ],
+          [
+            2217.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          257.0,
+          952.0,
+          690.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            257.0,
+            952.0
+          ],
+          [
+            690.0,
+            952.0
+          ],
+          [
+            690.0,
+            1586.0
+          ],
+          [
+            257.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1582.0,
+          1361.0,
+          2388.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1582.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1451.0
+          ],
+          [
+            1582.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1240.0,
+          1521.0,
+          1562.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1240.0,
+            1521.0
+          ],
+          [
+            1562.0,
+            1521.0
+          ],
+          [
+            1562.0,
+            1601.0
+          ],
+          [
+            1240.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0016.jpg": [
@@ -915,7 +4411,26 @@
           907.0,
           2287.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1683.0,
+            907.0
+          ],
+          [
+            2287.0,
+            907.0
+          ],
+          [
+            2287.0,
+            1814.0
+          ],
+          [
+            1683.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -925,7 +4440,26 @@
           967.0,
           675.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            272.0,
+            967.0
+          ],
+          [
+            675.0,
+            967.0
+          ],
+          [
+            675.0,
+            1571.0
+          ],
+          [
+            272.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -935,7 +4469,26 @@
           1361.0,
           2388.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1582.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1814.0
+          ],
+          [
+            1582.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -945,7 +4498,26 @@
           1361.0,
           1562.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1240.0,
+            1361.0
+          ],
+          [
+            1562.0,
+            1361.0
+          ],
+          [
+            1562.0,
+            1814.0
+          ],
+          [
+            1240.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -955,7 +4527,146 @@
           1120.0,
           2045.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1925.0,
+            1120.0
+          ],
+          [
+            2045.0,
+            1120.0
+          ],
+          [
+            2045.0,
+            1361.0
+          ],
+          [
+            1925.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2217.0,
+          1287.0,
+          2272.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2217.0,
+            1287.0
+          ],
+          [
+            2272.0,
+            1287.0
+          ],
+          [
+            2272.0,
+            1357.0
+          ],
+          [
+            2217.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          257.0,
+          952.0,
+          690.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            257.0,
+            952.0
+          ],
+          [
+            690.0,
+            952.0
+          ],
+          [
+            690.0,
+            1586.0
+          ],
+          [
+            257.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1582.0,
+          1361.0,
+          2388.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1582.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1361.0
+          ],
+          [
+            2388.0,
+            1451.0
+          ],
+          [
+            1582.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1240.0,
+          1521.0,
+          1562.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1240.0,
+            1521.0
+          ],
+          [
+            1562.0,
+            1521.0
+          ],
+          [
+            1562.0,
+            1601.0
+          ],
+          [
+            1240.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0017.jpg": [
@@ -967,7 +4678,26 @@
           907.0,
           2468.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1864.0,
+            907.0
+          ],
+          [
+            2468.0,
+            907.0
+          ],
+          [
+            2468.0,
+            1814.0
+          ],
+          [
+            1864.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -977,7 +4707,26 @@
           967.0,
           856.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            453.0,
+            967.0
+          ],
+          [
+            856.0,
+            967.0
+          ],
+          [
+            856.0,
+            1571.0
+          ],
+          [
+            453.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -987,7 +4736,26 @@
           1361.0,
           2569.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1814.0
+          ],
+          [
+            1763.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -997,7 +4765,26 @@
           1361.0,
           1743.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1361.0
+          ],
+          [
+            1743.0,
+            1814.0
+          ],
+          [
+            1421.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -1007,7 +4794,146 @@
           1120.0,
           2226.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            2106.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1120.0
+          ],
+          [
+            2226.0,
+            1361.0
+          ],
+          [
+            2106.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2398.0,
+          1287.0,
+          2453.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2398.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1287.0
+          ],
+          [
+            2453.0,
+            1357.0
+          ],
+          [
+            2398.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          438.0,
+          952.0,
+          871.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            438.0,
+            952.0
+          ],
+          [
+            871.0,
+            952.0
+          ],
+          [
+            871.0,
+            1586.0
+          ],
+          [
+            438.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1763.0,
+          1361.0,
+          2569.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1763.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1361.0
+          ],
+          [
+            2569.0,
+            1451.0
+          ],
+          [
+            1763.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1421.0,
+          1521.0,
+          1743.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1421.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1521.0
+          ],
+          [
+            1743.0,
+            1601.0
+          ],
+          [
+            1421.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0018.jpg": [
@@ -1019,7 +4945,26 @@
           907.0,
           2162.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1558.0,
+            907.0
+          ],
+          [
+            2162.0,
+            907.0
+          ],
+          [
+            2162.0,
+            1814.0
+          ],
+          [
+            1558.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -1029,7 +4974,26 @@
           967.0,
           550.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            147.0,
+            967.0
+          ],
+          [
+            550.0,
+            967.0
+          ],
+          [
+            550.0,
+            1571.0
+          ],
+          [
+            147.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -1039,7 +5003,26 @@
           1361.0,
           2263.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1457.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1814.0
+          ],
+          [
+            1457.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -1049,7 +5032,26 @@
           1361.0,
           1437.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1115.0,
+            1361.0
+          ],
+          [
+            1437.0,
+            1361.0
+          ],
+          [
+            1437.0,
+            1814.0
+          ],
+          [
+            1115.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -1059,7 +5061,146 @@
           1120.0,
           1920.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1800.0,
+            1120.0
+          ],
+          [
+            1920.0,
+            1120.0
+          ],
+          [
+            1920.0,
+            1361.0
+          ],
+          [
+            1800.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2092.0,
+          1287.0,
+          2147.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2092.0,
+            1287.0
+          ],
+          [
+            2147.0,
+            1287.0
+          ],
+          [
+            2147.0,
+            1357.0
+          ],
+          [
+            2092.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          132.0,
+          952.0,
+          565.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            132.0,
+            952.0
+          ],
+          [
+            565.0,
+            952.0
+          ],
+          [
+            565.0,
+            1586.0
+          ],
+          [
+            132.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1457.0,
+          1361.0,
+          2263.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1457.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1361.0
+          ],
+          [
+            2263.0,
+            1451.0
+          ],
+          [
+            1457.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1115.0,
+          1521.0,
+          1437.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1115.0,
+            1521.0
+          ],
+          [
+            1437.0,
+            1521.0
+          ],
+          [
+            1437.0,
+            1601.0
+          ],
+          [
+            1115.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0019.jpg": [
@@ -1071,7 +5212,26 @@
           907.0,
           2256.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1652.0,
+            907.0
+          ],
+          [
+            2256.0,
+            907.0
+          ],
+          [
+            2256.0,
+            1814.0
+          ],
+          [
+            1652.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -1081,7 +5241,26 @@
           967.0,
           644.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            241.0,
+            967.0
+          ],
+          [
+            644.0,
+            967.0
+          ],
+          [
+            644.0,
+            1571.0
+          ],
+          [
+            241.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -1091,7 +5270,26 @@
           1361.0,
           2357.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1551.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1814.0
+          ],
+          [
+            1551.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -1101,7 +5299,26 @@
           1361.0,
           1531.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1209.0,
+            1361.0
+          ],
+          [
+            1531.0,
+            1361.0
+          ],
+          [
+            1531.0,
+            1814.0
+          ],
+          [
+            1209.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -1111,7 +5328,146 @@
           1120.0,
           2014.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1894.0,
+            1120.0
+          ],
+          [
+            2014.0,
+            1120.0
+          ],
+          [
+            2014.0,
+            1361.0
+          ],
+          [
+            1894.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2186.0,
+          1287.0,
+          2241.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2186.0,
+            1287.0
+          ],
+          [
+            2241.0,
+            1287.0
+          ],
+          [
+            2241.0,
+            1357.0
+          ],
+          [
+            2186.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          226.0,
+          952.0,
+          659.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            226.0,
+            952.0
+          ],
+          [
+            659.0,
+            952.0
+          ],
+          [
+            659.0,
+            1586.0
+          ],
+          [
+            226.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1551.0,
+          1361.0,
+          2357.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1551.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1361.0
+          ],
+          [
+            2357.0,
+            1451.0
+          ],
+          [
+            1551.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1209.0,
+          1521.0,
+          1531.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1209.0,
+            1521.0
+          ],
+          [
+            1531.0,
+            1521.0
+          ],
+          [
+            1531.0,
+            1601.0
+          ],
+          [
+            1209.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ],
     "IMG_0020.jpg": [
@@ -1123,7 +5479,26 @@
           907.0,
           2225.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1621.0,
+            907.0
+          ],
+          [
+            2225.0,
+            907.0
+          ],
+          [
+            2225.0,
+            1814.0
+          ],
+          [
+            1621.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_window_left_center",
@@ -1133,7 +5508,26 @@
           967.0,
           613.0,
           1571.0
-        ]
+        ],
+        "polygon": [
+          [
+            210.0,
+            967.0
+          ],
+          [
+            613.0,
+            967.0
+          ],
+          [
+            613.0,
+            1571.0
+          ],
+          [
+            210.0,
+            1571.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_table_center",
@@ -1143,7 +5537,26 @@
           1361.0,
           2326.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1520.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1814.0
+          ],
+          [
+            1520.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_chair_table",
@@ -1153,7 +5566,26 @@
           1361.0,
           1500.0,
           1814.0
-        ]
+        ],
+        "polygon": [
+          [
+            1178.0,
+            1361.0
+          ],
+          [
+            1500.0,
+            1361.0
+          ],
+          [
+            1500.0,
+            1814.0
+          ],
+          [
+            1178.0,
+            1814.0
+          ]
+        ],
+        "has_mask": true
       },
       {
         "ground_truth_id": "gt_lamp_table",
@@ -1163,7 +5595,146 @@
           1120.0,
           1983.0,
           1361.0
-        ]
+        ],
+        "polygon": [
+          [
+            1863.0,
+            1120.0
+          ],
+          [
+            1983.0,
+            1120.0
+          ],
+          [
+            1983.0,
+            1361.0
+          ],
+          [
+            1863.0,
+            1361.0
+          ]
+        ],
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_door_handle_front",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          2155.0,
+          1287.0,
+          2210.0,
+          1357.0
+        ],
+        "polygon": [
+          [
+            2155.0,
+            1287.0
+          ],
+          [
+            2210.0,
+            1287.0
+          ],
+          [
+            2210.0,
+            1357.0
+          ],
+          [
+            2155.0,
+            1357.0
+          ]
+        ],
+        "parent_entity_id": "gt_door_front_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_window_frame_left",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          195.0,
+          952.0,
+          628.0,
+          1586.0
+        ],
+        "polygon": [
+          [
+            195.0,
+            952.0
+          ],
+          [
+            628.0,
+            952.0
+          ],
+          [
+            628.0,
+            1586.0
+          ],
+          [
+            195.0,
+            1586.0
+          ]
+        ],
+        "parent_entity_id": "gt_window_left_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_table_top_center",
+        "class_name": "table_top",
+        "bbox_2d": [
+          1520.0,
+          1361.0,
+          2326.0,
+          1451.0
+        ],
+        "polygon": [
+          [
+            1520.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1361.0
+          ],
+          [
+            2326.0,
+            1451.0
+          ],
+          [
+            1520.0,
+            1451.0
+          ]
+        ],
+        "parent_entity_id": "gt_table_center",
+        "has_mask": true
+      },
+      {
+        "ground_truth_id": "gt_chair_seat_table",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          1178.0,
+          1521.0,
+          1500.0,
+          1601.0
+        ],
+        "polygon": [
+          [
+            1178.0,
+            1521.0
+          ],
+          [
+            1500.0,
+            1521.0
+          ],
+          [
+            1500.0,
+            1601.0
+          ],
+          [
+            1178.0,
+            1601.0
+          ]
+        ],
+        "parent_entity_id": "gt_chair_table",
+        "has_mask": true
       }
     ]
   }

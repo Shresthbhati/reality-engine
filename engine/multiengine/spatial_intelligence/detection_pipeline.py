@@ -62,6 +62,8 @@ class DetectionBox:
     frame_index: int | None = None
     timestamp_sec: float | None = None
     shot_id: int | None = None
+    raw_score: float | None = None
+    calibrated_confidence: float | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -114,6 +116,8 @@ class DetectionBox:
             "frame_index": self.frame_index,
             "timestamp_sec": round(self.timestamp_sec, 4) if self.timestamp_sec is not None else None,
             "shot_id": self.shot_id,
+            "raw_score": round(self.raw_score, 4) if self.raw_score is not None else None,
+            "calibrated_confidence": round(self.calibrated_confidence, 4) if self.calibrated_confidence is not None else None,
             "polygon_point_count": len(self.mask_polygon) if self.mask_polygon else 0,
         }
 
@@ -359,12 +363,43 @@ def extract_host_crop_roi(
 # 4. CLASS-SPECIFIC CONFIDENCE GATING & VALIDATION
 # ============================================================================
 
-def filter_by_class_confidence(detections: Sequence[DetectionBox]) -> list[DetectionBox]:
-    """Filters detection candidates using domain- and class-specific confidence thresholds."""
+DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
+    "window": 0.50,
+    "table": 0.30,
+    "chair": 0.26,
+    "lamp": 0.30,
+    "door": 0.33,
+}
+
+
+def filter_by_class_confidence(
+    detections: Sequence[DetectionBox],
+    class_thresholds: dict[str, float] | None = None,
+    max_frame_share: float = 0.75,
+    max_dimension_share: float = 0.95,
+    image_shape: tuple[int, int] | None = None,
+) -> list[DetectionBox]:
+    """Filters detection candidates using domain- and class-specific confidence thresholds and box geometry."""
     filtered: list[DetectionBox] = []
+    eff_thresh = dict(DEFAULT_CALIBRATED_CLASS_THRESHOLDS)
+    if class_thresholds:
+        eff_thresh.update(class_thresholds)
+
+    img_h, img_w = image_shape if image_shape else (3024, 4032)
+    frame_area = float(img_w * img_h)
+
     for det in detections:
+        # 1. Whole-image hallucinated box filtering
+        w = det.width
+        h = det.height
+        frame_share = (w * h) / frame_area if frame_area > 0 else 0.0
+        if frame_share > max_frame_share:
+            continue
+        if (w > max_dimension_share * img_w and h > max_dimension_share * img_h) or (w > max_dimension_share * img_w and frame_share > 0.35):
+            continue
+
         tax_cls = resolve_taxonomy_class(det.class_name)
-        threshold = tax_cls.min_detector_confidence
+        threshold = eff_thresh.get(det.class_name, tax_cls.min_detector_confidence)
 
         # Micro fixtures (sockets, switches, door handles) have lower threshold to avoid starvation
         if det.scale == DetectionScale.MICRO or tax_cls.parent_class is not None:
@@ -401,14 +436,14 @@ def compute_box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float
 
 def suppress_duplicates_preserving_parts(
     detections: Sequence[DetectionBox],
-    iou_threshold: float = 0.55,
+    iou_threshold: float = 0.50,
 ) -> list[DetectionBox]:
     """Suppresses redundant duplicate detections while explicitly preserving subparts inside parents.
 
     If Box A and Box B have high overlap:
     - If Box A and Box B have the exact same class: fuses them via confidence-weighted averaging.
-    - If Box A is a subpart of Box B (e.g. door handle inside door): PRESERVES BOTH and establishes parent-part link.
-    - If Box A and Box B are different unrelated classes: keeps the one with higher confidence unless both are valid distinct scales.
+    - If Box A is a genuine subpart of Box B (or vice versa): PRESERVES BOTH and establishes parent-part link.
+    - If Box A and Box B are different unrelated classes: cross-class NMS keeps the one with higher confidence.
     """
     if not detections:
         return []
@@ -426,7 +461,7 @@ def suppress_duplicates_preserving_parts(
             tax_existing = resolve_taxonomy_class(existing.class_name)
             iou = compute_box_iou(det.box_2d, existing.box_2d)
 
-            # Check if one is contained inside the other (part-parent relationship)
+            # Check containment
             det_in_existing = (
                 det.x1 >= existing.x1 - 5.0 and det.y1 >= existing.y1 - 5.0 and
                 det.x2 <= existing.x2 + 5.0 and det.y2 <= existing.y2 + 5.0
@@ -436,15 +471,14 @@ def suppress_duplicates_preserving_parts(
                 existing.x2 <= det.x2 + 5.0 and existing.y2 <= det.y2 + 5.0
             )
 
+            # Genuine taxonomy part-parent relationships
             is_part_relation = (
                 det.parent_box_id == existing.box_id or
                 existing.parent_box_id == det.box_id or
                 tax_det.parent_class == tax_existing.taxonomy_id or
                 tax_existing.parent_class == tax_det.taxonomy_id or
-                tax_det.name in tax_existing.potential_parts or
-                tax_existing.name in tax_det.potential_parts or
-                tax_existing.name in tax_det.hosts or
-                tax_det.name in tax_existing.hosts or
+                (tax_det.name in tax_existing.potential_parts and det_in_existing) or
+                (tax_existing.name in tax_det.potential_parts and existing_in_det) or
                 (det.scale != existing.scale and (det_in_existing or existing_in_det))
             )
 
@@ -452,6 +486,8 @@ def suppress_duplicates_preserving_parts(
                 # Do NOT suppress! Establish parentage
                 if det_in_existing and det.parent_box_id is None:
                     object.__setattr__(det, "parent_box_id", existing.box_id)
+                elif existing_in_det and existing.parent_box_id is None:
+                    object.__setattr__(existing, "parent_box_id", det.box_id)
                 continue
 
             if iou >= iou_threshold:
@@ -494,6 +530,8 @@ def suppress_duplicates_preserving_parts(
                 mask_2d=fused_mask,
                 parent_box_id=target.parent_box_id,
                 scale=target.scale,
+                raw_score=target.raw_score,
+                calibrated_confidence=min(0.99, max(target.confidence, det.confidence) + 0.05),
                 attributes=dict(target.attributes),
             )
             kept[fused_with_idx] = fused_det
@@ -819,6 +857,8 @@ class GroundingDinoDetectorAdapter:
                         box_2d=b_xyxy,
                         confidence=float(score),
                         source_engine=self.name,
+                        raw_score=float(score),
+                        calibrated_confidence=float(score),
                     ))
 
         return boxes
@@ -1051,11 +1091,11 @@ class DetectionPipeline:
                         ))
                         subparts_detected += 1
 
-        # 5. Class-specific confidence filtering
-        filtered_dets = filter_by_class_confidence(raw_accum)
+        # 5. Class-specific confidence filtering & whole-image false positive suppression
+        filtered_dets = filter_by_class_confidence(raw_accum, image_shape=(h, w))
 
-        # 6. Duplicate suppression preserving subparts and WBF
-        suppressed_dets = suppress_duplicates_preserving_parts(filtered_dets, iou_threshold=0.45)
+        # 6. Duplicate suppression preserving subparts and cross-class NMS
+        suppressed_dets = suppress_duplicates_preserving_parts(filtered_dets, iou_threshold=0.50)
 
         # 7. Mask segmentation and boundary refinement
         refined_boxes: list[DetectionBox] = []

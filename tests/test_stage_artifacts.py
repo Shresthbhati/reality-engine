@@ -29,6 +29,18 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         yield c
 
 
+def test_a_stage_deadline_fails_the_real_job_with_the_reason_and_adopts_nothing(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("RE_STAGE_TIMEOUTS_S", "reconstruct=0.01")  # failure injection: the reconstruction stage cannot finish in 10 ms
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=120.0)
+    assert job["status"] == "failed" and "deadline" in str(job.get("error", "")).lower(), job
+    stages = client.get(f"/api/jobs/{job['id']}/stages").json()["items"]
+    rec = next(s for s in stages if s["name"] == "reconstruct")
+    assert rec["status"] == "failed" and rec["metrics"].get("timed_out") == 1.0
+    assert not any(s["name"] in ("compile_validate", "changeset_commit") for s in stages)  # nothing downstream ran
+    assert client.get(f"/api/worlds/{wid}/status").json()["has_model"] is False  # no false successful world
+
+
 def test_compile_validate_publishes_the_world_as_a_resolvable_artifact_with_matching_bytes(client, tmp_path, monkeypatch):
     sid, _ = _chain_setup(client, tmp_path, monkeypatch)
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=120.0)

@@ -37,6 +37,20 @@ def test_one_photograph_is_not_counted_twice_across_identifier_families():
     assert c["multiview_association"]["covered"] == 0  # same photo as a path and as a frame id
 
 
+def test_uncertainty_counts_only_geometries_whose_position_and_dimension_uncertainty_were_both_derived():
+    from world_ir.schema_v1 import Geometry, GeometryType
+
+    def geom(i, unc):
+        return Geometry(id=f"g{i}", type=GeometryType.BOX, quality_metrics={"uncertainty": unc})
+
+    w = _world()
+    for g in (geom(1, {"position": [0.1, 0.1, 0.1], "dimensions": [0.2, 0.2, 0.2]}), geom(2, {"position": [0.1, 0.1, 0.1], "dimensions": None}),
+              Geometry(id="g3", type=GeometryType.BOX)):  # g3 carries no uncertainty block: not part of the denominator
+        w.geometries[g.id] = g
+    c = _coverage(w, placed=[], sized=[])
+    assert (c["uncertainty_propagated"]["covered"], c["uncertainty_propagated"]["of"]) == (1, 2)  # a None is "not derived", never a stand-in
+
+
 def test_competing_hypotheses_are_counted_as_unresolved_conflicts():
     a = Entity(id="a", type=EntityType.FURNITURE, provenance=Provenance.ESTIMATED,
                custom_properties={"evidence": {"competing_hypotheses": [{"quantity": "class", "candidates": [{"label": "chair"}, {"label": "stool"}]},

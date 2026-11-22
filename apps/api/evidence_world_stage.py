@@ -465,6 +465,8 @@ def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, 
     # competing hypotheses the fusion PRESERVED instead of merging (class / position / dimension disagreements between independent engines)
     conflicted = {e.id: (e.custom_properties.get("evidence") or {}).get("competing_hypotheses") for e in ents}
     conflicted = {k: v for k, v in conflicted.items() if v}
+    # geometries that carry an uncertainty block: propagated from evidence, or None when none could be derived (never a stand-in value)
+    with_unc = [g for g in w.geometries.values() if isinstance((getattr(g, "quality_metrics", None) or {}).get("uncertainty"), dict)]
     rep = validate_world_ir(w)
     topo = [i for i in rep.issues if i.code.startswith("topology_")]
     return {
@@ -474,6 +476,7 @@ def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, 
         "source_traceability": frac(sum(1 for e in ents if images(e)), len(ents)),
         "provenance_declared": frac(sum(1 for e in ents if e.provenance != Provenance.UNKNOWN), len(ents)),
         "unresolved_conflicts": {"entities": len(conflicted), "hypotheses": sum(len(h) for h in conflicted.values())},
+        "uncertainty_propagated": frac(sum(1 for g in with_unc if all(v is not None for v in g.quality_metrics["uncertainty"].values())), len(with_unc)),
         "topology": {"errors": sum(1 for i in topo if i.severity.value == "error"), "warnings": sum(1 for i in topo if i.severity.value == "warning"),
                      "world_validation_errors": len(rep.errors)},
     }

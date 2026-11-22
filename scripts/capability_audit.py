@@ -109,6 +109,11 @@ ROWS: Dict[str, dict] = {
     "Active capture guidance": dict(
         modules=["reconstruction/capture_quality.py", "reconstruction/completeness.py"],
         tests=["tests/test_capture_planner.py", "tests/test_capture_requests_task6_1.py", "tests/test_capture_feedback_wiring.py"]),
+    "Reconstruction quality gate and run lifecycle": dict(
+        modules=["engine/multiengine/quality_gate.py", "engine/pipeline/stages/runner.py", "apps/api/evidence_world_stage.py",
+                 "apps/api/routes_evidence_world.py", "world_ir/validation.py"],
+        tests=["tests/test_quality_gate.py", "tests/test_evidence_coverage.py", "tests/test_stage_contract.py", "tests/test_stage_artifacts.py",
+               "tests/test_world_topology_checks.py", "tests/test_part_of_in_flow.py", "tests/test_evidence_world_api.py", "tests/test_evidence_world_job.py"]),
     "Export and persistence": dict(
         modules=["exporters/gltf", "exporters/ifc_bridge.py", "worldstore/store.py"],
         tests=["tests/test_gltf_exporter.py", "tests/test_export_pipeline_e2e.py", "tests/test_worldstore_concurrency.py",
@@ -127,6 +132,12 @@ REAL_DATA_NOTES: Dict[str, str] = {
         "Depth Anything V2 Small (sha256 3152477c...) each emitted 3 valid relative-depth records; raw 768x1024 float32 arrays reloaded byte-exact from disk. "
         "Sparse-SfM lifter on the 32-photo set: COLMAP registered 22/32 images (4,506 points), OWL-ViT made 89 detections, 23 regions lifted to "
         "sfm_gauge records, 17 rejected for too few points. Gauge units only: nothing here is metres, and no interior or physical ground truth was used."
+    ),
+    "Reconstruction quality gate and run lifecycle": (
+        "Real run (12 Microsoft 7-Scenes 'office' photographs through the production job, real COLMAP 4.2 + OWL-ViT + SAM, evidence stage ON): verdict PARTIAL "
+        "solely because scale is unanchored (SfM gauge). Measured coverage of the persisted world: positioned 19/19, dimensions 19/19, source-traceable 19/19, "
+        "provenance declared 19/19, multi-view association 8/12 objects, topology 0 errors / 0 warnings, source-photograph and manifest hashes re-verified OK. "
+        "This is structural completeness and integrity, NOT physical accuracy: no independent physical measurement was applied."
     ),
     "Metric scale calibration": "No physical anchor has ever been applied to a real reconstruction; South Building stays COLMAP_SFM_UNITS. Anchor acceptance is verified on synthetic scenes only.",
     "Benchmark manifests (BLOCKED when ground truth is missing)": "No furnished-interior benchmark exists in the repository: every interior metric is BLOCKED (no scenes, no independent measurements).",

@@ -170,6 +170,9 @@ async def export_run_world(
 
     d = _run_dir(await _world_dir(db, world_id, auth), run_id)
     rd = readiness(d)
+    q = rd.get("quality") or {}
+    if q.get("verdict") in ("FAILED", "BLOCKED"):  # the measured gate decides; PARTIAL stays exportable but is labelled in the headers
+        raise HTTPException(409, f"not exportable: quality verdict {q['verdict']}: {'; '.join(q.get('reasons') or ['no reason recorded'])}")
     if not rd.get("export_ready"):
         raise HTTPException(409, f"not exportable: {rd.get('export_not_ready_reason') or rd.get('reason') or rd['world'].get('reason') or 'readiness gate not met'}")
     if not rd.get("metric_export_ready") and not body.acknowledge_unscaled:
@@ -188,7 +191,7 @@ async def export_run_world(
     return Response(content=data, media_type=_EXPORT_MEDIA.get(body.format, "application/octet-stream"), headers={
         "X-Export-Version": vid, "X-Export-Scale": "metric" if rd.get("metric_export_ready") else "sfm_units-NOT-metres",
         "X-Entities-Exported": str(len(report.entities_exported)), "X-Entities-Skipped": str(len(report.entities_skipped)),
-        "X-Physical-Accuracy": str(rd.get("physical_accuracy"))})
+        "X-Physical-Accuracy": str(rd.get("physical_accuracy")), "X-Quality-Verdict": str(q.get("verdict", "UNKNOWN"))})
 
 
 class ProposeBody(BaseModel):

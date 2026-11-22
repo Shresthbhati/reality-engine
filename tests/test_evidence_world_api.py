@@ -242,6 +242,7 @@ def test_export_is_refused_when_nothing_is_positioned(client, tmp_path):
     _persisted_run(client, tmp_path, wid)  # 2D-only: entities exist, none has a position
     r = client.post(_url(wid, "run-c", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert r.status_code == 409 and "no entity has a measured position" in r.json()["detail"]
+    assert "quality verdict BLOCKED" in r.json()["detail"]  # the measured gate, not just the position check, refuses it
 
 
 def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and_says_it_is_not_metres(client, tmp_path):
@@ -267,6 +268,7 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     ok = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert ok.status_code == 200 and ok.headers["x-export-scale"] == "sfm_units-NOT-metres" and ok.headers["x-physical-accuracy"] == "NOT_MEASURED"
     assert int(ok.headers["x-entities-exported"]) >= 1 and ok.content[:4] == b"glTF"  # the object plus its observed surfaces
+    assert ok.headers["x-quality-verdict"] == "PARTIAL"  # unanchored scale: exported, but labelled partial, never ready
     assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
 
 

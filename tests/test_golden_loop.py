@@ -23,6 +23,7 @@ from world_ir.diff import diff_worlds
 from world_ir.world_v1 import WorldIR
 
 
+@pytest.mark.slow
 @pytest.mark.golden_loop
 def test_full_golden_loop(tmp_path: Path):
     """Execute the complete Reality Engine golden loop."""

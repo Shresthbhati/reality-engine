@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace as NS
 
 import numpy as np
+import pytest
 
 from perception.detection.attribute_pass import attribute_phrase, run_attribute_pass
 from world_ir.observation_table import ObservationTable
@@ -82,6 +83,7 @@ def test_a_scorer_with_many_is_called_once_per_attribute_not_once_per_value():
     assert json.loads(str(t.attrs_json[0]))["lock_type"]["value"] == "numpad" and out["detector_calls"] == 2
 
 
+@pytest.mark.slow
 def test_real_grounded_scorer_many_returns_one_score_per_phrase():
     import pytest
 

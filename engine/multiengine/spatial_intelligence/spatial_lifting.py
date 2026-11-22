@@ -40,9 +40,28 @@ class SpatialRelationship:
     target_id: str
     relation: SpatialRelationKind
     confidence: float
-    distance_m: float
-    basis: str
+    distance: float = 0.0
+    basis: str = ""
+    distance_units: str = "m"
     details: dict[str, Any] = field(default_factory=dict)
+    distance_m: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.distance_units == "m":
+            if self.distance_m is not None:
+                object.__setattr__(self, "distance", float(self.distance_m))
+            else:
+                object.__setattr__(self, "distance_m", float(self.distance))
+        else:
+            object.__setattr__(self, "distance_m", None)
+
+    @property
+    def distance_synthetic(self) -> float | None:
+        return self.distance if self.distance_units == "synthetic_m" else None
+
+    @property
+    def distance_gauge(self) -> float | None:
+        return self.distance if self.distance_units == "sfm_units" else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,7 +69,11 @@ class SpatialRelationship:
             "target_id": self.target_id,
             "relation": self.relation.value,
             "confidence": round(self.confidence, 3),
-            "distance_m": round(self.distance_m, 3),
+            "distance": round(self.distance, 3),
+            "distance_m": round(self.distance, 3) if self.distance_units == "m" else None,
+            "distance_synthetic": round(self.distance, 3) if self.distance_units == "synthetic_m" else None,
+            "distance_gauge": round(self.distance, 3) if self.distance_units == "sfm_units" else None,
+            "distance_units": self.distance_units,
             "basis": self.basis,
             "details": self.details,
         }
@@ -354,12 +377,23 @@ def infer_spatial_relationships(
     wall_attachment_dist_m: float = 0.25,
     support_resting_dist_m: float = 0.15,
 ) -> list[SpatialRelationship]:
-    """Infers evidence-grounded spatial relationships between reconstructed 3D entities."""
+    """Infers evidence-grounded spatial relationships between reconstructed 3D entities.
+
+    Enforces unit-aware and frame-aware geometry policies:
+    - Rejects cross-entity spatial inference between incompatible scale states.
+    - Prevents cross-image distance checks for unaligned relative depth.
+    - Never applies fixed metre distance thresholds to SfM gauge or relative coordinates.
+    """
     relationships: list[SpatialRelationship] = []
     n = len(entities)
 
     for i in range(n):
         ent_a = entities[i]
+        scale_a = ent_a.scale_state.lower()
+        # UNKNOWN scale has no geometric comparability
+        if scale_a == "unknown":
+            continue
+
         cls_a = ent_a.class_name.lower()
         pos_a = np.array(ent_a.position_m)
         bmin_a = np.array(ent_a.bounds_min)
@@ -369,12 +403,50 @@ def infer_spatial_relationships(
             if i == j:
                 continue
             ent_b = entities[j]
+            scale_b = ent_b.scale_state.lower()
+
+            # Reject mismatched scale states
+            if scale_a != scale_b:
+                continue
+
+            # Per-image relative depth: strictly do not assume cross-image comparability
+            if scale_a == "relative_depth" and ent_a.source_image_id != ent_b.source_image_id:
+                continue
+
+            is_gauge = scale_a == "sfm_gauge"
+            is_relative = scale_a == "relative_depth"
+            if is_gauge:
+                dist_units = "sfm_units"
+            elif is_relative:
+                dist_units = "relative"
+            else:
+                dist_units = "m" if (ent_a.is_physically_metric and scale_a == "metric_anchored") else "synthetic_m"
+
             cls_b = ent_b.class_name.lower()
             pos_b = np.array(ent_b.position_m)
             bmin_b = np.array(ent_b.bounds_min)
             bmax_b = np.array(ent_b.bounds_max)
 
             dist_centers = float(np.linalg.norm(pos_a - pos_b))
+
+            if is_gauge:
+                # Gauge scale: check part-of containment without metre assumptions
+                if "door" in cls_b and "handle" in cls_a:
+                    # Check if handle centroid is within or very close to door bounds
+                    in_x = bmin_b[0] <= pos_a[0] <= bmax_b[0]
+                    in_y = bmin_b[1] <= pos_a[1] <= bmax_b[1]
+                    in_z = bmin_b[2] <= pos_a[2] <= bmax_b[2]
+                    if in_x and in_y and in_z:
+                        relationships.append(SpatialRelationship(
+                            source_id=ent_a.entity_id,
+                            target_id=ent_b.entity_id,
+                            relation=SpatialRelationKind.PART_OF,
+                            confidence=0.90,
+                            distance=dist_centers,
+                            distance_units=dist_units,
+                            basis="semantic_part_hierarchy_containment",
+                        ))
+                continue
 
             # 1. Wall Mounting (e.g. socket, switch, sconce mounted on wall)
             if "wall" in cls_b and any(k in cls_a for k in ("socket", "switch", "lamp", "sconce", "mirror", "frame", "door", "window")):
@@ -386,15 +458,14 @@ def infer_spatial_relationships(
                         target_id=ent_b.entity_id,
                         relation=SpatialRelationKind.MOUNTED_ON,
                         confidence=0.85,
-                        distance_m=horiz_dist,
+                        distance=horiz_dist,
+                        distance_units=dist_units,
                         basis="proximity_to_wall_plane",
                     ))
 
             # 2. Floor / Surface Resting & Support (e.g. chair resting on floor, lamp resting on table)
             if "floor" in cls_b or "table" in cls_b or "desk" in cls_b:
-                # Vertical clearance between bottom of A and top of B
                 vert_clearance = abs(bmin_a[2] - bmax_b[2])
-                # Horizontal footprint overlap
                 x_overlap = max(0.0, min(bmax_a[0], bmax_b[0]) - max(bmin_a[0], bmin_b[0]))
                 y_overlap = max(0.0, min(bmax_a[1], bmax_b[1]) - max(bmin_a[1], bmin_b[1]))
                 footprint_overlap = (x_overlap > 0.05 and y_overlap > 0.05) if "floor" not in cls_b else True
@@ -405,7 +476,8 @@ def infer_spatial_relationships(
                         target_id=ent_b.entity_id,
                         relation=SpatialRelationKind.SUPPORTED_BY,
                         confidence=0.80,
-                        distance_m=vert_clearance,
+                        distance=vert_clearance,
+                        distance_units=dist_units,
                         basis="vertical_contact_footprint_overlap",
                     ))
                     relationships.append(SpatialRelationship(
@@ -413,7 +485,8 @@ def infer_spatial_relationships(
                         target_id=ent_a.entity_id,
                         relation=SpatialRelationKind.SUPPORTS,
                         confidence=0.80,
-                        distance_m=vert_clearance,
+                        distance=vert_clearance,
+                        distance_units=dist_units,
                         basis="vertical_contact_footprint_overlap",
                     ))
 
@@ -425,7 +498,8 @@ def infer_spatial_relationships(
                         target_id=ent_b.entity_id,
                         relation=SpatialRelationKind.PART_OF,
                         confidence=0.90,
-                        distance_m=dist_centers,
+                        distance=dist_centers,
+                        distance_units=dist_units,
                         basis="semantic_part_hierarchy",
                     ))
 
@@ -437,7 +511,8 @@ def infer_spatial_relationships(
                         target_id=ent_b.entity_id,
                         relation=SpatialRelationKind.ADJACENT_TO,
                         confidence=0.75,
-                        distance_m=dist_centers,
+                        distance=dist_centers,
+                        distance_units=dist_units,
                         basis="horizontal_physical_proximity",
                     ))
 

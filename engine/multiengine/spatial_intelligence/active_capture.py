@@ -53,12 +53,70 @@ class CaptureRequest:
     priority: CapturePriority
     target_entity_ids: tuple[str, ...]
     target_class: str
-    target_position_m: tuple[float, float, float]
-    recommended_camera_pos_m: tuple[float, float, float] | None
-    recommended_look_at_m: tuple[float, float, float] | None
-    suggested_distance_m: float
-    guidance_text: str
+    target_position: tuple[float, float, float] | None = None
+    recommended_camera_pos: tuple[float, float, float] | None = None
+    recommended_look_at: tuple[float, float, float] | None = None
+    suggested_distance: float = 0.0
+    guidance_text: str = ""
+    is_scale_request: bool = False
     details: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        request_id: str,
+        issue_type: CaptureIssueType,
+        priority: CapturePriority,
+        target_entity_ids: tuple[str, ...] | Sequence[str],
+        target_class: str,
+        target_position: tuple[float, float, float] | None = None,
+        recommended_camera_pos: tuple[float, float, float] | None = None,
+        recommended_look_at: tuple[float, float, float] | None = None,
+        suggested_distance: float = 0.0,
+        guidance_text: str = "",
+        is_scale_request: bool = False,
+        details: dict[str, Any] | None = None,
+        target_position_m: tuple[float, float, float] | None = None,
+        recommended_camera_pos_m: tuple[float, float, float] | None = None,
+        recommended_look_at_m: tuple[float, float, float] | None = None,
+        suggested_distance_m: float | None = None,
+    ) -> None:
+        eff_pos = target_position if target_position is not None else target_position_m
+        eff_cam = recommended_camera_pos if recommended_camera_pos is not None else recommended_camera_pos_m
+        eff_look = recommended_look_at if recommended_look_at is not None else recommended_look_at_m
+        eff_dist = suggested_distance if suggested_distance != 0.0 else (suggested_distance_m if suggested_distance_m is not None else 0.0)
+
+        object.__setattr__(self, "request_id", request_id)
+        object.__setattr__(self, "issue_type", issue_type)
+        object.__setattr__(self, "priority", priority)
+        object.__setattr__(self, "target_entity_ids", tuple(target_entity_ids))
+        object.__setattr__(self, "target_class", target_class)
+        object.__setattr__(self, "target_position", eff_pos)
+        object.__setattr__(self, "recommended_camera_pos", eff_cam)
+        object.__setattr__(self, "recommended_look_at", eff_look)
+        object.__setattr__(self, "suggested_distance", float(eff_dist))
+        object.__setattr__(self, "guidance_text", guidance_text)
+        object.__setattr__(self, "is_scale_request", bool(is_scale_request))
+        object.__setattr__(self, "details", details if details is not None else {})
+
+    @property
+    def is_scale_calibrated(self) -> bool:
+        return bool(self.details.get("scale_calibrated", False))
+
+    @property
+    def target_position_m(self) -> tuple[float, float, float] | None:
+        return self.target_position if self.is_scale_calibrated else None
+
+    @property
+    def recommended_camera_pos_m(self) -> tuple[float, float, float] | None:
+        return self.recommended_camera_pos if self.is_scale_calibrated else None
+
+    @property
+    def recommended_look_at_m(self) -> tuple[float, float, float] | None:
+        return self.recommended_look_at if self.is_scale_calibrated else None
+
+    @property
+    def suggested_distance_m(self) -> float:
+        return self.suggested_distance if self.is_scale_calibrated else 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -67,11 +125,16 @@ class CaptureRequest:
             "priority": self.priority.value,
             "target_entity_ids": list(self.target_entity_ids),
             "target_class": self.target_class,
-            "target_position_m": [round(c, 3) for c in self.target_position_m],
-            "recommended_camera_pos_m": [round(c, 3) for c in self.recommended_camera_pos_m] if self.recommended_camera_pos_m else None,
-            "recommended_look_at_m": [round(c, 3) for c in self.recommended_look_at_m] if self.recommended_look_at_m else None,
-            "suggested_distance_m": round(self.suggested_distance_m, 2),
+            "target_position": [round(c, 3) for c in self.target_position] if self.target_position is not None else None,
+            "target_position_m": [round(c, 3) for c in self.target_position] if (self.is_scale_calibrated and self.target_position is not None) else None,
+            "recommended_camera_pos": [round(c, 3) for c in self.recommended_camera_pos] if self.recommended_camera_pos else None,
+            "recommended_camera_pos_m": [round(c, 3) for c in self.recommended_camera_pos] if (self.is_scale_calibrated and self.recommended_camera_pos) else None,
+            "recommended_look_at": [round(c, 3) for c in self.recommended_look_at] if self.recommended_look_at else None,
+            "recommended_look_at_m": [round(c, 3) for c in self.recommended_look_at] if (self.is_scale_calibrated and self.recommended_look_at) else None,
+            "suggested_distance": round(self.suggested_distance, 2),
+            "suggested_distance_m": round(self.suggested_distance, 2) if self.is_scale_calibrated else 0.0,
             "guidance_text": self.guidance_text,
+            "is_scale_request": self.is_scale_request,
             "details": self.details,
         }
 
@@ -145,10 +208,10 @@ class ActiveCaptureAnalyzer:
                     scale_desc = "synthetic scale without a verified physical anchor"
                     guidance = (
                         "CRITICAL: The reconstruction is in synthetic scale without a verified physical anchor. "
-                        "Please place a physical metre ruler, AprilTag marker, or checkerboard target in the scene "
-                        "and photograph it clearly from 1.5-2.0 metres away."
+                        "Synthetic scale does not constitute physical metric calibration. "
+                        "Place a verified physical scale reference (e.g. metre ruler or AprilTag marker) in the scene "
+                        "and photograph it clearly to establish physical ground truth."
                     )
-                    sug_dist = 1.5
                     s_state_str = "synthetic_scale_aligned"
                 else:
                     scale_desc = "uncalibrated relative depth / SfM gauge without physical metric scale"
@@ -157,7 +220,6 @@ class ActiveCaptureAnalyzer:
                         "Physical camera distance is unknown. Place a physical metre ruler or AprilTag marker in the scene "
                         "and photograph it to establish physical scale."
                     )
-                    sug_dist = 0.0
                     s_state_str = "relative_depth"
 
                 requests.append(CaptureRequest(
@@ -166,11 +228,12 @@ class ActiveCaptureAnalyzer:
                     priority=CapturePriority.CRITICAL,
                     target_entity_ids=tuple(rent.canonical_entity_id for rent in merged_entities[:3]),
                     target_class="scene_scale_anchor",
-                    target_position_m=(0.0, 0.0, 0.0),
+                    target_position=None,
                     recommended_camera_pos_m=None,
                     recommended_look_at_m=None,
-                    suggested_distance_m=sug_dist,
+                    suggested_distance_m=0.0,
                     guidance_text=guidance,
+                    is_scale_request=True,
                     details={"scale_state": s_state_str, "is_metric": False, "description": scale_desc},
                 ))
                 req_counter += 1
@@ -183,17 +246,16 @@ class ActiveCaptureAnalyzer:
         coverage_ratio = (multiview_count / total_ents) if total_ents > 0 else 0.0
 
         for rent in merged_entities:
-            pos = rent.position_m
+            pos = rent.position
             pos_np = np.array(pos, dtype=np.float64) if pos is not None else None
-            target_pos = pos if pos is not None else (0.0, 0.0, 0.0)
-            is_scale_known = is_scene_metric or rent.scale_state.lower() in ("synthetic_scale_aligned", "metric_anchored")
+            is_physically_calibrated = is_scene_metric or rent.is_physically_metric
             lifted_obs = entity_lifted_map.get(rent.canonical_entity_id, [])
 
             # Check 2A: Single-view entities (Cannot triangulate 3D position independently)
             if not rent.is_multiview:
                 rec_cam_pos = None
                 rec_look_at = pos
-                if pos_np is not None and lifted_obs and is_scale_known:
+                if pos_np is not None and lifted_obs and is_physically_calibrated:
                     cam_id = lifted_obs[0].source_image_id
                     if cam_id in cameras:
                         cur_cam_pos = np.array([
@@ -212,8 +274,8 @@ class ActiveCaptureAnalyzer:
                         new_dir = rot_mat @ (view_vec / dist)
                         rec_cam_pos = tuple(float(c) for c in (pos_np + new_dir * dist))
 
-                sug_dist = self.standard_shooting_dist_m if is_scale_known else 0.0
-                dist_note = f"approximately {self.standard_shooting_dist_m}m away" if is_scale_known else "at an appropriate standoff distance (scale is uncalibrated)"
+                sug_dist = self.standard_shooting_dist_m if is_physically_calibrated else 0.0
+                dist_note = f"approximately {self.standard_shooting_dist_m}m away" if is_physically_calibrated else "at an appropriate standoff distance (scale is not physically calibrated)"
 
                 requests.append(CaptureRequest(
                     request_id=f"cap_req_{req_counter:03d}",
@@ -221,7 +283,7 @@ class ActiveCaptureAnalyzer:
                     priority=CapturePriority.HIGH,
                     target_entity_ids=(rent.canonical_entity_id,),
                     target_class=rent.primary_class,
-                    target_position_m=target_pos,
+                    target_position=pos,
                     recommended_camera_pos_m=rec_cam_pos,
                     recommended_look_at_m=rec_look_at,
                     suggested_distance_m=sug_dist,
@@ -230,7 +292,8 @@ class ActiveCaptureAnalyzer:
                         f"Take an additional photo from a ~35° offset angle {dist_note} "
                         f"to verify its physical 3D location."
                     ),
-                    details={"current_views": len(rent.sources), "scale_calibrated": is_scale_known},
+                    is_scale_request=False,
+                    details={"current_views": len(rent.sources), "scale_calibrated": is_physically_calibrated},
                 ))
                 req_counter += 1
                 continue
@@ -238,15 +301,15 @@ class ActiveCaptureAnalyzer:
             # Check 2B: Border Truncation (Object is clipped at image border)
             truncated_obs = [obs for obs in lifted_obs if obs.is_truncated_by_border]
             if truncated_obs and len(truncated_obs) == len(lifted_obs):
-                sug_dist = (self.standard_shooting_dist_m + 0.8) if is_scale_known else 0.0
-                step_note = "by ~0.8m" if is_scale_known else "further"
+                sug_dist = (self.standard_shooting_dist_m + 0.8) if is_physically_calibrated else 0.0
+                step_note = "by ~0.8m" if is_physically_calibrated else "further"
                 requests.append(CaptureRequest(
                     request_id=f"cap_req_{req_counter:03d}",
                     issue_type=CaptureIssueType.BORDER_TRUNCATION,
                     priority=CapturePriority.HIGH,
                     target_entity_ids=(rent.canonical_entity_id,),
                     target_class=rent.primary_class,
-                    target_position_m=target_pos,
+                    target_position=pos,
                     recommended_camera_pos_m=None,
                     recommended_look_at_m=pos,
                     suggested_distance_m=sug_dist,
@@ -254,6 +317,7 @@ class ActiveCaptureAnalyzer:
                         f"The {rent.primary_class.replace('_', ' ')} touches the frame border in all images. "
                         f"Step back {step_note} to capture the complete object boundary within the frame."
                     ),
+                    is_scale_request=False,
                     details={"truncated_in_views": len(truncated_obs)},
                 ))
                 req_counter += 1
@@ -277,14 +341,14 @@ class ActiveCaptureAnalyzer:
                         angle_deg = math.degrees(math.acos(cos_theta))
 
                         if angle_deg < self.min_multiview_angle_deg:
-                            sug_dist = self.standard_shooting_dist_m if is_scale_known else 0.0
+                            sug_dist = self.standard_shooting_dist_m if is_physically_calibrated else 0.0
                             requests.append(CaptureRequest(
                                 request_id=f"cap_req_{req_counter:03d}",
                                 issue_type=CaptureIssueType.INSUFFICIENT_OVERLAP,
                                 priority=CapturePriority.MEDIUM,
                                 target_entity_ids=(rent.canonical_entity_id,),
                                 target_class=rent.primary_class,
-                                target_position_m=target_pos,
+                                target_position=pos,
                                 recommended_camera_pos_m=None,
                                 recommended_look_at_m=pos,
                                 suggested_distance_m=sug_dist,
@@ -293,6 +357,7 @@ class ActiveCaptureAnalyzer:
                                     f"{angle_deg:.1f}° separation (near-degenerate baseline). "
                                     f"Take a photo from an angle at least 30° away to improve depth accuracy."
                                 ),
+                                is_scale_request=False,
                                 details={"current_baseline_angle_deg": round(angle_deg, 1)},
                             ))
                             req_counter += 1
@@ -301,15 +366,15 @@ class ActiveCaptureAnalyzer:
             if any(k in rent.primary_class.lower() for k in ("socket", "switch", "handle", "hinge", "lock", "faucet", "drain")):
                 small_obs = [obs for obs in lifted_obs if obs.mask_pixels_count < self.min_pixels_area]
                 if small_obs and len(small_obs) == len(lifted_obs):
-                    sug_dist = self.macro_shooting_dist_m if is_scale_known else 0.0
-                    macro_note = f"from ~{self.macro_shooting_dist_m}m" if is_scale_known else "at close range"
+                    sug_dist = self.macro_shooting_dist_m if is_physically_calibrated else 0.0
+                    macro_note = f"from ~{self.macro_shooting_dist_m}m" if is_physically_calibrated else "at close range"
                     requests.append(CaptureRequest(
                         request_id=f"cap_req_{req_counter:03d}",
                         issue_type=CaptureIssueType.INSUFFICIENT_RESOLUTION,
                         priority=CapturePriority.MEDIUM,
                         target_entity_ids=(rent.canonical_entity_id,),
                         target_class=rent.primary_class,
-                        target_position_m=target_pos,
+                        target_position=pos,
                         recommended_camera_pos_m=None,
                         recommended_look_at_m=pos,
                         suggested_distance_m=sug_dist,
@@ -317,6 +382,7 @@ class ActiveCaptureAnalyzer:
                             f"The fixture '{rent.primary_class.replace('_', ' ')}' is small (<{int(self.min_pixels_area)}px). "
                             f"Capture a close-up macro photograph {macro_note} to resolve fine details."
                         ),
+                        is_scale_request=False,
                         details={"max_pixels": max((obs.mask_pixels_count for obs in lifted_obs), default=0)},
                     ))
                     req_counter += 1

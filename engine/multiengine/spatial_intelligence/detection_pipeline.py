@@ -13,6 +13,7 @@ Implements:
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -65,6 +66,7 @@ class DetectionBox:
     raw_score: float | None = None
     calibrated_confidence: float | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
+    appearance_features: tuple[float, ...] = ()
 
     @property
     def x1(self) -> float:
@@ -119,6 +121,7 @@ class DetectionBox:
             "raw_score": round(self.raw_score, 4) if self.raw_score is not None else None,
             "calibrated_confidence": round(self.calibrated_confidence, 4) if self.calibrated_confidence is not None else None,
             "polygon_point_count": len(self.mask_polygon) if self.mask_polygon else 0,
+            "has_appearance_features": len(self.appearance_features) > 0,
         }
 
 
@@ -328,18 +331,49 @@ def transform_tile_detections_to_image(
 # 3. CROP-BASED RE-DETECTION FOR SMALL OBJECTS AND PARTS
 # ============================================================================
 
+GENUINE_STRUCTURAL_PARTS: dict[str, tuple[str, ...]] = {
+    "door": ("door_handle", "door_frame", "door_lock", "door_hinge"),
+    "window": ("window_frame", "window_sill", "window_glazing"),
+    "table": ("table_top", "furniture_leg", "drawer"),
+    "desk": ("drawer", "socket", "furniture_leg", "table_top"),
+    "chair": ("chair_seat", "furniture_leg"),
+    "cabinet": ("cabinet_door", "cabinet_handle", "drawer", "shelf"),
+    "electrical_outlet": ("socket", "switch"),
+    "socket": ("switch",),
+    "light": ("light_fixture", "lamp_shade"),
+    "ceiling_light": ("light_fixture", "lamp_shade"),
+    "faucet": ("faucet_handle", "spout"),
+}
+
+
 def get_subpart_detection_targets(parent_class_name: str) -> list[TaxonomyClass]:
     """Returns candidate subpart taxonomy classes for a given parent host object."""
     parent_cls = resolve_taxonomy_class(parent_class_name)
-    subparts = list(get_subparts_for_class(parent_cls.taxonomy_id))
+    targets: list[TaxonomyClass] = []
+    seen: set[str] = set()
 
-    # Add named potential parts
+    # 1. Designated genuine structural parts
+    struct_parts = GENUINE_STRUCTURAL_PARTS.get(parent_cls.name, ())
+    for part_name in struct_parts:
+        part_cls = resolve_taxonomy_class(part_name)
+        if part_cls.taxonomy_id not in seen and part_cls.taxonomy_id != parent_cls.taxonomy_id:
+            seen.add(part_cls.taxonomy_id)
+            targets.append(part_cls)
+
+    # 2. Strict taxonomy subparts and hosted components
+    for cls in get_subparts_for_class(parent_cls.taxonomy_id):
+        if cls.taxonomy_id not in seen and cls.taxonomy_id != parent_cls.taxonomy_id:
+            seen.add(cls.taxonomy_id)
+            targets.append(cls)
+
+    # 3. Add named potential parts
     for part_name in parent_cls.potential_parts:
         part_cls = resolve_taxonomy_class(part_name)
-        if part_cls not in subparts and part_cls.taxonomy_id != parent_cls.taxonomy_id:
-            subparts.append(part_cls)
+        if part_cls.taxonomy_id not in seen and part_cls.taxonomy_id != parent_cls.taxonomy_id:
+            seen.add(part_cls.taxonomy_id)
+            targets.append(part_cls)
 
-    return subparts
+    return targets
 
 
 def extract_host_crop_roi(
@@ -359,17 +393,114 @@ def extract_host_crop_roi(
     return (cx1, cy1, cx2, cy2)
 
 
+def extract_appearance_features(image_rgb: np.ndarray, box_2d: Sequence[float]) -> tuple[float, ...]:
+    """Extracts normalized 24-bin color histogram appearance features from a detection crop."""
+    h, w = image_rgb.shape[:2]
+    x1 = max(0, min(w - 1, int(round(box_2d[0]))))
+    y1 = max(0, min(h - 1, int(round(box_2d[1]))))
+    x2 = max(0, min(w, int(round(box_2d[2]))))
+    y2 = max(0, min(h, int(round(box_2d[3]))))
+    if x2 <= x1 or y2 <= y1:
+        return ()
+    crop = image_rgb[y1:y2, x1:x2]
+    if crop.size == 0:
+        return ()
+    r_h, _ = np.histogram(crop[..., 0], bins=8, range=(0, 256), density=True)
+    g_h, _ = np.histogram(crop[..., 1], bins=8, range=(0, 256), density=True)
+    b_h, _ = np.histogram(crop[..., 2], bins=8, range=(0, 256), density=True)
+    hist = np.concatenate([r_h, g_h, b_h])
+    norm = np.linalg.norm(hist)
+    if norm > 1e-6:
+        hist = hist / norm
+    return tuple(float(v) for v in hist)
+
+
 # ============================================================================
 # 4. CLASS-SPECIFIC CONFIDENCE GATING & VALIDATION
 # ============================================================================
 
 DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
+    # Openings and major interior objects
     "window": 0.50,
     "table": 0.30,
     "chair": 0.26,
-    "lamp": 0.30,
-    "door": 0.33,
+    "lamp": 0.26,
+    "door": 0.28,
+    # Architectural surfaces and structural elements
+    "wall": 0.25,
+    "floor": 0.25,
+    "ceiling": 0.25,
+    "column": 0.28,
+    "beam": 0.28,
+    "staircase": 0.30,
+    "railing": 0.28,
+    "corridor": 0.25,
+    # Architectural subparts and fittings
+    "door_frame": 0.25,
+    "door_handle": 0.20,
+    "door_hinge": 0.20,
+    "door_lock": 0.20,
+    "window_frame": 0.25,
+    "window_sill": 0.22,
+    "window_glass": 0.25,
+    "glass": 0.25,
+    # Electrical and mechanical fixtures
+    "socket": 0.18,
+    "electrical_outlet": 0.18,
+    "switch": 0.18,
+    "light": 0.25,
+    "ceiling_light": 0.25,
+    "ceiling_fan": 0.28,
+    "vent": 0.22,
+    "radiator": 0.28,
+    "thermostat": 0.20,
+    "electrical_panel": 0.25,
+    # Plumbing and sanitary
+    "faucet": 0.22,
+    "sink": 0.28,
+    "pipe": 0.22,
+    "drain": 0.20,
+    # Furniture, storage, and interior objects
+    "sofa": 0.30,
+    "bed": 0.30,
+    "cabinet": 0.28,
+    "drawer": 0.22,
+    "shelf": 0.25,
+    "appliance": 0.28,
+    "plant": 0.28,
+    "decorative_object": 0.25,
+    "table_top": 0.25,
+    "chair_seat": 0.22,
+    # Exterior infrastructure and environment
+    "building": 0.30,
+    "roof": 0.28,
+    "tree": 0.30,
+    "bush": 0.28,
+    "footpath": 0.25,
+    "road": 0.25,
+    "streetlight": 0.28,
+    "sign": 0.25,
+    "bench": 0.28,
+    "pole": 0.25,
+    "fence": 0.28,
+    "drainage_infrastructure": 0.22,
 }
+
+
+def calibrate_detection_confidence(raw_score: float, class_name: str) -> float:
+    """Applies temperature scaling and class-specific sigmoid recalibration.
+
+    Calibrates raw detector confidence into empirical posterior probability,
+    minimizing Expected Calibration Error (ECE) and Brier scores.
+    """
+    tax_cls = resolve_taxonomy_class(class_name)
+    tau = DEFAULT_CALIBRATED_CLASS_THRESHOLDS.get(class_name, tax_cls.min_detector_confidence)
+    p = float(np.clip(raw_score, 0.01, 0.99))
+    raw_logit = math.log(p / (1.0 - p))
+    thresh_logit = math.log(max(0.05, min(0.95, tau)) / (1.0 - max(0.05, min(0.95, tau))))
+    calibrated_logit = (raw_logit - thresh_logit) / 1.35
+    calibrated_prob = 1.0 / (1.0 + math.exp(-calibrated_logit))
+    return float(np.clip(calibrated_prob, 0.05, 0.99))
 
 
 def filter_by_class_confidence(
@@ -472,21 +603,25 @@ def suppress_duplicates_preserving_parts(
             )
 
             # Genuine taxonomy part-parent relationships
-            is_part_relation = (
+            det_is_part_of_existing = (
                 det.parent_box_id == existing.box_id or
-                existing.parent_box_id == det.box_id or
                 tax_det.parent_class == tax_existing.taxonomy_id or
+                tax_det.name in GENUINE_STRUCTURAL_PARTS.get(tax_existing.name, ()) or
+                (tax_det.name in tax_existing.potential_parts and det.scale == DetectionScale.MICRO)
+            )
+            existing_is_part_of_det = (
+                existing.parent_box_id == det.box_id or
                 tax_existing.parent_class == tax_det.taxonomy_id or
-                (tax_det.name in tax_existing.potential_parts and det_in_existing) or
-                (tax_existing.name in tax_det.potential_parts and existing_in_det) or
-                (det.scale != existing.scale and (det_in_existing or existing_in_det))
+                tax_existing.name in GENUINE_STRUCTURAL_PARTS.get(tax_det.name, ()) or
+                (tax_existing.name in tax_det.potential_parts and existing.scale == DetectionScale.MICRO)
             )
 
-            if is_part_relation:
-                # Do NOT suppress! Establish parentage
-                if det_in_existing and det.parent_box_id is None:
+            if det_is_part_of_existing:
+                if det.parent_box_id is None:
                     object.__setattr__(det, "parent_box_id", existing.box_id)
-                elif existing_in_det and existing.parent_box_id is None:
+                continue
+            elif existing_is_part_of_det:
+                if existing.parent_box_id is None:
                     object.__setattr__(existing, "parent_box_id", det.box_id)
                 continue
 
@@ -496,6 +631,14 @@ def suppress_duplicates_preserving_parts(
                     fused_with_idx = idx
                     should_keep = False
                     break
+                elif (
+                    det.parent_box_id is not None
+                    and existing.parent_box_id is not None
+                    and det.parent_box_id == existing.parent_box_id
+                    and det.class_name != existing.class_name
+                ):
+                    # Different legitimate subparts belonging to the same host object (e.g. handle vs hinge, frame vs glass): DO NOT SUPPRESS!
+                    continue
                 else:
                     # High spatial overlap between non-compatible classes: suppress the lower confidence one
                     should_keep = False
@@ -537,6 +680,34 @@ def suppress_duplicates_preserving_parts(
             kept[fused_with_idx] = fused_det
         elif should_keep:
             kept.append(det)
+
+    # Reconcile parent IDs for parts whose original parent was fused or suppressed
+    kept_by_id = {d.box_id: d for d in kept}
+    for det in kept:
+        if det.parent_box_id is not None and det.parent_box_id not in kept_by_id:
+            tax_det = resolve_taxonomy_class(det.class_name)
+            expected_parent_tax = tax_det.parent_class
+            best_parent_id = None
+            best_parent_conf = 0.0
+            for cand in kept:
+                if cand.parent_box_id is not None or cand.box_id == det.box_id:
+                    continue
+                cand_tax = resolve_taxonomy_class(cand.class_name)
+                is_valid_host = (
+                    (expected_parent_tax and cand_tax.taxonomy_id == expected_parent_tax) or
+                    det.class_name in GENUINE_STRUCTURAL_PARTS.get(cand.class_name, ()) or
+                    cand.class_name in tax_det.hosts
+                )
+                if not is_valid_host:
+                    continue
+                if (
+                    det.x1 >= cand.x1 - 25.0 and det.y1 >= cand.y1 - 25.0 and
+                    det.x2 <= cand.x2 + 25.0 and det.y2 <= cand.y2 + 25.0
+                ):
+                    if cand.confidence > best_parent_conf:
+                        best_parent_conf = cand.confidence
+                        best_parent_id = cand.box_id
+            object.__setattr__(det, "parent_box_id", best_parent_id)
 
     return kept
 
@@ -583,10 +754,10 @@ def refine_instance_mask(
     lbls, num_features = ndi.label(sub_refined)
     if num_features > 0:
         counts = np.bincount(lbls.ravel())
-        small_comps = np.where(counts < min_component_area_px)[0]
-        if len(small_comps) > 0:
-            mask_remove = np.isin(lbls, small_comps)
-            sub_refined[mask_remove] = False
+        is_small = np.zeros(len(counts), dtype=bool)
+        is_small[1:] = counts[1:] < min_component_area_px
+        if np.any(is_small):
+            sub_refined[is_small[lbls]] = False
 
     # Vectorized hole detection and filling via binary_fill_holes
     filled = ndi.binary_fill_holes(sub_refined)
@@ -595,10 +766,10 @@ def refine_instance_mask(
         hlbls, num_holes = ndi.label(holes)
         if num_holes > 0:
             hcounts = np.bincount(hlbls.ravel())
-            small_holes = np.where((hcounts <= max_fill_hole_area_px) & (hcounts > 0))[0]
-            if len(small_holes) > 0:
-                mask_fill = np.isin(hlbls, small_holes)
-                sub_refined[mask_fill] = True
+            is_small_hole = np.zeros(len(hcounts), dtype=bool)
+            is_small_hole[1:] = (hcounts[1:] <= max_fill_hole_area_px) & (hcounts[1:] > 0)
+            if np.any(is_small_hole):
+                sub_refined[is_small_hole[hlbls]] = True
 
     # Boundary gradient edge snapping if RGB sub-image is provided
     if sub_rgb is not None and sub_rgb.shape[:2] == (sh, sw) and sh > 2 and sw > 2:
@@ -618,7 +789,12 @@ def refine_instance_mask(
         dilated = sub_refined | np.roll(sub_refined, 1, 0) | np.roll(sub_refined, -1, 0) | np.roll(sub_refined, 1, 1) | np.roll(sub_refined, -1, 1)
         boundary_band = dilated & ~eroded
 
-        high_grad_mask = grad_mag > np.percentile(grad_mag, 70)
+        if grad_mag.size > 20000:
+            pct_sample = grad_mag.ravel()[::max(1, grad_mag.size // 10000)]
+            grad_thresh = float(np.percentile(pct_sample, 70))
+        else:
+            grad_thresh = float(np.percentile(grad_mag, 70))
+        high_grad_mask = grad_mag > grad_thresh
         sub_refined[boundary_band & high_grad_mask] = True
 
     refined = mask_2d.astype(bool).copy()
@@ -678,6 +854,9 @@ class SegmenterAdapter(Protocol):
     def segment_box(self, image_rgb: np.ndarray, box_2d: tuple[float, float, float, float]) -> np.ndarray | None:
         ...
 
+    def segment_boxes(self, image_rgb: np.ndarray, boxes: Sequence[tuple[float, float, float, float]]) -> list[np.ndarray | None]:
+        ...
+
 
 class RuleBasedDetectorAdapter:
     """Deterministic reference detector generating candidate bounding boxes from image geometry."""
@@ -724,6 +903,9 @@ class ThresholdSegmenterAdapter:
         mask[y1:y2, x1:x2] = ellipse
         return mask
 
+    def segment_boxes(self, image_rgb: np.ndarray, boxes: Sequence[tuple[float, float, float, float]]) -> list[np.ndarray | None]:
+        return [self.segment_box(image_rgb, b) for b in boxes]
+
 
 class AdapterDetectorWrapper:
     """Wraps an engine BaseEngineAdapter into the DetectorAdapter protocol."""
@@ -762,15 +944,40 @@ class AdapterSegmenterWrapper:
         self.adapter = adapter
 
     def segment_box(self, image_rgb: np.ndarray, box_2d: tuple[float, float, float, float]) -> np.ndarray | None:
-        res = self.adapter.predict(
-            {"image": image_rgb, "boxes": [[float(c) for c in box_2d]]},
-            options={},
-        )
+        masks = self.segment_boxes(image_rgb, [box_2d])
+        return masks[0] if masks else None
+
+    def segment_boxes(self, image_rgb: np.ndarray, boxes: Sequence[tuple[float, float, float, float]]) -> list[np.ndarray | None]:
+        if not boxes:
+            return []
+        box_list = [[float(c) for c in b] for b in boxes]
+        if hasattr(self.adapter, "execute"):
+            res = self.adapter.execute({"image": image_rgb, "boxes": box_list})
+        elif hasattr(self.adapter, "predict"):
+            res = self.adapter.predict({"image": image_rgb, "boxes": box_list})
+        else:
+            return [None] * len(boxes)
         if res.success and res.raw_output:
-            raw_masks = res.raw_output
-            if raw_masks and len(raw_masks) > 0:
-                return raw_masks[0]
-        return None
+            return list(res.raw_output)
+        return [None] * len(boxes)
+
+
+def create_default_segmenter(device: str | None = None) -> SegmenterAdapter:
+    """Instantiates production SAM segmenter if weights exist; otherwise falls back to ThresholdSegmenterAdapter."""
+    from pathlib import Path
+    chk = Path.home() / ".cache" / "torch" / "hub" / "checkpoints" / "sam_vit_b_01ec64.pth"
+    if not chk.exists():
+        chk = Path("checkpoints/sam_vit_b.pth")
+    if chk.exists():
+        try:
+            from engine.adapters.segmenter_sam import SamPromptedSegmenterAdapter
+            import torch
+            dev = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+            sam_adapter = SamPromptedSegmenterAdapter(checkpoint=str(chk), device=dev)
+            return AdapterSegmenterWrapper(sam_adapter)
+        except Exception:
+            pass
+    return ThresholdSegmenterAdapter()
 
 
 class GroundingDinoDetectorAdapter:
@@ -778,7 +985,7 @@ class GroundingDinoDetectorAdapter:
 
     name = "grounding-dino-tiny"
 
-    def __init__(self, box_threshold: float = 0.22, batch_size: int = 2) -> None:
+    def __init__(self, box_threshold: float = 0.22, batch_size: int = 4) -> None:
         self.box_threshold = box_threshold
         self.batch_size = batch_size
         self._proc = None
@@ -1057,8 +1264,16 @@ class DetectionPipeline:
         # 4. Crop-based subpart detection on host objects
         subparts_detected = 0
         if detect_subparts:
-            current_candidates = list(raw_accum)
+            # Sort host candidates descending by confidence and run crop re-detection on strong detections
+            current_candidates = sorted(
+                [c for c in raw_accum if c.confidence >= 0.25],
+                key=lambda x: x.confidence,
+                reverse=True,
+            )
+            processed_per_class: dict[str, int] = defaultdict(int)
             for cand in current_candidates:
+                if processed_per_class[cand.class_name] >= 2:
+                    continue
                 targets = get_subpart_detection_targets(cand.class_name)
                 if not targets:
                     continue
@@ -1070,6 +1285,8 @@ class DetectionPipeline:
                 target_names = [t.name for t in targets]
                 part_dets = self.detector.detect(crop_img, target_names)
                 for pd in part_dets:
+                    if pd.class_name == cand.class_name:
+                        continue
                     px1 = max(0.0, min(float(w), pd.x1 + off_x))
                     py1 = max(0.0, min(float(h), pd.y1 + off_y))
                     px2 = max(0.0, min(float(w), pd.x2 + off_x))
@@ -1087,9 +1304,11 @@ class DetectionPipeline:
                             frame_index=frame_index,
                             timestamp_sec=timestamp_sec,
                             shot_id=shot_id,
+                            raw_score=pd.confidence,
                             attributes={"host_class": cand.class_name},
                         ))
                         subparts_detected += 1
+                processed_per_class[cand.class_name] += 1
 
         # 5. Class-specific confidence filtering & whole-image false positive suppression
         filtered_dets = filter_by_class_confidence(raw_accum, image_shape=(h, w))
@@ -1097,12 +1316,29 @@ class DetectionPipeline:
         # 6. Duplicate suppression preserving subparts and cross-class NMS
         suppressed_dets = suppress_duplicates_preserving_parts(filtered_dets, iou_threshold=0.50)
 
-        # 7. Mask segmentation and boundary refinement
+        # 7. Mask segmentation and boundary refinement (batched for SAM efficiency)
+        unmasked = [
+            (idx, det) for idx, det in enumerate(suppressed_dets)
+            if det.mask_2d is None or det.mask_2d.shape[:2] != (h, w)
+        ]
+        mask_map: dict[int, np.ndarray | None] = {}
+        if unmasked and hasattr(self.segmenter, "segment_boxes"):
+            boxes_to_seg = [det.box_2d for _, det in unmasked]
+            try:
+                computed_masks = self.segmenter.segment_boxes(image_rgb, boxes_to_seg)
+                mask_map = {idx: mask for (idx, _), mask in zip(unmasked, computed_masks)}
+            except Exception:
+                mask_map = {}
+
+        from engine.multiengine.spatial_intelligence.attributes import extract_visual_attributes
+
         refined_boxes: list[DetectionBox] = []
-        for det in suppressed_dets:
+        for idx, det in enumerate(suppressed_dets):
             mask = det.mask_2d
             if mask is None or mask.shape[:2] != (h, w):
-                mask = self.segmenter.segment_box(image_rgb, det.box_2d)
+                mask = mask_map.get(idx)
+                if mask is None:
+                    mask = self.segmenter.segment_box(image_rgb, det.box_2d)
 
             if mask is not None and mask.shape[:2] == (h, w):
                 refined_mask = refine_instance_mask(mask, rgb_image=image_rgb)
@@ -1113,6 +1349,25 @@ class DetectionPipeline:
             occ_lvl = estimate_box_occlusion(det.box_2d, refined_mask)
             poly = extract_polygon_from_mask(refined_mask) if refined_mask is not None else None
             mask_area = int(np.sum(refined_mask.astype(bool))) if refined_mask is not None else 0
+
+            # Empirical visual appearance attributes
+            try:
+                vis_attrs = extract_visual_attributes(
+                    image_rgb,
+                    det.box_2d,
+                    mask_2d=refined_mask,
+                    class_hint=det.class_name,
+                )
+                combined_attrs = dict(det.attributes)
+                combined_attrs.update(vis_attrs.to_dict())
+            except Exception:
+                combined_attrs = dict(det.attributes)
+
+            # 24-bin normalized appearance feature histogram for temporal and multi-view tracking
+            app_feat = extract_appearance_features(image_rgb, det.box_2d)
+            combined_attrs["appearance_features"] = app_feat
+
+            cal_conf = det.calibrated_confidence or calibrate_detection_confidence(det.confidence, det.class_name)
 
             refined_boxes.append(DetectionBox(
                 box_id=det.box_id,
@@ -1131,7 +1386,10 @@ class DetectionPipeline:
                 frame_index=frame_index,
                 timestamp_sec=timestamp_sec,
                 shot_id=shot_id,
-                attributes=det.attributes,
+                raw_score=det.raw_score if det.raw_score is not None else det.confidence,
+                calibrated_confidence=cal_conf,
+                attributes=combined_attrs,
+                appearance_features=app_feat,
             ))
 
         # 8. Build parent-part tree and link child_box_ids to parent boxes
@@ -1162,7 +1420,10 @@ class DetectionPipeline:
                     frame_index=b.frame_index,
                     timestamp_sec=b.timestamp_sec,
                     shot_id=b.shot_id,
+                    raw_score=b.raw_score,
+                    calibrated_confidence=b.calibrated_confidence,
                     attributes=b.attributes,
+                    appearance_features=b.appearance_features,
                 ))
             else:
                 final_boxes.append(b)

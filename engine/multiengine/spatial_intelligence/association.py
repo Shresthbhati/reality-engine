@@ -1120,7 +1120,7 @@ class TemporalIdentityTracker:
             obs_cls = obs.class_name
             obs_cx = 0.5 * (obs_box[0] + obs_box[2])
             obs_cy = 0.5 * (obs_box[1] + obs_box[3])
-            obs_app = tuple(getattr(obs, "appearance_features", ()))
+            obs_app = tuple(getattr(obs, "appearance_features", ())) or tuple(getattr(obs, "attributes", {}).get("appearance_features", ()))
 
             for track in self.active_tracks.values():
                 if not are_semantically_compatible(obs_cls, track.class_name):
@@ -1178,8 +1178,9 @@ class TemporalIdentityTracker:
             track.timestamps_sec.append(timestamp_sec)
             track.last_box_2d = tuple(obs.box_2d)
             track.velocity_2d = (smoothed_vx, smoothed_vy)
-            if hasattr(obs, "appearance_features") and obs.appearance_features:
-                track.last_appearance = tuple(obs.appearance_features)
+            app = tuple(getattr(obs, "appearance_features", ())) or tuple(getattr(obs, "attributes", {}).get("appearance_features", ()))
+            if app:
+                track.last_appearance = app
             track.age_frames += 1
             track.missed_frames = 0
 
@@ -1189,7 +1190,7 @@ class TemporalIdentityTracker:
             if obs_id not in matched_obs_ids:
                 new_tid = f"track_{self._next_track_idx:04d}"
                 self._next_track_idx += 1
-                app = tuple(obs.appearance_features) if hasattr(obs, "appearance_features") and obs.appearance_features else ()
+                app = tuple(getattr(obs, "appearance_features", ())) or tuple(getattr(obs, "attributes", {}).get("appearance_features", ()))
                 new_track = TemporalTrack(
                     track_id=new_tid,
                     class_name=obs.class_name,

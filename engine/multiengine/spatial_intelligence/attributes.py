@@ -217,6 +217,11 @@ def extract_visual_attributes(
     if len(pixels) == 0:
         return EntityVisualAttributes()
 
+    # Subsample pixels if there are too many (e.g. max 5000 pixels) to avoid sorting millions of floats in np.median
+    if len(pixels) > 5000:
+        step = max(1, len(pixels) // 5000)
+        pixels = pixels[::step]
+
     # Normalize to [0, 1]
     pix_norm = pixels.astype(np.float64) / 255.0
     mean_rgb = np.median(pix_norm, axis=0)
@@ -234,8 +239,17 @@ def extract_visual_attributes(
             best_color_name = name
 
     # 2. Texture Roughness & High Frequency Energy
+    # Subsample large crop to max-dim 256 for fast gradient calculation
+    ch, cw = crop.shape[:2]
+    max_d = max(ch, cw)
+    if max_d > 256:
+        s_stride = max(1, max_d // 256)
+        small_crop = crop[::s_stride, ::s_stride]
+    else:
+        small_crop = crop
+
     # Convert crop to grayscale
-    gray_crop = 0.299 * crop[..., 0] + 0.587 * crop[..., 1] + 0.114 * crop[..., 2]
+    gray_crop = 0.299 * small_crop[..., 0] + 0.587 * small_crop[..., 1] + 0.114 * small_crop[..., 2]
     if gray_crop.shape[0] >= 3 and gray_crop.shape[1] >= 3:
         gy, gx = np.gradient(gray_crop.astype(np.float64))
         grad_mag = np.hypot(gx, gy)

@@ -223,6 +223,7 @@ def run_spatial_stage(
                                              box_2d=box, confidence=float(b.confidence if b.confidence is not None else 0.5), mask_2d=mask))
             det_obs[b.observation_id] = b
     report["fusion"] = _fuse_depth(matrix, [(s, cameras[s], depth_maps[s], images[s]) for s in depth_maps if s in cameras])
+    state["fusion"] = report["fusion"]  # the surface compiler prefers this fused surface over its own point-cloud mesh
     if not det_inputs:
         refused = sum(i["rejected"] for i in report["images"])
         if refused:  # the depth maps WERE examined and refused: that is a result (rejections on record), not a skipped stage

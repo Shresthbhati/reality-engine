@@ -71,6 +71,32 @@ def test_too_few_points_is_skipped_with_the_reason_not_a_made_up_room(monkeypatc
     assert surfaces.build_surface_entities({}, EvidenceMatrix(), "r")[3]["status"] == "skipped"
 
 
+def test_a_fused_surface_replaces_the_point_cloud_mesh_reuses_its_stored_artifact_and_keeps_its_measured_provenance(monkeypatch):
+    cloud = _room()
+    monkeypatch.setattr(surfaces, "fused_cloud", lambda aligned, stride=6: (cloud, np.zeros(len(cloud), int), CENTRES))
+
+    def boom(*a, **k):
+        raise AssertionError("the ball-pivoting mesh must not be built when a fused surface exists (two meshes of one geometry)")
+
+    monkeypatch.setattr(surfaces, "observed_mesh", boom)
+    m = EvidenceMatrix()
+    uri, sha = m.artifacts.put(b"ply\nfused surface bytes")
+    fusion = {"method": "open3d.UniformTSDFVolume", "voxel_length_gauge": 0.04, "views_with_valid_depth": 3,
+              "mesh": {"vertices": 120, "triangles": 200, "valid": True, "problems": [], "components": 2, "boundary_edges": 40,
+                       "degenerate_triangles": 0, "bounds_gauge": [[-2.0, -1.2, 1.0], [2.0, 1.3, 5.0]]},
+              "mesh_support": {"vertices_supported_by_ge2_views": 0.7, "views_that_did_not_contribute": []},
+              "mesh_artifact": {"uri": uri, "sha256": sha, "bytes": 22, "format": "ply"},
+              "per_view": [{"source": "a.png", "integrated_pixels": 10, "rejected_as_inconsistent": 2, "contributed_to_surface": True}]}
+    ents, geoms, _, rep = surfaces.build_surface_entities({"img": (np.full((8, 8), 3.0), None)}, m, "run-1", fusion=fusion)
+    g = next(x for x in geoms if x.type is GeometryType.MESH)
+    assert [x.id for x in geoms if x.type is GeometryType.MESH] == ["geom-fused-surface"]  # exactly one mesh
+    assert g.data_uri == uri and g.data_hash == sha and m.artifacts.get(g.data_uri).startswith(b"ply")  # the existing artifact, not a new one
+    assert g.quality_metrics["scale_state"] == "sfm_gauge" and g.quality_metrics["mesh_support"]["vertices_supported_by_ge2_views"] == 0.7
+    e = next(x for x in ents if x.id == "surf-fused-surface")
+    assert e.transform["physically_metric"] is False and e.custom_properties["surface"]["per_view"][0]["rejected_as_inconsistent"] == 2
+    assert rep["mesh"]["status"] == "fused"
+
+
 def test_the_mesh_preserves_holes_and_is_stored_as_an_artifact(monkeypatch):
     cloud = _room()
     cloud = cloud[~((np.abs(cloud[:, 0]) < 0.7) & (cloud[:, 1] < -1.0))]  # a hole in the floor

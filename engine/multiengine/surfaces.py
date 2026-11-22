@@ -149,7 +149,7 @@ def observed_mesh(points: np.ndarray, centres: np.ndarray, *, scene_depth: float
 
 
 def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix: Any, run_id: str, *, with_mesh: bool = True,
-                           depth_observations: Mapping[str, str] | None = None):
+                           depth_observations: Mapping[str, str] | None = None, fusion: Mapping[str, Any] | None = None):
     """``(entities, geometries, notes, report)`` for the evidence world's observed surfaces. A geometry failure is recorded in
     ``report``, never faked and never raised."""
     from provenance import Provenance
@@ -205,7 +205,31 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
                                                     checksum="sha256:" + cloud_ref.removeprefix("artifact://"), provenance=Provenance.ESTIMATED),)))
         geoms.append(geom)
         report["planes"].append({"id": sid, "kind": p.kind, "inliers": int(len(p.inliers)), "observed_area": round(p.area, 4), "rms": round(p.rms, 5)})
-    if with_mesh:
+    fused = (fusion or {}).get("mesh_artifact")
+    fmesh = (fusion or {}).get("mesh") or {}
+    if with_mesh and fused and fmesh.get("triangles"):
+        # The TSDF surface (cross-view consistency-rejected, per-view contribution measured) REPLACES the ball-pivoting mesh: one surface
+        # representation, never two competing meshes of the same geometry. The artifact already exists in the matrix store.
+        lo, hi = fmesh["bounds_gauge"]
+        g = Geometry(id="geom-fused-surface", type=GeometryType.MESH, lod_level=0, vertex_count=int(fmesh["vertices"]), triangle_count=int(fmesh["triangles"]),
+                     data_uri=fused["uri"], data_hash=fused["sha256"], bounds_min=Vector3(*lo), bounds_max=Vector3(*hi), provenance=Provenance.ESTIMATED,
+                     confidence=None, quality_metrics={"frame_id": "world", "scale_state": "sfm_gauge", "units": "sfm_units",
+                                                        "method": fusion.get("method"), "voxel_length_gauge": fusion.get("voxel_length_gauge"),
+                                                        "mesh_validity": {k: fmesh.get(k) for k in ("valid", "problems", "components", "boundary_edges", "degenerate_triangles")},
+                                                        "mesh_support": fusion.get("mesh_support"),
+                                                        "views_fused": fusion.get("views_with_valid_depth"),
+                                                        "unknown": "unobserved regions are holes (open boundary edges), not filled"})
+        mc = (np.asarray(lo) + np.asarray(hi)) / 2
+        ents.append(Entity(id="surf-fused-surface", type=EntityType.STRUCTURE, name="Fused depth surface", geometry_ids=[g.id],
+                           transform={"position": {"x": float(mc[0]), "y": float(mc[1]), "z": float(mc[2])}, "frame_id": "world",
+                                      "scale_state": "sfm_gauge", "units": "sfm_units", "physically_metric": False},
+                           provenance=Provenance.ESTIMATED, confidence=None, semantic_labels=["architecture/fused_surface"], observations=list(cites),
+                           custom_properties={"surface": {"kind": "fused_surface", "observed": True, "run_id": run_id,
+                                                          "per_view": [{k: v.get(k) for k in ("source", "integrated_pixels", "rejected_as_inconsistent",
+                                                                                              "contributed_to_surface")} for v in fusion.get("per_view", [])]}}))
+        geoms.append(g)
+        report["mesh"] = {"status": "fused", "vertices": g.vertex_count, "triangles": g.triangle_count, "sha256": g.data_hash}
+    elif with_mesh:
         try:
             built = observed_mesh(pts, centres, scene_depth=scene_depth)
         except Exception as exc:  # noqa: BLE001 -- recorded, never faked

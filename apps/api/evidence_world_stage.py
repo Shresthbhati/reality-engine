@@ -227,7 +227,7 @@ def run_for_job(
                 from engine.multiengine.surfaces import build_surface_entities
 
                 return build_surface_entities(scene_state.get("aligned") or {}, matrix, job_id,
-                                              depth_observations=scene_state.get("aligned_depth_observations"))
+                                              depth_observations=scene_state.get("aligned_depth_observations"), fusion=scene_state.get("fusion"))
             scoring_note = {**(scoring_note or {}), "spatial_intelligence": {"method": "multi-view ray triangulation", "fallback": "3D box IoU"}}
 
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:

@@ -59,6 +59,19 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
     else:
         gates.append(_gate("physical_scale", scale.get("status"), NOT_MEASURED, "no depth/scale evidence"))
 
+    cov = readiness.get("coverage")
+    if cov:
+        t = cov.get("topology") or {}
+        bad = int(t.get("errors", 0)) + int(t.get("world_validation_errors", 0))
+        gates.append(_gate("topology_validity", {"errors": bad, "warnings": t.get("warnings", 0)}, PASS if bad == 0 else FAIL,
+                           "the persisted world validates with no topology or structural errors (warnings are reported, not failed)"))
+        for key, why in (("source_traceability", "every entity cites at least one source photograph"),
+                         ("provenance_declared", "every entity declares its provenance")):
+            c = cov.get(key) or {}
+            gates.append(_gate(key, f"{c.get('covered')}/{c.get('of')}", PASS if c.get("of") and c.get("covered") == c.get("of") else FAIL, why))
+    else:
+        gates.append(_gate("topology_validity", None, NOT_MEASURED, "no persisted world to measure"))
+
     if not persisted:
         return {"verdict": "BLOCKED", "reasons": [f"no persisted world ({world.get('status')}): {world.get('reason', 'nothing to inspect or export')}"], "gates": gates}
     if not n:
@@ -71,4 +84,5 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
             reasons.append(f"{g['name']}: {g['measured']} (needs: {g['basis']})")
         elif g["status"] == NOT_MEASURED:
             reasons.append(f"{g['name']} not measured ({g['basis']})")
-    return {"verdict": "PARTIAL" if reasons else "READY", "reasons": reasons, "gates": gates}
+    return {"verdict": "PARTIAL" if reasons else "READY", "reasons": reasons, "gates": gates,
+            "coverage": cov or {}}  # multiview_association etc. are reported, not gated: a single-view object is weaker, not invalid

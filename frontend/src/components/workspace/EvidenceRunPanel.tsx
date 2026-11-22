@@ -161,6 +161,16 @@ export default function EvidenceRunPanel({
                   {readiness.quality.reasons.map((r) => <li key={r}>{r}</li>)}
                 </ul>
               )}
+              {readiness.coverage && (
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2" data-testid="evidence-coverage">
+                  {([["Positioned", readiness.coverage.spatial_positioning], ["Dimensions", readiness.coverage.geometry_dimensions],
+                     ["Multi-view", readiness.coverage.multiview_association], ["Traceable", readiness.coverage.source_traceability],
+                     ["Provenance", readiness.coverage.provenance_declared]] as const).map(([label, c]) => (
+                    <div key={label} className="contents"><dt>{label}</dt><dd>{c.of ? `${c.covered}/${c.of}` : "—"}</dd></div>
+                  ))}
+                  <dt>Topology</dt><dd>{readiness.coverage.topology.errors} errors, {readiness.coverage.topology.warnings} warnings</dd>
+                </dl>
+              )}
             </div>
           )}
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">

@@ -35,7 +35,20 @@ export interface EvidenceQuality {
   gates: { name: string; measured: unknown; status: "pass" | "fail" | "not_measured"; basis: string }[];
 }
 
+export interface CoverageFraction { covered: number; of: number; fraction: number | null }
+
+/** Separately measured coverage of the persisted world; `fraction` is null when nothing of that kind exists (never 0). */
+export interface EvidenceCoverage {
+  spatial_positioning: CoverageFraction;
+  geometry_dimensions: CoverageFraction;
+  multiview_association: CoverageFraction;
+  source_traceability: CoverageFraction;
+  provenance_declared: CoverageFraction;
+  topology: { errors: number; warnings: number; world_validation_errors: number };
+}
+
 export interface EvidenceReadiness {
+  coverage?: EvidenceCoverage;
   quality?: EvidenceQuality;
   detection?: EvidenceDetectionSummary;
   stage_status: string;

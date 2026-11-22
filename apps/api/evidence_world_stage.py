@@ -435,11 +435,44 @@ def _detection_readiness(m: Any) -> dict[str, Any]:
     segs = [s.predicted.get("segmentation") or {} for s in sums]
     boxes, masks = sum(int(x.get("refined_box_count", 0)) for x in stats), sum(int(g.get("masks", 0)) for g in segs)
     return {"status": "ran", "engine": sums[0].engine_id, "inner_detector": sums[0].predicted.get("inner_detector"), "images": len(sums),
+            "images_with_detections": sum(1 for x in stats if int(x.get("refined_box_count", 0)) > 0),
             "tiles_processed": sum(int(x.get("tiles_processed", 0)) for x in stats), "subparts_detected": sum(int(x.get("subparts_detected", 0)) for x in stats),
             "raw_candidates": sum(int(x.get("raw_detection_count", 0)) for x in stats), "refined_boxes": boxes, "masks": masks,
             "mask_coverage": round(masks / boxes, 4) if boxes else None,
             "segmentation": "ran" if all(g.get("status") == "ran" for g in segs) else "unavailable",
             "segmentation_reason": next((g.get("reason") for g in segs if g.get("status") != "ran"), None)}
+
+
+def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, Any]:
+    """Separately measured coverage of the PERSISTED world: every value is a ``{numerator, denominator}`` pair (never a bare score) so a
+    reader sees what was counted. ``None`` denominators mean nothing of that kind exists, which is not the same as 0 covered."""
+    from provenance import Provenance
+    from world_ir.validation import validate_world_ir
+
+    def frac(num: int, den: int) -> dict[str, Any]:
+        return {"covered": num, "of": den, "fraction": round(num / den, 4) if den else None}
+
+    ents = list(w.entities.values())
+    objects = [e for e in ents if not str(e.id).startswith("surf-")]
+
+    def images(e: Any) -> set[str]:
+        """Source photographs an entity is linked to: explicit image references plus the camera observations it carries (surfaces
+        cite the photographs their depth came from through observations, not image references)."""
+        refs = {r.uri for r in (getattr(e, "external_references", None) or ()) if r.kind == "image"}
+        obs = {o.data_uri or o.frame_id for o in (getattr(e, "observations", None) or ()) if o.sensor_type == "camera" and (o.data_uri or o.frame_id)}
+        return obs or refs  # ONE identifier family per entity (a path and a frame id for the same photo must not count twice)
+
+    rep = validate_world_ir(w)
+    topo = [i for i in rep.issues if i.code.startswith("topology_")]
+    return {
+        "spatial_positioning": frac(len(placed), len(ents)),
+        "geometry_dimensions": frac(len(sized), len(ents)),
+        "multiview_association": frac(sum(1 for e in objects if len(images(e)) >= 2), len(objects)),
+        "source_traceability": frac(sum(1 for e in ents if images(e)), len(ents)),
+        "provenance_declared": frac(sum(1 for e in ents if e.provenance != Provenance.UNKNOWN), len(ents)),
+        "topology": {"errors": sum(1 for i in topo if i.severity.value == "error"), "warnings": sum(1 for i in topo if i.severity.value == "warning"),
+                     "world_validation_errors": len(rep.errors)},
+    }
 
 
 def readiness(root: Path) -> dict[str, Any]:
@@ -501,6 +534,7 @@ def readiness(root: Path) -> dict[str, Any]:
             out["world"].update({"object_entities": n - n_surf, "surface_entities": n_surf,
                                  "entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
+            out["coverage"] = _coverage(w, placed, sized)
             out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
             if placed and not out["metric_export_ready"]:
                 out["export_scale_warning"] = ("positions/dimensions are not physically anchored metres (scale states: "

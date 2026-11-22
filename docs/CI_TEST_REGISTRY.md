@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 589
+Total: 590
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -304,6 +304,7 @@ Total: 589
 - `tests/test_entity_reid.py`
 - `tests/test_errors.py`
 - `tests/test_events.py`
+- `tests/test_evidence_coverage.py`
 - `tests/test_evidence_firewall.py`
 - `tests/test_evidence_fusion.py`
 - `tests/test_evidence_quality.py`

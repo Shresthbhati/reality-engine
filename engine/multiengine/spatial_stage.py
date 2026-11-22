@@ -389,8 +389,10 @@ def make_scene_relations_fn(state: dict[str, Any]):
                     continue
                 parent_of.setdefault(child, set()).add(parent)
             seen.add((a, kind, b))
-            out.append(SpatialRelation(a, kind, b, f"spatial_intelligence relation '{rel.relation.value}' ({rel.basis}); distance {rel.distance_m:.3g} "
-                                                    "in gauge units; thresholds are metre-calibrated heuristics",
+            # the distance is stated in the units the package measured it in (``distance_m`` is None unless they are physical metres)
+            units = {"m": "m", "sfm_units": "SfM gauge units", "synthetic_m": "synthetic metres"}.get(rel.distance_units, str(rel.distance_units))
+            out.append(SpatialRelation(a, kind, b, f"spatial_intelligence relation '{rel.relation.value}' ({rel.basis}); distance {rel.distance:.3g} "
+                                                    f"{units}; thresholds are metre-calibrated heuristics",
                                        (rel.source_id, rel.target_id)))
         return out
 

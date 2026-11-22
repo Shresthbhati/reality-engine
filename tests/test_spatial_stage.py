@@ -117,6 +117,21 @@ def test_relations_keep_only_structural_kinds_and_never_form_a_support_cycle():
     assert not any(r.kind is RelationshipKind.ADJACENT_TO for r in out) and all("spatial_intelligence relation" in r.basis for r in out)
 
 
+def test_gauge_unit_relations_state_their_real_units_and_never_crash_on_a_missing_metre_distance():
+    # REGRESSION (found by the real office run): distance_m is None for sfm_units / synthetic_m, and the bridge formatted it unconditionally
+    from types import SimpleNamespace as NS
+
+    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialRelationKind, SpatialRelationship
+    from engine.multiengine.spatial_stage import make_scene_relations_fn
+
+    cans = [NS(entity_id=e, members=(f"d{e}",)) for e in "AB"]
+    for units, expected in (("sfm_units", "SfM gauge units"), ("synthetic_m", "synthetic metres")):
+        rel = SpatialRelationship("dA", "dB", SpatialRelationKind("supported_by"), 0.9, 0.25, "test basis", units)
+        assert rel.distance_m is None
+        (out,) = make_scene_relations_fn({"relationships": [rel]})(cans, None)
+        assert expected in out.basis and "0.25" in out.basis
+
+
 def test_persistence_drops_an_impossible_support_cycle_keeps_both_entities_and_records_it():
     from provenance import Provenance
     from world_ir.schema_v1 import Relationship, RelationshipKind

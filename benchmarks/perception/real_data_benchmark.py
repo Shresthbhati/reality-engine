@@ -68,6 +68,9 @@ class DetectionMetrics:
     false_negatives: int
     average_precision: float | None = None  # Ranking-based 101-point interpolated PR AP
     per_class_ap: dict[str, float | None] = field(default_factory=dict)
+    scale_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
+    expected_calibration_error: float | None = None
+    brier_score: float | None = None
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,11 +84,14 @@ class DetectionMetrics:
             "micro_recall": round(self.micro_recall, 4) if self.micro_recall is not None else None,
             "micro_f1": round(self.micro_f1, 4) if self.micro_f1 is not None else None,
             "average_precision": round(self.average_precision, 4) if self.average_precision is not None else None,
+            "expected_calibration_error": round(self.expected_calibration_error, 4) if self.expected_calibration_error is not None else None,
+            "brier_score": round(self.brier_score, 4) if self.brier_score is not None else None,
             "true_positives": self.true_positives,
             "false_positives": self.false_positives,
             "false_negatives": self.false_negatives,
             "per_class_f1": {k: round(v, 4) if v is not None else None for k, v in self.per_class_f1.items()},
             "per_class_ap": {k: round(v, 4) if v is not None else None for k, v in self.per_class_ap.items()},
+            "scale_breakdown": self.scale_breakdown,
         }
 
 
@@ -389,6 +395,11 @@ def evaluate_detections(
     total_fp = 0
     total_fn = 0
 
+    pred_confidences: list[float] = []
+    pred_matches: list[int] = []
+    scale_tp: dict[str, int] = defaultdict(int)
+    scale_fp: dict[str, int] = defaultdict(int)
+
     for img_id in all_images:
         gts = list(gt_by_img.get(img_id, []))
         preds = list(pred_by_img.get(img_id, []))
@@ -399,6 +410,9 @@ def evaluate_detections(
         for p in preds:
             p_box = tuple(getattr(p, "box_2d", (0, 0, 0, 0)))
             p_cls = getattr(p, "class_name", "")
+            p_conf = float(getattr(p, "confidence", 0.5))
+            p_area = max(0.0, p_box[2] - p_box[0]) * max(0.0, p_box[3] - p_box[1])
+            s_bin = "small" if p_area < 1024.0 else ("medium" if p_area < 9216.0 else "large")
 
             best_iou = 0.0
             best_gt_idx = -1
@@ -417,9 +431,15 @@ def evaluate_detections(
                 matched_gt.add(best_gt_idx)
                 tp_per_class[p_cls] += 1
                 total_tp += 1
+                scale_tp[s_bin] += 1
+                pred_confidences.append(p_conf)
+                pred_matches.append(1)
             else:
                 fp_per_class[p_cls] += 1
                 total_fp += 1
+                scale_fp[s_bin] += 1
+                pred_confidences.append(p_conf)
+                pred_matches.append(0)
 
         for g_idx, g in enumerate(gts):
             if g_idx not in matched_gt:
@@ -479,6 +499,54 @@ def evaluate_detections(
         overall_ap = float(np.mean(valid_aps)) if valid_aps else 0.0
         status = "measured"
 
+    # Scale breakdown
+    scale_breakdown: dict[str, dict[str, Any]] = {}
+    gt_scale_counts: dict[str, int] = defaultdict(int)
+    for g in gt_boxes:
+        g_area = max(0.0, g.box_2d[2] - g.box_2d[0]) * max(0.0, g.box_2d[3] - g.box_2d[1])
+        bin_name = "small" if g_area < 1024.0 else ("medium" if g_area < 9216.0 else "large")
+        gt_scale_counts[bin_name] += 1
+
+    for bin_name in ["small", "medium", "large"]:
+        s_tp = scale_tp[bin_name]
+        s_fp = scale_fp[bin_name]
+        s_gt = gt_scale_counts[bin_name]
+        s_fn = max(0, s_gt - s_tp)
+        s_p = float(s_tp / (s_tp + s_fp)) if (s_tp + s_fp) > 0 else None
+        s_r = float(s_tp / s_gt) if s_gt > 0 else None
+        s_f1 = float(2 * s_p * s_r / (s_p + s_r)) if (s_p is not None and s_r is not None and (s_p + s_r) > 0) else None
+        scale_breakdown[bin_name] = {
+            "gt_count": s_gt,
+            "true_positives": s_tp,
+            "false_positives": s_fp,
+            "false_negatives": s_fn,
+            "precision": round(s_p, 4) if s_p is not None else None,
+            "recall": round(s_r, 4) if s_r is not None else None,
+            "f1": round(s_f1, 4) if s_f1 is not None else None,
+        }
+
+    # Expected Calibration Error (ECE) and Brier Score
+    brier_val = None
+    ece_val = None
+    if pred_confidences:
+        confs_arr = np.array(pred_confidences, dtype=float)
+        matches_arr = np.array(pred_matches, dtype=float)
+        brier_val = float(np.mean((confs_arr - matches_arr) ** 2))
+
+        # 10 equal bins from 0.0 to 1.0
+        bin_edges = np.linspace(0.0, 1.0, 11)
+        total_n = len(pred_confidences)
+        ece_sum = 0.0
+        for b_idx in range(10):
+            b_low, b_high = bin_edges[b_idx], bin_edges[b_idx + 1]
+            in_bin = (confs_arr >= b_low) & (confs_arr < b_high) if b_idx < 9 else (confs_arr >= b_low) & (confs_arr <= b_high)
+            n_b = int(np.sum(in_bin))
+            if n_b > 0:
+                avg_conf = float(np.mean(confs_arr[in_bin]))
+                avg_acc = float(np.mean(matches_arr[in_bin]))
+                ece_sum += (n_b / total_n) * abs(avg_acc - avg_conf)
+        ece_val = float(ece_sum)
+
     return DetectionMetrics(
         iou_threshold=iou_threshold,
         per_class_precision=per_class_p,
@@ -497,6 +565,9 @@ def evaluate_detections(
         true_positives=total_tp,
         false_positives=total_fp,
         false_negatives=total_fn,
+        scale_breakdown=scale_breakdown,
+        expected_calibration_error=ece_val,
+        brier_score=brier_val,
         status=status,
     )
 
@@ -834,6 +905,7 @@ def measure_hardware_telemetry() -> dict[str, Any]:
 def load_ground_truth_from_dataset(
     dataset_path: Path | str,
     split: str = "all",
+    include_subparts: bool = False,
 ) -> tuple[list[GroundTruthBox], dict[str, Any]]:
     """Loads ground-truth 2D annotations and physical entity metadata from a dataset directory or JSON file.
 
@@ -882,10 +954,35 @@ def load_ground_truth_from_dataset(
             continue
 
         for ann in annotations:
+            parent_id = ann.get("parent_entity_id")
+            if not include_subparts and parent_id:
+                continue
             gt_id = ann.get("ground_truth_id") or ann.get("entity_id", "")
             cls_name = ann.get("class_name") or ann.get("label", "")
             b = ann.get("bbox_2d") or ann.get("box_2d", [0, 0, 0, 0])
-            parent_id = ann.get("parent_entity_id")
+
+            mask_2d = None
+            poly = ann.get("polygon") or ann.get("mask_polygon")
+            if poly and len(poly) >= 3:
+                try:
+                    from PIL import Image, ImageDraw
+                    mask_img = Image.new("1", (4032, 3024), 0)
+                    ImageDraw.Draw(mask_img).polygon([tuple(pt) for pt in poly], fill=1)
+                    mask_2d = np.asarray(mask_img, dtype=bool)
+                except Exception:
+                    mask_2d = None
+            elif ann.get("has_mask"):
+                try:
+                    from PIL import Image, ImageDraw
+                    mask_img = Image.new("1", (4032, 3024), 0)
+                    x1 = max(0.0, float(b[0]))
+                    y1 = max(0.0, float(b[1]))
+                    x2 = min(4032.0, float(b[2]))
+                    y2 = min(3024.0, float(b[3]))
+                    ImageDraw.Draw(mask_img).rectangle([x1, y1, x2, y2], fill=1)
+                    mask_2d = np.asarray(mask_img, dtype=bool)
+                except Exception:
+                    mask_2d = None
 
             gt_boxes.append(GroundTruthBox(
                 entity_id=gt_id,
@@ -894,6 +991,7 @@ def load_ground_truth_from_dataset(
                 image_id=img_name,
                 parent_entity_id=parent_id,
                 frame_index=frame_idx,
+                mask_2d=mask_2d,
             ))
 
     metadata = {
@@ -1008,6 +1106,7 @@ def run_real_perception_benchmark(
         with Image.open(img_path) as im:
             rgb = np.asarray(im.convert("RGB"))
 
+        detect_parts = any(g.parent_entity_id is not None for g in gt_boxes)
         res = pipe.run_pipeline(
             rgb,
             domain=Domain.INTERIOR,
@@ -1015,7 +1114,7 @@ def run_real_perception_benchmark(
             frame_index=frame_idx,
             timestamp_sec=frame_idx * 0.1,  # 10 fps nominal
             run_tiling=False,  # default standard scale for evaluation
-            detect_subparts=False,
+            detect_subparts=detect_parts,
             text_prompts=prompts_to_use,
         )
 
@@ -1025,7 +1124,7 @@ def run_real_perception_benchmark(
             obs_by_image[img_name].append(b)
 
     # 4. Temporal Tracking Evaluation
-    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.20)
+    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=350.0)
     predicted_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]] = defaultdict(list)
     assignments: dict[str, str] = {}
 
@@ -1056,8 +1155,11 @@ def run_real_perception_benchmark(
 
     for img_name, boxes in obs_by_image.items():
         pose = extrinsics.get(img_name)
-        pos = pose["position"] if pose else (0.0, 0.0, 0.0)
-        rot = pose["rotation"] if pose else (1.0, 0.0, 0.0, 0.0)
+        if pose is None:
+            # Camera is uncalibrated / not registered in SfM; cannot construct 3D ray without fabricating camera pose
+            continue
+        pos = pose["position"]
+        rot = pose["rotation"]
 
         fx, fy, px, py = 1000.0, 1000.0, 1000.0, 750.0
         w_cam, h_cam = 4032, 3024

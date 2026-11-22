@@ -72,6 +72,24 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
     acc = readiness.get("physical_accuracy")
     gates.append(_gate("physical_accuracy", acc, NOT_MEASURED if acc in (None, "NOT_MEASURED") else PASS,
                        "an independent physical survey measured the reconstruction's error"))
+    fus = readiness.get("fusion")
+    if not fus:
+        gates.append(_gate("depth_fusion", None, NOT_MEASURED, "depth fusion did not run (needs at least two registered views with aligned depth)"))
+    elif fus.get("status") == "failed":
+        gates.append(_gate("depth_fusion", fus.get("error"), FAIL, "depth fusion executed without an error"))
+    elif fus.get("status") != "ran":
+        gates.append(_gate("depth_fusion", fus.get("reason"), NOT_MEASURED, "depth fusion executed"))
+    else:
+        mesh = fus.get("mesh") or {}
+        has_surface = bool(mesh.get("triangles")) and fus.get("artifact_verified") is not False
+        gates.append(_gate("depth_fusion", f"{mesh.get('triangles', 0)} triangles from {fus.get('views_with_valid_depth')} views",
+                           PASS if has_surface else FAIL, "fusion produced a surface and the stored artifact still matches its hash"))
+        if has_surface:
+            missing = (fus.get("mesh_support") or {}).get("views_that_did_not_contribute") or []
+            gates.append(_gate("fusion_contribution", f"{len(missing)} view(s) did not contribute", PASS if not missing else FAIL,
+                               "every view with aligned depth contributed to the fused surface (a persisted depth map that never touched it is not evidence)"))
+            gates.append(_gate("mesh_validity", mesh.get("problems") or "valid", PASS if mesh.get("valid") else FAIL,
+                               "the fused mesh has no degenerate or duplicate triangles, no non-finite vertices and no non-manifold edges"))
     scale = readiness.get("scale") or {}
     if scale.get("records_by_scale_state"):
         gates.append(_gate("physical_scale", scale.get("status"), PASS if scale.get("physical_metric") else FAIL,

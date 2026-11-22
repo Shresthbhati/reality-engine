@@ -509,6 +509,18 @@ def readiness(root: Path) -> dict[str, Any]:
             scale[s] = scale.get(s, 0) + 1
         out["rejected_predictions"] = len(m.rejected())
         out["detection"] = _detection_readiness(m)
+        fus = (snap.get("after_stages") or {}).get("fusion")
+        if fus:
+            out["fusion"] = {k: fus.get(k) for k in ("status", "reason", "error", "views_offered", "views_with_valid_depth", "voxel_length_gauge",
+                                                    "volume_resolution", "resolution_capped", "mesh", "mesh_support", "per_view", "mesh_artifact")}
+            art = fus.get("mesh_artifact")
+            if art:  # a recorded surface must still exist and still match its hash: nothing is trusted because it was once recorded
+                try:
+                    import hashlib
+
+                    out["fusion"]["artifact_verified"] = hashlib.sha256(m.artifacts.get(art["uri"])).hexdigest() == art["sha256"]
+                except Exception:  # noqa: BLE001
+                    out["fusion"]["artifact_verified"] = False
     except Exception as exc:  # noqa: BLE001
         out["scale_error"] = f"{type(exc).__name__}: {exc}"
     out["scale"] = {"records_by_scale_state": scale,

@@ -88,6 +88,24 @@ def test_the_production_stage_uses_spatial_intelligence_and_writes_its_results_i
     assert snap["counts"]["entities"] == 1 and any("ray triangulation" in str(d["basis"]) for d in snap["associations"] if d["outcome"] == "merged")
 
 
+def test_depth_fusion_runs_in_the_production_stage_and_any_surface_it_records_is_a_real_stored_artifact(tmp_path, photos, monkeypatch):  # noqa: F811
+    import hashlib
+
+    monkeypatch.delenv(ew.ENV_LIFT, raising=False)
+    f = _run(tmp_path, photos)["lifting"]["fusion"]
+    assert f["status"] == "ran", f  # two registered views with aligned depth: fusion executed (synthetic depth: proves wiring, not accuracy)
+    assert f["scale_state"] == "SFM_GAUGE" and f["physically_metric"] is False and f["frame"].startswith("job")
+    assert {p["source"] for p in f["per_view"]} == set(photos) and all("contributed_to_surface" in p for p in f["per_view"])
+    if "mesh_artifact" in f:  # a recorded artifact reference must resolve to exactly the bytes that were fused
+        from engine.multiengine.evidence_matrix import EvidenceMatrix
+
+        m = EvidenceMatrix(tmp_path / "ws" / "evidence-world" / "t1" / "w1" / "job-1")
+        data = m.artifacts.get(f["mesh_artifact"]["uri"])
+        assert hashlib.sha256(data).hexdigest() == f["mesh_artifact"]["sha256"] and data[:3] == b"ply" and len(data) == f["mesh_artifact"]["bytes"]
+    else:
+        assert f.get("reason")  # no surface: the reason is on the record, and no artifact is claimed
+
+
 def test_the_legacy_lifter_remains_selectable_and_says_so(tmp_path, photos, monkeypatch):  # noqa: F811
     monkeypatch.setenv(ew.ENV_LIFT, "legacy")
     assert _run(tmp_path, photos)["lifting"]["engine"] == "legacy box lifter"

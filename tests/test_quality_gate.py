@@ -9,6 +9,8 @@ def _ok(**over):
          "world": {"status": "persisted", "entities": 3, "entities_with_position": 3, "entities_with_geometry": 3, "withheld_entities": []},
          "integrity": {"ok": True, "problems": []},
          "completeness": {"covered": 3, "of": 3}, "physical_accuracy": "SURVEYED",  # reference-backed only: no real run has either
+         "fusion": {"status": "ran", "views_with_valid_depth": 3, "artifact_verified": True, "mesh": {"triangles": 900, "valid": True, "problems": []},
+                    "mesh_support": {"views_that_did_not_contribute": []}},
          "coverage": {"topology": {"errors": 0, "warnings": 0, "world_validation_errors": 0},
                       "source_traceability": {"covered": 3, "of": 3}, "provenance_declared": {"covered": 3, "of": 3},
                       "uncertainty_position": {"covered": 3, "of": 3, "fraction": 1.0},
@@ -71,6 +73,26 @@ def test_missing_coverage_is_not_measured_never_ready():
     r.pop("coverage")
     v = assess(r)
     assert v["verdict"] == "PARTIAL" and any("topology_validity not measured" in x for x in v["reasons"])
+
+
+def test_depth_fusion_gates_follow_the_measured_fusion_result():
+    def reasons(fusion):
+        r = _ok()
+        r.pop("fusion")
+        if fusion is not None:
+            r["fusion"] = fusion
+        v = assess(r)
+        assert v["verdict"] == "PARTIAL"
+        return " | ".join(v["reasons"])
+
+    assert "depth_fusion not measured" in reasons(None)                                         # fusion never ran: not measured, never a pass
+    assert "depth_fusion not measured" in reasons({"status": "skipped", "reason": "fewer than two views"})
+    assert "depth_fusion" in reasons({"status": "failed", "error": "boom"})
+    ok = _ok()["fusion"]
+    assert "fusion_contribution" in reasons({**ok, "mesh_support": {"views_that_did_not_contribute": ["b.png"]}})
+    assert "mesh_validity" in reasons({**ok, "mesh": {"triangles": 900, "valid": False, "problems": ["3 degenerate triangle(s)"]}})
+    assert "depth_fusion" in reasons({**ok, "artifact_verified": False})                        # the stored surface no longer matches its hash
+    assert "depth_fusion" in reasons({**ok, "mesh": {"triangles": 0}})                          # ran, but no surface exists
 
 
 def test_no_passing_metric_compensates_an_unmeasured_critical_one():

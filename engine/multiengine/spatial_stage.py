@@ -173,8 +173,8 @@ def run_spatial_stage(
         cam, bxs = cameras.get(src), boxes.get(src, [])
         img: dict[str, Any] = {"source": src, "boxes": len(bxs), "depth_engines": [], "lifted": 0, "rejected": 0}
         report["images"].append(img)
-        if not bxs:
-            continue
+        if not bxs and (cam is None or src not in depth_recs):
+            continue  # an image with depth + a camera but NO detection still joins depth fusion (its depth is evidence of the surface)
         if cam is None or src not in depth_recs:
             img["note"] = "no registered camera for this image" if cam is None else "no relative-depth record for this image"
             continue
@@ -222,6 +222,7 @@ def run_spatial_stage(
             det_inputs.append(DetectionInput(detection_id=b.observation_id, source_image_id=src, class_name=str(b.predicted["label"]),
                                              box_2d=box, confidence=float(b.confidence if b.confidence is not None else 0.5), mask_2d=mask))
             det_obs[b.observation_id] = b
+    report["fusion"] = _fuse_depth(matrix, [(s, cameras[s], depth_maps[s], images[s]) for s in depth_maps if s in cameras])
     if not det_inputs:
         refused = sum(i["rejected"] for i in report["images"])
         if refused:  # the depth maps WERE examined and refused: that is a result (rejections on record), not a skipped stage
@@ -342,6 +343,32 @@ def make_scene_pair_scorer(state: dict[str, Any], base: Callable[[Sequence[Candi
         return out
 
     return scorer
+
+
+def _fuse_depth(matrix: EvidenceMatrix, items: Sequence[tuple[str, Any, np.ndarray, np.ndarray]]) -> dict[str, Any]:
+    """Fuse the aligned depth maps of every image that has a camera into one surface (Open3D TSDF) and PERSIST it. Cameras are the job-frame
+    ones, so the mesh is already in the frame the entities use. Never raises: a failure is a recorded result, and the surface is stored
+    content-addressed only when it exists, so a recorded artifact reference always resolves."""
+    from engine.multiengine.depth_fusion import FusionView, fuse_depth_to_surface
+
+    try:
+        views = [FusionView(src, np.asarray(img) if np.asarray(img).shape[:2] == d.shape[:2] else _resize_rgb(img, d.shape), d, cam)
+                 for src, cam, d, img in items]
+        res = fuse_depth_to_surface(views)
+    except Exception as exc:  # noqa: BLE001 -- recorded, never fatal to the stage
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+    out: dict[str, Any] = {"status": res.status, "reason": res.reason, **res.report, "frame": "job (cameras as registered; +Y up)"}
+    if res.mesh_ply is not None:
+        uri, sha = matrix.artifacts.put(res.mesh_ply)
+        out["mesh_artifact"] = {"uri": uri, "sha256": sha, "bytes": len(res.mesh_ply), "format": "ply", "frame": "job",
+                                "scale_state": "SFM_GAUGE", "scale_units": "sfm_units"}
+    return out
+
+
+def _resize_rgb(img: Any, shape: tuple[int, int]) -> np.ndarray:
+    from PIL import Image
+
+    return np.asarray(Image.fromarray(np.asarray(img)).resize((shape[1], shape[0])))
 
 
 def make_scene_relations_fn(state: dict[str, Any]):

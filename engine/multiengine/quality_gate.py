@@ -33,7 +33,14 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
         return {"verdict": "FAILED", "reasons": [f"persisted world is not trustworthy: {world.get('status')} {why}".strip()],
                 "gates": [_gate("world_integrity", world.get("verification"), FAIL, "WorldStore.verify_version reported problems")]}
 
+    integ = readiness.get("integrity")
+    if integ is not None and not integ.get("ok"):
+        return {"verdict": "FAILED", "gates": [_gate("evidence_integrity", integ.get("problems"), FAIL, "recorded source photographs, manifest and world still match the disk")],
+                "reasons": ["source evidence or the run record no longer matches what the run recorded: " + "; ".join(integ.get("problems") or ["unspecified"])]}
+
     gates: list[dict[str, Any]] = []
+    gates.append(_gate("evidence_integrity", None if integ is None else "verified", NOT_MEASURED if integ is None else PASS,
+                       "recorded source photographs, manifest and world still match the disk"))
     persisted = world.get("status") == "persisted"
     gates.append(_gate("world_persisted", world.get("status"), PASS if persisted else FAIL, "a verified immutable version exists on disk"))
     n = world.get("entities")

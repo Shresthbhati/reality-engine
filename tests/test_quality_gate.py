@@ -7,6 +7,7 @@ from engine.multiengine.quality_gate import assess
 def _ok(**over):
     r = {"stage_status": "complete",
          "world": {"status": "persisted", "entities": 3, "entities_with_position": 3, "entities_with_geometry": 3, "withheld_entities": []},
+         "integrity": {"ok": True, "problems": []},
          "coverage": {"topology": {"errors": 0, "warnings": 0, "world_validation_errors": 0},
                       "source_traceability": {"covered": 3, "of": 3}, "provenance_declared": {"covered": 3, "of": 3},
                       "multiview_association": {"covered": 1, "of": 3, "fraction": 0.3333}},
@@ -67,6 +68,15 @@ def test_missing_coverage_is_not_measured_never_ready():
     r.pop("coverage")
     v = assess(r)
     assert v["verdict"] == "PARTIAL" and any("topology_validity not measured" in x for x in v["reasons"])
+
+
+def test_broken_evidence_integrity_is_failed_and_unverified_integrity_is_never_ready():
+    v = assess(_ok(integrity={"ok": False, "problems": ["input a.jpg changed since the run (hash differs)"]}))
+    assert v["verdict"] == "FAILED" and "a.jpg" in v["reasons"][0]
+    r = _ok()
+    r.pop("integrity")
+    v = assess(r)
+    assert v["verdict"] == "PARTIAL" and any("evidence_integrity not measured" in x for x in v["reasons"])
 
 
 def test_partial_stage_is_never_ready():

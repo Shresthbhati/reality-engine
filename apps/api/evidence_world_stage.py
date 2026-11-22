@@ -543,6 +543,14 @@ def readiness(root: Path) -> dict[str, Any]:
                 out["export_not_ready_reason"] = "no entity has a measured position yet; exporters would place nothing"
     except Exception as exc:  # noqa: BLE001
         out["world"] = {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+    try:  # the run's recorded inputs (photograph hashes), manifest and persisted world, re-checked against the disk
+        from engine.multiengine import run_manifest
+
+        if (root / run_manifest.MANIFEST_FILE).is_file():
+            v = run_manifest.verify(root)
+            out["integrity"] = {"ok": bool(v["ok"]), "problems": list(v["problems"])[:5]}
+    except Exception as exc:  # noqa: BLE001 -- an unverifiable run is reported as such (integrity stays absent -> not measured)
+        out["integrity_error"] = f"{type(exc).__name__}: {exc}"
     from engine.multiengine.quality_gate import assess
 
     out["quality"] = assess(out)  # READY / PARTIAL / BLOCKED / FAILED, from the measurements above only

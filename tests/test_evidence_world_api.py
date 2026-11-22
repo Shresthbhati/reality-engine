@@ -269,6 +269,15 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     assert ok.status_code == 200 and ok.headers["x-export-scale"] == "sfm_units-NOT-metres" and ok.headers["x-physical-accuracy"] == "NOT_MEASURED"
     assert int(ok.headers["x-entities-exported"]) >= 1 and ok.content[:4] == b"glTF"  # the object plus its observed surfaces
     assert ok.headers["x-quality-verdict"] == "PARTIAL"  # unanchored scale: exported, but labelled partial, never ready
+    assert rd["integrity"]["ok"] is True
+    # primary evidence is immutable: editing a source photograph after the run breaks the verdict and blocks the export
+    from PIL import Image as _I
+
+    _I.new("RGB", (W, H), (1, 2, 3)).save(photos[0])
+    rd2 = client.get(_url(wid, "run-g", "readiness"), headers=A).json()
+    assert rd2["integrity"]["ok"] is False and rd2["quality"]["verdict"] == "FAILED"
+    blocked = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
+    assert blocked.status_code == 409 and "quality verdict FAILED" in blocked.json()["detail"]
     assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
 
 

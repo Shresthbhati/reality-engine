@@ -242,6 +242,7 @@ def test_export_is_refused_when_nothing_is_positioned(client, tmp_path):
     _persisted_run(client, tmp_path, wid)  # 2D-only: entities exist, none has a position
     r = client.post(_url(wid, "run-c", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert r.status_code == 409 and "no entity has a measured position" in r.json()["detail"]
+    assert "quality verdict BLOCKED" in r.json()["detail"]  # the measured gate, not just the position check, refuses it
 
 
 def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and_says_it_is_not_metres(client, tmp_path):
@@ -267,6 +268,16 @@ def test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and
     ok = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert ok.status_code == 200 and ok.headers["x-export-scale"] == "sfm_units-NOT-metres" and ok.headers["x-physical-accuracy"] == "NOT_MEASURED"
     assert int(ok.headers["x-entities-exported"]) >= 1 and ok.content[:4] == b"glTF"  # the object plus its observed surfaces
+    assert ok.headers["x-quality-verdict"] == "PARTIAL"  # unanchored scale: exported, but labelled partial, never ready
+    assert rd["integrity"]["ok"] is True
+    # primary evidence is immutable: editing a source photograph after the run breaks the verdict and blocks the export
+    from PIL import Image as _I
+
+    _I.new("RGB", (W, H), (1, 2, 3)).save(photos[0])
+    rd2 = client.get(_url(wid, "run-g", "readiness"), headers=A).json()
+    assert rd2["integrity"]["ok"] is False and rd2["quality"]["verdict"] == "FAILED"
+    blocked = client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
+    assert blocked.status_code == 409 and "quality verdict FAILED" in blocked.json()["detail"]
     assert client.post(_url(wid, "run-g", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=B).status_code in (403, 404)
 
 
@@ -335,6 +346,22 @@ def test_merge_validation_and_tenancy(client, tmp_path):
     assert client.post(url, json={"other_entity_id": e}, headers=A).status_code == 422
     assert client.post(url, json={"other_entity_id": "nope"}, headers=A).status_code == 404
     assert client.post(url, json={"other_entity_id": "x"}, headers=B).status_code in (403, 404)
+
+
+def test_a_correction_made_against_a_stale_version_is_refused(client, tmp_path):
+    wid = _world(client, A)
+    _persisted_run(client, tmp_path, wid)
+    v0 = client.get(_url(wid, "run-c", "world"), headers=A).json()["version_id"]
+    chairs = [e for e in _ents(client, wid) if e["ontology_path"].endswith("chair")]
+    a, b = chairs[0]["entity_id"], chairs[1]["entity_id"]
+    merged = client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b, "expected_version_id": v0}, headers=A)
+    assert merged.status_code == 200  # the version the user saw was HEAD: accepted
+    stale = client.post(_url(wid, "run-c", "entities", a, "reclassify"), json={"new_class": "table", "expected_version_id": v0}, headers=A)
+    assert stale.status_code == 409 and "stale" in stale.json()["detail"]  # HEAD moved: refused, not applied on a version never seen
+    v1 = client.get(_url(wid, "run-c", "world"), headers=A).json()["version_id"]
+    assert v1 != v0
+    fresh = client.post(_url(wid, "run-c", "entities", a, "reclassify"), json={"new_class": "table", "expected_version_id": v1}, headers=A)
+    assert fresh.status_code != 409  # current version: not a staleness refusal (the class itself may still be judged separately)
 
 
 def test_a_merge_then_a_split_restores_two_entities_each_rebuilt_from_its_own_evidence(client, tmp_path):

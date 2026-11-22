@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 590
+Total: 593
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -274,6 +274,7 @@ Total: 590
 - `tests/test_depth_consistency.py`
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
+- `tests/test_depth_fusion.py`
 - `tests/test_depth_scale.py`
 - `tests/test_depth_scale_alignment.py`
 - `tests/test_depth_shift_alignment.py`
@@ -304,6 +305,7 @@ Total: 590
 - `tests/test_entity_reid.py`
 - `tests/test_errors.py`
 - `tests/test_events.py`
+- `tests/test_evidence_coverage.py`
 - `tests/test_evidence_firewall.py`
 - `tests/test_evidence_fusion.py`
 - `tests/test_evidence_quality.py`
@@ -490,6 +492,7 @@ Total: 590
 - `tests/test_pair_registration.py`
 - `tests/test_parametric_fits.py`
 - `tests/test_parametric_templates_task8_3.py`
+- `tests/test_part_of_in_flow.py`
 - `tests/test_partitioned_persistence.py`
 - `tests/test_pbr_material_classification.py`
 - `tests/test_pcl_core.py`

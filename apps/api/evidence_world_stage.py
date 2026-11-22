@@ -227,7 +227,7 @@ def run_for_job(
                 from engine.multiengine.surfaces import build_surface_entities
 
                 return build_surface_entities(scene_state.get("aligned") or {}, matrix, job_id,
-                                              depth_observations=scene_state.get("aligned_depth_observations"))
+                                              depth_observations=scene_state.get("aligned_depth_observations"), fusion=scene_state.get("fusion"))
             scoring_note = {**(scoring_note or {}), "spatial_intelligence": {"method": "multi-view ray triangulation", "fallback": "3D box IoU"}}
 
         def _depth_and_lift(matrix: Any) -> dict[str, Any]:
@@ -435,11 +435,53 @@ def _detection_readiness(m: Any) -> dict[str, Any]:
     segs = [s.predicted.get("segmentation") or {} for s in sums]
     boxes, masks = sum(int(x.get("refined_box_count", 0)) for x in stats), sum(int(g.get("masks", 0)) for g in segs)
     return {"status": "ran", "engine": sums[0].engine_id, "inner_detector": sums[0].predicted.get("inner_detector"), "images": len(sums),
+            "images_with_detections": sum(1 for x in stats if int(x.get("refined_box_count", 0)) > 0),
             "tiles_processed": sum(int(x.get("tiles_processed", 0)) for x in stats), "subparts_detected": sum(int(x.get("subparts_detected", 0)) for x in stats),
             "raw_candidates": sum(int(x.get("raw_detection_count", 0)) for x in stats), "refined_boxes": boxes, "masks": masks,
             "mask_coverage": round(masks / boxes, 4) if boxes else None,
             "segmentation": "ran" if all(g.get("status") == "ran" for g in segs) else "unavailable",
             "segmentation_reason": next((g.get("reason") for g in segs if g.get("status") != "ran"), None)}
+
+
+def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, Any]:
+    """Separately measured coverage of the PERSISTED world: every value is a ``{numerator, denominator}`` pair (never a bare score) so a
+    reader sees what was counted. ``None`` denominators mean nothing of that kind exists, which is not the same as 0 covered."""
+    from provenance import Provenance
+    from world_ir.validation import validate_world_ir
+
+    def frac(num: int, den: int) -> dict[str, Any]:
+        return {"covered": num, "of": den, "fraction": round(num / den, 4) if den else None}
+
+    ents = list(w.entities.values())
+    objects = [e for e in ents if not str(e.id).startswith("surf-")]
+
+    def images(e: Any) -> set[str]:
+        """Source photographs an entity is linked to: explicit image references plus the camera observations it carries (surfaces
+        cite the photographs their depth came from through observations, not image references)."""
+        refs = {r.uri for r in (getattr(e, "external_references", None) or ()) if r.kind == "image"}
+        obs = {o.data_uri or o.frame_id for o in (getattr(e, "observations", None) or ()) if o.sensor_type == "camera" and (o.data_uri or o.frame_id)}
+        return obs or refs  # ONE identifier family per entity (a path and a frame id for the same photo must not count twice)
+
+    # competing hypotheses the fusion PRESERVED instead of merging (class / position / dimension disagreements between independent engines)
+    conflicted = {e.id: (e.custom_properties.get("evidence") or {}).get("competing_hypotheses") for e in ents}
+    conflicted = {k: v for k, v in conflicted.items() if v}
+    # geometries that carry an uncertainty block: propagated from evidence, or None when none could be derived (never a stand-in value)
+    with_unc = [g for g in w.geometries.values() if isinstance((getattr(g, "quality_metrics", None) or {}).get("uncertainty"), dict)]
+    rep = validate_world_ir(w)
+    topo = [i for i in rep.issues if i.code.startswith("topology_")]
+    return {
+        "spatial_positioning": frac(len(placed), len(ents)),
+        "geometry_dimensions": frac(len(sized), len(ents)),
+        "multiview_association": frac(sum(1 for e in objects if len(images(e)) >= 2), len(objects)),
+        "source_traceability": frac(sum(1 for e in ents if images(e)), len(ents)),
+        "provenance_declared": frac(sum(1 for e in ents if e.provenance != Provenance.UNKNOWN), len(ents)),
+        "unresolved_conflicts": {"entities": len(conflicted), "hypotheses": sum(len(h) for h in conflicted.values())},
+        # reported separately: position uncertainty can be derived from the lift's covariance while dimension uncertainty has no source
+        "uncertainty_position": frac(sum(1 for g in with_unc if g.quality_metrics["uncertainty"].get("position") is not None), len(with_unc)),
+        "uncertainty_dimensions": frac(sum(1 for g in with_unc if g.quality_metrics["uncertainty"].get("dimensions") is not None), len(with_unc)),
+        "topology": {"errors": sum(1 for i in topo if i.severity.value == "error"), "warnings": sum(1 for i in topo if i.severity.value == "warning"),
+                     "world_validation_errors": len(rep.errors)},
+    }
 
 
 def readiness(root: Path) -> dict[str, Any]:
@@ -467,6 +509,18 @@ def readiness(root: Path) -> dict[str, Any]:
             scale[s] = scale.get(s, 0) + 1
         out["rejected_predictions"] = len(m.rejected())
         out["detection"] = _detection_readiness(m)
+        fus = (snap.get("after_stages") or {}).get("fusion")
+        if fus:
+            out["fusion"] = {k: fus.get(k) for k in ("status", "reason", "error", "views_offered", "views_with_valid_depth", "voxel_length_gauge",
+                                                    "volume_resolution", "resolution_capped", "mesh", "mesh_support", "per_view", "mesh_artifact")}
+            art = fus.get("mesh_artifact")
+            if art:  # a recorded surface must still exist and still match its hash: nothing is trusted because it was once recorded
+                try:
+                    import hashlib
+
+                    out["fusion"]["artifact_verified"] = hashlib.sha256(m.artifacts.get(art["uri"])).hexdigest() == art["sha256"]
+                except Exception:  # noqa: BLE001
+                    out["fusion"]["artifact_verified"] = False
     except Exception as exc:  # noqa: BLE001
         out["scale_error"] = f"{type(exc).__name__}: {exc}"
     out["scale"] = {"records_by_scale_state": scale,
@@ -501,6 +555,7 @@ def readiness(root: Path) -> dict[str, Any]:
             out["world"].update({"object_entities": n - n_surf, "surface_entities": n_surf,
                                  "entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
+            out["coverage"] = _coverage(w, placed, sized)
             out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
             if placed and not out["metric_export_ready"]:
                 out["export_scale_warning"] = ("positions/dimensions are not physically anchored metres (scale states: "
@@ -509,6 +564,14 @@ def readiness(root: Path) -> dict[str, Any]:
                 out["export_not_ready_reason"] = "no entity has a measured position yet; exporters would place nothing"
     except Exception as exc:  # noqa: BLE001
         out["world"] = {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+    try:  # the run's recorded inputs (photograph hashes), manifest and persisted world, re-checked against the disk
+        from engine.multiengine import run_manifest
+
+        if (root / run_manifest.MANIFEST_FILE).is_file():
+            v = run_manifest.verify(root)
+            out["integrity"] = {"ok": bool(v["ok"]), "problems": list(v["problems"])[:5]}
+    except Exception as exc:  # noqa: BLE001 -- an unverifiable run is reported as such (integrity stays absent -> not measured)
+        out["integrity_error"] = f"{type(exc).__name__}: {exc}"
     from engine.multiengine.quality_gate import assess
 
     out["quality"] = assess(out)  # READY / PARTIAL / BLOCKED / FAILED, from the measurements above only

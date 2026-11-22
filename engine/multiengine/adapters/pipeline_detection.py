@@ -277,6 +277,9 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                         predicted={"label": b.class_name, "score": float(b.confidence) if emitted else None, "scale_tier": b.scale.value,
                                    "pipeline_box_id": b.box_id, "parent_pipeline_box_id": b.parent_box_id, "host_class": b.attributes.get("host_class"),
                                    "inner_engine": b.source_engine, "confidence_emitted": emitted, "mask": mask_info,
+                                   # DetectionBox fields persisted AS GIVEN (same meaning as the perception contract), never reinterpreted
+                                   "is_truncated": bool(getattr(b, "is_truncated", False)), "occlusion_level": getattr(b, "occlusion_level", "none"),
+                                   "mask_area_px": int(getattr(b, "mask_area_px", 0) or 0), "child_box_ids": list(getattr(b, "child_box_ids", ()) or ()),
                                    "box_normalized": [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h]},
                         original_coordinates={"box_xyxy_px": [float(v) for v in b.box_2d], "image_size_px": [w, h]},
                         confidence=float(b.confidence) if emitted else None))

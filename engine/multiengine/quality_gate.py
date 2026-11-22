@@ -33,7 +33,14 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
         return {"verdict": "FAILED", "reasons": [f"persisted world is not trustworthy: {world.get('status')} {why}".strip()],
                 "gates": [_gate("world_integrity", world.get("verification"), FAIL, "WorldStore.verify_version reported problems")]}
 
+    integ = readiness.get("integrity")
+    if integ is not None and not integ.get("ok"):
+        return {"verdict": "FAILED", "gates": [_gate("evidence_integrity", integ.get("problems"), FAIL, "recorded source photographs, manifest and world still match the disk")],
+                "reasons": ["source evidence or the run record no longer matches what the run recorded: " + "; ".join(integ.get("problems") or ["unspecified"])]}
+
     gates: list[dict[str, Any]] = []
+    gates.append(_gate("evidence_integrity", None if integ is None else "verified", NOT_MEASURED if integ is None else PASS,
+                       "recorded source photographs, manifest and world still match the disk"))
     persisted = world.get("status") == "persisted"
     gates.append(_gate("world_persisted", world.get("status"), PASS if persisted else FAIL, "a verified immutable version exists on disk"))
     n = world.get("entities")
@@ -52,12 +59,67 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
                            "segmentation executed for the detections"))
     else:
         gates.append(_gate("detection_segmentation", det.get("status"), NOT_MEASURED, "the tiled detection pipeline did not run"))
+    if det.get("status") == "ran" and det.get("images"):
+        got = det.get("images_with_detections")
+        gates.append(_gate("detection_coverage", None if got is None else f"{got}/{det['images']} images with a detection",
+                           NOT_MEASURED if got is None else PASS if got == det["images"] else FAIL, "every photograph produced at least one detection"))
+    else:
+        gates.append(_gate("detection_coverage", None, NOT_MEASURED, "the tiled detection pipeline did not run"))
+    comp = readiness.get("completeness")  # only an INDEPENDENT inventory of what the room contains can supply this
+    gates.append(_gate("object_completeness", None if not comp else f"{comp.get('covered')}/{comp.get('of')}",
+                       NOT_MEASURED if not comp or not comp.get("of") else PASS if comp["covered"] == comp["of"] else FAIL,
+                       "every object in an independent inventory of the room was reconstructed (no such inventory exists unless supplied)"))
+    acc = readiness.get("physical_accuracy")
+    gates.append(_gate("physical_accuracy", acc, NOT_MEASURED if acc in (None, "NOT_MEASURED") else PASS,
+                       "an independent physical survey measured the reconstruction's error"))
+    fus = readiness.get("fusion")
+    if not fus:
+        gates.append(_gate("depth_fusion", None, NOT_MEASURED, "depth fusion did not run (needs at least two registered views with aligned depth)"))
+    elif fus.get("status") == "failed":
+        gates.append(_gate("depth_fusion", fus.get("error"), FAIL, "depth fusion executed without an error"))
+    elif fus.get("status") != "ran":
+        gates.append(_gate("depth_fusion", fus.get("reason"), NOT_MEASURED, "depth fusion executed"))
+    else:
+        mesh = fus.get("mesh") or {}
+        has_surface = bool(mesh.get("triangles")) and fus.get("artifact_verified") is not False
+        gates.append(_gate("depth_fusion", f"{mesh.get('triangles', 0)} triangles from {fus.get('views_with_valid_depth')} views",
+                           PASS if has_surface else FAIL, "fusion produced a surface and the stored artifact still matches its hash"))
+        if has_surface:
+            missing = (fus.get("mesh_support") or {}).get("views_that_did_not_contribute") or []
+            gates.append(_gate("fusion_contribution", f"{len(missing)} view(s) did not contribute", PASS if not missing else FAIL,
+                               "every view with aligned depth contributed to the fused surface (a persisted depth map that never touched it is not evidence)"))
+            gates.append(_gate("mesh_validity", mesh.get("problems") or "valid", PASS if mesh.get("valid") else FAIL,
+                               "the fused mesh has no degenerate or duplicate triangles, no non-finite vertices and no non-manifold edges"))
     scale = readiness.get("scale") or {}
     if scale.get("records_by_scale_state"):
         gates.append(_gate("physical_scale", scale.get("status"), PASS if scale.get("physical_metric") else FAIL,
                            "positions are physically anchored metres (otherwise gauge/relative units)"))
     else:
         gates.append(_gate("physical_scale", scale.get("status"), NOT_MEASURED, "no depth/scale evidence"))
+
+    cov = readiness.get("coverage")
+    if cov:
+        t = cov.get("topology") or {}
+        bad = int(t.get("errors", 0)) + int(t.get("world_validation_errors", 0))
+        gates.append(_gate("topology_validity", {"errors": bad, "warnings": t.get("warnings", 0)}, PASS if bad == 0 else FAIL,
+                           "the persisted world validates with no topology or structural errors (warnings are reported, not failed)"))
+        for key, what in (("uncertainty_position", "position"), ("uncertainty_dimensions", "dimension")):
+            up = cov.get(key)
+            if up is None or not up.get("of"):
+                gates.append(_gate(key, None, NOT_MEASURED, "no geometry carries an evidence-derived uncertainty block"))
+            else:
+                gates.append(_gate(key, f"{up.get('covered')}/{up.get('of')}", PASS if up["covered"] == up["of"] else FAIL,
+                                   f"every geometry's {what} uncertainty was derived from evidence (none is a stand-in)"))
+        uc = cov.get("unresolved_conflicts")
+        if uc is not None:
+            gates.append(_gate("unresolved_conflicts", f"{uc.get('entities', 0)} entities / {uc.get('hypotheses', 0)} competing hypotheses",
+                               PASS if not uc.get("entities") else FAIL, "no entity carries competing hypotheses the fusion could not resolve"))
+        for key, why in (("source_traceability", "every entity cites at least one source photograph"),
+                         ("provenance_declared", "every entity declares its provenance")):
+            c = cov.get(key) or {}
+            gates.append(_gate(key, f"{c.get('covered')}/{c.get('of')}", PASS if c.get("of") and c.get("covered") == c.get("of") else FAIL, why))
+    else:
+        gates.append(_gate("topology_validity", None, NOT_MEASURED, "no persisted world to measure"))
 
     if not persisted:
         return {"verdict": "BLOCKED", "reasons": [f"no persisted world ({world.get('status')}): {world.get('reason', 'nothing to inspect or export')}"], "gates": gates}
@@ -71,4 +133,5 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
             reasons.append(f"{g['name']}: {g['measured']} (needs: {g['basis']})")
         elif g["status"] == NOT_MEASURED:
             reasons.append(f"{g['name']} not measured ({g['basis']})")
-    return {"verdict": "PARTIAL" if reasons else "READY", "reasons": reasons, "gates": gates}
+    return {"verdict": "PARTIAL" if reasons else "READY", "reasons": reasons, "gates": gates,
+            "coverage": cov or {}}  # multiview_association etc. are reported, not gated: a single-view object is weaker, not invalid

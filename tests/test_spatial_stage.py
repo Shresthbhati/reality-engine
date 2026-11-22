@@ -88,6 +88,24 @@ def test_the_production_stage_uses_spatial_intelligence_and_writes_its_results_i
     assert snap["counts"]["entities"] == 1 and any("ray triangulation" in str(d["basis"]) for d in snap["associations"] if d["outcome"] == "merged")
 
 
+def test_depth_fusion_runs_in_the_production_stage_and_any_surface_it_records_is_a_real_stored_artifact(tmp_path, photos, monkeypatch):  # noqa: F811
+    import hashlib
+
+    monkeypatch.delenv(ew.ENV_LIFT, raising=False)
+    f = _run(tmp_path, photos)["lifting"]["fusion"]
+    assert f["status"] == "ran", f  # two registered views with aligned depth: fusion executed (synthetic depth: proves wiring, not accuracy)
+    assert f["scale_state"] == "SFM_GAUGE" and f["physically_metric"] is False and f["frame"].startswith("job")
+    assert {p["source"] for p in f["per_view"]} == set(photos) and all("contributed_to_surface" in p for p in f["per_view"])
+    if "mesh_artifact" in f:  # a recorded artifact reference must resolve to exactly the bytes that were fused
+        from engine.multiengine.evidence_matrix import EvidenceMatrix
+
+        m = EvidenceMatrix(tmp_path / "ws" / "evidence-world" / "t1" / "w1" / "job-1")
+        data = m.artifacts.get(f["mesh_artifact"]["uri"])
+        assert hashlib.sha256(data).hexdigest() == f["mesh_artifact"]["sha256"] and data[:3] == b"ply" and len(data) == f["mesh_artifact"]["bytes"]
+    else:
+        assert f.get("reason")  # no surface: the reason is on the record, and no artifact is claimed
+
+
 def test_the_legacy_lifter_remains_selectable_and_says_so(tmp_path, photos, monkeypatch):  # noqa: F811
     monkeypatch.setenv(ew.ENV_LIFT, "legacy")
     assert _run(tmp_path, photos)["lifting"]["engine"] == "legacy box lifter"
@@ -115,6 +133,21 @@ def test_relations_keep_only_structural_kinds_and_never_form_a_support_cycle():
     kinds = {(r.source_entity_id, r.kind.value, r.target_entity_id) for r in out}
     assert kinds == {("A", "supported_by", "B"), ("B", "supported_by", "C"), ("A", "mounted_on", "C")}
     assert not any(r.kind is RelationshipKind.ADJACENT_TO for r in out) and all("spatial_intelligence relation" in r.basis for r in out)
+
+
+def test_gauge_unit_relations_state_their_real_units_and_never_crash_on_a_missing_metre_distance():
+    # REGRESSION (found by the real office run): distance_m is None for sfm_units / synthetic_m, and the bridge formatted it unconditionally
+    from types import SimpleNamespace as NS
+
+    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialRelationKind, SpatialRelationship
+    from engine.multiengine.spatial_stage import make_scene_relations_fn
+
+    cans = [NS(entity_id=e, members=(f"d{e}",)) for e in "AB"]
+    for units, expected in (("sfm_units", "SfM gauge units"), ("synthetic_m", "synthetic metres")):
+        rel = SpatialRelationship("dA", "dB", SpatialRelationKind("supported_by"), 0.9, 0.25, "test basis", units)
+        assert rel.distance_m is None
+        (out,) = make_scene_relations_fn({"relationships": [rel]})(cans, None)
+        assert expected in out.basis and "0.25" in out.basis
 
 
 def test_persistence_drops_an_impossible_support_cycle_keeps_both_entities_and_records_it():

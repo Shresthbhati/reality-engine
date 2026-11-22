@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Loader2, X, FlaskConical } from "lucide-react";
 import { isApiError } from "@/lib/api/client";
 import type { WorldIR } from "@/types/worldir";
@@ -86,7 +87,11 @@ export default function EvidenceRunPanel({
   const [mergeWith, setMergeWith] = useState("");
   const [splitIds, setSplitIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [proposed, setProposed] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The version this panel last saw for the run: corrections are sent against it so the server refuses (409) one made on a version that
+  // has since moved, instead of silently stacking it on a newer world.
+  const [headVersion, setHeadVersion] = useState<{ runId: string; version: string } | null>(null);
   const inspect = (id: string) =>
     runId &&
     getEvidenceEntity(worldId, runId, id)
@@ -161,6 +166,19 @@ export default function EvidenceRunPanel({
                   {readiness.quality.reasons.map((r) => <li key={r}>{r}</li>)}
                 </ul>
               )}
+              {readiness.coverage && (
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2" data-testid="evidence-coverage">
+                  {([["Positioned", readiness.coverage.spatial_positioning], ["Dimensions", readiness.coverage.geometry_dimensions],
+                     ["Multi-view", readiness.coverage.multiview_association], ["Traceable", readiness.coverage.source_traceability],
+                     ["Provenance", readiness.coverage.provenance_declared]] as const).map(([label, c]) => (
+                    <div key={label} className="contents"><dt>{label}</dt><dd>{c.of ? `${c.covered}/${c.of}` : "—"}</dd></div>
+                  ))}
+                  <dt>Topology</dt><dd>{readiness.coverage.topology.errors} errors, {readiness.coverage.topology.warnings} warnings</dd>
+                  {readiness.coverage.unresolved_conflicts && (
+                    <><dt>Unresolved conflicts</dt><dd>{readiness.coverage.unresolved_conflicts.entities} entities</dd></>
+                  )}
+                </dl>
+              )}
             </div>
           )}
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
@@ -209,16 +227,23 @@ export default function EvidenceRunPanel({
               style={{ border: "1px solid var(--border)" }}
               onClick={() =>
                 proposeEvidenceRun(worldId, runId)
-                  .then((r) =>
+                  .then((r) => {
+                    setProposed(r.proposal.proposal_id);
                     setNotice(
                       `Proposed ${r.added_entities} entities to the world: ${r.proposal.summary.supported} supported, ${r.proposal.summary.needs_review} need review, ${r.proposal.summary.conflict} conflict. Nothing is committed until the proposal ${r.proposal.proposal_id} is accepted.`,
-                    ),
-                  )
+                    );
+                  })
                   .catch((e) => setError(err(e, "Could not propose this run's world.")))
               }
             >
               Propose to the world (review before adopting)
             </button>
+          )}
+          {notice && <p className="text-[11px]" role="status" data-testid="evidence-notice">{notice}</p>}
+          {proposed && (
+            <Link href={`/worlds/${encodeURIComponent(worldId)}/proposals`} className="text-[11px] underline self-start" data-testid="review-proposal">
+              Review and accept proposal {proposed}
+            </Link>
           )}
           {readiness.export_ready && runId && (
             <div className="flex flex-col gap-1 text-[11px]">
@@ -286,8 +311,11 @@ export default function EvidenceRunPanel({
                   e.preventDefault();
                   const cls = corrected.trim();
                   if (!cls || !runId || !selectedId) return;
-                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls)
-                    .then((r) => setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`))
+                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
+                    .then((r) => {
+                      setHeadVersion({ runId, version: r.version_id });
+                      setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`);
+                    })
                     .catch((er) => setError(err(er, "Could not save the correction.")));
                 }}
               >
@@ -309,9 +337,10 @@ export default function EvidenceRunPanel({
                   const me = selectedId.replace(/^ent-/, "");
                   const other = mergeWith.replace(/^ent-/, "");
                   const send = (ack: boolean) =>
-                    mergeEvidenceEntities(worldId, runId, me, other, ack).then((r) =>
-                      setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`),
-                    );
+                    mergeEvidenceEntities(worldId, runId, me, other, ack, "", headVersion?.runId === runId ? headVersion.version : w?.version_id).then((r) => {
+                      setHeadVersion({ runId, version: r.version_id });
+                      setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`);
+                    });
                   send(false).catch((er) => {
                     const msg = err(er, "Could not merge.");
                     if (msg.includes("same photograph") && window.confirm(`${msg}
@@ -338,8 +367,9 @@ Merge anyway (duplicate detections of one object)?`)) {
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (!runId || !selectedId || splitIds.length === 0) return;
-                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds)
+                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
                       .then((r) => {
+                        setHeadVersion({ runId, version: r.version_id });
                         setSplitIds([]);
                         setNotice(`Split: ${splitIds.length} detection(s) moved to new entity ${r.new_entity_id}; both rebuilt from their own evidence; saved as version ${r.version_id}. Original evidence unchanged.`);
                       })
@@ -360,7 +390,6 @@ Merge anyway (duplicate detections of one object)?`)) {
                   <button type="submit" disabled={splitIds.length === 0} className="text-[11px] rounded px-2 py-1 disabled:opacity-50 self-start" style={{ border: "1px solid var(--border)" }}>Split off selected</button>
                 </form>
               )}
-              {notice && <span role="status">{notice}</span>}
             </section>
           )}
 

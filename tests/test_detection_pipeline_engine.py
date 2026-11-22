@@ -188,6 +188,9 @@ def test_engine_tiles_crops_subparts_segments_and_preserves_every_raw_candidate(
     masked = boxes[0]
     m = decode_mask(masked.predicted["mask"])
     assert m.shape == (H, W) and m.any() and masked.predicted["mask"]["holes"] == 1  # the SAM-style hole survives the persisted encoding
+    for o in boxes:  # the contract's per-box fields are persisted, not dropped between the perception output and the evidence matrix
+        assert {"is_truncated", "occlusion_level", "mask_area_px", "child_box_ids"} <= set(o.predicted)
+        assert isinstance(o.predicted["is_truncated"], bool) and o.predicted["occlusion_level"] in ("none", "partial", "heavy")
     summary = next(o for o in run.observations if o.quantity == "detection_pipeline_summary")
     rows = summary.predicted["raw_detections"]
     assert len(rows) == f["raw_detections"] and {r["disposition"] for r in rows} <= {"kept", "suppressed_as_duplicate", "below_class_confidence"}

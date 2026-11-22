@@ -59,6 +59,39 @@ def test_non_idempotent_stage_is_never_retried(tmp_path):
     assert st.calls == 1 and m.stages[0].status == "failed"
 
 
+def test_stage_deadline_fails_the_stage_and_is_never_retried(tmp_path):
+    import threading
+
+    release = threading.Event()
+
+    def slow(n):
+        release.wait(5)
+        return _result("a")
+
+    st = Fn(StageSpec("a", "1", "cpu", True, idempotent=True, retries=3), slow)
+    try:
+        m = run_stages([st], _ctx(tmp_path), stage_timeouts={"a": 0.1})
+    finally:
+        release.set()
+    assert st.calls == 1  # abandoned, not retried, even though idempotent
+    r = m.stages[0]
+    assert r.status == "failed" and "deadline" in r.error and r.metrics["timed_out"] == 1.0
+
+
+def test_stage_without_a_deadline_runs_inline(tmp_path):
+    st = Fn(StageSpec("a", "1", "cpu", True), lambda n: _result("a"))
+    assert run_stages([st], _ctx(tmp_path), stage_timeouts={"other": 0.1}).stages[0].status == "succeeded"
+
+
+def test_stage_timeouts_env_is_parsed_and_malformed_entries_are_ignored(monkeypatch):
+    from apps.api.jobs import _stage_timeouts
+
+    monkeypatch.setenv("RE_STAGE_TIMEOUTS_S", "reconstruct=3600, compile_validate=300,bad,x=notnum,y=-1")
+    assert _stage_timeouts() == {"reconstruct": 3600.0, "compile_validate": 300.0}
+    monkeypatch.delenv("RE_STAGE_TIMEOUTS_S")
+    assert _stage_timeouts() == {}
+
+
 def test_retries_exhausted_is_failed(tmp_path):
     def boom(n):
         raise RuntimeError("x")

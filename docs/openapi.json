@@ -19051,6 +19051,18 @@
             "type": "boolean",
             "title": "Acknowledge Same Image",
             "default": false
+          },
+          "expected_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version Id"
           }
         },
         "type": "object",
@@ -19495,6 +19507,18 @@
             "maxLength": 1000,
             "title": "Note",
             "default": ""
+          },
+          "expected_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version Id"
           }
         },
         "type": "object",
@@ -20200,6 +20224,18 @@
             "maxLength": 1000,
             "title": "Note",
             "default": ""
+          },
+          "expected_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version Id"
           }
         },
         "type": "object",

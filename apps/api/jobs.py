@@ -1051,8 +1051,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # P111: architectural constraints are data, not exceptions -- an error degrades the stage, never fails it.
         from world_ir.constraints import check_architectural_constraints, violations_to_segment_fields
         c_warnings, c_metrics = violations_to_segment_fields(check_architectural_constraints(world_ir))
+        # the validated world is STORED (content-addressed) and its hash published: an output reference always points at a real artifact
+        import json as _json
+
+        from engine.pipeline.stages.content_store import store_bytes
+
+        world_sha, _ = store_bytes(_json.dumps(world_ir.to_dict(), sort_keys=True, default=str).encode("utf-8"))
         return SegmentReport(warnings=[*[f"validation warning: {w}" for w in validation.warnings], *c_warnings],
-                             metrics=c_metrics)
+                             metrics=c_metrics, outputs={"world_ir": world_sha})
 
     def seg_changeset_commit(ctx) -> SegmentReport:
         nonlocal cameras_bytes, changes, colmap_commit_fault, decision, finished_early, included, others, points_bytes, version_row, world_ir
@@ -1406,6 +1412,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 abandoned),
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
             pipeline_profile=PROFILE_NAME, pipeline_version=PIPELINE_VERSION,
+            stage_timeouts=_stage_timeouts(),
         )
 
     try:
@@ -1599,6 +1606,20 @@ def _heartbeat_interval_seconds() -> float:
         return max(0.2, float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS", "5.0")))
     except ValueError:
         return 5.0
+
+
+def _stage_timeouts() -> dict[str, float]:
+    """Per-stage deadlines from ``RE_STAGE_TIMEOUTS_S`` (``name=seconds,name=seconds``). Unset = no per-stage deadline (the job-level
+    timeout still applies). A malformed entry is skipped and logged, never fatal."""
+    out: dict[str, float] = {}
+    for part in (os.environ.get("RE_STAGE_TIMEOUTS_S") or "").split(","):
+        name, _, secs = part.strip().partition("=")
+        try:
+            if name and float(secs) > 0:
+                out[name.strip()] = float(secs)
+        except ValueError:
+            log.warning("ignoring malformed RE_STAGE_TIMEOUTS_S entry %r", part)
+    return out
 
 
 def _job_timeout_seconds() -> float:

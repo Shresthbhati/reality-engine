@@ -209,7 +209,21 @@ def derive_entities(
     groups = group_detections(obs, iou_min=same_image_iou_min)
     by_rep = {g.representative: g for g in groups}
     label_of = {o.observation_id: str(o.predicted["label"]) for o in obs}
-    cands = [Candidate(g.representative, g.source_id, label_of[g.representative]) for g in groups]
+    # A sub-part detection (handle on a door, ...) names its host box in the SAME image (``parent_pipeline_box_id``); the host box's
+    # image-level group representative becomes the part's parent, so association/canonical/bridge can record PART_OF. Detections that
+    # carry no box ids (every whole-image detector) have no parent: nothing is inferred.
+    obs_by_id = {o.observation_id: o for o in obs}
+    box_obs = {(o.source_id, o.predicted["pipeline_box_id"]): o.observation_id for o in obs if o.predicted.get("pipeline_box_id") is not None}
+    rep_of_obs = {m: g.representative for g in groups for m in g.members}
+
+    def parent_rep(rep: str) -> str | None:
+        o = obs_by_id[rep]
+        host = o.predicted.get("parent_pipeline_box_id")
+        pid = box_obs.get((o.source_id, host)) if host is not None else None
+        p = rep_of_obs.get(pid) if pid else None
+        return p if p and p != rep else None
+
+    cands = [Candidate(g.representative, g.source_id, label_of[g.representative], parent_rep(g.representative)) for g in groups]
     limitations = list(LIMITATIONS) + ([] if pair_scorer is not None else [PAIR_SCORER_LIMITATION])
     scores = list(pair_scorer(cands, matrix)) if pair_scorer is not None and cands else []
     assoc = associate(cands, scores, labels_compatible=ontology_label_compat(onto))
@@ -227,10 +241,18 @@ def derive_entities(
         entities, events = identity.resolve(entities)
         identity_events = [e.to_dict() for e in events]
     assoc = AssociationResult(tuple(entities), assoc.decisions)
+    ent_of_member = {m: e.entity_key for e in assoc.entities for m in e.members}
+
+    def parent_entity(e: Any) -> str | None:  # the entity that hosts this one's sub-part detections (None for whole objects)
+        ps = {ent_of_member.get(c.parent_observation_id) for c in cands if c.observation_id in e.members and c.parent_observation_id}
+        ps.discard(None)
+        ps.discard(e.entity_key)
+        return sorted(ps)[0] if ps else None
+
     canonicals = [
         build_canonical_entity(
             e, matrix, target_frame="world", tolerances=tolerances or {}, labels=label_of, registry=registry,
-            ontology=onto, association=assoc, graph=None,
+            ontology=onto, association=assoc, graph=None, parent_entity_id=parent_entity(e),
         )
         for e in assoc.entities
     ]
@@ -379,6 +401,11 @@ def run_evidence_flow(
             for g in s_geoms:
                 bridge.geometries[g.id] = g
             bridge.notes.extend(s_notes)
+            from engine.multiengine.surfaces import relate_objects_to_surfaces
+
+            hosted = relate_objects_to_surfaces(bridge.entities, bridge.geometries)
+            if isinstance(surface_report, dict):
+                surface_report["hosted_objects"] = hosted
         except Exception as exc:  # noqa: BLE001 -- recorded in the snapshot, never silent and never fatal to the objects
             surface_report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     hierarchy = SpatialHierarchy(FrameGraph()).readiness()

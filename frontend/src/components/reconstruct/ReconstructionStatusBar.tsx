@@ -23,6 +23,7 @@ import type {
 import { changeCategoryCounts, describeBuild, evidenceInVersion, modelStateCopy, versionEvidenceSummary } from "@/lib/api";
 import type { WorldIR } from "@/types/worldir";
 import ScaleCard from "@/components/reconstruct/ScaleCard";
+import JobStages from "@/components/reconstruct/JobStages";
 import CameraCard from "@/components/reconstruct/CameraCard";
 import RoomSummaryCard from "@/components/reconstruct/RoomSummaryCard";
 import { parseCaptureQuality } from "@/lib/viewport/structure-points-model";
@@ -426,6 +427,11 @@ export default function ReconstructionStatusBar({
               </span>
             )}
           </div>
+          {status.job && (
+            <div className="mt-1.5">
+              <JobStages jobId={status.job.id} active={status.in_progress} />
+            </div>
+          )}
           {model ? (
             <>
               <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">{copy.detail}</p>

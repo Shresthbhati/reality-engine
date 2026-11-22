@@ -218,6 +218,7 @@ async def get_job_stages(job_id: str, db: AsyncSession = Depends(get_db)) -> dic
                 "version": r.version,
                 "status": r.status,
                 "attempt": r.attempt,
+                "outputs": r.outputs or {},  # logical name -> sha256 of a stored artifact this stage produced
                 "metrics": r.metrics,
                 "warnings": r.warnings,
                 "error": r.error,

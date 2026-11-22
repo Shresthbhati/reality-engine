@@ -580,3 +580,66 @@ Against Kinect ground truth (`validate_office7_world.py`; the ground truth is it
 **Remaining blockers.** Class and identity accuracy unmeasured (needs labelled ground truth); metric scale needs an anchor; sub-part crops did not fire on this scene; compound-label splitting (above); Gemini acknowledgement of the shared interface; browser verification of the panel; merge of the evidence world into the committed world (section 7); the full test suite was not run.
 
 **Evidence world -> committed world, real run 14 (end to end).** The job wrote `committed_version.json` itself (`v-450b3f79ad1c`); `propose` returned 19 changes, 19 `supported` (the 7 surfaces now cite their aligned depth records), 0 `needs_review`, 0 `conflict`; `accept` adopted them as `v-5346fe783c7a` (19 -> 38 entities; read-back verified, validation clean, the 19 original entities byte-identical). Run 13 before the citation change gave 12 supported and 7 `needs_review`. Scale on all promoted entities remains `sfm_gauge`; this is adoption of evidence-backed entities, not a metric or class-accuracy claim.
+
+### 9. Production lifecycle contract (PR #363 sprint; status: IMPLEMENTED + EXECUTED ON REAL DATA for the gate, not physically validated)
+
+**Per-stage deadlines.** `run_stages(stage_timeouts=...)`, fed by `RE_STAGE_TIMEOUTS_S` (`name=seconds,...`) in the production job. A Python thread cannot be killed, so a timed-out stage is ABANDONED: recorded `failed` (`timed_out` metric), its late result discarded, and it is never retried (the straggler may still be running; a second run would duplicate its effects). Unset means no per-stage deadline; the job-level timeout and lease still apply.
+
+**Stage outputs.** `StageSpec.requires_outputs` / `idempotent` / `retries`: a stage that reports success without a declared output is `failed`; only `idempotent` stages are retried. `compile_validate` stores the validated world content-addressed and publishes its hash (`world_ir`), and requires it; the hash is exposed by `GET /api/jobs/{id}/stages`. A published reference always points at a stored artifact.
+
+**Quality verdict** (`engine/multiengine/quality_gate.py`, served as `readiness().quality`). FAILED (run unreadable/failed, world fails integrity, or source photographs / manifest no longer match what the run recorded), BLOCKED (no persisted world, empty, nothing positioned), PARTIAL (anything else short of READY, including unanchored scale and any gate that could not be measured), READY (every measured gate passes, none unmeasured). No universal numeric thresholds: each gate states the quantity and the structural rule. Multi-view association is reported, not gated (a single-view object is weaker, not invalid). Export is refused for FAILED/BLOCKED; PARTIAL exports carry `X-Quality-Verdict`.
+
+**Corrections are version-aware.** merge / split / reclassify accept `expected_version_id`; if HEAD moved the server answers 409 instead of applying the correction on a version the user never saw. The panel sends the version it last saw and tracks the new head after each correction.
+
+**Topology.** `validate_world_ir` errors on containment cycles and self-relations and WARNS (never errors) on disconnected room groups, since a partial capture may honestly lack the connecting evidence. This exposed that the interior compiler never wrote evidenced room passages into the WorldIR; they are now written as `CONNECTS`. Sub-part detections carry their host box (`parent_pipeline_box_id`); the evidence flow maps it to the host group so the bridge records `PART_OF`. Rooms are never manufactured: the real evidence-world run has surfaces but no closed room, so it has no room entity and no containment.
+
+**Not done.** Per-stage deadlines are not set by default; segment stages other than `compile_validate` publish no output hashes; physical accuracy is not measured (no independent metric ground truth; scale is SfM gauge).
+
+### 10. Perception contract: what production consumes (Phase 1; status: VERIFIED BY READING THE CODE + REAL RUN 18; incompatibilities listed)
+
+Source contract: `docs/engineering/PERCEPTION_OBSERVATION_CONTRACT.md` (Gemini, #365). Production never calls `SpatialSceneResult.to_world_ir()` or `to_metric3d_observations()`: it consumes the package's lifted entities, merged entities and relationships and writes its own `metric3d.v1` records, canonical entities and WorldIR through `canonical` / `worldir_bridge`.
+
+| Contract field | Production handling |
+|---|---|
+| Detection: `class_name`, `box_2d`, `confidence`, `source_engine`, `source_image_id`, `scale`, `box_id`, `parent_box_id` | persisted on the `bbox` observation (`label`, `score`, `scale_tier`, `pipeline_box_id`, `parent_pipeline_box_id`, `host_class`, `inner_engine`); a missing confidence stays `None` (`confidence_emitted=false`), never a default |
+| Detection: `is_truncated`, `occlusion_level`, `mask_area_px`, `child_box_ids` | NOW persisted as given (were dropped before this change) |
+| Detection: `mask_2d` | exact run-length encoding incl. holes; lifted to the depth grid and used to constrain surface lifting (`_lift_mask`) |
+| Detection: `mask_polygon`, `attributes` (material / finish / colour), `frame_index`, `timestamp_sec`, `shot_id` | NOT persisted on the detection (polygon is derivable from the mask; material/colour reach the world as the package's attribute CLAIMS, never as measured values). Video fields are not used: the production job takes photographs and video frames come from `reconstruction/video_frames.py`, NOT the selectable sampler in `spatial_intelligence/video_ingestion.py` (NOT INTEGRATED) |
+| Image / video provenance | source path + sha256 in the run manifest, re-verified on every readiness read |
+| Camera intrinsics / extrinsics | COLMAP model -> `PinholeCamera` (`to_working_camera`); intrinsics trust stays `estimated` when they are not EXIF-verified |
+| Coordinate frames | job frame (+Y up) <-> package working frame (Z-up) via `R_UP`; the frame of every record is stated; SfM frame mapped into the job frame by a residual-checked similarity |
+| Depth, scale state | depth is aligned to the image's own COLMAP keypoints and labelled `SFM_GAUGE`; un-aligned depth stays `RELATIVE_DEPTH`; metres only with `METRIC_ANCHORED` + anchor |
+| Confidence | raw model confidence persisted; calibrated confidence `None` (not measured) |
+| Uncertainty | position covariance propagated through the frame transform; dimension covariance: NOT PROVIDED by the lift, so dimension uncertainty is unknown (reported 0/15 on the real run) |
+| Rejected predictions | evidence matrix keeps them with the reason; the package's `refusal_reasons` are persisted in the spatial report |
+
+**Incompatibilities found (none resolved by changing a meaning).**
+1. The contract text lists `dimension_status` as `measured | prior_bounded | unknown`, but the code emits `DIRECT | ESTIMATED | PRIOR | UNKNOWN` (`association.py`). Production does not consume merged-entity dimensions, so no prior can become a measured dimension here; Gemini should align the document.
+2. `SpatialRelationship.distance_m` is `None` for gauge / synthetic distances (correct). The relation bridge assumed it was set and crashed the evidence stage on a real run; fixed on the consumer side (it now states the real units).
+3. The selectable video sampler is not wired into the production job.
+
+**Minimal interface requirement for Gemini.** `SpatialEntity3D` / `PhysicalMergedEntity` should expose per-axis dimension uncertainty (`dimensions_sigma: tuple[float, float, float] | None`, in `scale_units`, `None` when not derived) so dimension uncertainty can be propagated instead of reported unknown.
+
+### 11. Baseline audit for the unified reconstruction assignment (Phase 0; measured on `main` 91df53d70b7dcc6277d3f310efef19999250899e, 2026-11-22)
+
+**What actually executes** (real run 18, 12 real 7-Scenes office photographs, production job). Default deployment: stage list `interior_survey_standard / p108-ladder`: `evidence_resolve` -> `evidence_quality` -> `reconstruct` (COLMAP) -> `pose` (degraded) -> `scale` -> `depth` -> `layout` -> `perception` -> `mesh` (SKIPPED) -> `dense` (SKIPPED) -> `detail` -> `finalize` -> `quality_report` (SKIPPED) -> `compile_validate` -> `changeset_commit`. `mesh` / `dense` are skipped when the sparse model has too little geometric support (median structure point seen by 1 camera, needs >= 3), so the default path produces sparse points and fitted planes, never a surface. The evidence stage (Gemini's detection / segmentation / spatial lifting / association -> canonical -> WorldIR bridge) runs ONLY when `RE_EVIDENCE_WORLD=1`; it is off by default.
+
+**Geometry producers.** Sparse SfM points (COLMAP); plane fits (`perception/geometry/planes.py`); per-detection lifted point clouds and box geometry (`spatial_stage`); plane-fit surface hulls (`surfaces.py`, observed extent only); NEW: TSDF depth fusion (`depth_fusion.py`, section 12). **Consumers / persistence.** WorldIR (`compile_validate`) -> WorldStore versions; evidence world -> its own WorldStore + evidence matrix (content-addressed artifacts); readiness / quality gate read the persisted snapshot.
+
+**Implemented but not reachable from the API** (`scripts/capability_audit.py`, fresh run): video ingestion (`reconstruction/video_frames.py`, `evidence/video.py`, and Gemini's selectable sampler); object tracking (`perception/tracking`, `perception/instances/track_backend.py`); instance segmentation backends (`sam_backend`, `sam2_backend`, `detection/masks.py` -- the evidence stage reaches SAM through Gemini's adapter instead); `reconstruction/fusion/robust_fusion.py`; `reconstruction/meshing/room_mesh.py`; `engine/multiengine/adapters/metric_3d_lifter.py`; the multi-storey / split-level validators. The Open3D TSDF adapters (`volumetric_open3d.py`, `volumetric_surface.py`) are catalogued as ADAPTER_VERIFIED but NOTHING in production called them before section 12.
+
+**Exact blockers to a complete reconstructed world.** (1) Evidence stage off by default. (2) No surface reconstruction in the default path (mesh / dense skipped). (3) The evidence world has surfaces but no room, door, window or stair entities: those come only from the legacy interior compiler when a closed room is found, and no real closed-room capture exists locally (the office frames have no closed boundary; `datasets/real_room_capture` is a SYNTHETIC set; a user-supplied 10-image apartment set is AI-generated and COLMAP registers 0-5 of its views). (4) Video and tracking are unreachable. (5) No physical scale anchor has ever been applied to a real run, so physical accuracy is NOT_MEASURED everywhere. (6) Dimension uncertainty has no source (needs Gemini's per-axis sigma, section 10).
+
+## 12. Depth-to-geometry fusion (Open3D TSDF) and host-wall relations (2026-11-22, implemented)
+
+**Decision.** Aligned per-image depth (SfM gauge) plus job-frame cameras are fused by `engine/multiengine/depth_fusion.py` into one surface; the result is the world's surface entity (`surf-fused-surface`), replacing the earlier point-cloud ball-pivoting mesh (kept only as a fallback when fusion is unavailable). A depth map being persisted is not evidence it contributed: each view reports `integrated_pixels`, `rejected_as_inconsistent` and `contributed_to_surface`.
+
+**Method.** Cross-view consistency first (a pixel is supported, occluded or in conflict with another view; rejected when conflict outweighs support), then Open3D `UniformTSDFVolume` with data-derived bounds (`ScalableTSDFVolume` returns 0 triangles in the Open3D 0.20 Windows build), marching cubes, cleanup (degenerate, duplicate, zero-area triangles, floating specks), and `trimesh` PLY storage as a content-addressed artifact. Every length is a fraction of the median scene depth. Camera convention: OpenCV (x right, y down, z forward); `CameraExtrinsics.rotation` is camera-to-world, the Open3D extrinsic is its inverse.
+
+**Scale.** Reported `scale_state = SFM_GAUGE`, `physically_metric = false`. Nothing is converted to metres.
+
+**Measured (12 real office photographs, run 20).** 12/12 views fused; 196,547 triangles; 0 degenerate, 0 duplicate, 0 non-manifold edges; 34 components (largest 187,246 triangles), so the surface is fragmented; verdict PARTIAL (scale unanchored; object completeness, physical accuracy and dimension uncertainty not measured; unresolved conflicts).
+
+**Host-wall relations.** `relate_objects_to_surfaces` relates doors/windows (`embedded_in`) and wall fixtures (`mounted_on`) to a wall only when the object's measured box reaches the wall's fitted plane (within half its extent along the normal plus 3x plane RMS) and its centre lies over the wall's observed hull. Otherwise no relation is created. Confidence is recorded as not measured.
+
+**Known limits.** No closed-room multi-view capture exists locally, so rooms/doors/windows/stairs from real evidence are unverified; physical accuracy remains NOT_MEASURED until an independent survey is supplied.

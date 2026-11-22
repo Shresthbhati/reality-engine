@@ -462,6 +462,9 @@ def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, 
         obs = {o.data_uri or o.frame_id for o in (getattr(e, "observations", None) or ()) if o.sensor_type == "camera" and (o.data_uri or o.frame_id)}
         return obs or refs  # ONE identifier family per entity (a path and a frame id for the same photo must not count twice)
 
+    # competing hypotheses the fusion PRESERVED instead of merging (class / position / dimension disagreements between independent engines)
+    conflicted = {e.id: (e.custom_properties.get("evidence") or {}).get("competing_hypotheses") for e in ents}
+    conflicted = {k: v for k, v in conflicted.items() if v}
     rep = validate_world_ir(w)
     topo = [i for i in rep.issues if i.code.startswith("topology_")]
     return {
@@ -470,6 +473,7 @@ def _coverage(w: Any, placed: Sequence[Any], sized: Sequence[Any]) -> dict[str, 
         "multiview_association": frac(sum(1 for e in objects if len(images(e)) >= 2), len(objects)),
         "source_traceability": frac(sum(1 for e in ents if images(e)), len(ents)),
         "provenance_declared": frac(sum(1 for e in ents if e.provenance != Provenance.UNKNOWN), len(ents)),
+        "unresolved_conflicts": {"entities": len(conflicted), "hypotheses": sum(len(h) for h in conflicted.values())},
         "topology": {"errors": sum(1 for i in topo if i.severity.value == "error"), "warnings": sum(1 for i in topo if i.severity.value == "warning"),
                      "world_validation_errors": len(rep.errors)},
     }

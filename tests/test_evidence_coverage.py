@@ -37,6 +37,15 @@ def test_one_photograph_is_not_counted_twice_across_identifier_families():
     assert c["multiview_association"]["covered"] == 0  # same photo as a path and as a frame id
 
 
+def test_competing_hypotheses_are_counted_as_unresolved_conflicts():
+    a = Entity(id="a", type=EntityType.FURNITURE, provenance=Provenance.ESTIMATED,
+               custom_properties={"evidence": {"competing_hypotheses": [{"quantity": "class", "candidates": [{"label": "chair"}, {"label": "stool"}]},
+                                                                         {"quantity": "position", "candidates": []}]}})
+    b = Entity(id="b", type=EntityType.FURNITURE, provenance=Provenance.ESTIMATED, custom_properties={"evidence": {"competing_hypotheses": []}})
+    c = _coverage(_world(a, b), placed=[a, b], sized=[])
+    assert c["unresolved_conflicts"] == {"entities": 1, "hypotheses": 2}  # preserved competing claims, counted not merged
+
+
 def test_untraceable_and_undeclared_entities_are_not_covered_and_empty_world_has_no_fraction():
     e = Entity(id="x", type=EntityType.FURNITURE, provenance=Provenance.UNKNOWN)
     c = _coverage(_world(e), placed=[], sized=[])

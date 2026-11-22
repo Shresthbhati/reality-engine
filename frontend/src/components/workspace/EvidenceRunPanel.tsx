@@ -174,6 +174,9 @@ export default function EvidenceRunPanel({
                     <div key={label} className="contents"><dt>{label}</dt><dd>{c.of ? `${c.covered}/${c.of}` : "—"}</dd></div>
                   ))}
                   <dt>Topology</dt><dd>{readiness.coverage.topology.errors} errors, {readiness.coverage.topology.warnings} warnings</dd>
+                  {readiness.coverage.unresolved_conflicts && (
+                    <><dt>Unresolved conflicts</dt><dd>{readiness.coverage.unresolved_conflicts.entities} entities</dd></>
+                  )}
                 </dl>
               )}
             </div>

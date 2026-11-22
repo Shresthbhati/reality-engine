@@ -45,6 +45,8 @@ export interface EvidenceCoverage {
   source_traceability: CoverageFraction;
   provenance_declared: CoverageFraction;
   topology: { errors: number; warnings: number; world_validation_errors: number };
+  /** Competing hypotheses the fusion kept instead of merging (never silently resolved). */
+  unresolved_conflicts?: { entities: number; hypotheses: number };
 }
 
 export interface EvidenceReadiness {

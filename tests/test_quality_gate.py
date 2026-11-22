@@ -70,6 +70,13 @@ def test_missing_coverage_is_not_measured_never_ready():
     assert v["verdict"] == "PARTIAL" and any("topology_validity not measured" in x for x in v["reasons"])
 
 
+def test_an_unresolved_conflict_keeps_the_world_partial():
+    cov = {**_ok()["coverage"], "unresolved_conflicts": {"entities": 2, "hypotheses": 3}}
+    v = assess(_ok(coverage=cov))
+    assert v["verdict"] == "PARTIAL" and any("unresolved_conflicts" in x for x in v["reasons"])
+    assert assess(_ok(coverage={**_ok()["coverage"], "unresolved_conflicts": {"entities": 0, "hypotheses": 0}}))["verdict"] == "READY"
+
+
 def test_broken_evidence_integrity_is_failed_and_unverified_integrity_is_never_ready():
     v = assess(_ok(integrity={"ok": False, "problems": ["input a.jpg changed since the run (hash differs)"]}))
     assert v["verdict"] == "FAILED" and "a.jpg" in v["reasons"][0]

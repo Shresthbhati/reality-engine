@@ -72,6 +72,10 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
         bad = int(t.get("errors", 0)) + int(t.get("world_validation_errors", 0))
         gates.append(_gate("topology_validity", {"errors": bad, "warnings": t.get("warnings", 0)}, PASS if bad == 0 else FAIL,
                            "the persisted world validates with no topology or structural errors (warnings are reported, not failed)"))
+        uc = cov.get("unresolved_conflicts")
+        if uc is not None:
+            gates.append(_gate("unresolved_conflicts", f"{uc.get('entities', 0)} entities / {uc.get('hypotheses', 0)} competing hypotheses",
+                               PASS if not uc.get("entities") else FAIL, "no entity carries competing hypotheses the fusion could not resolve"))
         for key, why in (("source_traceability", "every entity cites at least one source photograph"),
                          ("provenance_declared", "every entity declares its provenance")):
             c = cov.get(key) or {}

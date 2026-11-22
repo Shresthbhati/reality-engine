@@ -594,3 +594,28 @@ Against Kinect ground truth (`validate_office7_world.py`; the ground truth is it
 **Topology.** `validate_world_ir` errors on containment cycles and self-relations and WARNS (never errors) on disconnected room groups, since a partial capture may honestly lack the connecting evidence. This exposed that the interior compiler never wrote evidenced room passages into the WorldIR; they are now written as `CONNECTS`. Sub-part detections carry their host box (`parent_pipeline_box_id`); the evidence flow maps it to the host group so the bridge records `PART_OF`. Rooms are never manufactured: the real evidence-world run has surfaces but no closed room, so it has no room entity and no containment.
 
 **Not done.** Per-stage deadlines are not set by default; segment stages other than `compile_validate` publish no output hashes; physical accuracy is not measured (no independent metric ground truth; scale is SfM gauge).
+
+### 10. Perception contract: what production consumes (Phase 1; status: VERIFIED BY READING THE CODE + REAL RUN 18; incompatibilities listed)
+
+Source contract: `docs/engineering/PERCEPTION_OBSERVATION_CONTRACT.md` (Gemini, #365). Production never calls `SpatialSceneResult.to_world_ir()` or `to_metric3d_observations()`: it consumes the package's lifted entities, merged entities and relationships and writes its own `metric3d.v1` records, canonical entities and WorldIR through `canonical` / `worldir_bridge`.
+
+| Contract field | Production handling |
+|---|---|
+| Detection: `class_name`, `box_2d`, `confidence`, `source_engine`, `source_image_id`, `scale`, `box_id`, `parent_box_id` | persisted on the `bbox` observation (`label`, `score`, `scale_tier`, `pipeline_box_id`, `parent_pipeline_box_id`, `host_class`, `inner_engine`); a missing confidence stays `None` (`confidence_emitted=false`), never a default |
+| Detection: `is_truncated`, `occlusion_level`, `mask_area_px`, `child_box_ids` | NOW persisted as given (were dropped before this change) |
+| Detection: `mask_2d` | exact run-length encoding incl. holes; lifted to the depth grid and used to constrain surface lifting (`_lift_mask`) |
+| Detection: `mask_polygon`, `attributes` (material / finish / colour), `frame_index`, `timestamp_sec`, `shot_id` | NOT persisted on the detection (polygon is derivable from the mask; material/colour reach the world as the package's attribute CLAIMS, never as measured values). Video fields are not used: the production job takes photographs and video frames come from `reconstruction/video_frames.py`, NOT the selectable sampler in `spatial_intelligence/video_ingestion.py` (NOT INTEGRATED) |
+| Image / video provenance | source path + sha256 in the run manifest, re-verified on every readiness read |
+| Camera intrinsics / extrinsics | COLMAP model -> `PinholeCamera` (`to_working_camera`); intrinsics trust stays `estimated` when they are not EXIF-verified |
+| Coordinate frames | job frame (+Y up) <-> package working frame (Z-up) via `R_UP`; the frame of every record is stated; SfM frame mapped into the job frame by a residual-checked similarity |
+| Depth, scale state | depth is aligned to the image's own COLMAP keypoints and labelled `SFM_GAUGE`; un-aligned depth stays `RELATIVE_DEPTH`; metres only with `METRIC_ANCHORED` + anchor |
+| Confidence | raw model confidence persisted; calibrated confidence `None` (not measured) |
+| Uncertainty | position covariance propagated through the frame transform; dimension covariance: NOT PROVIDED by the lift, so dimension uncertainty is unknown (reported 0/15 on the real run) |
+| Rejected predictions | evidence matrix keeps them with the reason; the package's `refusal_reasons` are persisted in the spatial report |
+
+**Incompatibilities found (none resolved by changing a meaning).**
+1. The contract text lists `dimension_status` as `measured | prior_bounded | unknown`, but the code emits `DIRECT | ESTIMATED | PRIOR | UNKNOWN` (`association.py`). Production does not consume merged-entity dimensions, so no prior can become a measured dimension here; Gemini should align the document.
+2. `SpatialRelationship.distance_m` is `None` for gauge / synthetic distances (correct). The relation bridge assumed it was set and crashed the evidence stage on a real run; fixed on the consumer side (it now states the real units).
+3. The selectable video sampler is not wired into the production job.
+
+**Minimal interface requirement for Gemini.** `SpatialEntity3D` / `PhysicalMergedEntity` should expose per-axis dimension uncertainty (`dimensions_sigma: tuple[float, float, float] | None`, in `scale_units`, `None` when not derived) so dimension uncertainty can be propagated instead of reported unknown.

@@ -437,7 +437,7 @@ def connect_rooms(world, links, room_entity_by_graph_id: Dict[str, str], derived
         for src, dst in ((ea, eb), (eb, ea)):
             ent = world.entities[src]
             if not any(r.kind == RelationshipKind.CONNECTS and r.target_id == dst for r in ent.relationships):
-                ent.relationships.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=dst, provenance=Provenance.INFERRED,
+                ent.relationships.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=dst, confidence=None, provenance=Provenance.INFERRED,
                                                       metadata={"derived_from": derived_from}))
                 added += 1
     return added

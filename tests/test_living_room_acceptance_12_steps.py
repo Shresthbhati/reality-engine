@@ -357,7 +357,7 @@ class _LivingRoomAcceptanceBackend:
             },
             relationships=[
                 Relationship(kind=RelationshipKind.RESTS_ON, target_id="floor-slab"),
-                Relationship(kind=RelationshipKind.CONTAINS, target_id="room-living"),
+                Relationship(kind=RelationshipKind.INSIDE, target_id="room-living"),
             ],
         )
 

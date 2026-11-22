@@ -38,6 +38,7 @@ from engine.multiengine.spatial_intelligence.integration import (
     reconstruct_spatial_scene,
 )
 from engine.multiengine.spatial_intelligence.video_ingestion import (
+    TemporalSamplingStrategy,
     VideoIngestionPipeline,
     compute_image_quality,
     compute_interframe_divergence,
@@ -475,3 +476,173 @@ def test_reconstruct_spatial_scene_auto_detection() -> None:
     assert result.execution_telemetry["total_detections"] >= 1
     assert len(result.merged_entities) >= 1
     assert "owlvit_detector" in result.model_inventory
+
+
+def test_selectable_video_sampling_strategies() -> None:
+    """Verifies that UNIFORM, KEYFRAME_SHARPNESS, SHOT_BOUNDARY, and ADAPTIVE strategies execute correctly with telemetry."""
+    # Create synthetic video sequence with sharp, blurry, and scene-cut frames
+    frames: list[np.ndarray] = []
+    for i in range(20):
+        img = np.zeros((240, 320, 3), dtype=np.uint8)
+        if i < 10:
+            # Shot 1
+            if i % 3 == 0:
+                # Sharp frame with high gradient edges
+                img[::10, :] = 255
+                img[:, ::10] = 255
+            else:
+                # Mild/blurred frame
+                img[:] = 120
+        else:
+            # Shot 2: dramatic color change
+            img[:] = 220
+            if i % 2 == 0:
+                img[::8, :] = 0
+        frames.append(img)
+
+    # 1. UNIFORM
+    p_uni = VideoIngestionPipeline(target_fps=2.0, strategy=TemporalSamplingStrategy.UNIFORM)
+    res_uni = p_uni.ingest_image_sequence(frames, fps=10.0)
+    assert len(res_uni) > 0
+    assert p_uni.last_report is not None
+    assert p_uni.last_report.strategy == "uniform"
+    assert all(f.provenance.sampling_strategy == "uniform" for f in res_uni)
+
+    # 2. KEYFRAME_SHARPNESS
+    p_sharp = VideoIngestionPipeline(target_fps=2.0, strategy=TemporalSamplingStrategy.KEYFRAME_SHARPNESS)
+    res_sharp = p_sharp.ingest_image_sequence(frames, fps=10.0)
+    assert len(res_sharp) > 0
+    assert p_sharp.last_report is not None
+    assert p_sharp.last_report.strategy == "keyframe_sharpness"
+    assert "suppressed_by_sharper_neighbor" in p_sharp.last_report.frames_dropped_by_reason
+    assert any("peak_sharpness" in f.provenance.sampling_reason for f in res_sharp)
+
+    # 3. SHOT_BOUNDARY
+    p_shot = VideoIngestionPipeline(target_fps=2.0, strategy=TemporalSamplingStrategy.SHOT_BOUNDARY)
+    res_shot = p_shot.ingest_image_sequence(frames, fps=10.0)
+    assert len(res_shot) > 0
+    assert p_shot.last_report is not None
+    assert p_shot.last_report.strategy == "shot_boundary"
+    assert p_shot.last_report.shots_detected >= 2
+    reasons = [f.provenance.sampling_reason for f in res_shot]
+    assert any("shot_entry" in r or "shot_keyframe" in r for r in reasons)
+
+    # 4. ADAPTIVE
+    p_adapt = VideoIngestionPipeline(target_fps=2.0, strategy=TemporalSamplingStrategy.ADAPTIVE)
+    res_adapt = p_adapt.ingest_image_sequence(frames, fps=10.0)
+    assert len(res_adapt) > 0
+    assert p_adapt.last_report is not None
+    assert p_adapt.last_report.strategy == "adaptive"
+
+
+def test_host_part_subpart_targets_resolution() -> None:
+    """Verifies that furniture and architectural hosts resolve subparts and crop re-detection targets."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import get_subpart_detection_targets
+
+    # Desk host
+    desk_targets = {t.name for t in get_subpart_detection_targets("desk")}
+    assert "drawer" in desk_targets or "socket" in desk_targets or "furniture_leg" in desk_targets
+
+    # Door host
+    door_targets = {t.name for t in get_subpart_detection_targets("door")}
+    assert "door_handle" in door_targets or "door_lock" in door_targets
+
+    # Cabinet host
+    cabinet_targets = {t.name for t in get_subpart_detection_targets("cabinet")}
+    assert "drawer" in cabinet_targets or "furniture_handle" in cabinet_targets or "cabinet_door" in cabinet_targets
+
+    # Window host
+    window_targets = {t.name for t in get_subpart_detection_targets("window")}
+    assert "window_frame" in window_targets or "window_glass" in window_targets
+
+
+def test_temporal_tracker_velocity_prediction_and_appearance() -> None:
+    """Tests that TemporalIdentityTracker uses velocity prediction and appearance embeddings."""
+    tracker = TemporalIdentityTracker(max_missed_frames=3, max_centroid_shift_px=150.0)
+
+    # Simulated detection that pans to the right at 100 px/sec
+    class DummyObs:
+        def __init__(self, obs_id: str, box: tuple[float, float, float, float], app: tuple[float, ...]):
+            self.observation_id = obs_id
+            self.class_name = "chair"
+            self.box_2d = box
+            self.appearance_features = app
+
+    app_emb = (0.9, 0.1, 0.05, 0.02)
+    # Frame 0 at t=0.0: box at [100, 100, 200, 200]
+    m0 = tracker.process_frame_observations(0, 0.0, [DummyObs("obs_0", (100.0, 100.0, 200.0, 200.0), app_emb)])
+    tid = m0["obs_0"]
+    track = tracker.active_tracks[tid]
+    assert track.track_id == tid
+
+    # Frame 1 at t=0.5: box moved right by 50px to [150, 100, 250, 200]
+    m1 = tracker.process_frame_observations(1, 0.5, [DummyObs("obs_1", (150.0, 100.0, 250.0, 200.0), app_emb)])
+    assert m1["obs_1"] == tid
+    assert track.age_frames == 2
+    assert track.velocity_2d[0] > 0.0  # Positive vx velocity detected
+
+    # Frame 2 at t=1.0: box moved further right to [200, 100, 300, 200]
+    # Even if IoU with initial box is 0, predicted centroid allows continuous tracking!
+    m2 = tracker.process_frame_observations(2, 1.0, [DummyObs("obs_2", (200.0, 100.0, 300.0, 200.0), app_emb)])
+    assert m2["obs_2"] == tid
+    assert track.age_frames == 3
+
+
+def test_temporal_track_vs_physical_identity_provenance() -> None:
+    """Enforces that temporal track IDs explicitly declare they are observation tracks, not physical identity."""
+    tracker = TemporalIdentityTracker()
+
+    class DummyObs:
+        def __init__(self, obs_id: str, box: tuple[float, float, float, float]):
+            self.observation_id = obs_id
+            self.class_name = "table"
+            self.box_2d = box
+
+    m = tracker.process_frame_observations(0, 0.0, [DummyObs("obs_table", (50.0, 50.0, 150.0, 150.0))])
+    tid = m["obs_table"]
+    track = tracker.active_tracks[tid]
+
+    d = track.to_dict()
+    assert d["is_physical_identity"] is False
+    assert d["provenance"] == "temporal_observation_tracking"
+
+
+def test_multi_view_competing_hypotheses_ledger() -> None:
+    """Verifies that competing cross-view hypotheses are preserved in the association ledger when conflicts occur."""
+    cam1 = PinholeCamera(
+        intrinsics=CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0, width=640, height=480),
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+    cam2 = PinholeCamera(
+        intrinsics=CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0, width=640, height=480),
+        extrinsics=CameraExtrinsics(position=Vec3(1.0, 0.0, 0.0), rotation=Quat(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    # Ray A from cam1
+    ray_a = build_camera_ray(
+        "obs_a", "img1", "chair", (310.0, 230.0, 330.0, 250.0), cam1,
+        scale_state="sfm_gauge", scale_units="sfm_units",
+    )
+    # Ray B from cam2 (consistent with ray A)
+    ray_b = build_camera_ray(
+        "obs_b", "img2", "chair", (300.0, 230.0, 320.0, 250.0), cam2,
+        scale_state="sfm_gauge", scale_units="sfm_units",
+    )
+    # Ray C also from cam2 (competing/conflicting with Ray B because same image img2!)
+    ray_c = build_camera_ray(
+        "obs_c", "img2", "chair", (305.0, 230.0, 325.0, 250.0), cam2,
+        scale_state="sfm_gauge", scale_units="sfm_units",
+    )
+
+    engine = MultiViewIntelligenceEngine(max_ray_distance_m=1.0, min_match_score=0.20)
+    merged, decisions, refusals = engine.associate_candidates([ray_a, ray_b, ray_c])
+
+    # Should merge ray_a and ray_b, but reject ray_c from merging with the cluster due to same-image constraint
+    assert len(merged) >= 1
+    # Check that decisions recorded both evaluations
+    assert len(decisions) == 3  # (A, B), (A, C), (B, C)
+    # Both B and C are from img2 -> (B, C) must be refused due to same-image mutual exclusion
+    bc_pair = [d for d in decisions if {d.obs_a_id, d.obs_b_id} == {"obs_b", "obs_c"}][0]
+    assert bc_pair.outcome == AssociationOutcome.REFUSED
+    assert "same_image" in bc_pair.reason
+

@@ -1,0 +1,88 @@
+{
+  "benchmark_id": "perception_real_benchmark",
+  "detection_mAP50": {
+    "iou_threshold": 0.5,
+    "macro_precision": 0.0714,
+    "macro_recall": 0.1667,
+    "macro_f1": 0.1,
+    "micro_precision": 0.2143,
+    "micro_recall": 0.0857,
+    "micro_f1": 0.1224,
+    "true_positives": 9,
+    "false_positives": 33,
+    "false_negatives": 96,
+    "per_class_f1": {
+      "window": 0.0,
+      "door": 0.0,
+      "door_frame": 0.6,
+      "table": 0.0,
+      "lamp": 0.0,
+      "chair": 0.0
+    }
+  },
+  "detection_mAP75": {
+    "iou_threshold": 0.75,
+    "macro_precision": 0.0,
+    "macro_recall": 0.0,
+    "macro_f1": 0.0,
+    "micro_precision": 0.0,
+    "micro_recall": 0.0,
+    "micro_f1": 0.0,
+    "true_positives": 0,
+    "false_positives": 42,
+    "false_negatives": 105,
+    "per_class_f1": {
+      "window": 0.0,
+      "door": 0.0,
+      "door_frame": 0.0,
+      "table": 0.0,
+      "lamp": 0.0,
+      "chair": 0.0
+    }
+  },
+  "part_hierarchy": {
+    "total_gt_part_links": 0,
+    "predicted_part_links": 1,
+    "correct_part_links": 0,
+    "precision": 0.0,
+    "recall": 1.0,
+    "f1": 0.0
+  },
+  "mask_quality": {
+    "evaluated_masks": 0,
+    "mean_mask_iou": 0.0,
+    "median_mask_iou": 0.0,
+    "mean_boundary_iou": 0.0,
+    "masks_above_50_iou_fraction": 0.0,
+    "masks_above_75_iou_fraction": 0.0
+  },
+  "tracking": {
+    "total_gt_trajectories": 5,
+    "total_predicted_tracks": 2,
+    "id_switches": 0,
+    "track_fragmentations": 6,
+    "idf1": 0.381,
+    "id_precision": 0.6667,
+    "id_recall": 0.2667,
+    "mota": 0.1333
+  },
+  "multi_view": {
+    "candidate_pairs_evaluated": 861,
+    "merged_pairs": 260,
+    "refused_pairs": 601,
+    "association_precision": 0.25,
+    "association_recall": 1.0,
+    "mean_reprojection_residual_px": 151.35,
+    "median_reprojection_residual_px": 0.0,
+    "p90_reprojection_residual_px": 836.65
+  },
+  "telemetry": {
+    "timestamp": 1795346986.8315182,
+    "peak_rss_mb": 1040.94,
+    "peak_cuda_vram_mb": 0.0,
+    "total_execution_seconds": 88.61,
+    "images_evaluated": 21,
+    "total_gt_boxes": 105,
+    "total_predicted_boxes": 42
+  }
+}

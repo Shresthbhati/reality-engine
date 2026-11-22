@@ -1340,12 +1340,40 @@ def get_ancestor_classes(taxonomy_id: str) -> list[TaxonomyClass]:
     return ancestors
 
 
-def get_subparts_for_class(taxonomy_id: str) -> tuple[TaxonomyClass, ...]:
-    """Returns all registered TaxonomyClasses that designate parts or children of this class."""
+def get_subparts_for_class(taxonomy_id_or_name: str) -> tuple[TaxonomyClass, ...]:
+    """Returns all registered TaxonomyClasses that designate parts, sub-components or hosted objects of this class."""
+    parent_cls = resolve_taxonomy_class(taxonomy_id_or_name)
     subparts: list[TaxonomyClass] = []
+    seen: set[str] = set()
+
+    broad_surfaces = {"floor", "ceiling", "ground", "road", "footpath", "paving"}
+
     for cls in _TAXONOMY_REGISTRY.values():
-        if cls.parent_class == taxonomy_id:
-            subparts.append(cls)
+        if cls.taxonomy_id == parent_cls.taxonomy_id:
+            continue
+
+        # 1. Direct parent class relationship
+        is_child = (cls.parent_class == parent_cls.taxonomy_id or cls.parent_class == parent_cls.name)
+
+        # 2. Host relationship for local objects/surfaces
+        is_hosted = False
+        if parent_cls.name not in broad_surfaces:
+            parent_keys = {parent_cls.name.lower(), parent_cls.taxonomy_id.lower(), *(a.lower() for a in parent_cls.aliases)}
+            if any(str(h).lower() in parent_keys for h in cls.hosts):
+                is_hosted = True
+
+        # 3. Explicit potential parts declared on the parent
+        is_potential = (
+            cls.name in parent_cls.potential_parts or
+            cls.taxonomy_id in parent_cls.potential_parts or
+            any(a in parent_cls.potential_parts for a in cls.aliases)
+        )
+
+        if is_child or is_hosted or is_potential:
+            if cls.taxonomy_id not in seen:
+                seen.add(cls.taxonomy_id)
+                subparts.append(cls)
+
     return tuple(subparts)
 
 

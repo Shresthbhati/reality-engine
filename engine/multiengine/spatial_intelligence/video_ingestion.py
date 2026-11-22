@@ -12,6 +12,7 @@ Provides production-ready video ingestion and frame sampling for Reality Engine:
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -90,6 +91,8 @@ class FrameProvenance:
     timestamp_sec: float
     shot_id: int
     quality: ImageQualityReport
+    sampling_strategy: str = "uniform"
+    sampling_reason: str = "selected"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +101,8 @@ class FrameProvenance:
             "timestamp_sec": round(self.timestamp_sec, 4),
             "shot_id": self.shot_id,
             "quality": self.quality.to_dict(),
+            "sampling_strategy": self.sampling_strategy,
+            "sampling_reason": self.sampling_reason,
         }
 
 
@@ -281,8 +286,32 @@ def compute_interframe_divergence(frame_a_rgb: np.ndarray, frame_b_rgb: np.ndarr
 # Video Ingestion Pipeline
 # ============================================================================
 
+@dataclass(frozen=True)
+class SamplingExecutionReport:
+    """Telemetry report of video sampling execution."""
+
+    strategy: str
+    total_frames_evaluated: int
+    frames_sampled: int
+    frames_dropped_by_reason: dict[str, int]
+    shots_detected: int
+    average_quality_score: float
+    mean_interframe_divergence: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "strategy": self.strategy,
+            "total_frames_evaluated": self.total_frames_evaluated,
+            "frames_sampled": self.frames_sampled,
+            "frames_dropped_by_reason": dict(self.frames_dropped_by_reason),
+            "shots_detected": self.shots_detected,
+            "average_quality_score": round(self.average_quality_score, 4),
+            "mean_interframe_divergence": round(self.mean_interframe_divergence, 2),
+        }
+
+
 class VideoIngestionPipeline:
-    """Production video ingestion engine with temporal sampling and quality gating."""
+    """Production video ingestion engine with selectable temporal sampling and quality gating."""
 
     def __init__(
         self,
@@ -297,23 +326,27 @@ class VideoIngestionPipeline:
         self.strategy = strategy
         self.min_quality_score = min_quality_score
         self.shot_divergence_threshold = shot_divergence_threshold
+        self.last_report: SamplingExecutionReport | None = None
 
-    def ingest_image_sequence(
+    def _sample_uniform(
         self,
-        images_rgb: Sequence[np.ndarray],
-        source_id: str = "image_seq",
-        fps: float = 2.0,
-    ) -> list[SampledFrame]:
-        """Ingests an ordered sequence of images as if it were a video or camera track."""
+        frames_data: list[tuple[int, float, np.ndarray, ImageQualityReport]],
+        source_id: str,
+        fps: float,
+    ) -> tuple[list[SampledFrame], dict[str, int], int]:
+        stride = max(1, int(round(fps / max(0.1, self.target_fps))))
+        dropped: dict[str, int] = defaultdict(int)
         sampled: list[SampledFrame] = []
         shot_id = 0
         last_kept_rgb: np.ndarray | None = None
 
-        for idx, img in enumerate(images_rgb):
-            t_sec = float(idx) / max(0.1, fps)
-            qr = compute_image_quality(img)
+        for idx, t_sec, img, qr in frames_data:
+            if idx % stride != 0:
+                dropped["temporal_stride_skip"] += 1
+                continue
 
             if not qr.is_usable or qr.quality_score < self.min_quality_score:
+                dropped["quality_gating"] += 1
                 continue
 
             if last_kept_rgb is not None:
@@ -327,17 +360,282 @@ class VideoIngestionPipeline:
                 timestamp_sec=t_sec,
                 shot_id=shot_id,
                 quality=qr,
+                sampling_strategy="uniform",
+                sampling_reason=f"stride_{stride}",
             )
             sampled.append(SampledFrame(
-                frame_id=f"{source_id}_f{idx:05d}",
+                frame_id=f"{source_id}_f{idx:06d}",
                 image_rgb=img,
                 provenance=prov,
             ))
             last_kept_rgb = img
+            if len(sampled) >= self.max_frame_budget:
+                dropped["budget_exceeded"] += max(0, len(frames_data) - idx - 1)
+                break
+
+        return sampled, dropped, shot_id + 1
+
+    def _sample_keyframe_sharpness(
+        self,
+        frames_data: list[tuple[int, float, np.ndarray, ImageQualityReport]],
+        source_id: str,
+        fps: float,
+    ) -> tuple[list[SampledFrame], dict[str, int], int]:
+        window_size = max(1, int(round(fps / max(0.1, self.target_fps))))
+        dropped: dict[str, int] = defaultdict(int)
+        sampled: list[SampledFrame] = []
+        shot_id = 0
+        last_kept_rgb: np.ndarray | None = None
+
+        # Group into sliding non-overlapping windows of size window_size
+        for w_start in range(0, len(frames_data), window_size):
+            window = frames_data[w_start:w_start + window_size]
+            usable_in_window = [
+                (idx, t, img, qr) for idx, t, img, qr in window
+                if qr.is_usable and qr.quality_score >= self.min_quality_score
+            ]
+            if not usable_in_window:
+                dropped["window_all_unusable"] += len(window)
+                continue
+
+            # Pick the single sharpest frame in the window
+            best_cand = max(
+                usable_in_window,
+                key=lambda item: (item[3].quality_score, item[3].blur_laplacian_var),
+            )
+            dropped["suppressed_by_sharper_neighbor"] += (len(usable_in_window) - 1)
+            dropped["quality_gating"] += (len(window) - len(usable_in_window))
+
+            idx, t_sec, img, qr = best_cand
+            if last_kept_rgb is not None:
+                div = compute_interframe_divergence(last_kept_rgb, img)
+                if div > self.shot_divergence_threshold:
+                    shot_id += 1
+
+            prov = FrameProvenance(
+                source_video_id=source_id,
+                frame_index=idx,
+                timestamp_sec=t_sec,
+                shot_id=shot_id,
+                quality=qr,
+                sampling_strategy="keyframe_sharpness",
+                sampling_reason=f"peak_sharpness_score_{qr.quality_score:.2f}",
+            )
+            sampled.append(SampledFrame(
+                frame_id=f"{source_id}_f{idx:06d}",
+                image_rgb=img,
+                provenance=prov,
+            ))
+            last_kept_rgb = img
+            if len(sampled) >= self.max_frame_budget:
+                break
+
+        return sampled, dropped, shot_id + 1
+
+    def _sample_shot_boundary(
+        self,
+        frames_data: list[tuple[int, float, np.ndarray, ImageQualityReport]],
+        source_id: str,
+        fps: float,
+    ) -> tuple[list[SampledFrame], dict[str, int], int]:
+        dropped: dict[str, int] = defaultdict(int)
+        sampled: list[SampledFrame] = []
+
+        if not frames_data:
+            return sampled, dropped, 0
+
+        # Segment frames into shots based on divergence
+        shots: list[list[tuple[int, float, np.ndarray, ImageQualityReport]]] = []
+        current_shot: list[tuple[int, float, np.ndarray, ImageQualityReport]] = [frames_data[0]]
+
+        for i in range(1, len(frames_data)):
+            div = compute_interframe_divergence(frames_data[i - 1][2], frames_data[i][2])
+            if div > self.shot_divergence_threshold:
+                shots.append(current_shot)
+                current_shot = [frames_data[i]]
+            else:
+                current_shot.append(frames_data[i])
+        if current_shot:
+            shots.append(current_shot)
+
+        # For each shot, extract entry, central sharpest, and exit keyframes
+        target_stride = max(1, int(round(fps / max(0.1, self.target_fps))))
+        for s_idx, shot in enumerate(shots):
+            usable = [f for f in shot if f[3].is_usable and f[3].quality_score >= self.min_quality_score]
+            if not usable:
+                dropped["shot_all_unusable"] += len(shot)
+                continue
+
+            dropped["quality_gating"] += (len(shot) - len(usable))
+
+            selected_indices: set[int] = set()
+
+            # 1. Entry frame (first usable)
+            entry_f = usable[0]
+            selected_indices.add(entry_f[0])
+
+            # 2. Central peak sharpness frame
+            best_f = max(usable, key=lambda f: (f[3].quality_score, f[3].blur_laplacian_var))
+            selected_indices.add(best_f[0])
+
+            # 3. Exit frame if shot is long enough (>= 4 frames)
+            if len(usable) >= 4:
+                exit_f = usable[-1]
+                selected_indices.add(exit_f[0])
+
+            # 4. If shot is very long, add intermediate frames spaced by target_stride
+            if len(usable) > target_stride * 2:
+                for step in range(target_stride, len(usable) - 1, target_stride):
+                    selected_indices.add(usable[step][0])
+
+            # Build SampledFrame for selected items in chronological order
+            shot_sampled = [f for f in usable if f[0] in selected_indices]
+            dropped["suppressed_within_shot"] += (len(usable) - len(shot_sampled))
+
+            for idx, t_sec, img, qr in shot_sampled:
+                reason = "shot_entry" if idx == entry_f[0] else ("shot_exit" if idx == usable[-1][0] else "shot_keyframe")
+                prov = FrameProvenance(
+                    source_video_id=source_id,
+                    frame_index=idx,
+                    timestamp_sec=t_sec,
+                    shot_id=s_idx,
+                    quality=qr,
+                    sampling_strategy="shot_boundary",
+                    sampling_reason=reason,
+                )
+                sampled.append(SampledFrame(
+                    frame_id=f"{source_id}_f{idx:06d}",
+                    image_rgb=img,
+                    provenance=prov,
+                ))
+                if len(sampled) >= self.max_frame_budget:
+                    break
+            if len(sampled) >= self.max_frame_budget:
+                break
+
+        return sampled, dropped, len(shots)
+
+    def _sample_adaptive(
+        self,
+        frames_data: list[tuple[int, float, np.ndarray, ImageQualityReport]],
+        source_id: str,
+        fps: float,
+    ) -> tuple[list[SampledFrame], dict[str, int], int]:
+        base_stride = max(1, int(round(fps / max(0.1, self.target_fps))))
+        dropped: dict[str, int] = defaultdict(int)
+        sampled: list[SampledFrame] = []
+        shot_id = 0
+        last_kept_rgb: np.ndarray | None = None
+        last_kept_idx = -9999
+
+        for idx, t_sec, img, qr in frames_data:
+            if not qr.is_usable or qr.quality_score < self.min_quality_score:
+                dropped["quality_gating"] += 1
+                continue
+
+            if last_kept_rgb is None:
+                # Always accept first usable frame
+                prov = FrameProvenance(
+                    source_video_id=source_id,
+                    frame_index=idx,
+                    timestamp_sec=t_sec,
+                    shot_id=shot_id,
+                    quality=qr,
+                    sampling_strategy="adaptive",
+                    sampling_reason="initial_frame",
+                )
+                sampled.append(SampledFrame(
+                    frame_id=f"{source_id}_f{idx:06d}",
+                    image_rgb=img,
+                    provenance=prov,
+                ))
+                last_kept_rgb = img
+                last_kept_idx = idx
+                continue
+
+            div = compute_interframe_divergence(last_kept_rgb, img)
+            frames_since_last = idx - last_kept_idx
+
+            if div > self.shot_divergence_threshold:
+                shot_id += 1
+                reason = "shot_transition"
+                accept = True
+            elif div >= 20.0 and frames_since_last >= max(1, base_stride // 2):
+                # Rapid motion / panning: sample more densely
+                reason = f"high_motion_div_{div:.1f}"
+                accept = True
+            elif div >= 8.0 and frames_since_last >= base_stride:
+                # Standard motion: sample at target stride
+                reason = f"normal_motion_div_{div:.1f}"
+                accept = True
+            elif div < 8.0 and frames_since_last >= base_stride * 2:
+                # Stationary camera: throttle sampling to prevent redundant views
+                reason = f"stationary_timeout_div_{div:.1f}"
+                accept = True
+            else:
+                dropped["redundant_or_substride"] += 1
+                accept = False
+
+            if accept:
+                prov = FrameProvenance(
+                    source_video_id=source_id,
+                    frame_index=idx,
+                    timestamp_sec=t_sec,
+                    shot_id=shot_id,
+                    quality=qr,
+                    sampling_strategy="adaptive",
+                    sampling_reason=reason,
+                )
+                sampled.append(SampledFrame(
+                    frame_id=f"{source_id}_f{idx:06d}",
+                    image_rgb=img,
+                    provenance=prov,
+                ))
+                last_kept_rgb = img
+                last_kept_idx = idx
 
             if len(sampled) >= self.max_frame_budget:
                 break
 
+        return sampled, dropped, shot_id + 1
+
+    def ingest_image_sequence(
+        self,
+        images_rgb: Sequence[np.ndarray],
+        source_id: str = "image_seq",
+        fps: float = 2.0,
+    ) -> list[SampledFrame]:
+        """Ingests an ordered sequence of images with selected temporal sampling strategy."""
+        frames_data = [
+            (idx, float(idx) / max(0.1, fps), img, compute_image_quality(img))
+            for idx, img in enumerate(images_rgb)
+        ]
+
+        if self.strategy == TemporalSamplingStrategy.UNIFORM:
+            sampled, dropped, num_shots = self._sample_uniform(frames_data, source_id, fps)
+        elif self.strategy == TemporalSamplingStrategy.KEYFRAME_SHARPNESS:
+            sampled, dropped, num_shots = self._sample_keyframe_sharpness(frames_data, source_id, fps)
+        elif self.strategy == TemporalSamplingStrategy.SHOT_BOUNDARY:
+            sampled, dropped, num_shots = self._sample_shot_boundary(frames_data, source_id, fps)
+        else:  # ADAPTIVE
+            sampled, dropped, num_shots = self._sample_adaptive(frames_data, source_id, fps)
+
+        # Compute telemetry
+        avg_q = float(np.mean([s.provenance.quality.quality_score for s in sampled])) if sampled else 0.0
+        divs: list[float] = []
+        for i in range(1, len(sampled)):
+            divs.append(compute_interframe_divergence(sampled[i - 1].image_rgb, sampled[i].image_rgb))
+        mean_div = float(np.mean(divs)) if divs else 0.0
+
+        self.last_report = SamplingExecutionReport(
+            strategy=self.strategy.value if isinstance(self.strategy, TemporalSamplingStrategy) else str(self.strategy),
+            total_frames_evaluated=len(frames_data),
+            frames_sampled=len(sampled),
+            frames_dropped_by_reason=dropped,
+            shots_detected=num_shots,
+            average_quality_score=avg_q,
+            mean_interframe_divergence=mean_div,
+        )
         return sampled
 
     def ingest_video_file(
@@ -345,7 +643,7 @@ class VideoIngestionPipeline:
         video_path: str | Path,
         video_id: str | None = None,
     ) -> tuple[VideoMetadata, list[SampledFrame]]:
-        """Extracts and samples frames from a video file with quality gating."""
+        """Extracts and samples frames from a video file with selectable strategy."""
         path = Path(video_path)
         if not path.is_file():
             raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -375,46 +673,50 @@ class VideoIngestionPipeline:
                 duration_sec=duration,
             )
 
-            # Determine frame stride based on target_fps
-            stride = max(1, int(round(fps / self.target_fps)))
-
-            sampled: list[SampledFrame] = []
-            shot_id = 0
-            last_kept_rgb: np.ndarray | None = None
+            # Read all frames (or subsampled pre-scan for very long videos)
+            raw_frames: list[tuple[int, float, np.ndarray, ImageQualityReport]] = []
             frame_idx = 0
+            # Pre-stride if video is massive (> 1000 frames) to maintain performance
+            read_stride = max(1, int(round(fps / (self.target_fps * 4.0)))) if total_frames > 600 else 1
 
-            while cap.isOpened() and len(sampled) < self.max_frame_budget:
-                ret, bgr_frame = cap.read()
-                if not ret or bgr_frame is None:
+            while cap.isOpened() and frame_idx < total_frames:
+                ret, bgr = cap.read()
+                if not ret or bgr is None:
                     break
 
-                if frame_idx % stride == 0:
-                    rgb_frame = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
-                    qr = compute_image_quality(rgb_frame)
-
-                    if qr.is_usable and qr.quality_score >= self.min_quality_score:
-                        if last_kept_rgb is not None:
-                            div = compute_interframe_divergence(last_kept_rgb, rgb_frame)
-                            if div > self.shot_divergence_threshold:
-                                shot_id += 1
-
-                        t_sec = float(frame_idx) / fps if fps > 0 else 0.0
-                        prov = FrameProvenance(
-                            source_video_id=vid_id,
-                            frame_index=frame_idx,
-                            timestamp_sec=t_sec,
-                            shot_id=shot_id,
-                            quality=qr,
-                        )
-                        sampled.append(SampledFrame(
-                            frame_id=f"{vid_id}_f{frame_idx:06d}",
-                            image_rgb=rgb_frame,
-                            provenance=prov,
-                        ))
-                        last_kept_rgb = rgb_frame
+                if frame_idx % read_stride == 0:
+                    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                    qr = compute_image_quality(rgb)
+                    t_sec = float(frame_idx) / max(0.1, fps)
+                    raw_frames.append((frame_idx, t_sec, rgb, qr))
 
                 frame_idx += 1
 
+            # Dispatch through sampling strategy
+            if self.strategy == TemporalSamplingStrategy.UNIFORM:
+                sampled, dropped, num_shots = self._sample_uniform(raw_frames, vid_id, fps)
+            elif self.strategy == TemporalSamplingStrategy.KEYFRAME_SHARPNESS:
+                sampled, dropped, num_shots = self._sample_keyframe_sharpness(raw_frames, vid_id, fps)
+            elif self.strategy == TemporalSamplingStrategy.SHOT_BOUNDARY:
+                sampled, dropped, num_shots = self._sample_shot_boundary(raw_frames, vid_id, fps)
+            else:  # ADAPTIVE
+                sampled, dropped, num_shots = self._sample_adaptive(raw_frames, vid_id, fps)
+
+            avg_q = float(np.mean([s.provenance.quality.quality_score for s in sampled])) if sampled else 0.0
+            divs: list[float] = []
+            for i in range(1, len(sampled)):
+                divs.append(compute_interframe_divergence(sampled[i - 1].image_rgb, sampled[i].image_rgb))
+            mean_div = float(np.mean(divs)) if divs else 0.0
+
+            self.last_report = SamplingExecutionReport(
+                strategy=self.strategy.value if isinstance(self.strategy, TemporalSamplingStrategy) else str(self.strategy),
+                total_frames_evaluated=len(raw_frames),
+                frames_sampled=len(sampled),
+                frames_dropped_by_reason=dropped,
+                shots_detected=num_shots,
+                average_quality_score=avg_q,
+                mean_interframe_divergence=mean_div,
+            )
             return metadata, sampled
         finally:
             cap.release()

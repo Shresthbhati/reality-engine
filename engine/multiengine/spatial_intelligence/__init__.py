@@ -27,8 +27,11 @@ from engine.multiengine.spatial_intelligence.attributes import (
 )
 from engine.multiengine.spatial_intelligence.detection_pipeline import (
     DetectionBox,
+    DetectionPipeline,
     DetectionScale,
+    PipelineResult,
     TileWindow,
+    UniversalPerceptionPipeline,
     compute_box_iou,
     filter_by_class_confidence,
     generate_domain_prompts,
@@ -100,8 +103,11 @@ __all__ = [
     "compute_ray_cpa",
     "evaluate_cross_view_pair",
     "DetectionBox",
+    "DetectionPipeline",
     "DetectionScale",
+    "PipelineResult",
     "TileWindow",
+    "UniversalPerceptionPipeline",
     "compute_box_iou",
     "filter_by_class_confidence",
     "generate_domain_prompts",

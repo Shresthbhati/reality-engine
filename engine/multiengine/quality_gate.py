@@ -59,6 +59,19 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
                            "segmentation executed for the detections"))
     else:
         gates.append(_gate("detection_segmentation", det.get("status"), NOT_MEASURED, "the tiled detection pipeline did not run"))
+    if det.get("status") == "ran" and det.get("images"):
+        got = det.get("images_with_detections")
+        gates.append(_gate("detection_coverage", None if got is None else f"{got}/{det['images']} images with a detection",
+                           NOT_MEASURED if got is None else PASS if got == det["images"] else FAIL, "every photograph produced at least one detection"))
+    else:
+        gates.append(_gate("detection_coverage", None, NOT_MEASURED, "the tiled detection pipeline did not run"))
+    comp = readiness.get("completeness")  # only an INDEPENDENT inventory of what the room contains can supply this
+    gates.append(_gate("object_completeness", None if not comp else f"{comp.get('covered')}/{comp.get('of')}",
+                       NOT_MEASURED if not comp or not comp.get("of") else PASS if comp["covered"] == comp["of"] else FAIL,
+                       "every object in an independent inventory of the room was reconstructed (no such inventory exists unless supplied)"))
+    acc = readiness.get("physical_accuracy")
+    gates.append(_gate("physical_accuracy", acc, NOT_MEASURED if acc in (None, "NOT_MEASURED") else PASS,
+                       "an independent physical survey measured the reconstruction's error"))
     scale = readiness.get("scale") or {}
     if scale.get("records_by_scale_state"):
         gates.append(_gate("physical_scale", scale.get("status"), PASS if scale.get("physical_metric") else FAIL,

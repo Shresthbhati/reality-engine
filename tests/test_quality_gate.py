@@ -8,11 +8,12 @@ def _ok(**over):
     r = {"stage_status": "complete",
          "world": {"status": "persisted", "entities": 3, "entities_with_position": 3, "entities_with_geometry": 3, "withheld_entities": []},
          "integrity": {"ok": True, "problems": []},
+         "completeness": {"covered": 3, "of": 3}, "physical_accuracy": "SURVEYED",  # reference-backed only: no real run has either
          "coverage": {"topology": {"errors": 0, "warnings": 0, "world_validation_errors": 0},
                       "source_traceability": {"covered": 3, "of": 3}, "provenance_declared": {"covered": 3, "of": 3},
                       "uncertainty_propagated": {"covered": 3, "of": 3, "fraction": 1.0},
                       "multiview_association": {"covered": 1, "of": 3, "fraction": 0.3333}},
-         "detection": {"status": "ran", "segmentation": "ran"},
+         "detection": {"status": "ran", "segmentation": "ran", "images": 2, "images_with_detections": 2},
          "scale": {"status": "physically_anchored", "physical_metric": True, "records_by_scale_state": {"metric_anchored": 3}}}
     r.update(over)
     return r
@@ -69,6 +70,20 @@ def test_missing_coverage_is_not_measured_never_ready():
     r.pop("coverage")
     v = assess(r)
     assert v["verdict"] == "PARTIAL" and any("topology_validity not measured" in x for x in v["reasons"])
+
+
+def test_no_passing_metric_compensates_an_unmeasured_critical_one():
+    for key, val, name in (("physical_accuracy", "NOT_MEASURED", "physical_accuracy"), ("completeness", None, "object_completeness")):
+        r = _ok()
+        r[key] = val  # everything else passes; the one unmeasured dimension alone keeps the verdict PARTIAL
+        v = assess(r)
+        assert v["verdict"] == "PARTIAL" and any(f"{name} not measured" in x for x in v["reasons"]), name
+
+
+def test_detection_coverage_is_independent_of_segmentation():
+    d = {"status": "ran", "segmentation": "ran", "images": 4, "images_with_detections": 3}
+    v = assess(_ok(detection=d))
+    assert v["verdict"] == "PARTIAL" and any("detection_coverage" in x for x in v["reasons"])
 
 
 def test_uncertainty_is_its_own_dimension_a_missing_one_is_never_compensated_by_other_passes():

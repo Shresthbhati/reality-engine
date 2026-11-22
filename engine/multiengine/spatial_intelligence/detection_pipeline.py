@@ -437,10 +437,14 @@ def suppress_duplicates_preserving_parts(
             )
 
             is_part_relation = (
+                det.parent_box_id == existing.box_id or
+                existing.parent_box_id == det.box_id or
                 tax_det.parent_class == tax_existing.taxonomy_id or
                 tax_existing.parent_class == tax_det.taxonomy_id or
                 tax_det.name in tax_existing.potential_parts or
                 tax_existing.name in tax_det.potential_parts or
+                tax_existing.name in tax_det.hosts or
+                tax_det.name in tax_existing.hosts or
                 (det.scale != existing.scale and (det_in_existing or existing_in_det))
             )
 
@@ -535,75 +539,28 @@ def refine_instance_mask(
     sub_rgb = rgb_image[rmin:rmax + 1, cmin:cmax + 1] if rgb_image is not None and rgb_image.shape[:2] == (h, w) else None
     sh, sw = sub_refined.shape[:2]
 
-    # Connected component labeling via simple BFS flood fill
-    visited = np.zeros((sh, sw), dtype=bool)
-    components: list[list[tuple[int, int]]] = []
+    # Vectorized connected component labeling and filtering via scipy.ndimage (C-optimized)
+    import scipy.ndimage as ndi
 
-    for r in range(sh):
-        for c in range(sw):
-            if sub_refined[r, c] and not visited[r, c]:
-                comp_pixels: list[tuple[int, int]] = []
-                queue = [(r, c)]
-                visited[r, c] = True
-                while queue:
-                    cr, cc = queue.pop()
-                    comp_pixels.append((cr, cc))
-                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                        nr, nc = cr + dr, cc + dc
-                        if 0 <= nr < sh and 0 <= nc < sw:
-                            if sub_refined[nr, nc] and not visited[nr, nc]:
-                                visited[nr, nc] = True
-                                queue.append((nr, nc))
-                components.append(comp_pixels)
+    lbls, num_features = ndi.label(sub_refined)
+    if num_features > 0:
+        counts = np.bincount(lbls.ravel())
+        small_comps = np.where(counts < min_component_area_px)[0]
+        if len(small_comps) > 0:
+            mask_remove = np.isin(lbls, small_comps)
+            sub_refined[mask_remove] = False
 
-    # Filter small speckles
-    for comp in components:
-        if len(comp) < min_component_area_px:
-            for r, c in comp:
-                sub_refined[r, c] = False
-
-    # Hole detection on inverted sub-mask
-    inv_visited = np.zeros((sh, sw), dtype=bool)
-    border_queue: list[tuple[int, int]] = []
-    for r in range(sh):
-        for c in (0, sw - 1):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                inv_visited[r, c] = True
-                border_queue.append((r, c))
-    for c in range(sw):
-        for r in (0, sh - 1):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                inv_visited[r, c] = True
-                border_queue.append((r, c))
-
-    while border_queue:
-        cr, cc = border_queue.pop()
-        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            nr, nc = cr + dr, cc + dc
-            if 0 <= nr < sh and 0 <= nc < sw:
-                if not sub_refined[nr, nc] and not inv_visited[nr, nc]:
-                    inv_visited[nr, nc] = True
-                    border_queue.append((nr, nc))
-
-    # Any unvisited background pixel is an interior hole
-    for r in range(sh):
-        for c in range(sw):
-            if not sub_refined[r, c] and not inv_visited[r, c]:
-                hole_pixels: list[tuple[int, int]] = []
-                hq = [(r, c)]
-                inv_visited[r, c] = True
-                while hq:
-                    hr, hc = hq.pop()
-                    hole_pixels.append((hr, hc))
-                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                        nr, nc = hr + dr, hc + dc
-                        if 0 <= nr < sh and 0 <= nc < sw:
-                            if not sub_refined[nr, nc] and not inv_visited[nr, nc]:
-                                inv_visited[nr, nc] = True
-                                hq.append((nr, nc))
-                if len(hole_pixels) <= max_fill_hole_area_px:
-                    for hr, hc in hole_pixels:
-                        sub_refined[hr, hc] = True
+    # Vectorized hole detection and filling via binary_fill_holes
+    filled = ndi.binary_fill_holes(sub_refined)
+    holes = filled ^ sub_refined
+    if np.any(holes):
+        hlbls, num_holes = ndi.label(holes)
+        if num_holes > 0:
+            hcounts = np.bincount(hlbls.ravel())
+            small_holes = np.where((hcounts <= max_fill_hole_area_px) & (hcounts > 0))[0]
+            if len(small_holes) > 0:
+                mask_fill = np.isin(hlbls, small_holes)
+                sub_refined[mask_fill] = True
 
     # Boundary gradient edge snapping if RGB sub-image is provided
     if sub_rgb is not None and sub_rgb.shape[:2] == (sh, sw) and sh > 2 and sw > 2:
@@ -778,6 +735,176 @@ class AdapterSegmenterWrapper:
         return None
 
 
+class GroundingDinoDetectorAdapter:
+    """Production open-vocabulary detector using Grounding DINO Tiny on GPU."""
+
+    name = "grounding-dino-tiny"
+
+    def __init__(self, box_threshold: float = 0.22, batch_size: int = 2) -> None:
+        self.box_threshold = box_threshold
+        self.batch_size = batch_size
+        self._proc = None
+        self._model = None
+        self._device = None
+
+    def _ensure_loaded(self) -> None:
+        if self._model is None:
+            from engine.pipeline.open_vocab_furniture import _load
+            self._proc, self._model, self._device = _load()
+
+    def available(self) -> tuple[bool, str]:
+        try:
+            self._ensure_loaded()
+            return True, "cached"
+        except Exception as exc:
+            return False, str(exc)
+
+    def detect(self, image_rgb: np.ndarray, text_prompts: Sequence[str]) -> list[DetectionBox]:
+        self._ensure_loaded()
+        import torch
+        from PIL import Image
+
+        orig_h, orig_w = image_rgb.shape[:2]
+        max_side = 1024
+        if max(orig_h, orig_w) > max_side:
+            scale = max_side / float(max(orig_h, orig_w))
+            new_w = int(round(orig_w * scale))
+            new_h = int(round(orig_h * scale))
+            img_infer = Image.fromarray(np.ascontiguousarray(image_rgb)).resize((new_w, new_h), Image.Resampling.BILINEAR)
+            sx = orig_w / float(new_w)
+            sy = orig_h / float(new_h)
+        else:
+            img_infer = Image.fromarray(np.ascontiguousarray(image_rgb))
+            new_w, new_h = orig_w, orig_h
+            sx, sy = 1.0, 1.0
+
+        boxes: list[DetectionBox] = []
+        queries = [p.replace("_", " ").strip() for p in text_prompts if p.strip()]
+        if not queries:
+            return boxes
+
+        for i in range(0, len(queries), self.batch_size):
+            chunk = list(queries[i:i + self.batch_size])
+            text_queries = [f"{q}." if not q.endswith(".") else q for q in chunk]
+            inp = self._proc(
+                images=[img_infer] * len(chunk),
+                text=text_queries,
+                return_tensors="pt",
+                padding=True,
+            ).to(self._device)
+
+            with torch.no_grad():
+                res = self._model(**inp)
+
+            post = self._proc.post_process_grounded_object_detection(
+                res,
+                inp.input_ids,
+                threshold=self.box_threshold,
+                text_threshold=max(0.15, self.box_threshold * 0.8),
+                target_sizes=[(new_h, new_w)] * len(chunk),
+            )
+
+            for q, r in zip(chunk, post):
+                clean_cls = q.rstrip(".").replace(" ", "_").lower()
+                for score, box in zip(r["scores"].tolist(), r["boxes"].tolist()):
+                    b_xyxy = (
+                        float(box[0] * sx),
+                        float(box[1] * sy),
+                        float(box[2] * sx),
+                        float(box[3] * sy),
+                    )
+                    boxes.append(DetectionBox(
+                        box_id=f"gd_{clean_cls}_{len(boxes)}",
+                        class_name=clean_cls,
+                        box_2d=b_xyxy,
+                        confidence=float(score),
+                        source_engine=self.name,
+                    ))
+
+        return boxes
+
+
+class OwlVitDetectorAdapter:
+    """Production zero-shot open-vocabulary detector using Google OWL-ViT on GPU/CPU."""
+
+    name = "owlvit"
+
+    def __init__(self, threshold: float = 0.08) -> None:
+        self.threshold = threshold
+        self._proc = None
+        self._model = None
+        self._device = None
+
+    def _ensure_loaded(self) -> None:
+        if self._model is None:
+            import torch
+            from transformers import OwlViTForObjectDetection, OwlViTProcessor
+            repo = "google/owlvit-base-patch32"
+            dev = "cuda" if torch.cuda.is_available() else "cpu"
+            self._proc = OwlViTProcessor.from_pretrained(repo, local_files_only=True)
+            self._model = OwlViTForObjectDetection.from_pretrained(repo, local_files_only=True).to(dev).eval()
+            self._device = dev
+
+    def available(self) -> tuple[bool, str]:
+        try:
+            self._ensure_loaded()
+            return True, "cached"
+        except Exception as exc:
+            return False, str(exc)
+
+    def detect(self, image_rgb: np.ndarray, text_prompts: Sequence[str]) -> list[DetectionBox]:
+        self._ensure_loaded()
+        import torch
+        from PIL import Image
+
+        img = Image.fromarray(np.ascontiguousarray(image_rgb))
+        queries = [p.replace("_", " ").strip() for p in text_prompts if p.strip()]
+        if not queries:
+            return []
+
+        h, w = image_rgb.shape[:2]
+        inputs = self._proc(text=[queries], images=img, return_tensors="pt")
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            out = self._model(**inputs)
+
+        post = getattr(self._proc, "post_process_object_detection", None) or self._proc.post_process_grounded_object_detection
+        res = post(out, threshold=self.threshold, target_sizes=torch.tensor([[h, w]], device=self._device))[0]
+
+        boxes: list[DetectionBox] = []
+        for score, label_idx, box in zip(res["scores"].tolist(), res["labels"].tolist(), res["boxes"].tolist()):
+            cls_name = queries[int(label_idx)].replace(" ", "_").lower()
+            b_xyxy = (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
+            boxes.append(DetectionBox(
+                box_id=f"owl_{cls_name}_{len(boxes)}",
+                class_name=cls_name,
+                box_2d=b_xyxy,
+                confidence=float(score),
+                source_engine="owlvit_base_patch32",
+            ))
+        return boxes
+
+
+def create_default_detector(preferred: str = "auto") -> DetectorAdapter:
+    """Creates best available production detector adapter."""
+    if preferred in ("auto", "grounding_dino"):
+        try:
+            adapter = GroundingDinoDetectorAdapter()
+            adapter._ensure_loaded()
+            return adapter
+        except Exception:
+            pass
+    if preferred in ("auto", "owlvit"):
+        try:
+            adapter = OwlVitDetectorAdapter()
+            adapter._ensure_loaded()
+            return adapter
+        except Exception:
+            pass
+    return RuleBasedDetectorAdapter()
+
+
 @dataclass(frozen=True)
 class PipelineResult:
     """Structured result of full detection, tiling, and mask refinement pipeline."""
@@ -824,15 +951,23 @@ class DetectionPipeline:
         frame_index: int | None = None,
         timestamp_sec: float | None = None,
         shot_id: int | None = None,
+        text_prompts: Sequence[str] | None = None,
     ) -> PipelineResult:
         """Executes the full perception workflow on an input RGB image."""
         h, w = image_rgb.shape[:2]
         raw_accum: list[DetectionBox] = []
 
         # 1. Open-vocab prompt generation
-        prompts = generate_domain_prompts(domain)
-        std_prompts = prompts.get(DetectionScale.STANDARD, [])
-        micro_prompts = prompts.get(DetectionScale.MICRO, [])
+        if text_prompts:
+            std_prompts = list(text_prompts)
+            micro_prompts = [
+                p for p in text_prompts
+                if any(s in p for s in ("socket", "switch", "handle", "hinge", "lock", "sill", "frame", "vent", "tap", "drain"))
+            ]
+        else:
+            prompts = generate_domain_prompts(domain)
+            std_prompts = prompts.get(DetectionScale.STANDARD, [])
+            micro_prompts = prompts.get(DetectionScale.MICRO, [])
 
         # 2. Whole-image standard detection
         base_dets = self.detector.detect(image_rgb, std_prompts)
@@ -1008,3 +1143,7 @@ class DetectionPipeline:
             parent_part_tree=parent_part_tree,
             execution_stats=stats,
         )
+
+
+UniversalPerceptionPipeline = DetectionPipeline
+

@@ -242,6 +242,7 @@ def test_load_ground_truth_dataset(tmp_path) -> None:
 def test_real_perception_benchmark_end_to_end(tmp_path) -> None:
     """Verifies end-to-end benchmark execution on real dataset sample."""
     from benchmarks.perception.real_data_benchmark import run_real_perception_benchmark
+    from engine.multiengine.spatial_intelligence.detection_pipeline import RuleBasedDetectorAdapter
 
     ds_dir = Path("datasets/real_room_capture")
     if (ds_dir / "ground_truth_identities.json").is_file():
@@ -250,6 +251,7 @@ def test_real_perception_benchmark_end_to_end(tmp_path) -> None:
             dataset_dir=ds_dir,
             output_dir=out_dir,
             benchmark_id="test_run_e2e",
+            detector_engine=RuleBasedDetectorAdapter(),
         )
         assert summary.benchmark_id == "test_run_e2e"
         assert summary.telemetry["images_evaluated"] == 21
@@ -266,4 +268,188 @@ def test_real_perception_benchmark_end_to_end(tmp_path) -> None:
         assert "tracking" in data
         assert "multi_view" in data
         assert "telemetry" in data
+
+
+# ============================================================================
+# Adversarial Integrity Tests (Benchmark Integrity — Mandate P0)
+# ============================================================================
+
+def test_adversarial_duplicate_detections() -> None:
+    """Adversarial test: multiple overlapping detections for the same single GT box.
+
+    Only the highest-confidence candidate must be marked as TP; all others must be FP.
+    """
+    gt_boxes = [
+        GroundTruthBox(entity_id="gt_1", class_name="table", box_2d=(100.0, 100.0, 300.0, 300.0), image_id="img_1")
+    ]
+
+    class MockPred:
+        def __init__(self, conf: float, offset: float):
+            self.class_name = "table"
+            self.box_2d = (100.0 + offset, 100.0 + offset, 300.0 + offset, 300.0 + offset)
+            self.confidence = conf
+            self.source_image_id = "img_1"
+
+    preds = [
+        MockPred(0.95, 0.0),   # True Positive
+        MockPred(0.85, 2.0),   # Duplicate FP
+        MockPred(0.75, 4.0),   # Duplicate FP
+        MockPred(0.65, 5.0),   # Duplicate FP
+    ]
+
+    metrics = evaluate_detections(gt_boxes, preds, iou_threshold=0.50)
+    assert metrics.total_gt == 1
+    assert metrics.total_predictions == 4
+    assert metrics.true_positives == 1
+    assert metrics.false_positives == 3
+    assert metrics.false_negatives == 0
+    assert metrics.micro_precision == pytest.approx(0.25)
+    assert metrics.micro_recall == pytest.approx(1.0)
+
+
+def test_adversarial_wrong_class_detections() -> None:
+    """Adversarial test: near-perfect bounding box spatial match, but completely wrong class.
+
+    Must count as 0 TP, 1 FP, 1 FN.
+    """
+    gt_boxes = [
+        GroundTruthBox(entity_id="gt_1", class_name="door", box_2d=(50.0, 50.0, 200.0, 400.0), image_id="img_1")
+    ]
+
+    class MockPred:
+        def __init__(self):
+            self.class_name = "table"  # Incompatible with door
+            self.box_2d = (50.0, 50.0, 200.0, 400.0)
+            self.confidence = 0.99
+            self.source_image_id = "img_1"
+
+    preds = [MockPred()]
+    metrics = evaluate_detections(gt_boxes, preds, iou_threshold=0.50)
+    assert metrics.true_positives == 0
+    assert metrics.false_positives == 1
+    assert metrics.false_negatives == 1
+    assert metrics.micro_precision == 0.0
+    assert metrics.micro_recall == 0.0
+
+
+def test_adversarial_missed_detections() -> None:
+    """Adversarial test: multiple ground truth objects present, zero detections emitted."""
+    gt_boxes = [
+        GroundTruthBox(entity_id="gt_1", class_name="lamp", box_2d=(10.0, 10.0, 50.0, 50.0), image_id="img_1"),
+        GroundTruthBox(entity_id="gt_2", class_name="chair", box_2d=(60.0, 60.0, 120.0, 120.0), image_id="img_1"),
+    ]
+
+    metrics = evaluate_detections(gt_boxes, [], iou_threshold=0.50)
+    assert metrics.total_gt == 2
+    assert metrics.total_predictions == 0
+    assert metrics.true_positives == 0
+    assert metrics.false_positives == 0
+    assert metrics.false_negatives == 2
+    assert metrics.macro_recall == 0.0
+    assert metrics.average_precision == 0.0
+
+
+def test_adversarial_repeated_objects() -> None:
+    """Adversarial test: two identical objects of the same class placed adjacent to each other.
+
+    One prediction matching object A must not satisfy object B.
+    """
+    gt_boxes = [
+        GroundTruthBox(entity_id="chair_left", class_name="chair", box_2d=(100.0, 100.0, 200.0, 200.0), image_id="img_1"),
+        GroundTruthBox(entity_id="chair_right", class_name="chair", box_2d=(220.0, 100.0, 320.0, 200.0), image_id="img_1"),
+    ]
+
+    class MockPred:
+        def __init__(self):
+            self.class_name = "chair"
+            self.box_2d = (101.0, 101.0, 199.0, 199.0)
+            self.confidence = 0.90
+            self.source_image_id = "img_1"
+
+    preds = [MockPred()]
+    metrics = evaluate_detections(gt_boxes, preds, iou_threshold=0.50)
+    assert metrics.total_gt == 2
+    assert metrics.total_predictions == 1
+    assert metrics.true_positives == 1
+    assert metrics.false_positives == 0
+    assert metrics.false_negatives == 1
+    assert metrics.per_class_recall["chair"] == 0.50
+
+
+def test_adversarial_empty_ground_truth_never_silent_pass() -> None:
+    """Adversarial test: empty ground truth populations must NEVER return silent 1.0 passing scores."""
+    # 1. Detection with 0 GT
+    det_metrics = evaluate_detections([], [], iou_threshold=0.50)
+    assert det_metrics.status == "unmeasured_no_gt"
+    assert det_metrics.macro_recall is None
+    assert det_metrics.macro_f1 is None
+    assert det_metrics.average_precision is None
+
+    # 2. Part hierarchy with 0 GT links
+    part_metrics = evaluate_part_hierarchy([], [])
+    assert part_metrics.status == "unmeasured_no_gt"
+    assert part_metrics.recall is None
+    assert part_metrics.f1 is None
+    assert part_metrics.precision is None
+
+    # 3. Mask evaluation with 0 GT masks
+    mask_metrics = evaluate_mask_quality([], [])
+    assert mask_metrics.status == "unmeasured_no_gt"
+    assert mask_metrics.mean_mask_iou is None
+    assert mask_metrics.median_mask_iou is None
+    assert mask_metrics.mean_boundary_iou is None
+
+    # 4. Temporal tracking with 0 GT trajectories
+    track_metrics = evaluate_temporal_tracking({}, {})
+    assert track_metrics.status == "unmeasured_no_gt"
+    assert track_metrics.idf1 is None
+    assert track_metrics.id_recall is None
+    assert track_metrics.mota is None
+
+    # 5. Multi-view association with 0 GT pairs
+    mv_metrics = evaluate_multiview_association({}, [], [])
+    assert mv_metrics.status == "unmeasured_no_gt"
+    assert mv_metrics.association_recall is None
+    assert mv_metrics.association_precision is None
+
+
+def test_adversarial_missing_predictions_zero_score() -> None:
+    """Adversarial test: zero predictions when GT exists must produce zero score, not crash."""
+    gt_boxes = [
+        GroundTruthBox(entity_id="g1", class_name="table", box_2d=(10.0, 10.0, 50.0, 50.0), image_id="img_1")
+    ]
+    det_metrics = evaluate_detections(gt_boxes, [], iou_threshold=0.50)
+    assert det_metrics.status == "measured"
+    assert det_metrics.true_positives == 0
+    assert det_metrics.false_negatives == 1
+    assert det_metrics.macro_recall == 0.0
+    assert det_metrics.macro_f1 == 0.0
+    assert det_metrics.average_precision == 0.0
+
+
+def test_benchmark_split_dev_and_test_separation() -> None:
+    """Validates strict separation of development and held-out test splits."""
+    from benchmarks.perception.real_data_benchmark import load_ground_truth_from_dataset
+
+    ds_dir = Path("datasets/real_room_capture")
+    if (ds_dir / "ground_truth_identities.json").is_file():
+        dev_boxes, dev_meta = load_ground_truth_from_dataset(ds_dir, split="dev")
+        test_boxes, test_meta = load_ground_truth_from_dataset(ds_dir, split="test")
+        all_boxes, all_meta = load_ground_truth_from_dataset(ds_dir, split="all")
+
+        assert len(dev_boxes) == 55  # 11 images x 5 objects
+        assert len(test_boxes) == 50  # 10 images x 5 objects
+        assert len(all_boxes) == 105
+
+        dev_images = set(b.image_id for b in dev_boxes)
+        test_images = set(b.image_id for b in test_boxes)
+
+        # Mutually exclusive splits
+        assert len(dev_images & test_images) == 0
+        assert len(dev_images | test_images) == 21
+        assert "IMG_0000.jpg" in dev_images
+        assert "IMG_0010.jpg" in dev_images
+        assert "IMG_0011.jpg" in test_images
+        assert "IMG_0020.jpg" in test_images
+
 

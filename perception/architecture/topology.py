@@ -97,6 +97,8 @@ class TopologyPromotionResult:
     #: docstring: evidence-side ring-closure detection is authoritative
     #: whenever it has run). A refusal, recorded here, not a fabrication.
     unmatched_room_ids: Tuple[str, ...] = ()
+    #: RoomGraph.room_id -> promoted ROOM entity id (what connect_rooms needs to wire evidenced links).
+    room_entity_by_graph_id: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -419,7 +421,26 @@ def promote_building_topology(
         room_ids=tuple(room_ids),
         room_parts={k: tuple(v) for k, v in room_parts.items()},
         unmatched_room_ids=tuple(unmatched_room_ids),
+        room_entity_by_graph_id=dict(room_index),
     )
+
+
+def connect_rooms(world, links, room_entity_by_graph_id: Dict[str, str], derived_from: str = "shared_wall_opening") -> int:
+    """Write an evidenced room-to-room connection (both directions, idempotent) as ``CONNECTS`` relationships. A link whose either end
+    was not promoted to a ROOM entity is skipped: connectivity is only recorded between rooms that exist in the world. Returns the
+    number of relationships added."""
+    added = 0
+    for a, b in links:
+        ea, eb = room_entity_by_graph_id.get(a), room_entity_by_graph_id.get(b)
+        if not ea or not eb or ea == eb or ea not in world.entities or eb not in world.entities:
+            continue
+        for src, dst in ((ea, eb), (eb, ea)):
+            ent = world.entities[src]
+            if not any(r.kind == RelationshipKind.CONNECTS and r.target_id == dst for r in ent.relationships):
+                ent.relationships.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=dst, provenance=Provenance.INFERRED,
+                                                      metadata={"derived_from": derived_from}))
+                added += 1
+    return added
 
 
 # ------------------------------------------------------------------

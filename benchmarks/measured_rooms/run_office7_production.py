@@ -45,8 +45,8 @@ def _peak_memory() -> dict:
     return out
 
 
-def main(frames: Path, out: Path) -> int:
-    photos = sorted(frames.glob("frame-*.color.png"))
+def main(frames: Path, out: Path, pattern: str = "frame-*.color.png") -> int:
+    photos = sorted(frames.glob(pattern))  # any folder of photographs (e.g. ``IMG_*.jpg``); the default is the 7-Scenes colour frames
     if len(photos) < 6:
         print(f"need >= 6 photographs, found {len(photos)}")
         return 2
@@ -78,7 +78,8 @@ def main(frames: Path, out: Path) -> int:
         hashes = {}
         for p in photos:
             data = p.read_bytes()
-            r = c.post(f"/api/uploads?session_id={sid}", headers=H, files={"file": (p.name, data, "image/png")})
+            mime = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+            r = c.post(f"/api/uploads?session_id={sid}", headers=H, files={"file": (p.name, data, mime)})
             assert r.status_code == 201, r.text
             hashes[p.name] = hashlib.sha256(data).hexdigest()
         jid = c.post(f"/api/sessions/{sid}/reconstruct", headers=H).json()["job_id"]
@@ -100,4 +101,4 @@ def main(frames: Path, out: Path) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2])))
+    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2]), *(sys.argv[3:4])))

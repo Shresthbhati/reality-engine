@@ -227,6 +227,7 @@ def test_without_cameras_nothing_is_lifted_and_the_reason_is_recorded(tmp_path, 
 
 
 def test_surface_entities_cite_the_depth_records_they_were_fitted_from(tmp_path, photos):
+    pytest.importorskip("open3d")  # optional geometry extra: absent from the CI dev install, where the stage records the step as unavailable
     from worldstore.store import WorldStore
 
     r = _run(tmp_path, photos, _Depth(_per_view()), points3d=_points())

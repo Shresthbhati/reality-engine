@@ -89,6 +89,7 @@ def test_the_production_stage_uses_spatial_intelligence_and_writes_its_results_i
 
 
 def test_depth_fusion_runs_in_the_production_stage_and_any_surface_it_records_is_a_real_stored_artifact(tmp_path, photos, monkeypatch):  # noqa: F811
+    pytest.importorskip("open3d")  # optional geometry extra: absent from the CI dev install, where the stage records the step as unavailable
     import hashlib
 
     monkeypatch.delenv(ew.ENV_LIFT, raising=False)

@@ -255,10 +255,18 @@ async def propose_run_world(
             "next": f"review, then POST /api/worlds/{world_id}/proposals/{p.proposal_id}/accept (entity_ids to pick a subset)"}
 
 
+def _require_fresh(head: str, expected: str | None) -> None:
+    """A correction made while looking at version X must not silently land on a newer version: when the caller says which version it
+    saw (``expected_version_id``) and HEAD has moved, refuse (409) so the user reloads and re-decides."""
+    if expected and expected != head:
+        raise HTTPException(409, f"stale: this correction was made against version {expected} but the run's HEAD is {head}; reload and retry")
+
+
 class MergeBody(BaseModel):
     other_entity_id: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)
     acknowledge_same_image: bool = False
+    expected_version_id: str | None = Field(None, max_length=200)
 
 
 @evidence_world_router.post("/{run_id}/entities/{entity_id}/merge")
@@ -285,6 +293,7 @@ async def merge_entities_route(
     head = head_version(d)
     if not head:
         raise HTTPException(404, "No persisted world for this run")
+    _require_fresh(head, getattr(body, "expected_version_id", None))
     if body.other_entity_id == entity_id:
         raise HTTPException(422, "an entity cannot be merged with itself")
     store = WorldStore(d / WORLDSTORE_REL)
@@ -359,6 +368,7 @@ async def merge_entities_route(
 class SplitBody(BaseModel):
     detach_observation_ids: list[str] = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)
+    expected_version_id: str | None = Field(None, max_length=200)
 
 
 @evidence_world_router.post("/{run_id}/entities/{entity_id}/split")
@@ -385,6 +395,7 @@ async def split_entity_route(
     head = head_version(d)
     if not head:
         raise HTTPException(404, "No persisted world for this run")
+    _require_fresh(head, getattr(body, "expected_version_id", None))
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)
@@ -456,6 +467,7 @@ async def split_entity_route(
 class ReclassifyBody(BaseModel):
     new_class: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=1000)
+    expected_version_id: str | None = Field(None, max_length=200)
 
 
 @evidence_world_router.post("/{run_id}/entities/{entity_id}/reclassify")
@@ -476,6 +488,7 @@ async def reclassify_entity_route(
     head = head_version(d)
     if not head:
         raise HTTPException(404, "No persisted world for this run")
+    _require_fresh(head, getattr(body, "expected_version_id", None))
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)

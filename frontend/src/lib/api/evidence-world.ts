@@ -139,10 +139,10 @@ export interface EvidenceCorrectionResult {
 }
 
 /** Reclassify one entity of the run's persisted world. Saves a NEW version; the original evidence is untouched (server-checked). */
-export function reclassifyEvidenceEntity(worldId: string, runId: string, entityId: string, newClass: string, note = "") {
+export function reclassifyEvidenceEntity(worldId: string, runId: string, entityId: string, newClass: string, note = "", expectedVersionId?: string) {
   return apiPost<EvidenceCorrectionResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/reclassify`,
-    { new_class: newClass, note },
+    { new_class: newClass, note, expected_version_id: expectedVersionId },
   );
 }
 
@@ -157,10 +157,10 @@ export interface EvidenceMergeResult {
 
 /** Identity correction: "otherEntityId is the same object as entityId". The server rebuilds the merged entity from the raw evidence of
  * both and saves a new version; it refuses (422) two entities detected in the same photograph unless acknowledged. */
-export function mergeEvidenceEntities(worldId: string, runId: string, entityId: string, otherEntityId: string, acknowledgeSameImage = false, note = "") {
+export function mergeEvidenceEntities(worldId: string, runId: string, entityId: string, otherEntityId: string, acknowledgeSameImage = false, note = "", expectedVersionId?: string) {
   return apiPost<EvidenceMergeResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/merge`,
-    { other_entity_id: otherEntityId, note, acknowledge_same_image: acknowledgeSameImage },
+    { other_entity_id: otherEntityId, note, acknowledge_same_image: acknowledgeSameImage, expected_version_id: expectedVersionId },
   );
 }
 
@@ -186,10 +186,10 @@ export interface EvidenceSplitResult {
 
 /** Identity correction: "these detections are a different object". The server moves them (and their derived observations) to a NEW
  * entity, rebuilds both from their own raw evidence and saves a new version; it refuses to leave the original with no detection. */
-export function splitEvidenceEntity(worldId: string, runId: string, entityId: string, detachObservationIds: string[], note = "") {
+export function splitEvidenceEntity(worldId: string, runId: string, entityId: string, detachObservationIds: string[], note = "", expectedVersionId?: string) {
   return apiPost<EvidenceSplitResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/split`,
-    { detach_observation_ids: detachObservationIds, note },
+    { detach_observation_ids: detachObservationIds, note, expected_version_id: expectedVersionId },
   );
 }
 

@@ -87,6 +87,9 @@ export default function EvidenceRunPanel({
   const [splitIds, setSplitIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The version this panel last saw for the run: corrections are sent against it so the server refuses (409) one made on a version that
+  // has since moved, instead of silently stacking it on a newer world.
+  const [headVersion, setHeadVersion] = useState<{ runId: string; version: string } | null>(null);
   const inspect = (id: string) =>
     runId &&
     getEvidenceEntity(worldId, runId, id)
@@ -296,8 +299,11 @@ export default function EvidenceRunPanel({
                   e.preventDefault();
                   const cls = corrected.trim();
                   if (!cls || !runId || !selectedId) return;
-                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls)
-                    .then((r) => setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`))
+                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
+                    .then((r) => {
+                      setHeadVersion({ runId, version: r.version_id });
+                      setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`);
+                    })
                     .catch((er) => setError(err(er, "Could not save the correction.")));
                 }}
               >
@@ -319,9 +325,10 @@ export default function EvidenceRunPanel({
                   const me = selectedId.replace(/^ent-/, "");
                   const other = mergeWith.replace(/^ent-/, "");
                   const send = (ack: boolean) =>
-                    mergeEvidenceEntities(worldId, runId, me, other, ack).then((r) =>
-                      setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`),
-                    );
+                    mergeEvidenceEntities(worldId, runId, me, other, ack, "", headVersion?.runId === runId ? headVersion.version : w?.version_id).then((r) => {
+                      setHeadVersion({ runId, version: r.version_id });
+                      setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`);
+                    });
                   send(false).catch((er) => {
                     const msg = err(er, "Could not merge.");
                     if (msg.includes("same photograph") && window.confirm(`${msg}
@@ -348,8 +355,9 @@ Merge anyway (duplicate detections of one object)?`)) {
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (!runId || !selectedId || splitIds.length === 0) return;
-                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds)
+                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
                       .then((r) => {
+                        setHeadVersion({ runId, version: r.version_id });
                         setSplitIds([]);
                         setNotice(`Split: ${splitIds.length} detection(s) moved to new entity ${r.new_entity_id}; both rebuilt from their own evidence; saved as version ${r.version_id}. Original evidence unchanged.`);
                       })

@@ -45,7 +45,7 @@ def test_successful_reconstruct_records_the_fine_stages_in_order(client, tmp_pat
     skipped = {"depth", "perception", "mesh", "dense", "detail", "quality_report"}  # no mesh -> NOT_EVALUABLE, skipped
     assert {n for n, st in status.items() if st == "skipped"} == skipped
     assert {st for n, st in status.items() if n not in skipped} == {"succeeded"}
-    assert all(i["version"] == "1" for i in items)
+    assert all(i["version"] == ("2" if i["name"] == "compile_validate" else "1") for i in items)  # compile_validate v2: declares its world_ir output
     assert all(i["error"] is None for i in items)
 
 

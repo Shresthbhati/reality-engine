@@ -886,6 +886,15 @@ def measure_hardware_telemetry() -> dict[str, Any]:
             telemetry["peak_rss_mb"] = round(peak / (1024 * 1024), 2)
     except Exception:
         pass
+    if telemetry["peak_rss_mb"] is None:  # no psutil: POSIX getrusage (KiB on Linux, bytes on macOS)
+        try:
+            import resource
+            import sys as _sys
+
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            telemetry["peak_rss_mb"] = round(rss / (1024 * 1024) if _sys.platform == "darwin" else rss / 1024, 2)
+        except Exception:
+            pass
 
     try:
         import torch

@@ -99,7 +99,7 @@ def test_stages_returns_rows_in_order(api):
     assert [i["name"] for i in items] == ["a", "b", "c"]
     first = items[0]
     assert set(first) == {
-        "name", "version", "status", "attempt", "metrics", "warnings", "error", "started_at", "ended_at", "duration_s",
+        "name", "version", "status", "attempt", "metrics", "warnings", "error", "started_at", "ended_at", "duration_s", "outputs",
     }
     assert first["status"] == "succeeded" and first["attempt"] == 1 and first["metrics"] == {"n": 0}
     assert first["duration_s"] == pytest.approx(2.0)

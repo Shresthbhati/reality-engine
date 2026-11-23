@@ -1353,6 +1353,12 @@ def run_real_perception_benchmark(
                 frame_observations[frame_idx].append(b)
                 obs_by_image[img_name].append(b)
 
+        import gc
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
     # 4. Temporal Tracking Evaluation
     tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=450.0)
     predicted_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]] = defaultdict(list)

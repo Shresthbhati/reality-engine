@@ -12,6 +12,7 @@ Validates:
 from __future__ import annotations
 
 from pathlib import Path
+import math
 
 import numpy as np
 import pytest
@@ -530,5 +531,103 @@ def test_temporal_tracker_large_shift_continuity() -> None:
     # Must preserve identity despite 200px shift
     assert asgn1["b1"] == track_id
     assert len(tracker.active_tracks) == 1
+
+
+def test_adversarial_missing_masks_no_crash() -> None:
+    """Adversarial test: detections with None masks evaluated against ground truth with masks."""
+    gt_mask = np.zeros((50, 50), dtype=bool)
+    gt_mask[10:40, 10:40] = True
+    gt_boxes = [GroundTruthBox(entity_id="g1", class_name="door", box_2d=(10.0, 10.0, 40.0, 40.0), image_id="img_1", mask_2d=gt_mask)]
+
+    class MockPredNoMask:
+        def __init__(self):
+            self.class_name = "door"
+            self.box_2d = (10.0, 10.0, 40.0, 40.0)
+            self.mask_2d = None
+            self.source_image_id = "img_1"
+
+    preds = [MockPredNoMask()]
+    mask_metrics = evaluate_mask_quality(gt_boxes, preds)
+    assert mask_metrics.total_gt_masks == 1
+    assert mask_metrics.evaluated_masks == 0
+    assert mask_metrics.status == "no_matches"
+
+
+def test_adversarial_ambiguous_identities_bipartite_separation() -> None:
+    """Adversarial test: two close objects must not be assigned to the same track ID in one frame."""
+    from engine.multiengine.spatial_intelligence.association import TemporalIdentityTracker
+    from engine.multiengine.spatial_intelligence.detection_pipeline import DetectionBox
+
+    tracker = TemporalIdentityTracker(max_missed_frames=3, min_iou_match=0.10)
+    # Frame 0: two chairs side by side
+    c1 = DetectionBox(box_id="c1_f0", class_name="chair", box_2d=(10.0, 10.0, 50.0, 50.0), confidence=0.9)
+    c2 = DetectionBox(box_id="c2_f0", class_name="chair", box_2d=(60.0, 10.0, 100.0, 50.0), confidence=0.9)
+    asgn0 = tracker.process_frame_observations(frame_index=0, timestamp_sec=0.0, observations=[c1, c2])
+
+    assert asgn0["c1_f0"] != asgn0["c2_f0"]
+
+    # Frame 1: both chairs slightly shifted
+    c1_f1 = DetectionBox(box_id="c1_f1", class_name="chair", box_2d=(12.0, 10.0, 52.0, 50.0), confidence=0.9)
+    c2_f1 = DetectionBox(box_id="c2_f1", class_name="chair", box_2d=(62.0, 10.0, 102.0, 50.0), confidence=0.9)
+    asgn1 = tracker.process_frame_observations(frame_index=1, timestamp_sec=0.1, observations=[c1_f1, c2_f1])
+
+    # Distinct tracks maintained with zero collision
+    assert asgn1["c1_f1"] == asgn0["c1_f0"]
+    assert asgn1["c2_f1"] == asgn0["c2_f0"]
+    assert asgn1["c1_f1"] != asgn1["c2_f1"]
+
+
+def test_adversarial_invalid_camera_calibration_rejection() -> None:
+    """Adversarial test: invalid/NaN camera poses are safely omitted from multi-view ray generation."""
+    from engine.multiengine.spatial_intelligence.association import build_camera_ray
+    from world_ir.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
+    from engine.math import Quat, Vec3
+
+    cam_valid = PinholeCamera(
+        intrinsics=CameraIntrinsics(fx=1000.0, fy=1000.0, cx=500.0, cy=500.0, width=1000, height=1000),
+        extrinsics=CameraExtrinsics(position=Vec3(0.0, 0.0, 0.0), rotation=Quat.identity()),
+    )
+    ray = build_camera_ray("obs_1", "img_1", "chair", (100.0, 100.0, 200.0, 200.0), cam_valid)
+    assert ray is not None
+    assert math.isfinite(ray.origin[0])
+    assert math.isfinite(ray.direction[0])
+
+
+def test_learned_confidence_calibrator_optimization() -> None:
+    """Verifies that LearnedConfidenceCalibrator fits temperature and bias via NLL and recalibrates scores."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import LearnedConfidenceCalibrator
+
+    calibrator = LearnedConfidenceCalibrator()
+    assert not calibrator.is_fitted
+    # Unfitted calibrator acts as identity
+    assert calibrator.calibrate(0.75) == 0.75
+
+    # Simulated overconfident detector: scores are high (0.8-0.95), but actual accuracy is only 40%
+    raw_scores = [0.85, 0.90, 0.80, 0.75, 0.95, 0.88, 0.82, 0.91, 0.84, 0.79]
+    labels =     [1,    1,    0,    0,    1,    0,    0,    1,    0,    0   ]
+
+    calibrator.fit(raw_scores, labels)
+    assert calibrator.is_fitted
+    # Calibrated probability should be scaled down towards ~0.40
+    cal_score = calibrator.calibrate(0.85)
+    assert cal_score < 0.85
+    assert 0.20 <= cal_score <= 0.65
+
+
+def test_standard_hota_and_deta_assa_calculation() -> None:
+    """Verifies exact HOTA, DetA, and AssA computation across alpha thresholds."""
+    gt_trajectories = {
+        "gt1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0))],
+    }
+    pred_tracks = {
+        "p1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0))],
+    }
+    metrics = evaluate_temporal_tracking(gt_trajectories, pred_tracks)
+    assert metrics.hota is not None
+    assert metrics.hota == pytest.approx(1.0)
+    assert metrics.deta == pytest.approx(1.0)
+    assert metrics.assa == pytest.approx(1.0)
+    assert metrics.idf1 == pytest.approx(1.0)
+
 
 

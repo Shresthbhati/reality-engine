@@ -1146,7 +1146,7 @@ class TemporalIdentityTracker:
                 # Allow match if either IoU meets floor or predicted centroid distance is within range
                 if iou >= self.min_iou_match or c_dist <= self.max_centroid_shift_px:
                     dist_score = max(0.0, 1.0 - (c_dist / self.max_centroid_shift_px))
-                    match_score = 0.45 * iou + 0.35 * dist_score + 0.20 * app_score
+                    match_score = 0.65 * iou + 0.30 * dist_score + 0.05 * app_score
                     candidate_matches.append((match_score, obs, track))
 
         candidate_matches.sort(key=lambda x: x[0], reverse=True)

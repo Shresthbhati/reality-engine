@@ -360,18 +360,12 @@ def get_subpart_detection_targets(parent_class_name: str) -> list[TaxonomyClass]
             seen.add(part_cls.taxonomy_id)
             targets.append(part_cls)
 
-    # 2. Strict taxonomy subparts and hosted components
-    for cls in get_subparts_for_class(parent_cls.taxonomy_id):
-        if cls.taxonomy_id not in seen and cls.taxonomy_id != parent_cls.taxonomy_id:
-            seen.add(cls.taxonomy_id)
-            targets.append(cls)
-
-    # 3. Add named potential parts
-    for part_name in parent_cls.potential_parts:
-        part_cls = resolve_taxonomy_class(part_name)
-        if part_cls.taxonomy_id not in seen and part_cls.taxonomy_id != parent_cls.taxonomy_id:
-            seen.add(part_cls.taxonomy_id)
-            targets.append(part_cls)
+    # 2. Strict taxonomy subparts with direct parent_class relationship
+    for cls in get_all_taxonomy_classes():
+        if cls.parent_class in (parent_cls.taxonomy_id, parent_cls.name):
+            if cls.taxonomy_id not in seen and cls.taxonomy_id != parent_cls.taxonomy_id:
+                seen.add(cls.taxonomy_id)
+                targets.append(cls)
 
     return targets
 
@@ -421,11 +415,11 @@ def extract_appearance_features(image_rgb: np.ndarray, box_2d: Sequence[float]) 
 
 DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
     # Openings and major interior objects
-    "window": 0.50,
-    "table": 0.30,
+    "window": 0.40,
+    "table": 0.28,
     "chair": 0.26,
-    "lamp": 0.26,
-    "door": 0.28,
+    "lamp": 0.22,
+    "door": 0.32,
     # Architectural surfaces and structural elements
     "wall": 0.25,
     "floor": 0.25,
@@ -487,18 +481,73 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
 }
 
 
-def calibrate_detection_confidence(raw_score: float, class_name: str) -> float:
-    """Applies temperature scaling and class-specific sigmoid recalibration.
+class LearnedConfidenceCalibrator:
+    """Empirical temperature and bias scaling calibrator fit on development split."""
 
-    Calibrates raw detector confidence into empirical posterior probability,
-    minimizing Expected Calibration Error (ECE) and Brier scores.
+    def __init__(self, temperature: float = 1.0, bias: float = 0.0) -> None:
+        self.temperature = float(temperature)
+        self.bias = float(bias)
+        self.is_fitted = False
+
+    def fit(self, raw_scores: Sequence[float], binary_labels: Sequence[int]) -> LearnedConfidenceCalibrator:
+        """Fits Platt/temperature scaling logit parameters using NLL minimization on calibration data."""
+        if not raw_scores or len(raw_scores) < 5 or sum(binary_labels) == 0 or sum(binary_labels) == len(binary_labels):
+            self.temperature = 1.0
+            self.bias = 0.0
+            self.is_fitted = False
+            return self
+
+        scores = np.clip(np.asarray(raw_scores, dtype=np.float64), 1e-4, 1.0 - 1e-4)
+        logits = np.log(scores / (1.0 - scores))
+        y = np.asarray(binary_labels, dtype=np.float64)
+
+        from scipy.optimize import minimize
+
+        def nll_loss(params: np.ndarray) -> float:
+            T, b = params[0], params[1]
+            scaled_logits = logits / max(1e-2, T) + b
+            p = 1.0 / (1.0 + np.exp(-np.clip(scaled_logits, -30.0, 30.0)))
+            eps = 1e-7
+            loss = -np.mean(y * np.log(p + eps) + (1.0 - y) * np.log(1.0 - p + eps))
+            return float(loss)
+
+        res = minimize(nll_loss, x0=[1.0, 0.0], bounds=[(0.05, 10.0), (-5.0, 5.0)], method="L-BFGS-B")
+        if res.success:
+            self.temperature = float(res.x[0])
+            self.bias = float(res.x[1])
+            self.is_fitted = True
+        return self
+
+    def calibrate(self, score: float) -> float:
+        """Transforms a raw score into a calibrated posterior probability."""
+        if not self.is_fitted:
+            return float(score)
+        p = float(np.clip(score, 1e-4, 1.0 - 1e-4))
+        logit = math.log(p / (1.0 - p))
+        scaled_logit = logit / max(1e-2, self.temperature) + self.bias
+        calibrated_prob = 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, scaled_logit))))
+        return float(np.clip(calibrated_prob, 0.01, 0.99))
+
+
+def calibrate_detection_confidence(
+    raw_score: float,
+    class_name: str,
+    calibrator: LearnedConfidenceCalibrator | None = None,
+) -> float:
+    """Calibrates raw detector confidence into empirical posterior probability.
+
+    If a learned calibrator (fit on dev split) is provided, it uses the fitted parameters.
+    Otherwise applies class-aware threshold scaling minimizing calibration error.
     """
+    if calibrator is not None and calibrator.is_fitted:
+        return calibrator.calibrate(raw_score)
+
     tax_cls = resolve_taxonomy_class(class_name)
     tau = DEFAULT_CALIBRATED_CLASS_THRESHOLDS.get(class_name, tax_cls.min_detector_confidence)
     p = float(np.clip(raw_score, 0.01, 0.99))
     raw_logit = math.log(p / (1.0 - p))
     thresh_logit = math.log(max(0.05, min(0.95, tau)) / (1.0 - max(0.05, min(0.95, tau))))
-    calibrated_logit = (raw_logit - thresh_logit) / 1.35
+    calibrated_logit = (raw_logit - thresh_logit) / 1.25
     calibrated_prob = 1.0 / (1.0 + math.exp(-calibrated_logit))
     return float(np.clip(calibrated_prob, 0.05, 0.99))
 
@@ -625,13 +674,22 @@ def suppress_duplicates_preserving_parts(
                     object.__setattr__(existing, "parent_box_id", det.box_id)
                 continue
 
-            if iou >= iou_threshold:
-                if are_semantically_compatible(det.class_name, existing.class_name):
-                    # Same physical entity detected multiple times: fuse boxes
-                    fused_with_idx = idx
-                    should_keep = False
-                    break
-                elif (
+            # Calculate containment IoA (Intersection over Area)
+            inter_area = max(0.0, min(det.x2, existing.x2) - max(det.x1, existing.x1)) * max(0.0, min(det.y2, existing.y2) - max(det.y1, existing.y1))
+            area_det = det.area
+            area_existing = existing.area
+            ioa_det = inter_area / area_det if area_det > 0 else 0.0
+            ioa_existing = inter_area / area_existing if area_existing > 0 else 0.0
+
+            is_compat = are_semantically_compatible(det.class_name, existing.class_name)
+
+            if is_compat and (iou >= iou_threshold or ioa_det >= 0.65 or ioa_existing >= 0.65):
+                # Same physical entity detected multiple times or partial sub-window detection: fuse boxes
+                fused_with_idx = idx
+                should_keep = False
+                break
+            elif iou >= iou_threshold:
+                if (
                     det.parent_box_id is not None
                     and existing.parent_box_id is not None
                     and det.parent_box_id == existing.parent_box_id
@@ -645,17 +703,29 @@ def suppress_duplicates_preserving_parts(
                     break
 
         if fused_with_idx is not None:
-            # Fuse coordinates via weighted box fusion (WBF)
+            # Fuse coordinates via weighted box fusion (WBF) or containment adoption
             target = kept[fused_with_idx]
             w1 = target.confidence
             w2 = det.confidence
             w_sum = w1 + w2
-            fused_box = (
-                (target.x1 * w1 + det.x1 * w2) / w_sum,
-                (target.y1 * w1 + det.y1 * w2) / w_sum,
-                (target.x2 * w1 + det.x2 * w2) / w_sum,
-                (target.y2 * w1 + det.y2 * w2) / w_sum,
-            )
+
+            inter_area = max(0.0, min(det.x2, target.x2) - max(det.x1, target.x1)) * max(0.0, min(det.y2, target.y2) - max(det.y1, target.y1))
+            ioa_det = inter_area / det.area if det.area > 0 else 0.0
+            ioa_target = inter_area / target.area if target.area > 0 else 0.0
+
+            if ioa_det >= 0.70 and target.area > det.area:
+                # det is largely inside target: retain target's full bounding box
+                fused_box = target.box_2d
+            elif ioa_target >= 0.70 and det.area > target.area:
+                # target is largely inside det: adopt det's full bounding box
+                fused_box = det.box_2d
+            else:
+                fused_box = (
+                    (target.x1 * w1 + det.x1 * w2) / w_sum,
+                    (target.y1 * w1 + det.y1 * w2) / w_sum,
+                    (target.x2 * w1 + det.x2 * w2) / w_sum,
+                    (target.y2 * w1 + det.y2 * w2) / w_sum,
+                )
             # Combine masks if available
             fused_mask = target.mask_2d
             if det.mask_2d is not None and target.mask_2d is not None:
@@ -985,7 +1055,7 @@ class GroundingDinoDetectorAdapter:
 
     name = "grounding-dino-tiny"
 
-    def __init__(self, box_threshold: float = 0.22, batch_size: int = 4) -> None:
+    def __init__(self, box_threshold: float = 0.22, batch_size: int = 2) -> None:
         self.box_threshold = box_threshold
         self.batch_size = batch_size
         self._proc = None
@@ -1180,11 +1250,13 @@ class DetectionPipeline:
         self,
         detector: DetectorAdapter | None = None,
         segmenter: SegmenterAdapter | None = None,
+        calibrator: LearnedConfidenceCalibrator | None = None,
         tile_size: int = 800,
         tile_overlap: float = 0.25,
     ) -> None:
         self.detector = detector or RuleBasedDetectorAdapter()
         self.segmenter = segmenter or ThresholdSegmenterAdapter()
+        self.calibrator = calibrator
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
 
@@ -1272,7 +1344,7 @@ class DetectionPipeline:
             )
             processed_per_class: dict[str, int] = defaultdict(int)
             for cand in current_candidates:
-                if processed_per_class[cand.class_name] >= 2:
+                if processed_per_class[cand.class_name] >= 1:
                     continue
                 targets = get_subpart_detection_targets(cand.class_name)
                 if not targets:
@@ -1282,10 +1354,20 @@ class DetectionPipeline:
                     continue
                 crop_img = image_rgb[cy1:cy2, cx1:cx2]
                 off_x, off_y = cx1, cy1
+                crop_w = float(cx2 - cx1)
+                crop_h = float(cy2 - cy1)
+                crop_area = crop_w * crop_h
                 target_names = [t.name for t in targets]
                 part_dets = self.detector.detect(crop_img, target_names)
                 for pd in part_dets:
                     if pd.class_name == cand.class_name:
+                        continue
+                    pw = pd.width
+                    ph = pd.height
+                    p_area = pw * ph
+                    # Reject whole-crop hallucinated detections:
+                    # A genuine subpart cannot cover the entire parent host crop
+                    if (pw / crop_w > 0.80 and ph / crop_h > 0.80) or (p_area / crop_area > 0.65):
                         continue
                     px1 = max(0.0, min(float(w), pd.x1 + off_x))
                     py1 = max(0.0, min(float(h), pd.y1 + off_y))
@@ -1367,12 +1449,30 @@ class DetectionPipeline:
             app_feat = extract_appearance_features(image_rgb, det.box_2d)
             combined_attrs["appearance_features"] = app_feat
 
-            cal_conf = det.calibrated_confidence or calibrate_detection_confidence(det.confidence, det.class_name)
+            final_box = det.box_2d
+            if refined_mask is not None and mask_area > 100:
+                ys, xs = np.where(refined_mask)
+                if len(ys) > 0 and len(xs) > 0:
+                    my1, mx1, my2, mx2 = float(np.min(ys)), float(np.min(xs)), float(np.max(ys)), float(np.max(xs))
+                    mask_box = (mx1, my1, mx2, my2)
+                    mb_iou = compute_box_iou(det.box_2d, mask_box)
+                    if mb_iou >= 0.50:
+                        bx1 = 0.70 * mx1 + 0.30 * det.x1
+                        by1 = 0.70 * my1 + 0.30 * det.y1
+                        bx2 = 0.70 * mx2 + 0.30 * det.x2
+                        by2 = 0.70 * my2 + 0.30 * det.y2
+                        final_box = (bx1, by1, bx2, by2)
+
+            cal_conf = det.calibrated_confidence or calibrate_detection_confidence(
+                det.confidence,
+                det.class_name,
+                calibrator=self.calibrator,
+            )
 
             refined_boxes.append(DetectionBox(
                 box_id=det.box_id,
                 class_name=det.class_name,
-                box_2d=det.box_2d,
+                box_2d=final_box,
                 confidence=det.confidence,
                 source_engine=det.source_engine,
                 source_image_id=det.source_image_id,

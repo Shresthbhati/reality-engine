@@ -207,7 +207,7 @@ def build_surface_entities(aligned: Mapping[str, tuple[np.ndarray, Any]], matrix
         report["planes"].append({"id": sid, "kind": p.kind, "inliers": int(len(p.inliers)), "observed_area": round(p.area, 4), "rms": round(p.rms, 5)})
     fused = (fusion or {}).get("mesh_artifact")
     fmesh = (fusion or {}).get("mesh") or {}
-    if with_mesh and fused and fmesh.get("triangles"):
+    if with_mesh and fused and fmesh.get("triangles") and (fusion or {}).get("status") != "partial":  # a partial surface never replaces the other mesh
         # The TSDF surface (cross-view consistency-rejected, per-view contribution measured) REPLACES the ball-pivoting mesh: one surface
         # representation, never two competing meshes of the same geometry. The artifact already exists in the matrix store.
         lo, hi = fmesh["bounds_gauge"]

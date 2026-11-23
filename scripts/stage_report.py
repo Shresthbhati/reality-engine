@@ -705,6 +705,7 @@ def render_md(data: dict) -> str:
         if r.get("sift_check"):
             L += [f"**Independent SIFT+RANSAC check**: `{json.dumps({k: v for k, v in r['sift_check'].items() if k != 'top_pairs'})}`", ""]
         L += [f"warnings logged: {len(r.get('logged_warnings', []))}", ""]
+    L += data.get("fusion_md", [])  # measured fusion section (depth_fusion.py) lives in the JSON so regeneration keeps it
     return "\n".join(L) + "\n"
 
 

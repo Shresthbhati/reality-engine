@@ -428,6 +428,10 @@ def _fuse_depth(matrix: EvidenceMatrix, items: Sequence[tuple[str, Any, np.ndarr
         uri, sha = matrix.artifacts.put(res.mesh_ply)
         out["mesh_artifact"] = {"uri": uri, "sha256": sha, "bytes": len(res.mesh_ply), "format": "ply", "frame": "job",
                                 "scale_state": "SFM_GAUGE", "scale_units": "sfm_units"}
+        for key, blob in (("provenance_artifact", res.provenance_json), ("provenance_vertex_table_artifact", res.provenance_npz)):
+            if blob is not None:  # per-vertex provenance sidecars: content-addressed beside the mesh, hashes also in report["provenance"]
+                p_uri, p_sha = matrix.artifacts.put(blob)
+                out[key] = {"uri": p_uri, "sha256": p_sha, "bytes": len(blob)}
     return out
 
 

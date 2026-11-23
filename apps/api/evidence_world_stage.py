@@ -512,7 +512,10 @@ def readiness(root: Path) -> dict[str, Any]:
         fus = (snap.get("after_stages") or {}).get("fusion")
         if fus:
             out["fusion"] = {k: fus.get(k) for k in ("status", "reason", "error", "views_offered", "views_with_valid_depth", "voxel_length_gauge",
-                                                    "volume_resolution", "resolution_capped", "mesh", "mesh_support", "per_view", "mesh_artifact")}
+                                                    "volume_resolution", "resolution_capped", "mesh", "mesh_support", "per_view", "mesh_artifact",
+                                                    "complete", "error_code", "degradations", "views_excluded", "views_not_integrated", "input_validation",
+                                                    "provenance", "provenance_artifact", "provenance_vertex_table_artifact",
+                                                    "unsupported_regions", "geometry_confidence")}
             art = fus.get("mesh_artifact")
             if art:  # a recorded surface must still exist and still match its hash: nothing is trusted because it was once recorded
                 try:

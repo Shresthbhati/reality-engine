@@ -562,3 +562,27 @@ warnings logged: 0
 
 warnings logged: 0
 
+## Fusion consistency and provenance (Workstream 4; `engine/multiengine/depth_fusion.py`)
+
+Status: **not verified on real data and not verified through Open3D.** The development venv (Python 3.14) has no Open3D wheel, so the TSDF step was never run here (`tests/test_depth_fusion.py` and the one real-integrator test in `tests/test_fusion_consistency.py` skip). Everything before and after the TSDF step is numpy and was exercised on a synthetic analytic room (floor, ceiling, two walls; exact depth) with the TSDF step replaced by an analytic room mesh. No real depth artifacts exist in `datasets/south_building` or `datasets/real_room_capture` (the real runs above stop at `dense: skipped`, world not METRIC-scale).
+
+Wiring (documented, not changed): the evidence-world route reaches the TSDF via `apps/api/evidence_world_stage.py` -> `spatial_stage._fuse_depth` -> `fuse_depth_to_surface`. The `/reconstruct` job path (`apps/api/jobs.py`) uses COLMAP MVS only and never calls it. `reconstruction/fusion/robust_fusion.py` fuses scalar quantities / registered point clouds; it shares no pose or back-projection helper with `depth_fusion` (no duplication, nothing consolidated).
+
+Synthetic measurement, 5 clean views (160x120):
+
+| view | valid depth px | integrated | rejected inconsistent | occlusion-boundary masked | unsupported (single view) | mesh vertices on this depth | probe support as given |
+|---|---|---|---|---|---|---|---|
+| v0 | 19200 | 19200 | 0 | 0 | 2522 | 1069 | 0.8663 |
+| v1 | 19200 | 19200 | 0 | 0 | 1594 | 586 | 0.9187 |
+| v2 | 19200 | 19200 | 0 | 0 | 9658 | 789 | 0.4927 |
+| v3 | 19200 | 19200 | 0 | 0 | 1627 | 656 | 0.9143 |
+| v4 | 19200 | 19200 | 0 | 0 | 2931 | 221 | 0.851 |
+
+Vertices on >=1 view: 0.3256, on >=2 views: 0.2399; mean vertex confidence 0.1734; orientation flipped fraction vs viewing rays 0.0 (2588 triangles evaluated). These describe the synthetic analytic mesh, not a fused real surface.
+
+Outcomes (typed `error_code` / per-view `code`): `MISSING_ARTIFACT`, `CORRUPT_DEPTH`, `CORRUPT_COLOR`, `SHAPE_MISMATCH`, `INVALID_CAMERA`, `WRONG_CAMERA_TRANSFORM`, `DEPTH_SCALE_MISMATCH`, `SINGLE_VIEW`, `DISCONNECTED_VIEW_GRAPH`, `INTERRUPTED`, `LIBRARY_UNAVAILABLE`. An excluded view makes the result `partial` (never `ran`); `FusionResult.complete` is True only when every offered view was integrated.
+
+Provenance granularity: PER VERTEX (npz table: contributing views, confidence weight, signed depth residual) aggregated PER CONNECTED COMPONENT (json, with supporting view sets); not per voxel, not per triangle patch. Sidecars carry the sha256 of the mesh, of the vertex table, and of each depth artifact; `persist_fusion` writes temp + atomic rename and names an incomplete surface `*.partial.*`.
+
+What the checks cannot decide: (1) the pose / scale probes need overlap and at least 3 consistent views to attribute a fault (with 2 disagreeing views both are excluded, `scale_attribution_ambiguous`); (2) a boundary loop is a hole OR the open border of the observed surface; (3) uncertainty is measured only for vertices on >=2 views (RMS of depth residuals, gauge units), single-view vertices are reported unmeasured; (4) the confidence gate does not weight the TSDF (Open3D `integrate` has no per-pixel weight); (5) mesh orientation vs Open3D's marching-cubes winding is untested here, a global inversion is reported, not folded into `valid`.
+

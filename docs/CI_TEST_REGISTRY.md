@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 607
+Total: 608
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -341,6 +341,7 @@ Total: 607
 - `tests/test_frontend_no_fake_state.py`
 - `tests/test_frontend_sessions_proxy_contract.py`
 - `tests/test_furniture_from_detections.py`
+- `tests/test_fusion_consistency.py`
 - `tests/test_fusion_pipeline.py`
 - `tests/test_fusion_stage.py`
 - `tests/test_gaussian_splats.py`

@@ -275,6 +275,8 @@ async def calibrate_run_world(
         raise HTTPException(409, str(exc)) from exc
     except (CalibrationRefused, WorldStoreError) as exc:
         raise HTTPException(422, f"the calibration could not be applied and no version was saved: {exc}") from exc
+    except OSError as exc:  # disk full / permission / I/O while persisting: nothing was adopted, the request is safe to retry
+        raise HTTPException(503, f"the calibrated version could not be persisted and nothing was changed; retry: {exc}") from exc
     return {"version_id": vid, "parent_version_id": head, "status": cal.status, "scale_m_per_gauge": cal.scale_m_per_gauge,
             "scale_sigma": cal.scale_sigma, "calibration_id": record["id"], "applied": record["applied"], "warnings": cal.warnings,
             "idempotent": False, "calibration": cal.to_dict()}

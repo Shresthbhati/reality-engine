@@ -763,7 +763,7 @@ def test_learned_confidence_calibrator_per_class_and_provenance(tmp_path: Path) 
         "sample_count": len(raw_scores),
     }
 
-    cal.fit(raw_scores, labels, class_names=classes, provenance=provenance_meta)
+    cal.fit(raw_scores, labels, class_names=classes, min_class_samples=4, min_class_positives=2, min_class_negatives=2, provenance=provenance_meta)
     assert cal.is_fitted
     assert "pre_calibration" in cal.provenance
     assert "post_calibration" in cal.provenance
@@ -789,6 +789,248 @@ def test_learned_confidence_calibrator_per_class_and_provenance(tmp_path: Path) 
     assert loaded.provenance["dataset_split"] == "dev"
     res_loaded = loaded.calibrate(0.85, class_name="door")
     assert res_loaded.calibrated_probability == pytest.approx(res_door.calibrated_probability, rel=1e-4)
+
+
+def test_adversarial_tracking_suite() -> None:
+    """Adversarial validation of temporal tracking for ID switches, fragmentations, false positives, and overlapping predictions."""
+    from benchmarks.perception.real_data_benchmark import evaluate_temporal_tracking
+
+    # Case 1: Pure identity cross-over (two tracks cross and tracker swaps identities)
+    # GT1: stays at (0, 0, 10, 10). GT2: stays at (50, 50, 60, 60).
+    # Frames 0, 1: correct. Frame 2: p1 swaps to GT2, p2 swaps to GT1.
+    gt_cross = {
+        "gt1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0)), (2, (0.0, 0.0, 10.0, 10.0))],
+        "gt2": [(0, (50.0, 50.0, 60.0, 60.0)), (1, (50.0, 50.0, 60.0, 60.0)), (2, (50.0, 50.0, 60.0, 60.0))],
+    }
+    pred_cross = {
+        "p1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0)), (2, (50.0, 50.0, 60.0, 60.0))],
+        "p2": [(0, (50.0, 50.0, 60.0, 60.0)), (1, (50.0, 50.0, 60.0, 60.0)), (2, (0.0, 0.0, 10.0, 10.0))],
+    }
+    m_cross = evaluate_temporal_tracking(gt_cross, pred_cross, iou_threshold=0.50)
+    assert m_cross.id_switches == 2
+    assert m_cross.frame_fn == 0
+    assert m_cross.frame_fp == 0
+    assert m_cross.frame_tp == 6
+    # 6 total GT instances, 2 ID switches -> MOTA = 1 - 2/6 = 0.6667
+    assert m_cross.mota == pytest.approx(4.0 / 6.0)
+
+    # Case 2: Track fragmentation (GT present in frames 0, 1, 2, 3; prediction missing at frame 2)
+    gt_frag = {
+        "gt1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0)), (2, (0.0, 0.0, 10.0, 10.0)), (3, (0.0, 0.0, 10.0, 10.0))],
+    }
+    pred_frag = {
+        "p1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0)), (3, (0.0, 0.0, 10.0, 10.0))],
+    }
+    m_frag = evaluate_temporal_tracking(gt_frag, pred_frag, iou_threshold=0.50)
+    assert m_frag.track_fragmentations == 1
+    assert m_frag.frame_fn == 1
+    assert m_frag.frame_tp == 3
+    assert m_frag.id_switches == 0
+    # MOTA = 1 - (1 FN + 0 FP + 0 IDSW) / 4 = 0.75
+    assert m_frag.mota == pytest.approx(0.75)
+
+    # Case 3: Overlapping candidate predictions (2 predictions competing for 1 GT)
+    gt_overlap = {
+        "gt1": [(0, (0.0, 0.0, 10.0, 10.0))],
+    }
+    pred_overlap = {
+        "p1": [(0, (0.0, 0.0, 10.0, 10.0))],
+        "p2": [(0, (0.0, 0.0, 10.0, 10.0))],  # Duplicate identical bounding box
+    }
+    m_overlap = evaluate_temporal_tracking(gt_overlap, pred_overlap, iou_threshold=0.50)
+    assert m_overlap.frame_tp == 1
+    assert m_overlap.frame_fp == 1
+    assert m_overlap.frame_fn == 0
+    # MOTA = 1 - (0 FN + 1 FP + 0 IDSW) / 1 = 0.0
+    assert m_overlap.mota == pytest.approx(0.0)
+
+
+def test_reference_boundary_iou_and_bf_score_analytical() -> None:
+    """Verifies boundary IoU and BF-score against analytical geometric properties."""
+    from benchmarks.perception.real_data_benchmark import compute_boundary_f_score, compute_boundary_iou
+
+    # 1. Identical square mask (100x100)
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[30:70, 30:70] = True
+    assert compute_boundary_iou(mask, mask, dilation_radius=2) == 1.0
+    assert compute_boundary_f_score(mask, mask, distance_threshold=2.0) == 1.0
+
+    # 2. Completely disjoint masks
+    mask_disjoint = np.zeros((100, 100), dtype=bool)
+    mask_disjoint[5:20, 5:20] = True
+    assert compute_boundary_iou(mask, mask_disjoint, dilation_radius=2) == 0.0
+    assert compute_boundary_f_score(mask, mask_disjoint, distance_threshold=2.0) == 0.0
+
+    # 3. Both empty masks
+    empty = np.zeros((100, 100), dtype=bool)
+    assert compute_boundary_iou(empty, empty) == 1.0
+    assert compute_boundary_f_score(empty, empty) == 1.0
+
+    # 4. One empty mask
+    assert compute_boundary_iou(mask, empty) == 0.0
+    assert compute_boundary_f_score(mask, empty) == 0.0
+
+    # 5. Shift by 1 pixel with tolerance = 2.0 px (all contour points within tolerance -> BF=1.0)
+    mask_shift1 = np.zeros((100, 100), dtype=bool)
+    mask_shift1[31:71, 30:70] = True
+    bf_tolerant = compute_boundary_f_score(mask, mask_shift1, distance_threshold=2.0)
+    assert bf_tolerant == 1.0
+
+
+def test_multiview_association_adversarial_audits() -> None:
+    """Audits multi-view association metrics against unassigned, duplicate, and fragmented observations."""
+    from engine.multiengine.spatial_intelligence.association import PairScore, PhysicalMergedEntity, AssociationOutcome
+    from benchmarks.perception.real_data_benchmark import evaluate_multiview_association
+
+    gt_entities = {
+        "lamp_gt": {"lamp_obs1", "lamp_obs2"},
+    }
+
+    # Case A: Cluster contains a false positive / unassigned observation ('fp_det')
+    m_contaminated = PhysicalMergedEntity(
+        canonical_entity_id="cluster_lamp",
+        primary_class="lamp",
+        member_observation_ids=("lamp_obs1", "fp_det"),  # 1 true, 1 unassigned
+        sources=("cam1", "cam2"),
+    )
+    res_a = evaluate_multiview_association(
+        gt_entities,
+        merged_entities=[m_contaminated],
+        association_decisions=[],
+    )
+    # Purity must drop because 1 of 2 observations is unassigned (purity = 1/2 = 0.50)
+    assert res_a.cluster_purity == pytest.approx(0.50)
+
+    # Case B: Self-pair decision 'obs_a == obs_b' is cleanly ignored
+    self_decision = PairScore(
+        obs_a_id="lamp_obs1",
+        obs_b_id="lamp_obs1",
+        score=1.0,
+        outcome=AssociationOutcome.MERGED,
+        reason="self",
+        triangulated_position=(0.0, 0.0, 0.0),
+        ray_distance=0.0,
+        reprojection_err_px=0.0,
+    )
+    res_b = evaluate_multiview_association(
+        gt_entities,
+        merged_entities=[],
+        association_decisions=[self_decision],
+    )
+    assert res_b.candidate_pairs_evaluated == 0  # self-pair rejected/ignored
+    assert res_b.merged_pairs == 0
+
+
+def test_learned_confidence_calibrator_sample_threshold_enforcement_and_reliability_diagrams() -> None:
+    """Verifies sample thresholds (default min 8 samples, 3 pos, 3 neg), reliability diagrams, model verification, and pipeline loading."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        LearnedConfidenceCalibrator,
+        DetectionPipeline,
+        load_default_production_calibrator,
+    )
+
+    cal = LearnedConfidenceCalibrator()
+
+    # Create dataset with 10 door samples (5 pos, 5 neg) and 6 table samples (3 pos, 3 neg)
+    door_scores = [0.85, 0.90, 0.80, 0.75, 0.88, 0.30, 0.25, 0.40, 0.35, 0.20]
+    door_labels = [1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+    door_classes = ["door"] * 10
+
+    table_scores = [0.70, 0.80, 0.75, 0.30, 0.25, 0.35]
+    table_labels = [1, 1, 1, 0, 0, 0]
+    table_classes = ["table"] * 6
+
+    raw_scores = door_scores + table_scores
+    labels = door_labels + table_labels
+    classes = door_classes + table_classes
+
+    provenance_meta = {
+        "model_name": "grounding_dino_swint_ogc",
+        "checkpoint_hash": "sha256_mock_abc123",
+        "dataset_split": "dev",
+    }
+
+    # Fit with default min_class_samples=8, min_class_positives=3, min_class_negatives=3
+    cal.fit(raw_scores, labels, class_names=classes, provenance=provenance_meta)
+    assert cal.is_fitted
+
+    # Door has 10 samples (5 pos, 5 neg) -> fits per-class Platt
+    res_door = cal.calibrate(0.85, class_name="door")
+    assert res_door.is_calibrated
+    assert res_door.method == "per_class_platt"
+
+    # Table has only 6 samples (< 8) -> rejected from per-class Platt and falls back to global_platt
+    res_table = cal.calibrate(0.70, class_name="table")
+    assert res_table.is_calibrated
+    assert res_table.method == "global_platt"
+    assert "table" not in cal.class_params
+
+    # Check parameter uncertainty was computed
+    assert "temperature_se" in cal.global_uncertainty
+    assert "bias_se" in cal.global_uncertainty
+    assert "door" in cal.class_uncertainties
+
+    # Reliability diagram
+    diagram = cal.compute_reliability_diagram(raw_scores, labels, num_bins=5)
+    assert len(diagram) == 5
+    for b in diagram:
+        assert "bin_index" in b
+        assert "confidence" in b
+        assert "accuracy" in b
+        assert "calibration_gap" in b
+
+    # Model and checkpoint compatibility verification
+    assert cal.verify_model_compatibility(model_name="grounding_dino_swint_ogc", checkpoint_hash="sha256_mock_abc123") is True
+    assert cal.verify_model_compatibility(model_name="other_model", checkpoint_hash="sha256_mock_abc123") is False
+    assert cal.verify_model_compatibility(model_name="grounding_dino_swint_ogc", checkpoint_hash="wrong_hash") is False
+
+    # Production pipeline loading default calibrator
+    pipeline = DetectionPipeline()
+    # If artifacts/perception/calibrator_dev.json is not yet fitted, self.calibrator is None
+    # If loaded and fitted, self.calibrator is instance of LearnedConfidenceCalibrator
+    if pipeline.calibrator is not None:
+        assert isinstance(pipeline.calibrator, LearnedConfidenceCalibrator)
+
+
+def test_part_hierarchy_precision_recall_and_false_parents() -> None:
+    """Verifies part hierarchy evaluation: correct parent links, false parent assignments, and missed components."""
+    from benchmarks.perception.real_data_benchmark import evaluate_part_hierarchy, GroundTruthBox
+
+    gt_boxes = [
+        GroundTruthBox(entity_id="door_1", class_name="door", box_2d=(100.0, 100.0, 300.0, 600.0), image_id="img_1"),
+        GroundTruthBox(entity_id="handle_1", class_name="door_handle", box_2d=(120.0, 300.0, 150.0, 350.0), image_id="img_1", parent_entity_id="door_1"),
+        GroundTruthBox(entity_id="door_2", class_name="door", box_2d=(400.0, 100.0, 600.0, 600.0), image_id="img_1"),
+        GroundTruthBox(entity_id="handle_2", class_name="door_handle", box_2d=(420.0, 300.0, 450.0, 350.0), image_id="img_1", parent_entity_id="door_2"),
+    ]
+
+    class MockPred:
+        def __init__(self, box_id, class_name, box_2d, parent_box_id=None):
+            self.box_id = box_id
+            self.class_name = class_name
+            self.box_2d = box_2d
+            self.parent_box_id = parent_box_id
+            self.source_image_id = "img_1"
+            self.confidence = 0.90
+
+    # Case 1: Pred 1 correctly links handle_1 to door_1. Pred 2 links handle_2 to door_1 (FALSE PARENT ASSIGNMENT!)
+    preds = [
+        MockPred("p_door1", "door", (101.0, 101.0, 299.0, 599.0)),
+        MockPred("p_handle1", "door_handle", (121.0, 301.0, 149.0, 349.0), parent_box_id="p_door1"),
+        MockPred("p_door2", "door", (401.0, 101.0, 599.0, 599.0)),
+        MockPred("p_handle2", "door_handle", (421.0, 301.0, 449.0, 349.0), parent_box_id="p_door1"),  # Wrong parent!
+    ]
+
+    metrics = evaluate_part_hierarchy(gt_boxes, preds)
+    assert metrics.total_gt_part_links == 2
+    assert metrics.predicted_part_links == 2
+    assert metrics.correct_part_links == 1
+    assert metrics.false_parent_assignments == 1
+    assert metrics.missed_components == 1
+    assert metrics.precision == pytest.approx(0.50)
+    assert metrics.recall == pytest.approx(0.50)
+    assert metrics.f1 == pytest.approx(0.50)
+
+
 
 
 

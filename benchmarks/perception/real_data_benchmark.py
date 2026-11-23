@@ -45,6 +45,8 @@ class GroundTruthBox:
     parent_entity_id: str | None = None
     frame_index: int | None = None
     mask_2d: np.ndarray | None = None
+    visibility: str = "visible"
+    occlusion_level: str = "none"
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,8 @@ class PartHierarchyMetrics:
     precision: float | None
     recall: float | None
     f1: float | None
+    false_parent_assignments: int = 0
+    missed_components: int = 0
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,6 +116,8 @@ class PartHierarchyMetrics:
             "total_gt_part_links": self.total_gt_part_links,
             "predicted_part_links": self.predicted_part_links,
             "correct_part_links": self.correct_part_links,
+            "false_parent_assignments": self.false_parent_assignments,
+            "missed_components": self.missed_components,
             "precision": round(self.precision, 4) if self.precision is not None else None,
             "recall": round(self.recall, 4) if self.recall is not None else None,
             "f1": round(self.f1, 4) if self.f1 is not None else None,
@@ -159,6 +165,7 @@ class TrackingMetrics:
     id_precision: float | None
     id_recall: float | None
     mota: float | None
+    iou_threshold: float = 0.50
     total_gt_instances: int = 0
     total_predicted_instances: int = 0
     frame_tp: int = 0
@@ -173,6 +180,7 @@ class TrackingMetrics:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "iou_threshold": self.iou_threshold,
             "total_gt_trajectories": self.total_gt_trajectories,
             "total_gt_instances": self.total_gt_instances,
             "total_predicted_tracks": self.total_predicted_tracks,
@@ -361,16 +369,17 @@ def compute_boundary_f_score(
         return 1.0
     if not np.any(mask_a) or not np.any(mask_b):
         return 0.0
-    from scipy.ndimage import distance_transform_edt
+    from scipy.ndimage import distance_transform_edt, binary_erosion
 
     if distance_threshold is None:
         distance_threshold = max(2.0, 0.015 * min(mask_a.shape[:2]))
 
-    # 1-pixel boundary extraction via morphological gradient
-    d_bg_a = distance_transform_edt(mask_a.astype(bool))
-    bound_a = (d_bg_a >= 1) & (d_bg_a <= 1.5)
-    d_bg_b = distance_transform_edt(mask_b.astype(bool))
-    bound_b = (d_bg_b >= 1) & (d_bg_b <= 1.5)
+    # Exact 1-pixel boundary extraction via 4-connected morphological erosion
+    struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+    m_a = mask_a.astype(bool)
+    m_b = mask_b.astype(bool)
+    bound_a = m_a & (~binary_erosion(m_a, structure=struct))
+    bound_b = m_b & (~binary_erosion(m_b, structure=struct))
 
     n_a = int(bound_a.sum())
     n_b = int(bound_b.sum())
@@ -379,11 +388,22 @@ def compute_boundary_f_score(
     if n_a == 0 or n_b == 0:
         return 0.0
 
-    dist_to_b = distance_transform_edt(~bound_b)
-    dist_to_a = distance_transform_edt(~bound_a)
+    rows_a, cols_a = np.where(m_a)
+    rows_b, cols_b = np.where(m_b)
+    pad = int(math.ceil(distance_threshold)) + 4
+    r1 = max(0, min(rows_a.min(), rows_b.min()) - pad)
+    r2 = min(mask_a.shape[0], max(rows_a.max(), rows_b.max()) + pad)
+    c1 = max(0, min(cols_a.min(), cols_b.min()) - pad)
+    c2 = min(mask_a.shape[1], max(cols_a.max(), cols_b.max()) + pad)
 
-    prec = float(np.sum(dist_to_b[bound_a] <= distance_threshold) / n_a)
-    rec = float(np.sum(dist_to_a[bound_b] <= distance_threshold) / n_b)
+    bound_a_crop = bound_a[r1:r2, c1:c2]
+    bound_b_crop = bound_b[r1:r2, c1:c2]
+
+    dist_to_b = distance_transform_edt(~bound_b_crop)
+    dist_to_a = distance_transform_edt(~bound_a_crop)
+
+    prec = float(np.sum(dist_to_b[bound_a_crop] <= distance_threshold) / n_a)
+    rec = float(np.sum(dist_to_a[bound_b_crop] <= distance_threshold) / n_b)
     return float(2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0.0 else 0.0
 
 
@@ -706,16 +726,24 @@ def evaluate_part_hierarchy(
             pred_to_gt_entity[p_id] = best_gt
 
     correct_links = 0
+    false_parent_assignments = 0
     for child_pid, parent_pid in pred_links.items():
         child_p = pred_by_id[child_pid]
         img_id = getattr(child_p, "source_image_id", getattr(child_p, "image_id", "img_001"))
         child_gt = pred_to_gt_entity.get(child_pid)
         parent_gt = pred_to_gt_entity.get(parent_pid)
-        if child_gt and parent_gt and gt_links.get((img_id, child_gt)) == parent_gt:
-            correct_links += 1
+        expected_parent = gt_links.get((img_id, child_gt)) if child_gt else None
+        if child_gt and expected_parent is not None:
+            if parent_gt == expected_parent:
+                correct_links += 1
+            else:
+                false_parent_assignments += 1
+        else:
+            false_parent_assignments += 1
 
     total_gt = len(gt_links)
     total_pred = len(pred_links)
+    missed_components = max(0, total_gt - correct_links)
     if total_gt == 0:
         prec = 0.0 if total_pred > 0 else None
         rec = None
@@ -731,6 +759,8 @@ def evaluate_part_hierarchy(
         total_gt_part_links=total_gt,
         predicted_part_links=total_pred,
         correct_part_links=correct_links,
+        false_parent_assignments=false_parent_assignments,
+        missed_components=missed_components,
         precision=prec,
         recall=rec,
         f1=f1_val,
@@ -809,8 +839,10 @@ def evaluate_mask_quality(
 def evaluate_temporal_tracking(
     gt_trajectories: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
     pred_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
+    iou_threshold: float = 0.50,
 ) -> TrackingMetrics:
-    """Computes global bipartite IDF1, standard HOTA (Luiten et al., 2021), ID switches, and MOTA."""
+    """Computes global bipartite IDF1 (Ristani et al., 2016), standard CLEAR MOTA (Bernardin & Stiefelhagen, 2008),
+    and standard HOTA, DetA, AssA (Luiten et al., 2021)."""
     from scipy.optimize import linear_sum_assignment
 
     total_gt_trajectories = len(gt_trajectories)
@@ -834,6 +866,7 @@ def evaluate_temporal_tracking(
             deta=None,
             assa=None,
             track_coverage=None,
+            iou_threshold=iou_threshold,
             status="unmeasured_no_gt",
         )
 
@@ -847,7 +880,7 @@ def evaluate_temporal_tracking(
         for j, p_id in enumerate(pred_id_list):
             overlap = 0
             for f_idx, p_box in pred_tracks[p_id]:
-                if f_idx in g_map and compute_box_iou(p_box, g_map[f_idx]) >= 0.40:
+                if f_idx in g_map and compute_box_iou(p_box, g_map[f_idx]) >= iou_threshold:
                     overlap += 1
             cost_matrix[i, j] = -overlap
 
@@ -858,32 +891,67 @@ def evaluate_temporal_tracking(
     id_rec = float(id_tp / total_gt_instances) if total_gt_instances > 0 else 0.0
     idf1 = float(2 * id_tp / (total_gt_instances + total_pred_instances)) if (total_gt_instances + total_pred_instances) > 0 else 0.0
 
-    # 2. CLEAR MOT metrics: Frame-level TP, FN, FP, ID Switches and Fragmentations
+    # 2. CLEAR MOT metrics (Bernardin & Stiefelhagen, EURASIP 2008):
+    # In each frame:
+    # 1. Matches from the previous frame are preserved if both entities exist and IoU >= threshold.
+    # 2. Unmatched GT and hypotheses are paired via bipartite Hungarian matching on IoU.
+    # 3. An ID switch occurs when a GT was mapped to track P_prev and is now mapped to P_curr != P_prev.
     all_frames = sorted(set(
         [f[0] for frames in gt_trajectories.values() for f in frames] +
         [f[0] for frames in pred_tracks.values() for f in frames]
     ))
     id_switches = 0
     fragmentations = 0
-    prev_gt_matched: dict[str, str | None] = {g_id: None for g_id in gt_id_list}
+    prev_frame_matches: dict[str, str] = {}  # g_id -> p_id in immediate previous frame
+    last_matched_track: dict[str, str] = {}  # g_id -> last observed matched track ID
     frame_tp_total = 0
     frame_fn_total = 0
     frame_fp_total = 0
 
     for f_idx in all_frames:
-        f_gts = [(g_id, box) for g_id, frames in gt_trajectories.items() for fi, box in frames if fi == f_idx]
-        f_preds = [(p_id, box) for p_id, frames in pred_tracks.items() for fi, box in frames if fi == f_idx]
+        f_gts = {g_id: box for g_id, frames in gt_trajectories.items() for fi, box in frames if fi == f_idx}
+        f_preds = {p_id: box for p_id, frames in pred_tracks.items() for fi, box in frames if fi == f_idx}
 
         curr_frame_matches: dict[str, str] = {}
-        if f_gts and f_preds:
-            iou_mat = np.zeros((len(f_gts), len(f_preds)), dtype=float)
-            for gi, (_, g_box) in enumerate(f_gts):
-                for pi, (_, p_box) in enumerate(f_preds):
-                    iou_mat[gi, pi] = compute_box_iou(g_box, p_box)
+        unmatched_gts = set(f_gts.keys())
+        unmatched_preds = set(f_preds.keys())
+
+        # Step 2a: Preserve correspondence from previous frame if IoU >= threshold
+        for g_id, prev_pid in list(prev_frame_matches.items()):
+            if g_id in unmatched_gts and prev_pid in unmatched_preds:
+                iou = compute_box_iou(f_gts[g_id], f_preds[prev_pid])
+                if iou >= iou_threshold:
+                    curr_frame_matches[g_id] = prev_pid
+                    unmatched_gts.remove(g_id)
+                    unmatched_preds.remove(prev_pid)
+
+        # Step 2b: Bipartite matching for remaining unmatched GTs and predictions
+        if unmatched_gts and unmatched_preds:
+            rem_gts = list(unmatched_gts)
+            rem_preds = list(unmatched_preds)
+            iou_mat = np.zeros((len(rem_gts), len(rem_preds)), dtype=float)
+            for gi, g_id in enumerate(rem_gts):
+                for pi, p_id in enumerate(rem_preds):
+                    iou_mat[gi, pi] = compute_box_iou(f_gts[g_id], f_preds[p_id])
+
             r_idx, c_idx = linear_sum_assignment(-iou_mat)
             for r, c in zip(r_idx, c_idx):
-                if iou_mat[r, c] >= 0.40:
-                    curr_frame_matches[f_gts[r][0]] = f_preds[c][0]
+                if iou_mat[r, c] >= iou_threshold:
+                    g_id = rem_gts[r]
+                    p_id = rem_preds[c]
+                    curr_frame_matches[g_id] = p_id
+                    if g_id in last_matched_track and last_matched_track[g_id] != p_id:
+                        id_switches += 1
+                    last_matched_track[g_id] = p_id
+                    unmatched_gts.remove(g_id)
+                    unmatched_preds.remove(p_id)
+
+        # Update fragmentations: if a GT was tracked in previous frame but untracked now
+        for g_id in f_gts:
+            if g_id not in curr_frame_matches and g_id in prev_frame_matches:
+                fragmentations += 1
+
+        prev_frame_matches = curr_frame_matches
 
         frame_tp = len(curr_frame_matches)
         frame_fn = len(f_gts) - frame_tp
@@ -891,16 +959,6 @@ def evaluate_temporal_tracking(
         frame_tp_total += frame_tp
         frame_fn_total += frame_fn
         frame_fp_total += frame_fp
-
-        for g_id, _ in f_gts:
-            curr_tid = curr_frame_matches.get(g_id)
-            prev_tid = prev_gt_matched[g_id]
-            if prev_tid is not None and curr_tid is not None and curr_tid != prev_tid:
-                id_switches += 1
-            elif prev_tid is not None and curr_tid is None:
-                fragmentations += 1
-            if curr_tid is not None:
-                prev_gt_matched[g_id] = curr_tid
 
     # Standard CLEAR MOT metrics (Bernardin & Stiefelhagen, EURASIP 2008):
     # MOTA = 1 - (sum_t FN_t + sum_t FP_t + sum_t IDSW_t) / sum_t GT_t
@@ -1024,7 +1082,12 @@ def evaluate_multiview_association(
     inlier_residuals: list[float] = []
     all_residuals: list[float] = []
 
-    for d in association_decisions:
+    valid_decisions = [
+        d for d in association_decisions
+        if getattr(d, "obs_a_id", "") and getattr(d, "obs_b_id", "") and getattr(d, "obs_a_id", "") != getattr(d, "obs_b_id", "")
+    ]
+
+    for d in valid_decisions:
         outcome = getattr(d, "outcome", "")
         is_merged = (outcome == "merged" or getattr(outcome, "value", "") == "merged")
         obs_a = getattr(d, "obs_a_id", "")
@@ -1054,7 +1117,7 @@ def evaluate_multiview_association(
 
     if total_gt_pairs == 0:
         return MultiViewAssociationMetrics(
-            candidate_pairs_evaluated=len(association_decisions),
+            candidate_pairs_evaluated=len(valid_decisions),
             merged_pairs=merged_count,
             refused_pairs=refused_count,
             total_gt_pairs=0,
@@ -1075,7 +1138,7 @@ def evaluate_multiview_association(
     purity_numer = 0
     purity_denom = 0
     for entity in merged_entities:
-        obs_ids = getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ()))
+        obs_ids = sorted(set(getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ()))))
         if not obs_ids:
             continue
         gt_counts: Counter[str] = Counter()
@@ -1133,7 +1196,7 @@ def evaluate_multiview_association(
     all_mean = float(np.mean(all_residuals)) if all_residuals else None
 
     return MultiViewAssociationMetrics(
-        candidate_pairs_evaluated=len(association_decisions),
+        candidate_pairs_evaluated=len(valid_decisions),
         merged_pairs=merged_count,
         refused_pairs=refused_count,
         total_gt_pairs=total_gt_pairs,
@@ -1245,6 +1308,30 @@ def load_ground_truth_from_dataset(
         elif norm_split == "test" and frame_idx <= 10:
             continue
 
+        # Determine image dimensions dynamically
+        img_w, img_h = 4032, 3024
+        img_candidates = [
+            path / img_name,
+            path / "images" / img_name,
+        ]
+        if path.is_file():
+            img_candidates.extend([
+                path.parent / img_name,
+                path.parent / "images" / img_name,
+            ])
+        for cand in img_candidates:
+            if cand.is_file():
+                try:
+                    from PIL import Image
+                    with Image.open(cand) as im:
+                        img_w, img_h = im.size
+                    break
+                except Exception:
+                    pass
+        else:
+            if "image_size" in data:
+                img_w, img_h = int(data["image_size"][0]), int(data["image_size"][1])
+
         for ann in annotations:
             parent_id = ann.get("parent_entity_id")
             if not include_subparts and parent_id:
@@ -1252,13 +1339,15 @@ def load_ground_truth_from_dataset(
             gt_id = ann.get("ground_truth_id") or ann.get("entity_id", "")
             cls_name = ann.get("class_name") or ann.get("label", "")
             b = ann.get("bbox_2d") or ann.get("box_2d", [0, 0, 0, 0])
+            vis_state = ann.get("visibility", "visible")
+            occ_lvl = ann.get("occlusion_level", "none")
 
             mask_2d = None
             poly = ann.get("polygon") or ann.get("mask_polygon")
             if poly and len(poly) >= 3:
                 try:
                     from PIL import Image, ImageDraw
-                    mask_img = Image.new("1", (4032, 3024), 0)
+                    mask_img = Image.new("1", (img_w, img_h), 0)
                     ImageDraw.Draw(mask_img).polygon([tuple(pt) for pt in poly], fill=1)
                     mask_2d = np.asarray(mask_img, dtype=bool)
                 except Exception:
@@ -1266,11 +1355,11 @@ def load_ground_truth_from_dataset(
             elif ann.get("has_mask"):
                 try:
                     from PIL import Image, ImageDraw
-                    mask_img = Image.new("1", (4032, 3024), 0)
+                    mask_img = Image.new("1", (img_w, img_h), 0)
                     x1 = max(0.0, float(b[0]))
                     y1 = max(0.0, float(b[1]))
-                    x2 = min(4032.0, float(b[2]))
-                    y2 = min(3024.0, float(b[3]))
+                    x2 = min(float(img_w), float(b[2]))
+                    y2 = min(float(img_h), float(b[3]))
                     ImageDraw.Draw(mask_img).rectangle([x1, y1, x2, y2], fill=1)
                     mask_2d = np.asarray(mask_img, dtype=bool)
                 except Exception:
@@ -1284,6 +1373,8 @@ def load_ground_truth_from_dataset(
                 parent_entity_id=parent_id,
                 frame_index=frame_idx,
                 mask_2d=mask_2d,
+                visibility=vis_state,
+                occlusion_level=occ_lvl,
             ))
 
     metadata = {
@@ -1335,6 +1426,7 @@ def run_real_perception_benchmark(
     iou_thresholds: tuple[float, float] = (0.50, 0.75),
     split: str = "all",
     text_prompts: Sequence[str] | None = None,
+    target_resolution: tuple[int, int] | None = None,
 ) -> BenchmarkExecutionSummary:
     """Executes the full perception, tracking, multi-view association, and telemetry benchmark on a real dataset.
 
@@ -1347,6 +1439,54 @@ def run_real_perception_benchmark(
     # 1. Load ground truth for designated split
     gt_boxes, gt_meta = load_ground_truth_from_dataset(dpath, split=split, include_subparts=False)
     gt_all_boxes, _ = load_ground_truth_from_dataset(dpath, split=split, include_subparts=True)
+
+    # Scale ground truth boxes and masks if target_resolution is specified
+    if target_resolution is not None:
+        from PIL import Image as PILImage
+        import cv2
+        scaled_gt_boxes: list[GroundTruthBox] = []
+        scaled_gt_all: list[GroundTruthBox] = []
+
+        def _scale_gt(g_in: GroundTruthBox) -> GroundTruthBox:
+            img_p = dpath / g_in.image_id
+            if img_p.is_file():
+                with PILImage.open(img_p) as im_ref:
+                    orig_w, orig_h = im_ref.size
+            else:
+                orig_w, orig_h = (4032, 3024)
+            w_scale = target_resolution[0] / orig_w
+            h_scale = target_resolution[1] / orig_h
+            new_box = (
+                g_in.box_2d[0] * w_scale,
+                g_in.box_2d[1] * h_scale,
+                g_in.box_2d[2] * w_scale,
+                g_in.box_2d[3] * h_scale,
+            )
+            new_mask = None
+            if g_in.mask_2d is not None:
+                new_mask = cv2.resize(
+                    g_in.mask_2d.astype(np.uint8),
+                    target_resolution,
+                    interpolation=cv2.INTER_NEAREST,
+                ).astype(bool)
+            return GroundTruthBox(
+                entity_id=g_in.entity_id,
+                class_name=g_in.class_name,
+                box_2d=new_box,
+                image_id=g_in.image_id,
+                mask_2d=new_mask,
+                parent_entity_id=g_in.parent_entity_id,
+                frame_index=g_in.frame_index,
+                visibility=g_in.visibility,
+            )
+
+        for g in gt_boxes:
+            scaled_gt_boxes.append(_scale_gt(g))
+        for g in gt_all_boxes:
+            scaled_gt_all.append(_scale_gt(g))
+        gt_boxes = scaled_gt_boxes
+        gt_all_boxes = scaled_gt_all
+
     gt_by_image: dict[str, list[GroundTruthBox]] = defaultdict(list)
     for g in gt_boxes:
         gt_by_image[g.image_id].append(g)
@@ -1414,6 +1554,8 @@ def run_real_perception_benchmark(
         print(f"  [{loop_idx + 1}/{len(sorted_image_names)}] Inferring perception on {img_name} ({split} split)...", flush=True)
         from PIL import Image
         with Image.open(img_path) as im:
+            if target_resolution is not None and im.size != target_resolution:
+                im = im.resize(target_resolution, Image.Resampling.BILINEAR)
             rgb = np.asarray(im.convert("RGB"))
 
         detect_parts = any(g.parent_entity_id is not None for g in gt_all_boxes)
@@ -1488,6 +1630,15 @@ def run_real_perception_benchmark(
             if len(params) >= 4:
                 fx, fy, px, py = float(params[0]), float(params[1]), float(params[2]), float(params[3])
 
+        if target_resolution is not None:
+            s_x = target_resolution[0] / w_cam
+            s_y = target_resolution[1] / h_cam
+            w_cam, h_cam = target_resolution
+            fx *= s_x
+            fy *= s_y
+            px *= s_x
+            py *= s_y
+
         cam_intr = CameraIntrinsics(fx=fx, fy=fy, cx=px, cy=py, width=w_cam, height=h_cam)
         cam_extr = CameraExtrinsics(
             position=Vec3(float(pos[0]), float(pos[1]), float(pos[2])),
@@ -1556,6 +1707,7 @@ def run_real_perception_benchmark(
     telemetry["total_gt_boxes"] = len(gt_boxes)
     telemetry["total_predicted_boxes"] = len(primary_pred_boxes)
     telemetry["split"] = split
+    telemetry["target_resolution"] = f"{target_resolution[0]}x{target_resolution[1]}" if target_resolution else "native"
     telemetry["detector_name"] = getattr(detector_engine, "name", detector_engine.__class__.__name__)
 
     summary = BenchmarkExecutionSummary(
@@ -1619,15 +1771,16 @@ def fit_calibrator_on_dev_split(
     binary_labels: list[int] = []
     class_names: list[str] = []
 
-    print(f"Fitting calibrator on {len(dev_image_ids)} development images...")
-    for img_id in dev_image_ids:
+    print(f"Fitting calibrator on {len(dev_image_ids)} development images...", flush=True)
+    for idx_img, img_id in enumerate(dev_image_ids):
         img_file = ds_p / img_id if (ds_p / img_id).is_file() else (images_dir / img_id)
         if not img_file.is_file():
             continue
+        print(f"  [{idx_img + 1}/{len(dev_image_ids)}] Extracting calibration samples from {img_id}...", flush=True)
         with Image.open(img_file) as pil_img:
             img_rgb = np.array(pil_img.convert("RGB"))
 
-        pipeline_res = pipe.run_pipeline(img_rgb, image_id=img_id, text_prompts=annotated_classes)
+        pipeline_res = pipe.run_pipeline(img_rgb, image_id=img_id, run_tiling=False, text_prompts=annotated_classes)
         img_gt = gt_by_img.get(img_id, [])
 
         matched_gt = set()
@@ -1683,6 +1836,7 @@ def main() -> int:
     parser.add_argument("--out-dir", type=str, default="artifacts/perception", help="Output directory for reports")
     parser.add_argument("--benchmark-id", type=str, default="perception_real_benchmark", help="Benchmark run identifier")
     parser.add_argument("--split", type=str, default="all", choices=["dev", "test", "all"], help="Dataset split to evaluate")
+    parser.add_argument("--target-resolution", nargs=2, type=int, default=None, metavar=("WIDTH", "HEIGHT"), help="Target resolution (e.g. 1280 960)")
     parser.add_argument("--fit-calibrator", action="store_true", help="Fit confidence calibrator on dev split before benchmark")
     args = parser.parse_args()
 
@@ -1690,12 +1844,14 @@ def main() -> int:
         print(f"Fitting confidence calibrator on development split of {args.dataset}...")
         fit_calibrator_on_dev_split(dataset_dir=args.dataset, output_dir=args.out_dir)
 
-    print(f"Running Real-Data Perception Benchmark on {args.dataset} (split: {args.split})...")
+    target_res = tuple(args.target_resolution) if args.target_resolution else None
+    print(f"Running Real-Data Perception Benchmark on {args.dataset} (split: {args.split}, resolution: {target_res or 'native'})...")
     summary = run_real_perception_benchmark(
         dataset_dir=args.dataset,
         output_dir=args.out_dir,
         benchmark_id=args.benchmark_id,
         split=args.split,
+        target_resolution=target_res,
     )
 
     print("\n" + "=" * 60)

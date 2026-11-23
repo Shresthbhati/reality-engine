@@ -1532,13 +1532,17 @@ def resolve_taxonomy_class(raw_label: str) -> TaxonomyClass:
     return FALLBACK_UNKNOWN
 
 
-def are_semantically_compatible(class_a: str, class_b: str) -> bool:
+def are_semantically_compatible(
+    class_a: str,
+    class_b: str,
+    allow_parent_part: bool = True,
+) -> bool:
     """Evaluates whether two class names can physically denote the same real-world object.
 
     Handles:
     - Exact alias identity (e.g. 'electrical socket' == 'socket')
     - Same canonical taxonomy class
-    - Parent-part containment (e.g. 'door' and 'door_frame', 'sink' and 'faucet')
+    - Parent-part containment (e.g. 'door' and 'door_frame', 'sink' and 'faucet') -- ONLY when allow_parent_part is True
     - Plausible visual label overlap (e.g. 'desk' and 'table')
     """
     node_a = resolve_taxonomy_class(class_a)
@@ -1547,12 +1551,13 @@ def are_semantically_compatible(class_a: str, class_b: str) -> bool:
     if node_a.taxonomy_id == node_b.taxonomy_id:
         return True
 
-    # Check parent-part relationships
-    if node_a.parent_class == node_b.taxonomy_id or node_b.parent_class == node_a.taxonomy_id:
-        return True
+    # Check parent-part relationships (disabled for identity tracking and multi-view entity association)
+    if allow_parent_part:
+        if node_a.parent_class == node_b.taxonomy_id or node_b.parent_class == node_a.taxonomy_id:
+            return True
 
-    if node_b.name in node_a.potential_parts or node_a.name in node_b.potential_parts:
-        return True
+        if node_b.name in node_a.potential_parts or node_a.name in node_b.potential_parts:
+            return True
 
     # Known acceptable semantic confusions across viewpoints
     if node_b.name in node_a.common_confusion_classes or node_a.name in node_b.common_confusion_classes:

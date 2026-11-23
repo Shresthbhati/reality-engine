@@ -264,9 +264,11 @@ class RoomCompletenessEngine:
             if not is_mv and camera_view_count > 1:
                 notes.append("Single-view observation in multi-view capture")
 
-            # Presence state
+            # Presence state logic grounded in observation evidence (Sprint 6/7)
             if is_mv and conf >= 0.60:
                 pstate = EvidencePresenceState.VERIFIED_PRESENT
+            elif occl == "heavy" or (is_trunc and conf < 0.35):
+                pstate = EvidencePresenceState.PRESENT_NOT_VISIBLE
             elif conf < 0.35:
                 pstate = EvidencePresenceState.POSSIBLY_PRESENT
             else:

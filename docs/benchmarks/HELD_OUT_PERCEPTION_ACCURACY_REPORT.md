@@ -23,56 +23,56 @@ This report documents the empirical benchmark evaluation of Reality Engine's per
 
 The table below contrasts historical baselines against the empirical results obtained on the **held-out test split** (`IMG_0011.jpg` – `IMG_0020.jpg`) across native $4032 \times 3024$ and downscaled $1280 \times 960$ resolutions:
 
-| Metric Category | Metric | PR #366 Baseline | PR #369 Baseline | Sprint 4 Native ($4032 \times 3024$) | Sprint 5 Native ($4032 \times 3024$) | Sprint 5 Scaled ($1280 \times 960$) |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| **2D Detection (IoU @ 0.50)** | True Positives / Total GT | 32 / 50 (64.00%) | 28 / 50 (56.00%) | 32 / 50 (64.00%) | **40 / 50 (80.00%)** | **38 / 50 (76.00%)** |
-| | False Positives | 25 | 27 | 12 | **7** | **9** |
-| | False Negatives | 18 | 22 | 18 | **10** | **12** |
-| | Macro Precision | 0.5614 | 0.5087 | 0.5500 | **0.8727** | **0.8364** |
-| | Micro Precision | *Unmeasured* | *Unmeasured* | 0.7273 | **0.8511** | **0.8085** |
-| | Macro Recall | 0.6400 | 0.5600 | 0.5400 | **0.8000** | **0.7636** |
-| | Micro Recall | *Unmeasured* | *Unmeasured* | 0.6400 | **0.8000** | **0.7600** |
-| | Macro F1 | 0.5981 | 0.5333 | 0.5139 | **0.8262** | **0.7923** |
-| | Micro F1 | *Unmeasured* | *Unmeasured* | 0.6809 | **0.8247** | **0.7835** |
-| | Average Precision (AP50) | 0.5027 | 0.3815 | 0.3933 | **0.7723** | **0.6992** |
-| | Class `door` AP @ 0.50 | 0.4348 | 0.1151 | 0.0000 | **1.0000** | **0.7360** |
-| | Class `window` AP @ 0.50 | 0.9010 | 0.9010 | 0.5556 | **1.0000** | **0.9010** |
-| | Class `table` AP @ 0.50 | 0.8109 | 0.3815 | 1.0000 | **1.0000** | **0.9910** |
-| | Class `chair` AP @ 0.50 | 0.3177 | 0.4010 | 0.3020 | **0.6040** | **0.6931** |
-| | Class `lamp` AP @ 0.50 | *Unmeasured* | *Unmeasured* | 0.1089 | **0.2574** | **0.1749** |
-| **2D Detection (IoU @ 0.75)** | AP @ 0.75 IoU (COCO) | *Unmeasured* | 0.0559 | 0.0284 | **0.1864** | **0.1503** |
-| | True Positives (IoU @ 0.75) | *Unmeasured* | 6 / 50 (12.00%) | 6 / 50 (12.00%) | **13 / 50 (26.00%)** | **12 / 50 (24.00%)** |
-| | Macro F1 @ 0.75 IoU | *Unmeasured* | *Unmeasured* | 0.0933 | **0.2600** | **0.2511** |
-| **Instance Mask Quality** | Evaluated Instances | 39 | 39 | 36 | **44** | **44** |
-| | Mean Mask IoU | 0.5566 | 0.6372 | 0.6095 | **0.5559** | **0.5638** |
-| | Median Mask IoU | 0.5687 | 0.6312 | 0.5905 | **0.5702** | **0.5750** |
-| | Mean Boundary IoU | 0.0050 | 0.1541 | 0.2908 | **0.2852** | **0.2707** |
-| | Boundary F1 (BF-score) | *Unmeasured* | *Unmeasured* | 0.3560 | **0.3444** | **0.3502** |
-| | Masks above 0.50 IoU | 76.92% | 97.44% | 83.33% | **77.27%** | **72.73%** |
-| **Part Hierarchy** | Correct Part Links | 0 | 4 / 40 (10.00%) | 14 / 40 (35.00%) | **12 / 40 (30.00%)** | **11 / 40 (27.50%)** |
-| | Parent Assignment Precision | *Unmeasured* | *Unmeasured* | *Unmeasured* | **0.9231** | **0.8462** |
-| | False Parent Assignments | *Unmeasured* | *Unmeasured* | 194 | **101** | **93** |
-| | Missed Components | *Unmeasured* | *Unmeasured* | 26 | **28** | **29** |
-| | Links Precision | *Unmeasured* | 0.0199 | 0.0673 | **0.1062** | **0.1058** |
-| | Links Recall | *Unmeasured* | 0.1000 | 0.3500 | **0.3000** | **0.2750** |
-| | Links F1 | *Unmeasured* | 0.0332 | 0.1129 | **0.1569** | **0.1528** |
-| **Temporal Tracking** | Standard MOTA Threshold | 0.50 | 0.50 | 0.50 | **0.50** | **0.50** |
-| | IDF1 | 0.5421 | 0.3504 | 0.6526 | **0.6838** | **0.6271** |
-| | HOTA (Standard IJCV 2021) | *Unmeasured* | 0.3225 | 0.4467 | **0.5145** | **0.4786** |
-| | Detection Accuracy (DetA) | *Unmeasured* | *Unmeasured* | 0.4115 | **0.4120** | **0.4090** |
-| | Association Accuracy (AssA) | *Unmeasured* | *Unmeasured* | 0.4994 | **0.6517** | **0.5681** |
-| | CLEAR MOTA | *Unmeasured* | 0.0800 | 0.3400 | **0.2600** | **0.1400** |
-| | Track Coverage | *Unmeasured* | 48.00% | 66.00% | **82.00%** | **80.00%** |
-| | ID Switches / Fragmentations | 5 / *Unmeasured* | 4 / *Unmeasured* | 4 / 6 | **2 / 5** | **5 / 5** |
-| **Multi-View Geometry** | Association Precision | 0.2800 | 0.2800 | 1.0000 | **0.2667** | **0.2432** |
-| | Association Recall | 0.2100 | 0.2100 | 0.3333 | **0.1429** | **0.2812** |
-| | Cluster Purity | 1.0000 | 1.0000 | 0.8462 | **0.7000** | **0.6957** |
-| | Identity Completeness | *Unmeasured* | *Unmeasured* | 0.6154 | **0.4211** | **0.7000** |
-| | Inlier Reprojection Mean | 20.70 px | 19.52 px | 18.70 px | **19.37 px** | **14.39 px** |
-| | Inlier Reprojection Median | 20.14 px | 22.08 px | 15.33 px | **20.61 px** | **11.87 px** |
-| | Inlier Reprojection P90 | 29.13 px | 27.95 px | 27.29 px | **26.71 px** | **26.01 px** |
-| **Hardware & Telemetry** | Execution Time (10 frames) | 97.2 s | 493.8 s | 817.2 s | **1338.9 s** | **228.0 s** |
-| | Peak GPU VRAM | 2959.41 MB | 3432.37 MB | 3431.12 MB | **3431.12 MB** | **3431.12 MB** |
+| Metric Category | Metric | PR #366 Baseline | PR #369 Baseline | Sprint 4 Native ($4032 \times 3024$) | Sprint 5 Native ($4032 \times 3024$) | Sprint 5 Scaled ($1280 \times 960$) | Sprint 7 Scaled ($1280 \times 960$) |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **2D Detection (IoU @ 0.50)** | True Positives / Total GT | 32 / 50 (64.00%) | 28 / 50 (56.00%) | 32 / 50 (64.00%) | **40 / 50 (80.00%)** | 38 / 50 (76.00%) | **38 / 50 (76.00%)** |
+| | False Positives | 25 | 27 | 12 | **7** | 9 | **9** |
+| | False Negatives | 18 | 22 | 18 | **10** | 12 | **12** |
+| | Macro Precision | 0.5614 | 0.5087 | 0.5500 | **0.8727** | 0.8364 | **0.8364** |
+| | Micro Precision | *Unmeasured* | *Unmeasured* | 0.7273 | **0.8511** | 0.8085 | **0.8085** |
+| | Macro Recall | 0.6400 | 0.5600 | 0.5400 | **0.8000** | 0.7636 | **0.7636** |
+| | Micro Recall | *Unmeasured* | *Unmeasured* | 0.6400 | **0.8000** | 0.7600 | **0.7600** |
+| | Macro F1 | 0.5981 | 0.5333 | 0.5139 | **0.8262** | 0.7923 | **0.7923** |
+| | Micro F1 | *Unmeasured* | *Unmeasured* | 0.6809 | **0.8247** | 0.7835 | **0.7835** |
+| | Average Precision (AP50) | 0.5027 | 0.3815 | 0.3933 | **0.7723** | 0.6992 | **0.6992** |
+| | Class `door` AP @ 0.50 | 0.4348 | 0.1151 | 0.0000 | **1.0000** | 0.7360 | **0.7360** |
+| | Class `window` AP @ 0.50 | 0.9010 | 0.9010 | 0.5556 | **1.0000** | 0.9010 | **0.9010** |
+| | Class `table` AP @ 0.50 | 0.8109 | 0.3815 | 1.0000 | **1.0000** | 0.9910 | **0.9910** |
+| | Class `chair` AP @ 0.50 | 0.3177 | 0.4010 | 0.3020 | **0.6040** | 0.6931 | **0.6931** |
+| | Class `lamp` AP @ 0.50 | *Unmeasured* | *Unmeasured* | 0.1089 | **0.2574** | 0.1749 | **0.1749** |
+| **2D Detection (IoU @ 0.75)** | AP @ 0.75 IoU (COCO) | *Unmeasured* | 0.0559 | 0.0284 | **0.1864** | 0.1503 | **0.1503** |
+| | True Positives (IoU @ 0.75) | *Unmeasured* | 6 / 50 (12.00%) | 6 / 50 (12.00%) | **13 / 50 (26.00%)** | 12 / 50 (24.00%) | **12 / 50 (24.00%)** |
+| | Macro F1 @ 0.75 IoU | *Unmeasured* | *Unmeasured* | 0.0933 | **0.2600** | 0.2511 | **0.2511** |
+| **Instance Mask Quality** | Evaluated Instances | 39 | 39 | 36 | **44** | 44 | **44** |
+| | Mean Mask IoU | 0.5566 | 0.6372 | 0.6095 | **0.5559** | 0.5638 | **0.5638** |
+| | Median Mask IoU | 0.5687 | 0.6312 | 0.5905 | **0.5702** | 0.5750 | **0.5750** |
+| | Mean Boundary IoU | 0.0050 | 0.1541 | 0.2908 | **0.2852** | 0.2707 | **0.2707** |
+| | Boundary F1 (BF-score) | *Unmeasured* | *Unmeasured* | 0.3560 | **0.3444** | 0.3502 | **0.3502** |
+| | Masks above 0.50 IoU | 76.92% | 97.44% | 83.33% | **77.27%** | 72.73% | **72.73%** |
+| **Part Hierarchy** | Correct Part Links | 0 | 4 / 40 (10.00%) | 14 / 40 (35.00%) | **12 / 40 (30.00%)** | 11 / 40 (27.50%) | **11 / 40 (27.50%)** |
+| | Parent Assignment Precision | *Unmeasured* | *Unmeasured* | *Unmeasured* | **0.9231** | 0.8462 | **0.8462** |
+| | False Parent Assignments | *Unmeasured* | *Unmeasured* | 194 | 101 | 93 | **93** |
+| | Missed Components | *Unmeasured* | *Unmeasured* | 26 | 28 | 29 | **29** |
+| | Links Precision | *Unmeasured* | 0.0199 | 0.0673 | 0.1062 | 0.1058 | **0.1058** |
+| | Links Recall | *Unmeasured* | 0.1000 | 0.3500 | **0.3000** | 0.2750 | **0.2750** |
+| | Links F1 | *Unmeasured* | 0.0332 | 0.1129 | **0.1569** | 0.1528 | **0.1528** |
+| **Temporal Tracking** | Standard MOTA Threshold | 0.50 | 0.50 | 0.50 | 0.50 | 0.50 | **0.50** |
+| | IDF1 | 0.5421 | 0.3504 | 0.6526 | **0.6838** | 0.6271 | **0.6441** |
+| | HOTA (Standard IJCV 2021) | *Unmeasured* | 0.3225 | 0.4467 | **0.5145** | 0.4786 | **0.4895** |
+| | Detection Accuracy (DetA) | *Unmeasured* | *Unmeasured* | 0.4115 | **0.4120** | 0.4090 | **0.4090** |
+| | Association Accuracy (AssA) | *Unmeasured* | *Unmeasured* | 0.4994 | **0.6517** | 0.5681 | **0.5890** |
+| | CLEAR MOTA | *Unmeasured* | 0.0800 | 0.3400 | **0.2600** | 0.1400 | **0.1800** |
+| | Track Coverage | *Unmeasured* | 48.00% | 66.00% | **82.00%** | 80.00% | **80.00%** |
+| | ID Switches / Fragmentations | 5 / *Unmeasured* | 4 / *Unmeasured* | 4 / 6 | **2 / 5** | 5 / 5 | **3 / 5** |
+| **Multi-View Geometry** | Association Precision | 0.2800 | 0.2800 | 1.0000 | 0.2667 | 0.2432 | **0.3600** |
+| | Association Recall | 0.2100 | 0.2100 | 0.3333 | 0.1429 | 0.2812 | **0.2812** |
+| | Cluster Purity | 1.0000 | 1.0000 | 0.8462 | 0.7000 | 0.6957 | **0.6957** |
+| | Identity Completeness | *Unmeasured* | *Unmeasured* | 0.6154 | 0.4211 | 0.7000 | **0.7000** |
+| | Inlier Reprojection Mean | 20.70 px | 19.52 px | 18.70 px | 19.37 px | 14.39 px | **13.00 px** |
+| | Inlier Reprojection Median | 20.14 px | 22.08 px | 15.33 px | 20.61 px | 11.87 px | **9.60 px** |
+| | Inlier Reprojection P90 | 29.13 px | 27.95 px | 27.29 px | 26.71 px | 26.01 px | **25.01 px** |
+| **Hardware & Telemetry** | Execution Time (10 frames) | 97.2 s | 493.8 s | 817.2 s | 1338.9 s | 228.0 s | **240.3 s** |
+| | Peak GPU VRAM | 2959.41 MB | 3432.37 MB | 3431.12 MB | 3431.12 MB | 3431.12 MB | **3431.12 MB** |
 
 ---
 

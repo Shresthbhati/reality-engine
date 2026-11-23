@@ -1,7 +1,16 @@
-"""Geometry Extraction, Validation and Object-Specific Constraints (Sprint 6).
+"""Geometry Extraction, Validation and Object-Specific Constraints (Sprint 6 / Sprint 7).
 
 Extracts and validates physical geometry, aspect ratios, surface normals,
 hierarchical components, and spatial relationships without fabricating unmeasured coordinates.
+
+Sprint 7 additions:
+- ``ObjectGeometryEvidence`` carries ``scale_state`` and ``coordinate_frame`` so validators
+  can refuse cross-frame comparisons and avoid applying metric plausibility bounds to
+  relative-depth or SfM-gauge evidence.
+- Validators that require metric extents (e.g. door height > 1.8 m, table width > 0.4 m)
+  annotate their result with ``metric_check_applicable=False`` when the evidence is not
+  physically metric, and do not mark the object invalid solely because of a metric check
+  that cannot be verified.
 """
 
 from __future__ import annotations
@@ -22,7 +31,18 @@ from engine.multiengine.spatial_intelligence.taxonomy import (
 
 @dataclass(frozen=True)
 class ObjectGeometryEvidence:
-    """Rich geometric evidence extracted from 2D observations and 3D lifting."""
+    """Rich geometric evidence extracted from 2D observations and 3D lifting.
+
+    Scale-state fields (Sprint 7):
+    - ``scale_state``: string from the entity's ``scale_state`` attribute.  Valid values
+      include ``"metric_anchored"``, ``"sfm_gauge"``, ``"relative_depth"``,
+      ``"synthetic_scale_aligned"``.  When ``None``, scale is unknown.
+    - ``coordinate_frame``: opaque string identifying the coordinate reference frame
+      (e.g. ``"world:canonical"``, ``"camera:0"``, ``"sfm:reconstruction_0"``).
+      Validators refuse to compare 3D positions from incompatible frames.
+    - ``is_physically_metric``: True only when ``position_3d`` and ``extent_3d`` are
+      known to be in physical metres (anchored to a real-world reference).
+    """
 
     box_2d: tuple[float, float, float, float]  # (x1, y1, x2, y2)
     class_name: str
@@ -40,17 +60,37 @@ class ObjectGeometryEvidence:
     confidence: float = 0.5
     uncertainty: float = 0.5
     subparts_geometry: dict[str, Any] = field(default_factory=dict)
+    # Sprint 7 scale-state fields
+    scale_state: str | None = None          # e.g. "metric_anchored", "relative_depth"
+    coordinate_frame: str | None = None     # e.g. "world:canonical", "sfm:reconstruction_0"
+    is_physically_metric: bool = False       # True only when extent_3d is in real metres
+
+
+def _evidence_is_metric(evidence: "ObjectGeometryEvidence") -> bool:
+    """Returns True only when the evidence carries physically-calibrated metric 3D data."""
+    ss = evidence.scale_state
+    if ss is None:
+        return False
+    return "metric_anchored" in str(ss).lower() and evidence.is_physically_metric
 
 
 @dataclass(frozen=True)
 class GeometryValidationResult:
-    """Outcome of validating object-specific geometric constraints."""
+    """Outcome of validating object-specific geometric constraints.
+
+    ``metric_check_applicable`` (Sprint 7): True when at least one metric-bound check
+    (e.g. door height > 1.8 m) could be evaluated.  False indicates the evidence
+    lacks physically-calibrated extent data; metric-bound validity claims are
+    therefore not meaningful.  The object is not marked invalid solely because a
+    metric check was inapplicable.
+    """
 
     is_valid: bool
     validation_score: float  # 0.0 to 1.0
     anomalies: tuple[str, ...]
     measured_aspect_ratio: float | None
     is_physically_plausible: bool
+    metric_check_applicable: bool = True  # Sprint 7: False when evidence is not metric
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,6 +100,7 @@ class GeometryValidationResult:
             "anomalies": list(self.anomalies),
             "measured_aspect_ratio": round(self.measured_aspect_ratio, 3) if self.measured_aspect_ratio else None,
             "is_physically_plausible": self.is_physically_plausible,
+            "metric_check_applicable": self.metric_check_applicable,
             "details": self.details,
         }
 
@@ -105,13 +146,29 @@ def validate_door_geometry(
             score -= 0.25
 
     is_valid = score >= 0.50
+    # Sprint 7: metric extent checks (door height > 1.8 m) are only applicable when
+    # the evidence carries physically-calibrated metric 3D data.
+    metric_ok = _evidence_is_metric(evidence)
+    details_out: dict[str, Any] = {
+        "door_aperture_ar": ar,
+        "truncated": evidence.is_truncated,
+        "metric_check_applicable": metric_ok,
+        "scale_state": evidence.scale_state,
+    }
+    if metric_ok and evidence.extent_3d is not None:
+        h_m = evidence.extent_3d[2]  # height in metres
+        if h_m < 1.80:
+            anomalies.append(f"Door height {h_m:.2f} m below standard minimum of 1.80 m")
+            score -= 0.20
+        details_out["height_m"] = h_m
     return GeometryValidationResult(
-        is_valid=is_valid,
+        is_valid=len(anomalies) == 0 or score >= 0.50,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
-        details={"door_aperture_ar": ar, "truncated": evidence.is_truncated},
+        metric_check_applicable=metric_ok,
+        details=details_out,
     )
 
 
@@ -136,13 +193,24 @@ def validate_window_geometry(
             score -= 0.30
 
     is_valid = score >= 0.50
+    metric_ok = _evidence_is_metric(evidence)
+    details_out: dict[str, Any] = {
+        "window_aspect_ratio": ar,
+        "metric_check_applicable": metric_ok,
+        "scale_state": evidence.scale_state,
+    }
+    if metric_ok and evidence.extent_3d is not None:
+        w_m, h_m = evidence.extent_3d[0], evidence.extent_3d[2]
+        details_out["width_m"] = w_m
+        details_out["height_m"] = h_m
     return GeometryValidationResult(
         is_valid=is_valid,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
-        details={"window_aspect_ratio": ar},
+        metric_check_applicable=metric_ok,
+        details=details_out,
     )
 
 
@@ -174,13 +242,15 @@ def validate_table_geometry(
                 break
 
     is_valid = score >= 0.50
+    metric_ok = _evidence_is_metric(evidence)
     return GeometryValidationResult(
         is_valid=is_valid,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
-        details={"table_aspect_ratio": ar},
+        metric_check_applicable=metric_ok,
+        details={"table_aspect_ratio": ar, "metric_check_applicable": metric_ok},
     )
 
 
@@ -203,13 +273,15 @@ def validate_chair_geometry(
             score -= 0.35
 
     is_valid = score >= 0.50
+    metric_ok = _evidence_is_metric(evidence)
     return GeometryValidationResult(
         is_valid=is_valid,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
-        details={"chair_aspect_ratio": ar},
+        metric_check_applicable=metric_ok,
+        details={"chair_aspect_ratio": ar, "metric_check_applicable": metric_ok},
     )
 
 
@@ -224,12 +296,14 @@ def validate_light_geometry(
     ar = extract_box_aspect_ratio(evidence.box_2d)
 
     is_valid = score >= 0.50
+    metric_ok = _evidence_is_metric(evidence)
     return GeometryValidationResult(
         is_valid=is_valid,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=True,
+        metric_check_applicable=metric_ok,
         details={"light_aspect_ratio": ar},
     )
 
@@ -253,13 +327,15 @@ def validate_structural_surface_geometry(
             score -= 0.35
 
     is_valid = score >= 0.50
+    metric_ok = _evidence_is_metric(evidence)
     return GeometryValidationResult(
         is_valid=is_valid,
         validation_score=max(0.0, min(1.0, score)),
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
-        details={"surface_class": cname},
+        metric_check_applicable=metric_ok,
+        details={"surface_class": cname, "metric_check_applicable": metric_ok},
     )
 
 
@@ -291,5 +367,6 @@ def validate_object_geometry(evidence: ObjectGeometryEvidence) -> GeometryValida
         anomalies=tuple(anomalies),
         measured_aspect_ratio=ar,
         is_physically_plausible=len(anomalies) == 0,
+        metric_check_applicable=_evidence_is_metric(evidence),
         details={"generic_aspect_ratio": ar},
     )

@@ -338,6 +338,13 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 MAX_WORKSPACE_PATH_CHARS = ColmapConfig.max_workspace_path_chars   # default ceiling; ColmapConfig can override per run
 
 
+def _as_text(value: bytes | str | None) -> str:
+    """TimeoutExpired carries bytes even when the run was text=True."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value or ""
+
+
 class WorkspacePathTooLong(RuntimeError):
     """The COLMAP workspace path would push COLMAP's own file paths past what Windows allows."""
 
@@ -507,8 +514,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         if self.session is not None:
             return self._reconstruct_in_session(image_evidence, env, gpu_flag)
 
-        with tempfile.TemporaryDirectory(prefix="colmap_") as workspace:
-            workspace = Path(workspace)
+        with tempfile.TemporaryDirectory(prefix="colmap_") as workspace_name:
+            workspace = Path(workspace_name)
             image_dir = workspace / "images"
             image_dir.mkdir()
             evidence_id_by_name = {}
@@ -634,8 +641,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 step,
                 subprocess.CompletedProcess(
                     args=[self._colmap_binary, step, *args], returncode=-1,
-                    stdout=exc.stdout or "",
-                    stderr=(exc.stderr or "") + f"\n[TIMEOUT after {timeout_s:.0f}s]",
+                    stdout=_as_text(exc.stdout),
+                    stderr=_as_text(exc.stderr) + f"\n[TIMEOUT after {timeout_s:.0f}s]",
                 ),
                 [self._colmap_binary, step, *args],
             ) from exc
@@ -1046,6 +1053,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             if n > best:
                 best, reference_dir = n, d
         if reference_dir is None:
+            from reconstruction.dense_pipeline import DenseMVSUnavailableError
             raise DenseMVSUnavailableError(
                 "no sparse sub-model directory found to continue into "
                 f"dense MVS (looked under {sparse_dir})"

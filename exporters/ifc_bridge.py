@@ -340,6 +340,7 @@ def _make_opening_solid(builder, wall_geom: Geometry, opening_geom: Geometry):
     """Construct an extruded solid for an opening cutting completely through wall thickness."""
     wbmin, wbmax = wall_geom.bounds_min, wall_geom.bounds_max
     obmin, obmax = opening_geom.bounds_min, opening_geom.bounds_max
+    assert wbmin is not None and wbmax is not None and obmin is not None and obmax is not None
     wdx = wbmax.x - wbmin.x
     wdy = wbmax.y - wbmin.y
     wdz = wbmax.z - wbmin.z
@@ -395,6 +396,7 @@ def _make_slab_opening_solid(builder, ws: dict, op: dict, wall_geom: Geometry):
         obmax = (max(p0[0], p1[0]), max(p0[1], p1[1]), max(p0[2], p1[2]))
 
         wbmin, wbmax = wall_geom.bounds_min, wall_geom.bounds_max
+        assert wbmin is not None and wbmax is not None
         wdx = wbmax.x - wbmin.x
         wdy = wbmax.y - wbmin.y
         wdz = wbmax.z - wbmin.z
@@ -767,6 +769,7 @@ def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[s
 
         dx, dy, dz = extent
         bmin = geometry.bounds_min
+        assert bmin is not None
 
         # Non-convex polygon support (P6-01 / P8-03): If the entity or geometry defines
         # boundary_polygon_2d or floor_polygon_2d, extrude that exact 2D closed polygon
@@ -778,11 +781,12 @@ def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[s
                 or entity.custom_properties.get("boundary_polygon_2d")
                 or entity.custom_properties.get("footprint")
             )
-        if polygon_2d is None and isinstance(getattr(geometry, "custom_properties", None), dict):
+        geom_props = getattr(geometry, "custom_properties", None)
+        if polygon_2d is None and isinstance(geom_props, dict):
             polygon_2d = (
-                geometry.custom_properties.get("floor_polygon_2d")
-                or geometry.custom_properties.get("boundary_polygon_2d")
-                or geometry.custom_properties.get("footprint")
+                geom_props.get("floor_polygon_2d")
+                or geom_props.get("boundary_polygon_2d")
+                or geom_props.get("footprint")
             )
 
         if polygon_2d and len(polygon_2d) >= 3:
@@ -866,8 +870,8 @@ def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[s
         if not isinstance(slab_openings, list):
             continue
         host_wall_elem = created_products.get(wall_id)
-        host_wall_geom = entity_geoms.get(wall_id)
-        if not host_wall_elem or not host_wall_geom:
+        slab_host_geom = entity_geoms.get(wall_id)
+        if not host_wall_elem or not slab_host_geom:
             continue
 
         for idx, op in enumerate(slab_openings):
@@ -885,7 +889,7 @@ def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[s
                                        name=f"opening-{wall_id}-{idx + 1:02d}")
             opening_elem.GlobalId = _deterministic_guid(f"{world.id}/opening/{wall_id}/{idx}")
 
-            cut_solid = _make_slab_opening_solid(builder, ws, op, host_wall_geom)
+            cut_solid = _make_slab_opening_solid(builder, ws, op, slab_host_geom)
             rep = builder.get_representation(context=body_ctx, items=cut_solid)
             ifc_api.run("geometry.assign_representation", model,
                         product=opening_elem, representation=rep)
@@ -953,9 +957,9 @@ def _extract_ifc_geometry(elem, geom_id: str) -> tuple[Optional[Geometry], dict[
                 if swept.is_a("IfcArbitraryClosedProfileDef"):
                     curve = getattr(swept, "OuterCurve", None)
                     if curve and hasattr(curve, "Points") and hasattr(curve.Points, "CoordList"):
-                        pts_2d = [tuple(float(c) for c in pt) for pt in curve.Points.CoordList]
+                        pts_2d = [(float(pt[0]), float(pt[1])) for pt in curve.Points.CoordList]
                     elif curve and hasattr(curve, "Points"):
-                        pts_2d = [tuple(float(c) for c in pt.Coordinates) for pt in curve.Points]
+                        pts_2d = [(float(pt.Coordinates[0]), float(pt.Coordinates[1])) for pt in curve.Points]
                 elif swept.is_a("IfcRectangleProfileDef"):
                     dx = float(swept.XDim)
                     dy = float(swept.YDim)

@@ -661,6 +661,13 @@ def export_world_to_ifc(world, path: str | Path, schema: str = "IFC4") -> Dict[s
     project = ifc_api.run("root.create_entity", model, ifc_class="IfcProject",
                           name=f"Reality Engine {world.id}")
     ifc_api.run("unit.assign_unit", model)
+    # IFC declares SI metres unconditionally; say in the file when the lengths are NOT physically measured metres (model units, an estimated
+    # typical-size prior, or a calibration no independent held-out anchor has checked).
+    from engine.multiengine.world_scale import scale_block
+
+    _sb = scale_block(world)
+    project.Description = (f"scale_kind={_sb['scale_kind']}; units={_sb['units']}; physically_measured={_sb['physically_measured']}; "
+                           f"calibration_status={_sb['calibration_status']}" + (f"; {_sb['warnings'][0]}" if _sb["warnings"] else ""))
     model_ctx = ifc_api.run("context.add_context", model,
                             context_type="Model")
     body_ctx = ifc_api.run(

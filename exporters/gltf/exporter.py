@@ -279,6 +279,13 @@ def _resolve_material(
     return None
 
 
+def _scale_extras(world: "WorldIR") -> dict:
+    from engine.multiengine.world_scale import scale_block
+
+    sb = scale_block(world)
+    return {k: sb[k] for k in ("units", "scale_kind", "physically_measured", "calibration_status", "dimension_state", "scale_m_per_gauge", "warnings")}
+
+
 def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.
 
@@ -306,7 +313,8 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
     zs = [v[2] for v in _CUBE_POSITIONS]
 
     gltf: dict = {
-        "asset": {"version": "2.0", "generator": "reality-engine gltf exporter"},
+        # what the lengths in this file are (metres vs model units, and on what evidence): glTF itself is unitless, so the file must say it
+        "asset": {"version": "2.0", "generator": "reality-engine gltf exporter", "extras": {"scale": _scale_extras(world)}},
         "scene": 0,
         "scenes": [{"nodes": []}],
         "nodes": [],

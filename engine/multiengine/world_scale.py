@@ -50,10 +50,40 @@ def world_calibration(world: Any) -> dict[str, Any] | None:
     return cal if isinstance(cal, dict) else None
 
 
+def _unscaled_kind(md: Mapping[str, Any], world: Any) -> str:
+    """Distinguish a gauge (SfM) world from one whose coordinates came from a relative depth model, from the labels its records carry."""
+    labels = {str(((e.transform or {}).get("scale_state")) or "").lower() for e in (getattr(world, "entities", None) or {}).values()}
+    labels |= {str(md.get("scale_state") or "").lower()}
+    return "relative_depth" if any("relative_depth" in x or x in ("relative", "relative_units") for x in labels) else "sfm_gauge"
+
+
+def scale_kind(world: Any) -> str:
+    """ONE vocabulary for what a world's lengths are, shared by the API, every exporter and the UI banner. Never mixed:
+
+    * ``sfm_gauge`` / ``relative_depth`` -- no physical scale (model units);
+    * ``estimated`` -- an accepted typical-size prior (never a measurement);
+    * ``anchored_unvalidated`` -- scaled by measured references that no independent held-out anchor has checked;
+    * ``physically_anchored`` -- a validated calibration (or a device depth scale)."""
+    md = getattr(world, "metadata", None) or {}
+    legacy = md.get("scale") or {}
+    cal = world_calibration(world)
+    status = (cal or {}).get("status")
+    state = str(legacy.get("state") or md.get("scale_state") or "relative").lower()
+    metric = state in ("metric", "metric_anchored")
+    if status == "estimated_prior":
+        return "estimated"
+    if metric and (status == "validated" or ((cal or {}).get("basis") or legacy.get("scale_basis")) == "device_depth"):
+        return "physically_anchored"
+    if metric and status == "unvalidated":
+        return "anchored_unvalidated"
+    return _unscaled_kind(md, world)
+
+
 def scale_block(world: Any) -> dict[str, Any]:
     """What a consumer (export response, status, UI banner) may say about a world's scale, from ONE function for the legacy and the evidence-world
     paths. ``units`` is "m" only when the scale is backed by an applicable measured calibration (or a device-depth scale); an accepted typical-size
-    prior is ESTIMATED and never reads as metric-export-ready; otherwise the geometry is in model units."""
+    prior is ESTIMATED and never reads as metric-export-ready; otherwise the geometry is in model units. ``physically_measured`` is True only for a
+    VALIDATED calibration: an unvalidated one still gives metres, but its dimensions are never labelled measured (``dimension_state`` is capped)."""
     md = getattr(world, "metadata", None) or {}
     legacy = md.get("scale") or {}
     cal = world_calibration(world)
@@ -62,6 +92,10 @@ def scale_block(world: Any) -> dict[str, Any]:
     basis = (cal or {}).get("basis") or legacy.get("scale_basis")
     device = basis == "device_depth"
     metric_ready = state in ("metric", "metric_anchored") and (status in ("validated", "unvalidated") or device)
+    kind = scale_kind(world)
+    measured = kind == "physically_anchored"
+    raw_dim = (cal or {}).get("dimension_state") or legacy.get("dimension_state")
+    dim = "UNVALIDATED" if raw_dim == "MEASURED" and not measured else raw_dim
     warnings: list[str] = []
     if not metric_ready:
         why = ("the scale is an accepted typical-size ESTIMATE, not a measurement" if status == "estimated_prior"
@@ -71,7 +105,7 @@ def scale_block(world: Any) -> dict[str, Any]:
     elif status == "unvalidated":
         warnings.append("Metric scale rests on measurements that were not independently validated")
     return {"state": state, "units": "m" if metric_ready else "model_units", "metric_export_ready": metric_ready, "calibration_status": status,
-            "basis": basis, "dimension_state": (cal or {}).get("dimension_state") or legacy.get("dimension_state"),
+            "scale_kind": kind, "physically_measured": measured, "basis": basis, "dimension_state": dim, "reference_dimension_state": raw_dim,
             "scale_m_per_gauge": (cal or {}).get("scale_m_per_gauge") or legacy.get("meters_per_unit"), "warnings": warnings}
 
 
@@ -127,6 +161,19 @@ def _propagate(unc: Any, extent: Any, s: float, rel: float | None, rot: np.ndarr
     return {"original": unc, "scale_term": "unrecognised_shape_not_propagated"}
 
 
+def _gauge_twins(d: dict[str, Any], s: float) -> int:
+    """For every scalar ``*_gauge`` (length) / ``*_gauge2`` (area) entry add the metre twin ``*_m`` / ``*_m2``; the gauge original stays, labelled."""
+    n = 0
+    for k in [k for k in d if isinstance(k, str)]:
+        if _num(d[k]) and k.endswith("_gauge"):
+            d[k[:-6] + "_m"] = s * float(d[k])
+            n += 1
+        elif _num(d[k]) and k.endswith("_gauge2"):
+            d[k[:-7] + "_m2"] = s * s * float(d[k])
+            n += 1
+    return n
+
+
 def _transform_mesh(artifacts: Any, uri: str, tf: Sim3) -> tuple[str, str, np.ndarray, np.ndarray]:
     import trimesh
 
@@ -164,6 +211,8 @@ def _scale_determinations(dets: dict[str, Any], tf: Sim3, rel: float | None, cid
                                              (np.asarray(dets[q]["value"], float) - centroid).tolist())
         d["uncertainty"] = _propagate(d.get("uncertainty"), ext, s, rel, tf.R if q == "position" else None)
         d["scale_state"], d["units"], d["calibration_id"] = METRIC, "m", cid
+        if q == "dimensions" and d.get("uncertainty") is not None:
+            d["uncertainty_state"] = dets[q].get("uncertainty_state") or "NOT_MEASURED"
         if q == "position" and frame_id:
             d["frame"] = frame_id
     return out
@@ -173,8 +222,11 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
                       cameras: Mapping[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
     if not cal.applicable:
         raise CalibrationRefused(f"calibration status is {cal.status!r}: {cal.reason}")
-    if (world.metadata or {}).get(CAL_KEY):
-        raise AlreadyCalibrated("this world already carries a physical calibration; recalibrate from its gauge ancestor, never rescale it")
+    md0 = world.metadata or {}
+    if md0.get(CAL_KEY) or world_calibration(world) or str((md0.get("scale") or {}).get("state") or "").lower() == "metric"             or any((e.transform or {}).get("physically_metric") for e in world.entities.values()):
+        # the legacy reconstruction route scales the SfM result BEFORE the world is compiled; this world is already in metres
+        raise AlreadyCalibrated("this world already carries a physical scale (evidence-world calibration or a metric reconstruction); "
+                                "recalibrate from its gauge ancestor, never rescale it")
     tf = _tf(cal)
     s, R, t = float(tf.scale), tf.R, tf.t
     rel = _scale_sigma_rel(cal)
@@ -214,7 +266,9 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
                 ref_vec = (centre - centroid).tolist() if centroid is not None and isinstance(pos_unc, dict) else ref
                 qm["uncertainty"] = {"position": _propagate(pos_unc, ref_vec, s, rel, R),
                                      "dimensions": _propagate(unc.get("dimensions"), dims.tolist(), s, rel),
-                                     "propagated_from_gauge": unc, "scale_sigma_rel": rel}
+                                     "propagated_from_gauge": unc, "scale_sigma_rel": rel,
+                                     # a scale-propagated sampling spread is still a lower bound: only a scene-disjoint calibration may lift this
+                                     "dimension_uncertainty_state": unc.get("dimension_uncertainty_state") or "NOT_MEASURED"}
                 counts["uncertainties"] += 1
             g.bounds_min, g.bounds_max = Vector3(*nlo), Vector3(*nhi)
             counts["boxes"] += 1
@@ -225,9 +279,10 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
             n2 = R @ np.asarray(plane["normal"], float)
             qm["plane"] = {"normal": n2.tolist(), "offset": float(s * plane["offset"] + n2 @ t)}
             ph = tf.apply(np.asarray(hull, float))
-            qm["observed_hull"] = np.round(ph, 6).tolist()
+            qm["observed_hull"] = np.round(ph, 9).tolist()  # not 6: at s=0.05 a 1e-6 rounding of the scaled hull is a 1e-5 relative error
             qm["observed_area"] = float(qm.get("observed_area", 0.0)) * s * s
             qm["rms_residual"] = float(qm.get("rms_residual", 0.0)) * s
+            _gauge_twins(qm, s)
             g.bounds_min, g.bounds_max = Vector3(*ph.min(0)), Vector3(*ph.max(0))
             counts["planes"] += 1
         elif g.type is GeometryType.MESH:
@@ -236,8 +291,7 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
             pre["data_uri"], pre["data_hash"] = g.data_uri, g.data_hash
             g.data_uri, g.data_hash, mlo, mhi = _transform_mesh(artifacts, g.data_uri, tf)
             g.bounds_min, g.bounds_max = Vector3(*mlo), Vector3(*mhi)
-            if _num(qm.get("voxel_length_gauge")):
-                qm["voxel_length_m"] = s * float(qm["voxel_length_gauge"])
+            _gauge_twins(qm, s)
             counts["meshes"] += 1
         else:
             raise CalibrationRefused(f"geometry {g.id} has type {g.type}; no consistent transform is defined for it")
@@ -281,7 +335,12 @@ def apply_calibration(world: Any, cal: ScaleCalibration, *, parent_version: str,
     record = {"id": cid, "parent_version": parent_version, "scale_m_per_gauge": s, "scale_sigma": cal.scale_sigma, "scale_sigma_rel": rel,
               "frame_id": frame_id, "calibration": cal.to_dict(), "camera_centres_physical": cam_out, "applied": counts,
               "note": "gauge ancestor preserved as the parent version; every metric quantity carries this calibration_id"}
-    w.metadata = {**(w.metadata or {}), CAL_KEY: record, "scale_state": METRIC}
+    # The legacy reconstruction route records the same fact in ``metadata['scale']``; every reader of that block (floor-plan exports, measurements,
+    # the scale route's own "already metric" guard, the next job's unit conversion) must see the calibrated version as metric too.
+    legacy_scale = {"state": "metric", "meters_per_unit": s, "scale_basis": cal.basis or cal.kind, "dimension_state": cal.dimension_state,
+                    "calibration": cal.to_dict(), "calibration_id": cid, "applied_by": "evidence_world_calibration",
+                    "note": f"metric scale from {cal.basis or cal.kind}: {s:.6f} m per gauge unit (applied as version {parent_version} -> calibrated)"}
+    w.metadata = {**(w.metadata or {}), CAL_KEY: record, "scale_state": METRIC, "scale": legacy_scale}
     return w, record
 
 
@@ -297,7 +356,9 @@ def commit_calibrated_version(store: Any, parent_version: str, cal: ScaleCalibra
     vid = f"{parent_version}-m{calibration_id(cal, parent_version)[4:]}"
     if (store._versions_dir / f"{vid}.json").exists():
         return vid, store.load_version(vid).metadata[CAL_KEY]
+    parent_hash = store._record(parent_version)["artifact_hash"]
     world, record = apply_calibration(store.load_version(parent_version), cal, parent_version=parent_version, artifacts=artifacts, cameras=cameras)
+    record["parent_artifact_hash"] = parent_hash
     errors = [i for i in validate_world_ir(world).issues if str(getattr(i.severity, "value", i.severity)).lower() == "error"]
     if errors:
         raise CalibrationRefused("calibrated world failed validation: " + "; ".join(f"{i.code}: {i.message}" for i in errors[:3]))
@@ -305,6 +366,8 @@ def commit_calibrated_version(store: Any, parent_version: str, cal: ScaleCalibra
         store.save_version(world, parent=parent_version, version_id=vid, source_session_ids=source_session_ids)
     except WorldStoreError:
         pass  # a concurrent identical request won the race; the content is identical by construction
+    if store._record(parent_version)["artifact_hash"] != parent_hash:
+        raise CalibrationRefused(f"the parent version {parent_version} changed while it was being calibrated; it must stay immutable")
     problems = store.verify_version(vid)
     if problems:
         try:  # an unverifiable version must never be reachable as HEAD

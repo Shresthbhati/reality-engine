@@ -69,9 +69,15 @@ def run_fine_stages(evidence_items, options, sink: dict | None = None):
     ctx = StageContext(job_id="", workdir=Path("."), artifacts={}, params={},
                        state={"evidence_items": evidence_items, "vertical_slice_options": options,
                               "lap": lap, "clock": clock})
+    from engine.core.resource_governor import StageResourceProbe
+
     for cls in fine_chain():
         stage = cls()
-        result = stage.run(ctx)
+        with StageResourceProbe() as probe:  # measured per-stage resident memory (process + children), system headroom and CUDA peaks
+            result = stage.run(ctx)
+        if probe.metrics:
+            result.metrics.update(probe.metrics)
+            result.peak_rss_mb = probe.metrics.get("mem_rss_peak_mb")
         if sink is not None:
             sink[stage.spec.name] = result
         for name in _LAPS_AFTER.get(stage.spec.name, ()):

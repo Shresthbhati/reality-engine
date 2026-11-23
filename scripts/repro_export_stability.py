@@ -85,7 +85,10 @@ def main() -> int:
             sample("reconstruct")
             j = h.get(f"/api/jobs/{job}").json()
             if j.get("terminal"):
-                results.append({"phase": "reconstruct", "job": job, "status": j["status"], "seconds": round(time.time() - t_job, 1)})
+                results.append({"phase": "reconstruct", "job": job, "status": j["status"], "seconds": round(time.time() - t_job, 1),
+                                "stages": [{"name": i["name"], "status": i["status"], "duration_s": i.get("duration_s"),
+                                            **{k: v for k, v in (i.get("metrics") or {}).items() if k.startswith("mem_")}}
+                                           for i in h.get(f"/api/jobs/{job}/stages").json()["items"]]})
                 break
             time.sleep(5)
         if proc.poll() is not None:

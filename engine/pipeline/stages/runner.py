@@ -81,8 +81,15 @@ def run_stages(
             attempts = 1 + (max(0, spec.retries) if spec.idempotent else 0)  # a non-idempotent stage is never re-run
             for attempt in range(1, attempts + 1):
                 try:
-                    result = _run_with_deadline(stage, ctx, (stage_timeouts or {}).get(spec.name))
+                    from engine.core.resource_governor import StageResourceProbe
+
+                    with StageResourceProbe() as probe:  # measured resident memory (process + children), system headroom, CUDA peaks
+                        result = _run_with_deadline(stage, ctx, (stage_timeouts or {}).get(spec.name))
                     result.inputs_hash = inputs_hash
+                    if probe.metrics:
+                        result.metrics.update({k: v for k, v in probe.metrics.items() if k not in result.metrics})
+                        if result.peak_rss_mb is None:
+                            result.peak_rss_mb = probe.metrics.get("mem_rss_peak_mb")
                     break
                 except Exception as exc:  # noqa: BLE001 - recorded as a failed StageResult, never swallowed
                     result = StageResult(

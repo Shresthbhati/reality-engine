@@ -275,6 +275,21 @@ async def test_a_timeout_is_a_failure_and_never_a_success(env, monkeypatch):
     assert job.status == "failed" and "timed out" in job.error
 
 
+async def test_a_timed_out_job_is_never_retried_in_the_same_process(env, monkeypatch):
+    """The abandoned thread of a timed-out attempt still holds its memory; a retry would run a second copy on top of it."""
+    monkeypatch.setenv("JOB_TIMEOUT_SECONDS", "1")
+
+    async def wedged(db, job):
+        await asyncio.sleep(30)
+
+    monkeypatch.setitem(jobs._HANDLERS, FAKE, wedged)
+    await _add_job(env, max_attempts=3)
+    job = await asyncio.wait_for(_run(env), 15)
+    assert job.status == "failed" and job.attempts == 1, "no second attempt although two were left"
+    assert (job.payload or {}).get("failure_kind") == "handler_timeout"
+    assert await _run(env) is None
+
+
 async def test_a_cancel_request_stops_a_running_job_and_it_grades_cancelled(env, monkeypatch):
     started = asyncio.Event()
 

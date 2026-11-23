@@ -534,6 +534,8 @@ class LearnedConfidenceCalibrator:
     - Per-class Platt scaling parameters when sufficient samples exist
     - Fallback tracking (per_class_platt, global_platt, uncalibrated)
     - Calibration error evaluation (ECE, Brier score, NLL)
+    - Reliability diagrams and calibration curves
+    - Parameter uncertainty / Fisher information standard errors
     - Full provenance tracking (model_name, checkpoint_hash, dataset_split, dataset_split_hash)
     """
 
@@ -542,11 +544,17 @@ class LearnedConfidenceCalibrator:
         temperature: float = 1.0,
         bias: float = 0.0,
         class_params: dict[str, tuple[float, float]] | None = None,
+        class_sample_counts: dict[str, dict[str, int]] | None = None,
+        class_uncertainties: dict[str, dict[str, float]] | None = None,
+        global_uncertainty: dict[str, float] | None = None,
         provenance: dict[str, Any] | None = None,
     ) -> None:
         self.temperature = float(temperature)
         self.bias = float(bias)
         self.class_params: dict[str, tuple[float, float]] = dict(class_params) if class_params else {}
+        self.class_sample_counts: dict[str, dict[str, int]] = dict(class_sample_counts) if class_sample_counts else {}
+        self.class_uncertainties: dict[str, dict[str, float]] = dict(class_uncertainties) if class_uncertainties else {}
+        self.global_uncertainty: dict[str, float] = dict(global_uncertainty) if global_uncertainty else {}
         self.provenance: dict[str, Any] = dict(provenance) if provenance else {}
         self.is_fitted = bool(self.provenance.get("is_fitted", False) or class_params or temperature != 1.0 or bias != 0.0)
 
@@ -586,15 +594,80 @@ class LearnedConfidenceCalibrator:
 
         return CalibrationMetrics(ece=float(ece), brier_score=brier, nll=nll, sample_count=n)
 
+    @staticmethod
+    def compute_reliability_diagram(
+        scores: Sequence[float],
+        binary_labels: Sequence[int],
+        num_bins: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Computes empirical reliability diagram bins (mean confidence vs empirical accuracy)."""
+        if not scores or len(scores) != len(binary_labels):
+            return []
+        p = np.clip(np.asarray(scores, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+        y = np.asarray(binary_labels, dtype=np.float64)
+        n = len(p)
+        bins = np.linspace(0.0, 1.0, num_bins + 1)
+        bin_indices = np.clip(np.digitize(p, bins) - 1, 0, num_bins - 1)
+        diagram: list[dict[str, Any]] = []
+        for b in range(num_bins):
+            mask = (bin_indices == b)
+            cnt = int(np.sum(mask))
+            b_low = float(bins[b])
+            b_high = float(bins[b + 1])
+            if cnt > 0:
+                conf = float(np.mean(p[mask]))
+                acc = float(np.mean(y[mask]))
+                gap = float(abs(acc - conf))
+            else:
+                conf = float(0.5 * (b_low + b_high))
+                acc = 0.0
+                gap = 0.0
+            diagram.append({
+                "bin_index": b,
+                "bin_lower": round(b_low, 3),
+                "bin_upper": round(b_high, 3),
+                "count": cnt,
+                "confidence": round(conf, 4),
+                "accuracy": round(acc, 4),
+                "calibration_gap": round(gap, 4),
+            })
+        return diagram
+
+    def verify_model_compatibility(
+        self,
+        model_name: str | None = None,
+        checkpoint_hash: str | None = None,
+    ) -> bool:
+        """Verifies if the calibrator was fitted on the specified model and checkpoint."""
+        if not self.is_fitted:
+            return True
+        exp_model = self.provenance.get("model_name")
+        if exp_model and model_name and exp_model != model_name:
+            return False
+        exp_hash = self.provenance.get("checkpoint_hash")
+        if exp_hash and checkpoint_hash and exp_hash != checkpoint_hash:
+            return False
+        return True
+
     def fit(
         self,
         raw_scores: Sequence[float],
         binary_labels: Sequence[int],
         class_names: Sequence[str] | None = None,
+        min_class_samples: int = 8,
+        min_class_positives: int = 3,
+        min_class_negatives: int = 3,
         provenance: dict[str, Any] | None = None,
     ) -> LearnedConfidenceCalibrator:
-        """Fits Platt scaling parameters using NLL minimization on calibration data."""
-        if not raw_scores or len(raw_scores) < 5 or sum(binary_labels) == 0 or sum(binary_labels) == len(binary_labels):
+        """Fits Platt scaling parameters using NLL minimization on calibration data.
+
+        Enforces strict sample requirements to prevent overfitting on sparse classes:
+        - Requires >= 6 total samples with >= 2 positives and >= 2 negatives for global Platt.
+        - Requires >= min_class_samples (default 8) with >= min_class_positives (default 3)
+          and >= min_class_negatives (default 3) for per-class Platt.
+        - Calculates parameter uncertainties (standard errors) via Fisher information.
+        """
+        if not raw_scores or len(raw_scores) < 6 or sum(binary_labels) < 2 or sum(binary_labels) > len(binary_labels) - 2:
             self.temperature = 1.0
             self.bias = 0.0
             self.is_fitted = False
@@ -606,7 +679,7 @@ class LearnedConfidenceCalibrator:
         logits = np.log(scores / (1.0 - scores))
         y = np.asarray(binary_labels, dtype=np.float64)
 
-        def fit_platt(log_arr: np.ndarray, y_arr: np.ndarray) -> tuple[float, float]:
+        def fit_platt_with_uncertainty(log_arr: np.ndarray, y_arr: np.ndarray) -> tuple[float, float, float, float]:
             def nll_loss(params: np.ndarray) -> float:
                 T, b = params[0], params[1]
                 scaled_logits = log_arr / max(1e-2, T) + b
@@ -616,15 +689,39 @@ class LearnedConfidenceCalibrator:
                 return float(loss)
 
             res = minimize(nll_loss, x0=[1.0, 0.0], bounds=[(0.05, 10.0), (-5.0, 5.0)], method="L-BFGS-B")
-            if res.success:
-                return (float(res.x[0]), float(res.x[1]))
-            return (1.0, 0.0)
+            opt_T, opt_b = (float(res.x[0]), float(res.x[1])) if res.success else (1.0, 0.0)
 
-        # 1. Global Platt fit
-        self.temperature, self.bias = fit_platt(logits, y)
+            # Fisher information / Hessian matrix estimation for parameter uncertainty
+            n_samples = len(log_arr)
+            z = log_arr / max(1e-2, opt_T) + opt_b
+            p_opt = 1.0 / (1.0 + np.exp(-np.clip(z, -30.0, 30.0)))
+            w = p_opt * (1.0 - p_opt)
+            h_bb = float(np.mean(w))
+            h_TT = float(np.mean(w * ((log_arr / (opt_T ** 2)) ** 2)))
+            h_Tb = float(-np.mean(w * (log_arr / (opt_T ** 2))))
+            det_h = h_TT * h_bb - (h_Tb ** 2)
 
-        # 2. Per-class Platt fit if class_names provided
+            se_T = 0.0
+            se_b = 0.0
+            if det_h > 1e-8 and n_samples > 0:
+                var_T = max(0.0, (1.0 / n_samples) * (h_bb / det_h))
+                var_b = max(0.0, (1.0 / n_samples) * (h_TT / det_h))
+                se_T = math.sqrt(var_T)
+                se_b = math.sqrt(var_b)
+
+            return (opt_T, opt_b, se_T, se_b)
+
+        # 1. Global Platt fit with uncertainty
+        self.temperature, self.bias, g_se_T, g_se_b = fit_platt_with_uncertainty(logits, y)
+        self.global_uncertainty = {
+            "temperature_se": round(g_se_T, 4),
+            "bias_se": round(g_se_b, 4),
+        }
+
+        # 2. Per-class Platt fit if class_names provided with sample thresholds
         self.class_params = {}
+        self.class_sample_counts = {}
+        self.class_uncertainties = {}
         if class_names is not None and len(class_names) == len(raw_scores):
             by_class: dict[str, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
             for lg, y_val, cls in zip(logits, y, class_names):
@@ -633,26 +730,45 @@ class LearnedConfidenceCalibrator:
 
             for cls, (c_logs, c_ys) in by_class.items():
                 c_y_arr = np.asarray(c_ys, dtype=np.float64)
-                if len(c_logs) >= 4 and np.sum(c_y_arr) >= 2 and np.sum(c_y_arr == 0) >= 2:
+                total_c = len(c_logs)
+                pos_c = int(np.sum(c_y_arr == 1.0))
+                neg_c = int(np.sum(c_y_arr == 0.0))
+                self.class_sample_counts[cls] = {
+                    "total": total_c,
+                    "positives": pos_c,
+                    "negatives": neg_c,
+                }
+                if total_c >= min_class_samples and pos_c >= min_class_positives and neg_c >= min_class_negatives:
                     c_log_arr = np.asarray(c_logs, dtype=np.float64)
-                    c_T, c_b = fit_platt(c_log_arr, c_y_arr)
+                    c_T, c_b, c_se_T, c_se_b = fit_platt_with_uncertainty(c_log_arr, c_y_arr)
                     self.class_params[cls] = (c_T, c_b)
+                    self.class_uncertainties[cls] = {
+                        "temperature_se": round(c_se_T, 4),
+                        "bias_se": round(c_se_b, 4),
+                    }
 
         self.is_fitted = True
 
-        # Compute post-calibration metrics
+        # Compute pre- and post-calibration metrics and reliability diagrams
         cal_scores = [self.calibrate(s, c).calibrated_probability for s, c in zip(raw_scores, class_names or ["unknown"] * len(raw_scores))]
         pre_metrics = self.compute_calibration_metrics(raw_scores, binary_labels)
         post_metrics = self.compute_calibration_metrics(cal_scores, binary_labels)
+        pre_diagram = self.compute_reliability_diagram(raw_scores, binary_labels)
+        post_diagram = self.compute_reliability_diagram(cal_scores, binary_labels)
 
         self.provenance = {
             "is_fitted": True,
             "global_temperature": round(self.temperature, 4),
             "global_bias": round(self.bias, 4),
+            "global_uncertainty": self.global_uncertainty,
             "class_param_count": len(self.class_params),
             "classes_calibrated": list(self.class_params.keys()),
+            "class_sample_counts": self.class_sample_counts,
+            "class_uncertainties": self.class_uncertainties,
             "pre_calibration": pre_metrics.to_dict(),
             "post_calibration": post_metrics.to_dict(),
+            "pre_reliability_diagram": pre_diagram,
+            "post_reliability_diagram": post_diagram,
         }
         if provenance:
             self.provenance.update(provenance)
@@ -674,9 +790,11 @@ class LearnedConfidenceCalibrator:
         if class_name and class_name in self.class_params:
             T, b = self.class_params[class_name]
             method = "per_class_platt"
-        else:
+        elif self.temperature != 1.0 or self.bias != 0.0:
             T, b = self.temperature, self.bias
             method = "global_platt"
+        else:
+            return CalibrationResult(float(score), False, "uncalibrated")
 
         scaled_logit = logit / max(1e-2, T) + b
         calibrated_prob = 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, scaled_logit))))
@@ -687,6 +805,9 @@ class LearnedConfidenceCalibrator:
             "temperature": self.temperature,
             "bias": self.bias,
             "class_params": {k: [round(v[0], 4), round(v[1], 4)] for k, v in self.class_params.items()},
+            "class_sample_counts": self.class_sample_counts,
+            "class_uncertainties": self.class_uncertainties,
+            "global_uncertainty": self.global_uncertainty,
             "provenance": self.provenance,
             "is_fitted": self.is_fitted,
         }
@@ -697,6 +818,9 @@ class LearnedConfidenceCalibrator:
             temperature=data.get("temperature", 1.0),
             bias=data.get("bias", 0.0),
             class_params={k: (v[0], v[1]) for k, v in data.get("class_params", {}).items()},
+            class_sample_counts=data.get("class_sample_counts", {}),
+            class_uncertainties=data.get("class_uncertainties", {}),
+            global_uncertainty=data.get("global_uncertainty", {}),
             provenance=data.get("provenance", {}),
         )
         cal.is_fitted = data.get("is_fitted", False)
@@ -716,6 +840,21 @@ class LearnedConfidenceCalibrator:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
         return cls.from_dict(data)
+
+
+def load_default_production_calibrator(
+    file_path: str | Path = "artifacts/perception/calibrator_dev.json",
+) -> LearnedConfidenceCalibrator | None:
+    """Loads default production confidence calibrator from workspace artifacts if available and fitted."""
+    p = Path(file_path)
+    if p.is_file():
+        try:
+            cal = LearnedConfidenceCalibrator.load(p)
+            if cal.is_fitted:
+                return cal
+        except Exception:
+            return None
+    return None
 
 
 def calibrate_detection_confidence(
@@ -1572,7 +1711,7 @@ class DetectionPipeline:
     ) -> None:
         self.detector = detector or RuleBasedDetectorAdapter()
         self.segmenter = segmenter or ThresholdSegmenterAdapter()
-        self.calibrator = calibrator
+        self.calibrator = calibrator if calibrator is not None else load_default_production_calibrator()
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
 
@@ -1780,11 +1919,21 @@ class DetectionPipeline:
                         by2 = 0.70 * my2 + 0.30 * det.y2
                         final_box = (bx1, by1, bx2, by2)
 
-            cal_conf = det.calibrated_confidence or calibrate_detection_confidence(
-                det.confidence,
-                det.class_name,
-                calibrator=self.calibrator,
-            )
+            if det.calibrated_confidence is not None:
+                cal_conf = det.calibrated_confidence
+            elif self.calibrator is not None and self.calibrator.is_fitted:
+                cal_res = self.calibrator.calibrate(det.confidence, class_name=det.class_name)
+                cal_conf = cal_res.calibrated_probability
+                combined_attrs["is_calibrated"] = cal_res.is_calibrated
+                combined_attrs["calibration_method"] = cal_res.method
+            else:
+                cal_conf = calibrate_detection_confidence(
+                    det.confidence,
+                    det.class_name,
+                    calibrator=self.calibrator,
+                )
+                combined_attrs["is_calibrated"] = False
+                combined_attrs["calibration_method"] = "uncalibrated"
 
             refined_boxes.append(DetectionBox(
                 box_id=det.box_id,

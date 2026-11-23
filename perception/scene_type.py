@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -94,7 +94,7 @@ def image_fractions(label_map: np.ndarray, id2label: Mapping[int, str]) -> Dict[
     return {"outdoor": sum(out_c.values()), "indoor": sum(in_c.values()), "top_outdoor": top(out_c), "top_indoor": top(in_c)}
 
 
-def classify_from_fractions(per_image: Sequence[Mapping[str, object]], views_total: Optional[int] = None,
+def classify_from_fractions(per_image: Sequence[Mapping[str, Any]], views_total: Optional[int] = None,
                             threshold: float = CONFIDENCE_THRESHOLD, min_coverage: float = MIN_COVERAGE) -> SceneTypeResult:
     """Pure decision rule over per-image {"outdoor", "indoor"} shares (see module docstring)."""
     views_total = len(per_image) if views_total is None else views_total
@@ -121,10 +121,10 @@ def classify_from_fractions(per_image: Sequence[Mapping[str, object]], views_tot
     return SceneTypeResult(kind, abs(score), score, len(scores), views_total, ev)
 
 
-def _merge_top(per_image: Sequence[Mapping[str, object]], key: str) -> Dict[str, float]:
+def _merge_top(per_image: Sequence[Mapping[str, Any]], key: str) -> Dict[str, float]:
     agg: Dict[str, float] = {}
     for f in per_image:
-        for k, v in (f.get(key) or {}).items():  # type: ignore[union-attr]
+        for k, v in (f.get(key) or {}).items():
             agg[k] = agg.get(k, 0.0) + float(v)
     n = max(len(per_image), 1)
     return {k: round(v / n, 4) for k, v in sorted(agg.items(), key=lambda kv: -kv[1])[:4]}
@@ -192,7 +192,8 @@ def _load_upernet(device: Optional[str]):
 
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
     proc = AutoImageProcessor.from_pretrained(SEG_MODEL, local_files_only=True)
-    model = UperNetForSemanticSegmentation.from_pretrained(SEG_MODEL, local_files_only=True).to(dev).eval()
+    raw_model: Any = UperNetForSemanticSegmentation.from_pretrained(SEG_MODEL, local_files_only=True)
+    model = raw_model.to(dev).eval()
     id2label = {int(k): str(v).strip() for k, v in model.config.id2label.items()}
     state = {"model": model}
 

@@ -37,10 +37,13 @@ class MaterialType(str, Enum):
     LEATHER = "leather"
     PLASTIC = "plastic"
     PLASTER = "plaster"
+    PAINT = "paint"
     PAINT_MATTE = "paint_matte"
     PAINT_GLOSS = "paint_gloss"
     BRICK = "brick"
     ASPHALT = "asphalt"
+    CERAMIC_TILE = "ceramic_tile"
+    COMPOSITE = "composite"
     UNKNOWN = "unknown"
 
 
@@ -126,6 +129,7 @@ class EntityVisualAttributes:
 
     material: MaterialType = MaterialType.UNKNOWN
     material_confidence: float = 0.0
+    material_probabilities: dict[str, float] = field(default_factory=dict)
     surface_finish: SurfaceFinish = SurfaceFinish.UNKNOWN
     dominant_color_name: str = "unknown"
     dominant_rgb: tuple[float, float, float] = (0.5, 0.5, 0.5)
@@ -134,6 +138,8 @@ class EntityVisualAttributes:
     condition: ObjectCondition = ObjectCondition.UNKNOWN
     is_reflective: bool = False
     is_transparent: bool = False
+    texture_regularity: float = 0.0
+    edge_gradient_intensity: float = 0.0
     confidence_basis: str = "deterministic_cielab_texture_analysis"
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -141,6 +147,7 @@ class EntityVisualAttributes:
         return {
             "material": self.material.value,
             "material_confidence": round(self.material_confidence, 3),
+            "material_probabilities": {k: round(v, 3) for k, v in self.material_probabilities.items()},
             "surface_finish": self.surface_finish.value,
             "dominant_color_name": self.dominant_color_name,
             "dominant_rgb": [round(c, 4) for c in self.dominant_rgb],
@@ -149,6 +156,8 @@ class EntityVisualAttributes:
             "condition": self.condition.value,
             "is_reflective": self.is_reflective,
             "is_transparent": self.is_transparent,
+            "texture_regularity": round(self.texture_regularity, 3),
+            "edge_gradient_intensity": round(self.edge_gradient_intensity, 3),
             "confidence_basis": self.confidence_basis,
             "details": self.details,
         }
@@ -352,6 +361,27 @@ def extract_visual_attributes(
         finish = SurfaceFinish.ROUGH
         mat_conf = 0.75
 
+    # 3b. Derive probabilistic material distributions across candidates
+    # Never claim exact material from RGB alone
+    mat_probs: dict[str, float] = {mat.value: mat_conf}
+    remaining_prob = max(0.05, 1.0 - mat_conf)
+    if "wood" in mat.value:
+        mat_probs[MaterialType.PLASTIC.value] = round(remaining_prob * 0.4, 3)
+        mat_probs[MaterialType.PAINT_MATTE.value] = round(remaining_prob * 0.4, 3)
+        mat_probs[MaterialType.UNKNOWN.value] = round(remaining_prob * 0.2, 3)
+    elif "glass" in mat.value:
+        mat_probs[MaterialType.PLASTIC.value] = round(remaining_prob * 0.7, 3)
+        mat_probs[MaterialType.UNKNOWN.value] = round(remaining_prob * 0.3, 3)
+    elif "metal" in mat.value:
+        mat_probs[MaterialType.PLASTIC.value] = round(remaining_prob * 0.6, 3)
+        mat_probs[MaterialType.PAINT_GLOSS.value] = round(remaining_prob * 0.3, 3)
+        mat_probs[MaterialType.UNKNOWN.value] = round(remaining_prob * 0.1, 3)
+    else:
+        mat_probs[MaterialType.UNKNOWN.value] = round(remaining_prob, 3)
+
+    # Texture regularity: inverse of directional gradient variance
+    texture_regularity = float(min(1.0, 1.0 / max(1.0, directional_ratio)))
+
     # 4. Operational state (e.g. door open vs closed, light on vs off)
     op_state = ObjectState.UNSPECIFIED
     state_conf = 0.0
@@ -387,6 +417,7 @@ def extract_visual_attributes(
     return EntityVisualAttributes(
         material=mat,
         material_confidence=mat_conf,
+        material_probabilities=mat_probs,
         surface_finish=finish,
         dominant_color_name=best_color_name,
         dominant_rgb=(float(mean_rgb[0]), float(mean_rgb[1]), float(mean_rgb[2])),
@@ -395,10 +426,60 @@ def extract_visual_attributes(
         condition=condition,
         is_reflective=is_refl,
         is_transparent=is_trans,
+        texture_regularity=texture_regularity,
+        edge_gradient_intensity=roughness_energy,
         details={
             "delta_e_closest_color": round(best_delta_e, 2),
             "texture_gradient_energy": round(roughness_energy, 2),
             "directional_gradient_ratio": round(directional_ratio, 2),
             "specular_pixel_fraction": round(specular_ratio, 4),
         },
+    )
+
+
+def fuse_multiview_attributes(attributes_list: Sequence[EntityVisualAttributes]) -> EntityVisualAttributes:
+    """Fuses visual attributes across multiple viewpoints with uncertainty weighting."""
+    if not attributes_list:
+        return EntityVisualAttributes()
+    if len(attributes_list) == 1:
+        return attributes_list[0]
+
+    # Weighted mean RGB
+    total_w = sum(a.material_confidence for a in attributes_list) or float(len(attributes_list))
+    fused_r = sum(a.dominant_rgb[0] * a.material_confidence for a in attributes_list) / total_w
+    fused_g = sum(a.dominant_rgb[1] * a.material_confidence for a in attributes_list) / total_w
+    fused_b = sum(a.dominant_rgb[2] * a.material_confidence for a in attributes_list) / total_w
+
+    # Aggregate material probabilities
+    combined_probs: dict[str, float] = {}
+    for a in attributes_list:
+        for m_name, prob in a.material_probabilities.items():
+            combined_probs[m_name] = combined_probs.get(m_name, 0.0) + prob / len(attributes_list)
+
+    # Best material
+    best_mat_name = max(combined_probs.keys(), key=lambda k: combined_probs[k]) if combined_probs else MaterialType.UNKNOWN.value
+    try:
+        best_mat = MaterialType(best_mat_name)
+    except ValueError:
+        best_mat = MaterialType.UNKNOWN
+
+    # Primary attribute from highest-confidence observation
+    primary = max(attributes_list, key=lambda a: a.material_confidence)
+
+    return EntityVisualAttributes(
+        material=best_mat,
+        material_confidence=round(combined_probs.get(best_mat_name, primary.material_confidence), 3),
+        material_probabilities=combined_probs,
+        surface_finish=primary.surface_finish,
+        dominant_color_name=primary.dominant_color_name,
+        dominant_rgb=(float(fused_r), float(fused_g), float(fused_b)),
+        operational_state=primary.operational_state,
+        state_confidence=primary.state_confidence,
+        condition=primary.condition,
+        is_reflective=any(a.is_reflective for a in attributes_list),
+        is_transparent=any(a.is_transparent for a in attributes_list),
+        texture_regularity=float(np.mean([a.texture_regularity for a in attributes_list])),
+        edge_gradient_intensity=float(np.mean([a.edge_gradient_intensity for a in attributes_list])),
+        confidence_basis="multiview_fused_attribute_consensus",
+        details={"view_count": len(attributes_list)},
     )

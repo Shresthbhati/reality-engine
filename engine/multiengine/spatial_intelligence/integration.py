@@ -32,6 +32,24 @@ from engine.multiengine.spatial_intelligence.association import (
 from engine.multiengine.spatial_intelligence.attributes import (
     EntityVisualAttributes,
     extract_visual_attributes,
+    fuse_multiview_attributes,
+)
+from engine.multiengine.spatial_intelligence.completeness import (
+    RoomCompletenessEngine,
+    RoomCompletenessReport,
+)
+from engine.multiengine.spatial_intelligence.geometry_validator import (
+    GeometryValidationResult,
+    ObjectGeometryEvidence,
+    validate_object_geometry,
+)
+from engine.multiengine.spatial_intelligence.relationships import (
+    EvidenceRelationship,
+    RelationshipEngine,
+)
+from engine.multiengine.spatial_intelligence.scene_graph import (
+    SceneObservationGraph,
+    build_scene_observation_graph,
 )
 from engine.multiengine.spatial_intelligence.spatial_lifting import (
     SpatialEntity3D,
@@ -100,6 +118,9 @@ class SpatialSceneResult:
     association_decisions: tuple[PairScore, ...]
     refusal_reasons: dict[str, int]
     active_capture_plan: ActiveCapturePlan | None = None
+    scene_graph: SceneObservationGraph | None = None
+    completeness_report: RoomCompletenessReport | None = None
+    geometry_validations: dict[str, GeometryValidationResult] = field(default_factory=dict)
     scale_state: str = "relative_depth"
     scale_units: str = "relative"
     is_physically_metric: bool = False
@@ -223,9 +244,13 @@ class SpatialSceneResult:
                 )
                 world.entities[src_ent_id].relationships.append(world_rel)
 
-        # Attach active capture guidance to metadata
+        # Attach active capture guidance, scene observation graph, and room completeness to metadata
         if self.active_capture_plan is not None:
             world.metadata["active_capture_guidance"] = self.active_capture_plan.to_dict()
+        if self.scene_graph is not None:
+            world.metadata["scene_observation_graph"] = self.scene_graph.to_dict()
+        if self.completeness_report is not None:
+            world.metadata["room_completeness"] = self.completeness_report.to_dict()
 
         return world
 
@@ -236,6 +261,9 @@ class SpatialSceneResult:
             "spatial_relationships": [r.to_dict() for r in self.spatial_relationships],
             "association_decisions_count": len(self.association_decisions),
             "refusal_reasons": self.refusal_reasons,
+            "scene_graph": self.scene_graph.to_dict() if self.scene_graph else None,
+            "completeness_report": self.completeness_report.to_dict() if self.completeness_report else None,
+            "geometry_validations_count": len(self.geometry_validations),
             "scale_state": self.scale_state,
             "scale_units": self.scale_units,
             "is_physically_metric": self.is_physically_metric,
@@ -602,9 +630,67 @@ def reconstruct_spatial_scene(
                 break
 
     # 4. Infer Spatial Relationships between lifted 3D entities
-    spatial_rels = infer_spatial_relationships(lifted_entities)
+    spatial_rels = list(infer_spatial_relationships(lifted_entities))
 
-    # 5. Active Capture Gap Analysis
+    # Evaluate extended evidence relationships and map to SpatialRelationship
+    rel_engine = RelationshipEngine()
+    extended_rels = rel_engine.evaluate_relationships(lifted_entities)
+    for er in extended_rels:
+        # Avoid duplicate (src, tgt, kind)
+        existing = any(
+            r.source_id == er.source_id and r.target_id == er.target_id and r.relation.value == er.relation_type.value
+            for r in spatial_rels
+        )
+        if not existing:
+            try:
+                from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialRelationKind
+                r_kind = SpatialRelationKind(er.relation_type.value)
+                dist_val = er.geometric_evidence.get("distance_m", er.geometric_evidence.get("wall_planar_clearance_m", 0.0))
+                spatial_rels.append(SpatialRelationship(
+                    source_id=er.source_id,
+                    target_id=er.target_id,
+                    relation=r_kind,
+                    confidence=er.confidence,
+                    distance=dist_val,
+                    distance_units="m" if is_physically_metric else scale_units,
+                    basis=er.basis,
+                    details=er.geometric_evidence,
+                ))
+            except ValueError:
+                pass
+
+    # 5. Geometry validation on lifted entities
+    geometry_validations: dict[str, GeometryValidationResult] = {}
+    for lent in lifted_entities:
+        evidence = ObjectGeometryEvidence(
+            box_2d=lent.box_2d or (0.0, 0.0, 100.0, 100.0),
+            class_name=lent.class_name,
+            position_3d=lent.position_m,
+            extent_3d=lent.dimensions_m,
+            surface_normal=lent.surface_normal,
+            confidence=lent.confidence,
+            uncertainty=round(1.0 - lent.confidence, 4),
+        )
+        geometry_validations[lent.entity_id] = validate_object_geometry(evidence)
+
+    # 6. Room completeness assessment
+    completeness_engine = RoomCompletenessEngine()
+    completeness_report = completeness_engine.assess_completeness(
+        entities=merged_entities if merged_entities else lifted_entities,
+        camera_view_count=len(cameras) or 1,
+    )
+
+    # 7. Build Scene Observation Graph
+    scene_graph = build_scene_observation_graph(
+        scene_id="scene_spatial_reconstruction",
+        merged_entities=merged_entities,
+        lifted_entities=lifted_entities,
+        visual_attributes=canonical_visual_attrs,
+        spatial_relationships=spatial_rels,
+        unresolved_candidates=effective_detections,
+    )
+
+    # 8. Active Capture Gap Analysis
     capture_analyzer = ActiveCaptureAnalyzer()
     capture_plan = capture_analyzer.analyze(
         merged_entities=merged_entities,
@@ -620,6 +706,8 @@ def reconstruct_spatial_scene(
         "lifted_entities_count": len(lifted_entities),
         "merged_entities_count": len(merged_entities),
         "association_decisions_count": len(decisions),
+        "scene_graph_nodes_count": len(scene_graph.nodes),
+        "scene_graph_edges_count": len(scene_graph.edges),
     }
 
     return SpatialSceneResult(
@@ -630,6 +718,9 @@ def reconstruct_spatial_scene(
         association_decisions=tuple(decisions),
         refusal_reasons=refusal_reasons,
         active_capture_plan=capture_plan,
+        scene_graph=scene_graph,
+        completeness_report=completeness_report,
+        geometry_validations=geometry_validations,
         scale_state=scale_state,
         scale_units=scale_units,
         is_physically_metric=is_physically_metric,

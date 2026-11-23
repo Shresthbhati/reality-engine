@@ -112,6 +112,8 @@ def scale_block(world: Any) -> dict[str, Any]:
 def _tf(cal: ScaleCalibration) -> Sim3:
     if cal.transform is not None:
         return cal.transform
+    if cal.scale_m_per_gauge is None:
+        raise TypeError("float() argument must be a real number, not 'NoneType': calibration has neither transform nor scale_m_per_gauge")
     return Sim3.from_arrays(float(cal.scale_m_per_gauge), np.eye(3), np.zeros(3))
 
 
@@ -177,7 +179,7 @@ def _gauge_twins(d: dict[str, Any], s: float) -> int:
 def _transform_mesh(artifacts: Any, uri: str, tf: Sim3) -> tuple[str, str, np.ndarray, np.ndarray]:
     import trimesh
 
-    mesh = trimesh.load(io.BytesIO(artifacts.get(uri)), file_type="ply", process=False)
+    mesh: Any = trimesh.load(io.BytesIO(artifacts.get(uri)), file_type="ply", process=False)
     m = np.eye(4)
     m[:3, :3] = tf.scale * tf.R
     m[:3, 3] = tf.t

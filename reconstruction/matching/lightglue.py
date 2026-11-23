@@ -11,6 +11,8 @@ with a deterministic CPU fallback.
 
 from __future__ import annotations
 
+import gc
+import os
 import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -31,12 +33,16 @@ class LightGlueMatcher:
         ransac_px: float = 1.0,
         device: Optional[str] = None,
         features: str = "disk",
+        max_keypoints: Optional[int] = None,
     ):
         self.paths = dict(paths)
         self.max_side = max_side
         self.ransac_px = ransac_px
         self._custom_device = device
         self.features = features.lower()
+        #: LightGlue attention is quadratic in keypoints per image. Uncapped DISK output made the scene gate reserve 12.4 GB of CUDA memory on
+        #: a 6 GB card (spilling into system RAM) and exhaust it. Capped to the strongest-scoring keypoints; RE_MATCH_MAX_KEYPOINTS overrides.
+        self.max_keypoints = int(max_keypoints or os.environ.get("RE_MATCH_MAX_KEYPOINTS", "2048"))
         self.name = f"lightglue@{self.features}"
 
         self._detector = None
@@ -66,6 +72,20 @@ class LightGlueMatcher:
             self._detector = kf.DISK.from_pretrained("depth").to(self._device).eval()
             self._matcher = kf.LightGlue(features="disk").to(self._device).eval()
 
+    def close(self) -> None:
+        """Release the detector, the matcher, every cached feature tensor and the CUDA allocator cache: nothing here is needed once the
+        pairs are verified, and the next heavy stage should not start with this one's models still resident."""
+        self._feat.clear()
+        self._detector = self._matcher = None
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001 - torch absent: nothing was allocated
+            pass
+
     def _features(self, eid: str):
         if eid not in self._feat:
             import cv2
@@ -94,6 +114,9 @@ class LightGlueMatcher:
                     feat = self._detector(t_img)[0]
                     kpts = feat.keypoints
                     descs = feat.descriptors
+                    if len(kpts) > self.max_keypoints:
+                        top = feat.keypoint_scores.topk(self.max_keypoints).indices
+                        kpts, descs = kpts[top], descs[top]
                     kpts_np = kpts.cpu().numpy().astype(np.float32)
                     if scale < 1.0:
                         kpts_np /= np.float32(scale)
@@ -106,7 +129,7 @@ class LightGlueMatcher:
                     t_img = torch.nn.functional.pad(t_img, (0, pad_w, 0, pad_h), mode="replicate")
 
                 with torch.no_grad():
-                    features = self._detector(t_img)[0]
+                    features = self._detector(t_img, n=self.max_keypoints)[0]
                     kpts = features.keypoints  # (N, 2) in (x, y) coordinates
                     descs = features.descriptors  # (N, D)
 

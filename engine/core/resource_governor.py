@@ -252,25 +252,32 @@ class StageResourceProbe:
         self._stop = None
         self._thread = None
         self._rss: List[float] = []
+        self._commit: List[float] = []
         self._avail: List[float] = []
 
     @staticmethod
-    def _tree_rss_mb() -> float:
+    def _tree_mem_mb() -> tuple:
+        """(resident, private commit) summed over this process and its children. Resident (working set) is TRIMMED by the OS under memory
+        pressure and then under-reports (measured: a 1.1 GB server read 91 MB); private commit is what the process actually holds."""
         import psutil  # type: ignore
 
         me = psutil.Process()
-        total = 0
+        rss = commit = 0
         for p in [me, *me.children(recursive=True)]:
             try:
-                total += p.memory_info().rss
+                mi = p.memory_info()
+                rss += mi.rss
+                commit += getattr(mi, "private", None) or getattr(mi, "data", None) or mi.rss  # Windows: private; Linux: data; else resident
             except Exception:  # noqa: BLE001 - a child that exited between listing and reading
                 pass
-        return total / (1024 * 1024)
+        return rss / (1024 * 1024), commit / (1024 * 1024)
 
     def _sample(self) -> None:
         import psutil  # type: ignore
 
-        self._rss.append(self._tree_rss_mb())
+        r, c = self._tree_mem_mb()
+        self._rss.append(r)
+        self._commit.append(c)
         self._avail.append(psutil.virtual_memory().available / (1024 * 1024))
 
     @staticmethod
@@ -317,7 +324,7 @@ class StageResourceProbe:
         except Exception:  # noqa: BLE001
             pass
         m = {"mem_rss_start_mb": self._rss[0], "mem_rss_peak_mb": max(self._rss), "mem_rss_end_mb": self._rss[-1],
-             "mem_system_available_min_mb": min(self._avail), "mem_samples": float(len(self._rss))}
+             "mem_commit_peak_mb": max(self._commit), "mem_system_available_min_mb": min(self._avail), "mem_samples": float(len(self._rss))}
         t = self._torch()
         if t is not None:
             try:

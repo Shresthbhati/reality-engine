@@ -547,6 +547,7 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     from apps.api import worldstore_service
     from reconstruction.scene_identity import SceneRegistry, make_pair_verifier, group_images
 
+    verifier = None
     try:
         ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
         paths = {ei.item.id: ei.path for ei in eval_inputs}
@@ -567,6 +568,10 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 -- the gate is advisory infrastructure; its failure is recorded, not hidden
         log.warning("scene gate unavailable for world %s: %s", world_id, exc)
         return {"state": "unavailable", "error": f"{type(exc).__name__}: {exc}", "excluded": {}}
+    finally:
+        close = getattr(verifier, "close", None)
+        if close is not None:  # release the matcher models + CUDA cache before the next heavy stage
+            close()
 
 
 def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, registered_ids, n_points: int,

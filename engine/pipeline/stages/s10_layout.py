@@ -28,11 +28,15 @@ class Layout:
         ctx.state["layout"] = outcome
         evidence_status, evidence_warnings = facts_status(outcome.layout_facts, "layout_evidence")
         warnings = evidence_warnings if evidence_status != "succeeded" else []
+        gate = (outcome.layout_facts or {}).get("scene_gate") or {}
+        gate_state = gate.get("state")
+        if gate_state in ("skipped", "degraded"):   # never silent: the reason and evidence are in layout_facts["scene_gate"]
+            warnings = [f"scene_gate: {gate_state} ({gate.get('reason')})"] + warnings
         diag = outcome.diagnostics
         metrics = {"entities": float(len(outcome.world.entities)),
                    "rooms_detected": float(diag.rooms_detected),
                    "layout_hypotheses": float((outcome.layout_facts or {}).get("hypotheses") or 0)}
         return StageResult(
-            name=self.spec.name, status="succeeded", inputs_hash="", outputs={}, metrics=metrics, warnings=warnings,
+            name=self.spec.name, status="degraded" if gate_state == "skipped" else "succeeded", inputs_hash="", outputs={}, metrics=metrics, warnings=warnings,
             error=None, started_at=started, ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
         )

@@ -547,6 +547,7 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     from apps.api import worldstore_service
     from reconstruction.scene_identity import SceneRegistry, make_pair_verifier, group_images
 
+    verifier = None
     try:
         ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
         paths = {ei.item.id: ei.path for ei in eval_inputs}
@@ -567,6 +568,20 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 -- the gate is advisory infrastructure; its failure is recorded, not hidden
         log.warning("scene gate unavailable for world %s: %s", world_id, exc)
         return {"state": "unavailable", "error": f"{type(exc).__name__}: {exc}", "excluded": {}}
+    finally:
+        # The LightGlue/ALIKED verifier holds model weights + cached descriptors on the GPU; COLMAP starts next and
+        # needs that VRAM. Drop the reference and release the allocator cache on success AND failure.
+        verifier = None
+        _release_gpu_after_stage()
+
+
+def _release_gpu_after_stage() -> None:
+    """gc + empty the CUDA allocator cache (engine.core.device.release_vram); never raises."""
+    try:
+        from engine.core.device import release_vram
+        release_vram()
+    except Exception:  # noqa: BLE001 -- best-effort hygiene must not change a stage outcome
+        log.warning("release_vram failed", exc_info=True)
 
 
 def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, registered_ids, n_points: int,

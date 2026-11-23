@@ -86,6 +86,11 @@ class MatcherPairVerifier:
         r = self._matcher.match(a, b)
         return PairEvidence(a, b, r.matches, r.inliers, r.inlier_ratio)
 
+    def close(self) -> None:
+        close = getattr(self._matcher, "close", None)
+        if close is not None:
+            close()
+
 
 def make_pair_verifier(
     paths: Dict[str, Path],

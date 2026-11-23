@@ -260,8 +260,39 @@ SWITCHBOARD_PLATE = _register(TaxonomyClass(
     min_dimensions_m=(0.08, 0.01, 0.08),
     max_dimensions_m=(0.40, 0.08, 0.25),
     can_contain_parts=True,
-    potential_parts=("socket", "switch"),
+    potential_parts=("socket", "switch", "control_switch"),
     hosts=("wall",),
+))
+
+OUTLET_PLATE = _register(TaxonomyClass(
+    taxonomy_id="interior.electrical.outlet_plate",
+    name="outlet_plate",
+    domain=Domain.INTERIOR,
+    category="electrical",
+    aliases=("outlet plate", "wall plate", "faceplate", "cover plate"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.06, 0.005, 0.06),
+    max_dimensions_m=(0.35, 0.03, 0.20),
+    can_contain_parts=True,
+    potential_parts=("socket", "switch", "control_switch"),
+    hosts=("wall", "desk"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+CONTROL_SWITCH = _register(TaxonomyClass(
+    taxonomy_id="interior.electrical.control_switch",
+    name="control_switch",
+    domain=Domain.INTERIOR,
+    category="electrical",
+    parent_class="interior.electrical.switchboard_plate",
+    aliases=("control switch", "rocker switch", "push button", "dimmer switch"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.01, 0.02),
+    max_dimensions_m=(0.15, 0.05, 0.15),
+    hosts=("wall", "switchboard_plate", "outlet_plate"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
 ))
 
 # --- LIGHTING & HVAC ---
@@ -286,8 +317,52 @@ LAMP = _register(TaxonomyClass(
     expected_geometry=GeometryType.CYLINDER,
     min_dimensions_m=(0.15, 0.15, 0.25),
     max_dimensions_m=(0.8, 0.8, 2.0),
+    can_contain_parts=True,
+    potential_parts=("diffuser", "light_housing", "mounting_hardware"),
     hosts=("table", "desk", "nightstand", "floor"),
     common_confusion_classes=("vase", "speaker"),
+))
+
+LIGHT_HOUSING = _register(TaxonomyClass(
+    taxonomy_id="interior.lighting.light_housing",
+    name="light_housing",
+    domain=Domain.INTERIOR,
+    category="lighting",
+    aliases=("light housing", "luminaire body", "fixture body", "lamp body"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.08, 0.08, 0.05),
+    max_dimensions_m=(1.8, 1.8, 1.2),
+    hosts=("ceiling", "wall", "lamp"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+DIFFUSER = _register(TaxonomyClass(
+    taxonomy_id="interior.lighting.diffuser",
+    name="diffuser",
+    domain=Domain.INTERIOR,
+    category="lighting",
+    aliases=("diffuser", "light diffuser", "lamp shade", "shade", "glass shade"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.08, 0.08, 0.02),
+    max_dimensions_m=(1.2, 1.2, 0.8),
+    hosts=("lamp", "ceiling_light", "light_housing"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+MOUNTING_HARDWARE = _register(TaxonomyClass(
+    taxonomy_id="interior.hardware.mounting_hardware",
+    name="mounting_hardware",
+    domain=Domain.UNIVERSAL,
+    category="hardware",
+    aliases=("mounting hardware", "mounting bracket", "canopy", "ceiling rose"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.04, 0.02, 0.02),
+    max_dimensions_m=(0.40, 0.20, 0.25),
+    hosts=("ceiling", "wall"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
 ))
 
 CEILING_FAN = _register(TaxonomyClass(
@@ -351,7 +426,39 @@ FAUCET = _register(TaxonomyClass(
     expected_geometry=GeometryType.BOX,
     min_dimensions_m=(0.04, 0.10, 0.10),
     max_dimensions_m=(0.25, 0.35, 0.50),
+    can_contain_parts=True,
+    potential_parts=("faucet_handle", "spout"),
     hosts=("sink", "counter"),
+))
+
+BASIN = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.basin",
+    name="basin",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    parent_class="interior.plumbing.sink",
+    aliases=("basin", "sink basin", "washbasin", "sink bowl"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.25, 0.25, 0.12),
+    max_dimensions_m=(1.20, 0.80, 0.50),
+    hosts=("sink",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+SPOUT = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.spout",
+    name="spout",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    parent_class="interior.plumbing.faucet",
+    aliases=("spout", "tap spout", "faucet spout"),
+    expected_geometry=GeometryType.CYLINDER,
+    min_dimensions_m=(0.02, 0.05, 0.05),
+    max_dimensions_m=(0.10, 0.35, 0.35),
+    hosts=("faucet", "sink"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
 ))
 
 TOILET = _register(TaxonomyClass(
@@ -544,6 +651,36 @@ DOOR_LOCK = _register(TaxonomyClass(
     min_detector_confidence=0.15,
 ))
 
+DOOR_PANEL = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.door_panel",
+    name="door_panel",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.door",
+    aliases=("door panel", "panel", "leaf", "door leaf"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.50, 0.02, 1.70),
+    max_dimensions_m=(2.20, 0.15, 3.00),
+    hosts=("door", "door_frame"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+DOOR_GLAZING = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.door_glazing",
+    name="door_glazing",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.door",
+    aliases=("door glazing", "door glass", "door pane", "vision panel"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.15, 0.003, 0.15),
+    max_dimensions_m=(2.0, 0.05, 2.5),
+    hosts=("door", "door_panel"),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+    min_detector_confidence=0.15,
+))
+
 # --- WINDOWS & GLAZING ---
 WINDOW_GLAZING = _register(TaxonomyClass(
     taxonomy_id="interior.opening.window_glazing",
@@ -571,6 +708,51 @@ WINDOW_SILL = _register(TaxonomyClass(
     max_dimensions_m=(5.0, 0.40, 0.15),
     hosts=("wall", "window_frame"),
     dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+WINDOW_HANDLE = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.window_handle",
+    name="window_handle",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.window",
+    aliases=("window handle", "window crank", "window latch", "sash lock"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.02, 0.05),
+    max_dimensions_m=(0.25, 0.12, 0.25),
+    hosts=("window_frame", "window_sash", "window"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+WINDOW_SASH = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.window_sash",
+    name="window_sash",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.window",
+    aliases=("window sash", "movable frame", "sash", "casement"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.30, 0.02, 0.30),
+    max_dimensions_m=(3.0, 0.15, 2.5),
+    hosts=("window_frame", "window"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+WINDOW_MULLION = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.window_mullion",
+    name="window_mullion",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    parent_class="interior.opening.window",
+    aliases=("window mullion", "mullion", "transom bar", "window divider", "muntin"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.02, 0.30),
+    max_dimensions_m=(0.15, 0.15, 3.5),
+    hosts=("window_frame", "window"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
 ))
 
 # --- ELECTRICAL & CONTROLS ---
@@ -748,6 +930,51 @@ CHAIR_SEAT = _register(TaxonomyClass(
     max_dimensions_m=(0.8, 0.8, 0.20),
     hosts=("chair",),
     dimension_measurability=DimensionMeasurability.DIRECT,
+))
+
+CHAIR_BACKREST = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.chair_backrest",
+    name="chair_backrest",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    parent_class="interior.furniture.chair",
+    aliases=("chair backrest", "backrest", "chair back"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.25, 0.02, 0.20),
+    max_dimensions_m=(0.75, 0.20, 0.90),
+    hosts=("chair",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+CHAIR_ARMREST = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.chair_armrest",
+    name="chair_armrest",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    parent_class="interior.furniture.chair",
+    aliases=("chair armrest", "armrest", "chair arm"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.15, 0.03, 0.05),
+    max_dimensions_m=(0.45, 0.15, 0.35),
+    hosts=("chair",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
+))
+
+DRAWER_HANDLE = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.drawer_handle",
+    name="drawer_handle",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    parent_class="interior.furniture.drawer",
+    aliases=("drawer handle", "drawer pull", "cabinet pull", "pull handle"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.02, 0.01, 0.01),
+    max_dimensions_m=(0.30, 0.08, 0.08),
+    hosts=("drawer", "cabinet"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    min_detector_confidence=0.15,
 ))
 
 # --- KITCHEN & HOME APPLIANCES ---
@@ -1273,11 +1500,16 @@ _ALIAS_MAP: dict[str, TaxonomyClass] = {}
 
 
 def _build_alias_map() -> None:
+    _ALIAS_MAP.clear()
     for tax_cls in _TAXONOMY_REGISTRY.values():
-        _ALIAS_MAP[tax_cls.name.lower()] = tax_cls
-        _ALIAS_MAP[tax_cls.taxonomy_id.lower()] = tax_cls
+        name_lower = tax_cls.name.lower().strip()
+        _ALIAS_MAP[name_lower] = tax_cls
+        _ALIAS_MAP[name_lower.replace("_", " ")] = tax_cls
+        _ALIAS_MAP[tax_cls.taxonomy_id.lower().strip()] = tax_cls
         for alias in tax_cls.aliases:
-            _ALIAS_MAP[alias.lower().strip()] = tax_cls
+            alias_lower = alias.lower().strip()
+            _ALIAS_MAP[alias_lower] = tax_cls
+            _ALIAS_MAP[alias_lower.replace("_", " ")] = tax_cls
 
 
 _build_alias_map()

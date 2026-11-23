@@ -599,8 +599,11 @@ def test_learned_confidence_calibrator_optimization() -> None:
 
     calibrator = LearnedConfidenceCalibrator()
     assert not calibrator.is_fitted
-    # Unfitted calibrator acts as identity
-    assert calibrator.calibrate(0.75) == 0.75
+    # Unfitted calibrator acts as identity returning (score, False, "uncalibrated")
+    prob, is_cal, method = calibrator.calibrate(0.75)
+    assert prob == 0.75
+    assert not is_cal
+    assert method == "uncalibrated"
 
     # Simulated overconfident detector: scores are high (0.8-0.95), but actual accuracy is only 40%
     raw_scores = [0.85, 0.90, 0.80, 0.75, 0.95, 0.88, 0.82, 0.91, 0.84, 0.79]
@@ -609,9 +612,11 @@ def test_learned_confidence_calibrator_optimization() -> None:
     calibrator.fit(raw_scores, labels)
     assert calibrator.is_fitted
     # Calibrated probability should be scaled down towards ~0.40
-    cal_score = calibrator.calibrate(0.85)
-    assert cal_score < 0.85
-    assert 0.20 <= cal_score <= 0.65
+    cal_res = calibrator.calibrate(0.85)
+    assert cal_res.is_calibrated
+    assert cal_res.method == "global_platt"
+    assert cal_res.calibrated_probability < 0.85
+    assert 0.20 <= cal_res.calibrated_probability <= 0.65
 
 
 def test_standard_hota_and_deta_assa_calculation() -> None:
@@ -628,6 +633,162 @@ def test_standard_hota_and_deta_assa_calculation() -> None:
     assert metrics.deta == pytest.approx(1.0)
     assert metrics.assa == pytest.approx(1.0)
     assert metrics.idf1 == pytest.approx(1.0)
+
+
+def test_clear_mota_hungarian_frame_matching() -> None:
+    """Verifies that CLEAR MOTA calculates frame-level Hungarian matching FN + FP + IDSW."""
+    gt_trajectories = {
+        "gt1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (0.0, 0.0, 10.0, 10.0))],
+        "gt2": [(0, (20.0, 20.0, 30.0, 30.0)), (1, (20.0, 20.0, 30.0, 30.0))],
+    }
+    # Frame 0: both matched correctly. Frame 1: p1 swaps to gt2, p2 missed (FN=1, FP=0, IDSW=1)
+    pred_tracks = {
+        "p1": [(0, (0.0, 0.0, 10.0, 10.0)), (1, (20.0, 20.0, 30.0, 30.0))],
+        "p2": [(0, (20.0, 20.0, 30.0, 30.0))],
+    }
+    metrics = evaluate_temporal_tracking(gt_trajectories, pred_tracks)
+    assert metrics.id_switches == 1
+    assert metrics.frame_fn == 1
+    assert metrics.frame_tp == 3
+    # Total GT frames = 4. Errors = 1 FN + 0 FP + 1 IDSW = 2 errors. MOTA = 1 - 2/4 = 0.50
+    assert metrics.mota == pytest.approx(0.50)
+
+
+def test_boundary_f_score_and_fast_boundary_iou() -> None:
+    """Verifies BF-score contour evaluation and EDT-accelerated boundary IoU."""
+    from benchmarks.perception.real_data_benchmark import compute_boundary_f_score, compute_boundary_iou
+
+    mask_a = np.zeros((100, 100), dtype=bool)
+    mask_a[20:80, 20:80] = True
+
+    mask_b = np.zeros((100, 100), dtype=bool)
+    mask_b[22:82, 22:82] = True  # shifted by 2 pixels
+
+    # Fast boundary IoU
+    b_iou = compute_boundary_iou(mask_a, mask_b, dilation_radius=3)
+    assert 0.50 <= b_iou <= 0.95
+
+    # Boundary F-score with 3-pixel tolerance
+    bf_score = compute_boundary_f_score(mask_a, mask_b, distance_threshold=3.0)
+    assert 0.70 <= bf_score <= 1.0
+
+
+def test_multiview_association_member_ids_and_false_split() -> None:
+    """Verifies that PhysicalMergedEntity with member_observation_ids evaluates purity and false split rate."""
+    from engine.multiengine.spatial_intelligence.association import PhysicalMergedEntity
+
+    gt_entities = {
+        "table_real": {"t_c1", "t_c2", "t_c3"},
+        "chair_real": {"c_c1", "c_c2"},
+    }
+
+    # Entity 1 correctly merges table observations from 2 cams; entity 2 has table from cam 3 (split!)
+    m1 = PhysicalMergedEntity(
+        canonical_entity_id="cluster_table_part1",
+        primary_class="table",
+        member_observation_ids=("t_c1", "t_c2"),
+        sources=("cam1", "cam2"),
+    )
+    m2 = PhysicalMergedEntity(
+        canonical_entity_id="cluster_table_part2",
+        primary_class="table",
+        member_observation_ids=("t_c3",),
+        sources=("cam3",),
+    )
+    m3 = PhysicalMergedEntity(
+        canonical_entity_id="cluster_chair",
+        primary_class="chair",
+        member_observation_ids=("c_c1", "c_c2"),
+        sources=("cam1", "cam2"),
+    )
+
+    metrics = evaluate_multiview_association(
+        gt_entities,
+        merged_entities=[m1, m2, m3],
+        association_decisions=[],
+    )
+
+    assert metrics.cluster_purity == 1.0  # Zero false merges
+    assert metrics.false_merge_rate == 0.0
+    assert metrics.false_split_rate > 0.0  # table was split into m1 and m2!
+    assert 0.50 <= metrics.identity_completeness <= 0.90
+
+
+def test_normalized_coordinate_resolution_invariance() -> None:
+    """Verifies that evidence-based geometric reasoning is invariant between 1280x960 and 4032x3024."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        DetectionBox,
+        suppress_duplicates_preserving_parts,
+    )
+
+    # Low-res scene (1280 x 960)
+    # A small wall sconce detected as "door" with normalized w=0.04, y1=0.35, y2=0.45
+    box_lowres = DetectionBox(
+        box_id="sconce_low",
+        class_name="door",
+        box_2d=(0.40 * 1280, 0.35 * 960, 0.44 * 1280, 0.45 * 960),
+        confidence=0.60,
+    )
+    res_low = suppress_duplicates_preserving_parts([box_lowres], image_shape=(960, 1280))
+
+    # High-res scene (4032 x 3024)
+    box_hires = DetectionBox(
+        box_id="sconce_high",
+        class_name="door",
+        box_2d=(0.40 * 4032, 0.35 * 3024, 0.44 * 4032, 0.45 * 3024),
+        confidence=0.60,
+    )
+    res_high = suppress_duplicates_preserving_parts([box_hires], image_shape=(3024, 4032))
+
+    # Both must be identically disambiguated to "lamp" despite 10x difference in pixel coordinates!
+    assert len(res_low) == 1 and res_low[0].class_name == "lamp"
+    assert len(res_high) == 1 and res_high[0].class_name == "lamp"
+
+
+def test_learned_confidence_calibrator_per_class_and_provenance(tmp_path: Path) -> None:
+    """Verifies per-class Platt scaling, provenance persistence, and ECE/Brier/NLL metrics."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import LearnedConfidenceCalibrator
+
+    cal = LearnedConfidenceCalibrator()
+
+    raw_scores = [0.85, 0.90, 0.82, 0.88, 0.60, 0.65, 0.55, 0.58, 0.92, 0.95]
+    labels =     [1,    1,    0,    0,    1,    1,    0,    0,    1,    0   ]
+    classes =    ["door", "door", "door", "door", "table", "table", "table", "table", "chair", "chair"]
+
+    provenance_meta = {
+        "model_name": "grounding_dino_swint_ogc",
+        "checkpoint_hash": "sha256_mock_abc123",
+        "dataset_split": "dev",
+        "dataset_split_hash": "split_sha_dev_998",
+        "sample_count": len(raw_scores),
+    }
+
+    cal.fit(raw_scores, labels, class_names=classes, provenance=provenance_meta)
+    assert cal.is_fitted
+    assert "pre_calibration" in cal.provenance
+    assert "post_calibration" in cal.provenance
+    assert cal.provenance["model_name"] == "grounding_dino_swint_ogc"
+
+    # Per-class Platt should be available for door and table (each has >= 4 samples with both 0 and 1)
+    res_door = cal.calibrate(0.85, class_name="door")
+    assert res_door.is_calibrated
+    assert res_door.method == "per_class_platt"
+
+    # Fallback to global Platt for unseen or rare classes
+    res_lamp = cal.calibrate(0.85, class_name="lamp")
+    assert res_lamp.is_calibrated
+    assert res_lamp.method == "global_platt"
+
+    # Persistence verification
+    cal_file = tmp_path / "test_calibrator.json"
+    cal.save(cal_file)
+    assert cal_file.is_file()
+
+    loaded = LearnedConfidenceCalibrator.load(cal_file)
+    assert loaded.is_fitted
+    assert loaded.provenance["dataset_split"] == "dev"
+    res_loaded = loaded.calibrate(0.85, class_name="door")
+    assert res_loaded.calibrated_probability == pytest.approx(res_door.calibrated_probability, rel=1e-4)
 
 
 

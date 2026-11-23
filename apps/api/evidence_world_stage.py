@@ -556,12 +556,15 @@ def readiness(root: Path) -> dict[str, Any]:
                                  "entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
             out["coverage"] = _coverage(w, placed, sized)
-            cal = (w.metadata or {}).get("scale_calibration")
-            cal_status = ((cal or {}).get("calibration") or {}).get("status")
-            out["calibration"] = None if not cal else {
-                "id": cal.get("id"), "status": cal_status, "scale_m_per_gauge": cal.get("scale_m_per_gauge"), "scale_sigma": cal.get("scale_sigma"),
-                "parent_version": cal.get("parent_version"), "held_out": len(((cal.get("calibration") or {}).get("held_out")) or []),
-                "fit_anchors": len(((cal.get("calibration") or {}).get("fit_ids")) or [])}
+            from engine.multiengine.world_scale import CAL_KEY, world_calibration
+
+            cal_rec = world_calibration(w)  # one reader for the evidence-world and the legacy job's calibration record
+            cal_status = (cal_rec or {}).get("status")
+            wrapper = (w.metadata or {}).get(CAL_KEY) or {}
+            out["calibration"] = None if not cal_rec else {
+                "id": wrapper.get("id"), "status": cal_status, "scale_m_per_gauge": cal_rec.get("scale_m_per_gauge"), "scale_sigma": cal_rec.get("scale_sigma"),
+                "parent_version": wrapper.get("parent_version"), "held_out": len(cal_rec.get("held_out") or []), "fit_anchors": len(cal_rec.get("fit_ids") or []),
+                "basis": cal_rec.get("basis"), "dimension_state": cal_rec.get("dimension_state")}
             # metric export needs every placed entity metric AND a recorded, applicable calibration: a bare "metric_anchored" label is not evidence
             out["metric_export_ready"] = (bool(placed) and not problems and all(s == "metric_anchored" for s in states)
                                           and cal_status in ("validated", "unvalidated"))

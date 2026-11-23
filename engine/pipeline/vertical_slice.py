@@ -433,6 +433,9 @@ class ScaleOutcome:
     unit_facts: Optional[dict]
     scale_error: Optional[str]
     device_depth_facts: Optional[dict]
+    #: The shared calibration record (engine.multiengine.scale_anchors.ScaleCalibration.to_dict()) when a measured baseline / model length /
+    #: accepted prior set the scale; None for device depth and for RELATIVE worlds. The same record the evidence-world calibration stores.
+    calibration: Optional[dict] = None
 
 
 def run_scale(result, evidence_items, options) -> ScaleOutcome:
@@ -471,7 +474,10 @@ def run_scale(result, evidence_items, options) -> ScaleOutcome:
         meters_per_unit = scaled.meters_per_unit
         scale_state = scaled.state
         scale_note = scaled.diagnostics.note
+        cal = getattr(scaled, "calibration", None)
+        calibration = cal.to_dict() if cal is not None else None
     else:
+        calibration = None
         rel = unscaled(result)
         # COLMAP's scale is arbitrary but every structure threshold downstream is in metres: give a RELATIVE result a
         # working unit so walls and floors are findable (still "relative" -- no metric claim, see scene_scale).
@@ -490,7 +496,7 @@ def run_scale(result, evidence_items, options) -> ScaleOutcome:
             scale_note = scale_note + " | " + scale_error
     return ScaleOutcome(result=result, meters_per_unit=meters_per_unit, scale_state=scale_state,
                         scale_note=scale_note, unit_k=unit_k, unit_facts=unit_facts, scale_error=scale_error,
-                        device_depth_facts=device_depth_facts)
+                        device_depth_facts=device_depth_facts, calibration=calibration)
 
 
 @dataclass(frozen=True)
@@ -724,6 +730,8 @@ def run_finalize(evidence_items, backend, run, result, sc: ScaleOutcome, fr: Fra
         "provisional_unit_k": unit_k if unit_facts else None,
         "provisional_unit_base_k": (unit_facts or {}).get("base_k") or (unit_facts or {}).get("unit_k"),
         "provisional_unit": unit_facts,
+        # the shared calibration record (same shape the evidence-world calibration stores); None when no reference set the scale
+        "calibration": getattr(sc, "calibration", None),
     }
     # Plan D1: the compile stamped dimensions before the scale existed (RELATIVE caps at RECONSTRUCTED/model_units).
     # Re-stamp now that the unit is known; idempotent, and a tape-verified value is preserved.

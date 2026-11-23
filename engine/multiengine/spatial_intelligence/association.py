@@ -787,8 +787,9 @@ def evaluate_cross_view_pair(
                 basis={"anchor_a": ray_a.physical_anchor_ref, "anchor_b": ray_b.physical_anchor_ref},
             )
 
-    # 5. Semantic compatibility
-    if not are_semantically_compatible(ray_a.class_name, ray_b.class_name):
+    # 5. Semantic compatibility: identity matching requires compatible object classes,
+    # NOT parent-part relationships (e.g. door and door_handle are NOT the same physical entity).
+    if not are_semantically_compatible(ray_a.class_name, ray_b.class_name, allow_parent_part=False):
         return PairScore(
             obs_a_id=ray_a.observation_id,
             obs_b_id=ray_b.observation_id,
@@ -1131,7 +1132,7 @@ class TemporalIdentityTracker:
             obs_app = tuple(getattr(obs, "appearance_features", ())) or tuple(getattr(obs, "attributes", {}).get("appearance_features", ()))
 
             for track in self.active_tracks.values():
-                if not are_semantically_compatible(obs_cls, track.class_name):
+                if not are_semantically_compatible(obs_cls, track.class_name, allow_parent_part=False):
                     continue
 
                 # Compute motion-compensated centroid distance with last-position fallback
@@ -1256,7 +1257,7 @@ class TemporalIdentityTracker:
                     continue
                 track_b = self.active_tracks[tid_b]
 
-                if not are_semantically_compatible(track_a.class_name, track_b.class_name):
+                if not are_semantically_compatible(track_a.class_name, track_b.class_name, allow_parent_part=False):
                     continue
 
                 # Ensure tracks do not share overlapping frame indices
@@ -1495,7 +1496,7 @@ class MultiViewIntelligenceEngine:
                 # Check semantic compatibility
                 cand_i = obs_by_id[root_i]
                 cand_j = obs_by_id[root_j]
-                if not are_semantically_compatible(cand_i.class_name, cand_j.class_name):
+                if not are_semantically_compatible(cand_i.class_name, cand_j.class_name, allow_parent_part=False):
                     continue
 
                 scale_common = next(iter(scales_i))

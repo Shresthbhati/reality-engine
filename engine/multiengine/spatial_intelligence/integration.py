@@ -670,6 +670,9 @@ def reconstruct_spatial_scene(
             surface_normal=lent.surface_normal,
             confidence=lent.confidence,
             uncertainty=round(1.0 - lent.confidence, 4),
+            scale_state=lent.scale_state,
+            coordinate_frame=getattr(lent, "coordinate_frame", None),
+            is_physically_metric=getattr(lent, "is_physically_metric", False),
         )
         geometry_validations[lent.entity_id] = validate_object_geometry(evidence)
 

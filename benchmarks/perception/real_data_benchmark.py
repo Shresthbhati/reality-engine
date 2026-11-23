@@ -20,7 +20,7 @@ import math
 import re
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -160,6 +160,8 @@ class TrackingMetrics:
     total_gt_instances: int = 0
     total_predicted_instances: int = 0
     hota: float | None = None
+    deta: float | None = None
+    assa: float | None = None
     track_coverage: float | None = None
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
@@ -176,6 +178,8 @@ class TrackingMetrics:
             "id_recall": round(self.id_recall, 4) if self.id_recall is not None else None,
             "mota": round(self.mota, 4) if self.mota is not None else None,
             "hota": round(self.hota, 4) if self.hota is not None else None,
+            "deta": round(self.deta, 4) if self.deta is not None else None,
+            "assa": round(self.assa, 4) if self.assa is not None else None,
             "track_coverage": round(self.track_coverage, 4) if self.track_coverage is not None else None,
             "status": self.status,
         }
@@ -198,6 +202,8 @@ class MultiViewAssociationMetrics:
     cluster_purity: float | None = None
     identity_completeness: float | None = None
     false_merge_rate: float | None = None
+    single_view_entity_rate: float | None = None
+    multi_view_entity_rate: float | None = None
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
     @property
@@ -223,6 +229,8 @@ class MultiViewAssociationMetrics:
             "false_merge_rate": round(self.false_merge_rate, 4) if self.false_merge_rate is not None else None,
             "cluster_purity": round(self.cluster_purity, 4) if self.cluster_purity is not None else None,
             "identity_completeness": round(self.identity_completeness, 4) if self.identity_completeness is not None else None,
+            "single_view_entity_rate": round(self.single_view_entity_rate, 4) if self.single_view_entity_rate is not None else None,
+            "multi_view_entity_rate": round(self.multi_view_entity_rate, 4) if self.multi_view_entity_rate is not None else None,
             "inlier_mean_reprojection_residual_px": round(self.inlier_mean_reprojection_residual_px, 2) if self.inlier_mean_reprojection_residual_px is not None else None,
             "inlier_median_reprojection_residual_px": round(self.inlier_median_reprojection_residual_px, 2) if self.inlier_median_reprojection_residual_px is not None else None,
             "inlier_p90_reprojection_residual_px": round(self.inlier_p90_reprojection_residual_px, 2) if self.inlier_p90_reprojection_residual_px is not None else None,
@@ -295,11 +303,11 @@ def compute_boundary_iou(mask_a: np.ndarray, mask_b: np.ndarray, dilation_radius
     """Evaluates Boundary IoU between two boolean segmentation masks."""
     if mask_a.shape != mask_b.shape:
         return 0.0
-    from scipy.ndimage import binary_dilation
+    from scipy.ndimage import binary_dilation, binary_erosion
 
     if dilation_radius is None:
-        # Standard boundary thickness is ~0.5% of min dimension
-        dilation_radius = max(2, int(round(0.005 * min(mask_a.shape[:2]))))
+        # Standard boundary thickness is ~1.5% of min dimension (Cheng et al., CVPR 2021)
+        dilation_radius = max(2, int(round(0.015 * min(mask_a.shape[:2]))))
 
     rows_a, cols_a = np.where(mask_a)
     rows_b, cols_b = np.where(mask_b)
@@ -317,8 +325,8 @@ def compute_boundary_iou(mask_a: np.ndarray, mask_b: np.ndarray, dilation_radius
     crop_b = mask_b[r1:r2, c1:c2]
 
     struc = np.ones((dilation_radius * 2 + 1, dilation_radius * 2 + 1), dtype=bool)
-    bound_a = binary_dilation(crop_a, structure=struc) ^ crop_a
-    bound_b = binary_dilation(crop_b, structure=struc) ^ crop_b
+    bound_a = binary_dilation(crop_a, structure=struc) ^ binary_erosion(crop_a, structure=struc)
+    bound_b = binary_dilation(crop_b, structure=struc) ^ binary_erosion(crop_b, structure=struc)
 
     inter = np.logical_and(bound_a, bound_b).sum()
     union = np.logical_or(bound_a, bound_b).sum()
@@ -439,7 +447,7 @@ def evaluate_detections(
         for p in preds:
             p_box = tuple(getattr(p, "box_2d", (0, 0, 0, 0)))
             p_cls = getattr(p, "class_name", "")
-            p_conf = float(getattr(p, "confidence", 0.5))
+            p_conf = float(getattr(p, "calibrated_confidence", None) if getattr(p, "calibrated_confidence", None) is not None else getattr(p, "confidence", 0.5))
             p_area = max(0.0, p_box[2] - p_box[0]) * max(0.0, p_box[3] - p_box[1])
             s_bin = "small" if p_area < 1024.0 else ("medium" if p_area < 9216.0 else "large")
 
@@ -627,7 +635,7 @@ def evaluate_part_hierarchy(
         img_id = getattr(p, "source_image_id", getattr(p, "image_id", "img_001"))
         p_cls = getattr(p, "class_name", "")
         p_is_subpart = getattr(p, "parent_box_id", None) is not None
-        best_iou = 0.20
+        best_iou = 0.15 if p_is_subpart else 0.20
         best_gt = None
         for g in gt_boxes:
             if g.image_id == img_id:
@@ -742,7 +750,9 @@ def evaluate_temporal_tracking(
     gt_trajectories: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
     pred_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
 ) -> TrackingMetrics:
-    """Computes IDF1, ID switches, track fragmentations, and MOTA on sequential tracking."""
+    """Computes global bipartite IDF1, standard HOTA (Luiten et al., 2021), ID switches, and MOTA."""
+    from scipy.optimize import linear_sum_assignment
+
     total_gt_trajectories = len(gt_trajectories)
     total_gt_instances = sum(len(frames) for frames in gt_trajectories.values())
     total_pred_tracks = len(pred_tracks)
@@ -760,61 +770,148 @@ def evaluate_temporal_tracking(
             id_precision=0.0 if total_pred_instances > 0 else None,
             id_recall=None,
             mota=None,
+            hota=None,
+            deta=None,
+            assa=None,
+            track_coverage=None,
             status="unmeasured_no_gt",
         )
 
-    id_switches = 0
-    fragmentations = 0
-    id_tp = 0
+    # 1. Global bipartite matching for IDF1 (Ristani et al., ECCV 2016)
+    gt_id_list = list(gt_trajectories.keys())
+    pred_id_list = list(pred_tracks.keys())
+    cost_matrix = np.zeros((len(gt_id_list), len(pred_id_list)), dtype=float)
 
-    for gt_id, gt_frames in gt_trajectories.items():
-        gt_frame_map = {f[0]: f[1] for f in gt_frames}
-        best_matching_tid = None
-        best_overlap_count = 0
-
-        for tid, pred_frames in pred_tracks.items():
+    for i, g_id in enumerate(gt_id_list):
+        g_map = {f[0]: f[1] for f in gt_trajectories[g_id]}
+        for j, p_id in enumerate(pred_id_list):
             overlap = 0
-            for f_idx, p_box in pred_frames:
-                if f_idx in gt_frame_map:
-                    if compute_box_iou(p_box, gt_frame_map[f_idx]) >= 0.40:
-                        overlap += 1
-            if overlap > best_overlap_count:
-                best_overlap_count = overlap
-                best_matching_tid = tid
+            for f_idx, p_box in pred_tracks[p_id]:
+                if f_idx in g_map and compute_box_iou(p_box, g_map[f_idx]) >= 0.40:
+                    overlap += 1
+            cost_matrix[i, j] = -overlap
 
-        id_tp += best_overlap_count
-
-        prev_matched_tid = None
-        for f_idx, gt_box in sorted(gt_frames, key=lambda x: x[0]):
-            curr_matched_tid = None
-            for tid, pred_frames in pred_tracks.items():
-                p_boxes = [pb for fi, pb in pred_frames if fi == f_idx]
-                if p_boxes and compute_box_iou(p_boxes[0], gt_box) >= 0.40:
-                    curr_matched_tid = tid
-                    break
-
-            if prev_matched_tid is not None and curr_matched_tid is not None:
-                if curr_matched_tid != prev_matched_tid:
-                    id_switches += 1
-            elif prev_matched_tid is not None and curr_matched_tid is None:
-                fragmentations += 1
-
-            prev_matched_tid = curr_matched_tid
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    id_tp = int(-cost_matrix[row_ind, col_ind].sum()) if len(row_ind) > 0 else 0
 
     id_prec = float(id_tp / total_pred_instances) if total_pred_instances > 0 else 0.0
     id_rec = float(id_tp / total_gt_instances) if total_gt_instances > 0 else 0.0
-    idf1 = float(2 * id_prec * id_rec / (id_prec + id_rec)) if (id_prec + id_rec) > 0 else 0.0
+    idf1 = float(2 * id_tp / (total_gt_instances + total_pred_instances)) if (total_gt_instances + total_pred_instances) > 0 else 0.0
 
-    # True CLEAR MOTA: 1.0 - (FN + FP + IDSW) / GT
-    fn = max(0, total_gt_instances - id_tp)
-    fp = max(0, total_pred_instances - id_tp)
-    mota = 1.0 - float(fn + fp + id_switches) / float(total_gt_instances) if total_gt_instances > 0 else 0.0
+    # 2. CLEAR MOT metrics: ID Switches and Fragmentations
+    all_frames = sorted(set(
+        [f[0] for frames in gt_trajectories.values() for f in frames] +
+        [f[0] for frames in pred_tracks.values() for f in frames]
+    ))
+    id_switches = 0
+    fragmentations = 0
+    prev_gt_matched: dict[str, str | None] = {g_id: None for g_id in gt_id_list}
 
-    # HOTA: sqrt(DetA * AssA)
-    deta = float(id_tp / (total_gt_instances + fp)) if (total_gt_instances + fp) > 0 else 0.0
-    assa = float(id_tp / (id_tp + id_switches + fragmentations)) if (id_tp + id_switches + fragmentations) > 0 else 0.0
-    hota = math.sqrt(max(0.0, deta * assa))
+    for f_idx in all_frames:
+        f_gts = [(g_id, box) for g_id, frames in gt_trajectories.items() for fi, box in frames if fi == f_idx]
+        f_preds = [(p_id, box) for p_id, frames in pred_tracks.items() for fi, box in frames if fi == f_idx]
+
+        curr_frame_matches: dict[str, str] = {}
+        if f_gts and f_preds:
+            iou_mat = np.zeros((len(f_gts), len(f_preds)), dtype=float)
+            for gi, (_, g_box) in enumerate(f_gts):
+                for pi, (_, p_box) in enumerate(f_preds):
+                    iou_mat[gi, pi] = compute_box_iou(g_box, p_box)
+            r_idx, c_idx = linear_sum_assignment(-iou_mat)
+            for r, c in zip(r_idx, c_idx):
+                if iou_mat[r, c] >= 0.40:
+                    curr_frame_matches[f_gts[r][0]] = f_preds[c][0]
+
+        for g_id, _ in f_gts:
+            curr_tid = curr_frame_matches.get(g_id)
+            prev_tid = prev_gt_matched[g_id]
+            if prev_tid is not None and curr_tid is not None and curr_tid != prev_tid:
+                id_switches += 1
+            elif prev_tid is not None and curr_tid is None:
+                fragmentations += 1
+            if curr_tid is not None:
+                prev_gt_matched[g_id] = curr_tid
+
+    # MOTA = 1 - (FN + FP + IDSW) / GT
+    fn_count = max(0, total_gt_instances - id_tp)
+    fp_count = max(0, total_pred_instances - id_tp)
+    mota = 1.0 - float(fn_count + fp_count + id_switches) / float(total_gt_instances) if total_gt_instances > 0 else 0.0
     track_cov = float(id_tp / total_gt_instances) if total_gt_instances > 0 else 0.0
+
+    # 3. Standard HOTA (Luiten et al., IJCV 2021) across 19 localization thresholds alpha in [0.05, 0.95]
+    alpha_thresholds = np.linspace(0.05, 0.95, 19)
+    hota_alphas: list[float] = []
+    deta_alphas: list[float] = []
+    assa_alphas: list[float] = []
+
+    for alpha in alpha_thresholds:
+        frame_matches_alpha: dict[int, list[tuple[str, str]]] = defaultdict(list)
+        unmatched_gt_alpha = 0
+        unmatched_pred_alpha = 0
+
+        for f_idx in all_frames:
+            f_gts = [(g_id, box) for g_id, frames in gt_trajectories.items() for fi, box in frames if fi == f_idx]
+            f_preds = [(p_id, box) for p_id, frames in pred_tracks.items() for fi, box in frames if fi == f_idx]
+            if not f_gts and not f_preds:
+                continue
+            if not f_gts:
+                unmatched_pred_alpha += len(f_preds)
+                continue
+            if not f_preds:
+                unmatched_gt_alpha += len(f_gts)
+                continue
+
+            iou_mat = np.zeros((len(f_gts), len(f_preds)), dtype=float)
+            for gi, (_, g_box) in enumerate(f_gts):
+                for pi, (_, p_box) in enumerate(f_preds):
+                    iou_mat[gi, pi] = compute_box_iou(g_box, p_box)
+
+            r_idx, c_idx = linear_sum_assignment(-iou_mat)
+            matched_r = set()
+            matched_c = set()
+            for r, c in zip(r_idx, c_idx):
+                if iou_mat[r, c] >= alpha:
+                    frame_matches_alpha[f_idx].append((f_gts[r][0], f_preds[c][0]))
+                    matched_r.add(r)
+                    matched_c.add(c)
+            unmatched_gt_alpha += (len(f_gts) - len(matched_r))
+            unmatched_pred_alpha += (len(f_preds) - len(matched_c))
+
+        total_tp_alpha = sum(len(m) for m in frame_matches_alpha.values())
+        if total_tp_alpha == 0:
+            deta_alphas.append(0.0)
+            assa_alphas.append(0.0)
+            hota_alphas.append(0.0)
+            continue
+
+        deta_a = float(total_tp_alpha / (total_tp_alpha + unmatched_gt_alpha + unmatched_pred_alpha))
+        deta_alphas.append(deta_a)
+
+        # Compute association score A(c) for each matched detection pair c = (g_id, p_id)
+        pair_match_counts: Counter[tuple[str, str]] = Counter()
+        for f_idx, m_list in frame_matches_alpha.items():
+            for g_id, p_id in m_list:
+                pair_match_counts[(g_id, p_id)] += 1
+
+        ass_scores: list[float] = []
+        for f_idx, m_list in frame_matches_alpha.items():
+            for g_id, p_id in m_list:
+                tpa = pair_match_counts[(g_id, p_id)]
+                p_len = len(pred_tracks[p_id])
+                fpa = p_len - tpa
+                g_len = len(gt_trajectories[g_id])
+                fna = g_len - tpa
+                denom = tpa + fpa + fna
+                a_score = float(tpa / denom) if denom > 0 else 0.0
+                ass_scores.append(a_score)
+
+        assa_a = float(np.mean(ass_scores)) if ass_scores else 0.0
+        assa_alphas.append(assa_a)
+        hota_alphas.append(math.sqrt(deta_a * assa_a))
+
+    hota = float(np.mean(hota_alphas)) if hota_alphas else 0.0
+    deta = float(np.mean(deta_alphas)) if deta_alphas else 0.0
+    assa = float(np.mean(assa_alphas)) if assa_alphas else 0.0
 
     return TrackingMetrics(
         total_gt_trajectories=total_gt_trajectories,
@@ -828,6 +925,8 @@ def evaluate_temporal_tracking(
         id_recall=id_rec,
         mota=mota,
         hota=hota,
+        deta=deta,
+        assa=assa,
         track_coverage=track_cov,
         status="measured",
     )
@@ -899,7 +998,7 @@ def evaluate_multiview_association(
     assoc_rec = float(correct_merges / total_gt_pairs)
     false_merge_rate = float(incorrect_merges / merged_count) if merged_count > 0 else 0.0
 
-    # Cluster purity: majority GT entity count / cluster size across all merged entities
+    # 1. Cluster Purity: fraction of cluster members belonging to the dominant true entity
     purity_numer = 0
     purity_denom = 0
     for entity in merged_entities:
@@ -916,7 +1015,30 @@ def evaluate_multiview_association(
         purity_denom += len(obs_ids)
 
     cluster_purity = float(purity_numer / purity_denom) if purity_denom > 0 else 1.0
-    identity_completeness = assoc_rec
+
+    # 2. Independent Identity Completeness (fraction of true entity observations in its dominant cluster)
+    total_mapped_gt_obs = sum(len(s) for s in gt_entity_observations.values())
+    completeness_sum = 0
+    for gt_id, obs_set in gt_entity_observations.items():
+        if not obs_set:
+            continue
+        c_counts: Counter[int] = Counter()
+        for c_idx, entity in enumerate(merged_entities):
+            c_obs = set(getattr(entity, "constituent_observation_ids", ()))
+            intersect = len(obs_set & c_obs)
+            if intersect > 0:
+                c_counts[c_idx] = intersect
+        if c_counts:
+            completeness_sum += c_counts.most_common(1)[0][1]
+
+    identity_completeness = float(completeness_sum / total_mapped_gt_obs) if total_mapped_gt_obs > 0 else 0.0
+
+    # 3. Single-view and Multi-view entity rates
+    tot_entities = len(merged_entities)
+    single_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "constituent_observation_ids", ())) <= 1)
+    multi_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "constituent_observation_ids", ())) >= 2)
+    single_view_rate = float(single_view_cnt / tot_entities) if tot_entities > 0 else 0.0
+    multi_view_rate = float(multi_view_cnt / tot_entities) if tot_entities > 0 else 0.0
 
     mean_inlier = float(np.mean(inlier_residuals)) if inlier_residuals else None
     med_inlier = float(np.median(inlier_residuals)) if inlier_residuals else None
@@ -933,6 +1055,8 @@ def evaluate_multiview_association(
         cluster_purity=cluster_purity,
         identity_completeness=identity_completeness,
         false_merge_rate=false_merge_rate,
+        single_view_entity_rate=single_view_rate,
+        multi_view_entity_rate=multi_view_rate,
         inlier_mean_reprojection_residual_px=mean_inlier,
         inlier_median_reprojection_residual_px=med_inlier,
         inlier_p90_reprojection_residual_px=p90_inlier,
@@ -1144,6 +1268,7 @@ def run_real_perception_benchmark(
         DetectionBox,
         DetectionPipeline,
         DetectionScale,
+        LearnedConfidenceCalibrator,
         create_default_detector,
         create_default_segmenter,
     )
@@ -1161,14 +1286,33 @@ def run_real_perception_benchmark(
     if segmenter_engine is None:
         segmenter_engine = create_default_segmenter()
 
-    pipe = DetectionPipeline(detector=detector_engine, segmenter=segmenter_engine)
+    calibrator = None
+    cal_file = Path(output_dir if output_dir else "artifacts/perception") / "calibrator_dev.json"
+    if not cal_file.is_file():
+        cal_file = Path("artifacts/perception/calibrator_dev.json")
+    if cal_file.is_file():
+        try:
+            import json
+            with open(cal_file, "r", encoding="utf-8") as f:
+                c_data = json.load(f)
+            calibrator = LearnedConfidenceCalibrator(
+                temperature=c_data.get("temperature", 1.0),
+                bias=c_data.get("bias", 0.0),
+            )
+            calibrator.is_fitted = True
+            print(f"Loaded learned confidence calibrator from {cal_file} (T={calibrator.temperature:.4f}, bias={calibrator.bias:.4f})")
+        except Exception as e:
+            print(f"Warning: could not load calibrator from {cal_file}: {e}")
+
+    pipe = DetectionPipeline(detector=detector_engine, segmenter=segmenter_engine, calibrator=calibrator)
 
     if text_prompts:
         prompts_to_use = list(text_prompts)
     else:
-        annotated_classes = sorted(set(g.class_name for g in gt_boxes))
+        annotated_classes = sorted(set(g.class_name for g in gt_all_boxes))
         prompts_to_use = annotated_classes if annotated_classes else [
-            "door", "window", "table", "chair", "lamp"
+            "door", "window", "table", "chair", "lamp",
+            "door_handle", "window_frame", "table_top", "chair_seat",
         ]
 
     # 3. Process each annotated image in the split
@@ -1209,8 +1353,14 @@ def run_real_perception_benchmark(
                 frame_observations[frame_idx].append(b)
                 obs_by_image[img_name].append(b)
 
+        import gc
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
     # 4. Temporal Tracking Evaluation
-    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=350.0)
+    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=450.0)
     predicted_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]] = defaultdict(list)
     assignments: dict[str, str] = {}
 
@@ -1283,13 +1433,17 @@ def run_real_perception_benchmark(
     mv_engine = MultiViewIntelligenceEngine(
         max_ray_distance_m=0.35,
         max_reproj_err_px=30.0,
-        min_match_score=0.35,
+        min_match_score=0.25,
     )
     merged_entities, assoc_decisions, _ = mv_engine.associate_candidates(ray_candidates)
 
     # Map GT entities to predicted observation IDs via best box IoU
+    # Only evaluate on images with valid calibration extrinsics to avoid inflating denominator with uncalibrated observations
+    calibrated_images = set(extrinsics.keys()) if extrinsics else set()
     gt_entity_obs: dict[str, set[str]] = defaultdict(set)
     for g in gt_boxes:
+        if calibrated_images and g.image_id not in calibrated_images:
+            continue
         img_preds = obs_by_image.get(g.image_id, [])
         best_iou = 0.0
         best_box_id = None

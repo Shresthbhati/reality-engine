@@ -1126,10 +1126,13 @@ class TemporalIdentityTracker:
                 if not are_semantically_compatible(obs_cls, track.class_name):
                     continue
 
-                # Compute motion-compensated centroid distance
+                # Compute motion-compensated centroid distance with last-position fallback
                 dt = max(0.001, timestamp_sec - (track.timestamps_sec[-1] if track.timestamps_sec else timestamp_sec))
                 tcx, tcy = track.predicted_centroid(dt)
-                c_dist = math.hypot(obs_cx - tcx, obs_cy - tcy)
+                c_dist_pred = math.hypot(obs_cx - tcx, obs_cy - tcy)
+                lcx, lcy = track.centroid
+                c_dist_last = math.hypot(obs_cx - lcx, obs_cy - lcy)
+                c_dist = min(c_dist_pred, c_dist_last)
 
                 # 2D IoU with previous box
                 iou = compute_box_iou(obs_box, track.last_box_2d)
@@ -1146,7 +1149,7 @@ class TemporalIdentityTracker:
                 # Allow match if either IoU meets floor or predicted centroid distance is within range
                 if iou >= self.min_iou_match or c_dist <= self.max_centroid_shift_px:
                     dist_score = max(0.0, 1.0 - (c_dist / self.max_centroid_shift_px))
-                    match_score = 0.45 * iou + 0.35 * dist_score + 0.20 * app_score
+                    match_score = 0.65 * iou + 0.30 * dist_score + 0.05 * app_score
                     candidate_matches.append((match_score, obs, track))
 
         candidate_matches.sort(key=lambda x: x[0], reverse=True)

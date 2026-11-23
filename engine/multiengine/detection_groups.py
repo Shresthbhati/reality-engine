@@ -6,7 +6,11 @@ report as a separate object would triple every entity. So detections are grouped
 
 Rules:
 * observations are grouped only within one source image, by box IoU >= ``iou_min`` (a stated parameter, not a tuned default);
-* an engine never joins two of its OWN detections (two boxes from one engine are two objects, however much they overlap);
+* an engine never joins two of its OWN detections (two boxes from one engine are two objects, however much they overlap) -- with ONE narrow
+  exception, ``DUPLICATE_BOX_IOU``: one engine emitting the SAME box (IoU >= 0.95) twice with DIFFERENT labels, neither the parent/child part
+  of the other, is one physical object whose class the engine itself is unsure of (a multi-label emission), not two objects. Measured on real
+  photographs: a wall plate boxed identically as "socket" and "switchboard plate" became two entities, one never lifted to 3D. Two identical
+  boxes with the SAME label are still two reports and are not merged here;
 * labels are NOT used to group: two engines that box the same object but disagree on its class are one detection with a class
   conflict, which canonical fusion then reports -- hiding that disagreement by splitting the group would be the wrong fix;
 * strongest overlap first, ties by observation id, so the result is independent of input order.
@@ -19,6 +23,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from engine.multiengine.observation import EngineObservation
+
+
+#: one engine, one image, near-identical box, different label: the same object with a class conflict (see the module doc)
+DUPLICATE_BOX_IOU = 0.95
+
+
+def _related(a: EngineObservation, b: EngineObservation) -> bool:
+    """True when one box is a recorded PART (child/parent) of the other: those are two objects even at identical extents."""
+    pa, pb = a.predicted or {}, b.predicted or {}
+    ida, idb = pa.get("pipeline_box_id"), pb.get("pipeline_box_id")
+    return bool((ida and pb.get("parent_pipeline_box_id") == ida) or (idb and pa.get("parent_pipeline_box_id") == idb)
+                or (idb and idb in (pa.get("child_box_ids") or ())) or (ida and ida in (pb.get("child_box_ids") or ())))
 
 
 @dataclass(frozen=True)
@@ -53,16 +69,24 @@ def group_detections(observations: Sequence[EngineObservation], *, iou_min: floa
         return x
 
     pairs = []
+    duplicates = set()  # same-engine multi-label emissions of one box: allowed to join despite the one-detection-per-engine rule
     for i, a in enumerate(obs):
         for b in obs[i + 1 :]:
-            if a.source_id != b.source_id or a.engine_id == b.engine_id:
+            if a.source_id != b.source_id:
                 continue
             iou = box_iou(a.image_region, b.image_region)
+            if a.engine_id == b.engine_id:
+                la, lb = (a.predicted or {}).get("label"), (b.predicted or {}).get("label")
+                if iou >= DUPLICATE_BOX_IOU and la and lb and la != lb and not _related(a, b):
+                    key = tuple(sorted((a.observation_id, b.observation_id)))
+                    duplicates.add(key)
+                    pairs.append((-iou, *key))
+                continue
             if iou >= iou_min:
                 pairs.append((-iou, *sorted((a.observation_id, b.observation_id))))
     for _, x, y in sorted(pairs):
         rx, ry = find(x), find(y)
-        if rx == ry or engines[rx] & engines[ry]:  # an engine never contributes two detections to one group
+        if rx == ry or (engines[rx] & engines[ry] and (x, y) not in duplicates):  # an engine never contributes two detections to one group
             continue
         parent[ry] = rx
         engines[rx] |= engines[ry]

@@ -62,3 +62,41 @@ def test_result_is_independent_of_input_order_and_validates_its_parameter():
         with pytest.raises(ValueError):
             group_detections(obs, iou_min=bad)
     assert box_iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0 and box_iou((0, 0, 1, 1), (5, 5, 6, 6)) == 0.0
+
+
+def _o2(engine, source, box, label, **predicted):
+    o = _o(engine, source, box, label)
+    return o if not predicted else _with_predicted(o, predicted)
+
+
+def _with_predicted(o, extra):
+    from dataclasses import replace
+
+    return replace(o, predicted={**o.predicted, **extra})
+
+
+def test_one_engine_boxing_the_same_object_twice_with_different_labels_is_one_group_with_a_class_conflict():
+    """Measured on real photographs: a wall plate emitted by ONE engine as 'socket' and 'switchboard plate' with an identical box."""
+    a, b = _o("pipe", "img", (0, 79, 42, 114), "socket"), _o("pipe", "img", (0, 79, 42, 114), "switchboard plate")
+    (g,) = group_detections([a, b], iou_min=0.5)
+    assert set(g.members) == {a.observation_id, b.observation_id}
+
+
+def test_the_same_engine_exception_is_narrow_same_label_partial_overlap_and_parts_stay_separate():
+    same_label = [_o("pipe", "img", (0, 0, 100, 100), "chair"), _o("pipe", "img", (0, 0, 100, 100), "chair")]
+    assert len(group_detections(same_label, iou_min=0.5)) == 2                       # two reports with one label are not merged here
+    partial = [_o("pipe", "img", (0, 0, 100, 100), "chair"), _o("pipe", "img", (10, 10, 110, 110), "table")]
+    assert len(group_detections(partial, iou_min=0.5)) == 2                          # IoU ~0.68 < 0.95: two objects
+    parent = _o2("pipe", "img", (0, 0, 100, 100), "door", pipeline_box_id="p1")
+    child = _o2("pipe", "img", (0, 0, 100, 100), "handle", pipeline_box_id="c1", parent_pipeline_box_id="p1")
+    assert len(group_detections([parent, child], iou_min=0.5)) == 2                  # a recorded part is a different object even at identical extents
+    far = [_o("pipe", "img", (0, 0, 100, 100), "chair"), _o("pipe", "img", (0, 0, 94, 100), "table")]
+    assert len(group_detections(far, iou_min=0.5)) == 2                              # IoU 0.94 is below the duplicate threshold
+
+
+def test_the_duplicate_rule_is_order_independent():
+    boxes = [_o("pipe", "img", (0, 79, 42, 114), "socket"), _o("pipe", "img", (0, 79, 42, 114), "switchboard plate"), _o("e2", "img", (1, 80, 41, 113), "socket")]
+    ref = [g.members for g in group_detections(boxes, iou_min=0.5)]
+    for _ in range(5):
+        random.shuffle(boxes)
+        assert [g.members for g in group_detections(boxes, iou_min=0.5)] == ref

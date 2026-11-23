@@ -1,0 +1,194 @@
+{
+ "dataset": "datasets/south_building/images (7-Scenes-free; COLMAP south-building subset, 32 photographs)",
+ "photos_total": 32,
+ "six_photo_set": [
+  {
+   "name": "P1180141.JPG",
+   "sha256": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560"
+  },
+  {
+   "name": "P1180145.JPG",
+   "sha256": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81"
+  },
+  {
+   "name": "P1180149.JPG",
+   "sha256": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa"
+  },
+  {
+   "name": "P1180153.JPG",
+   "sha256": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f"
+  },
+  {
+   "name": "P1180157.JPG",
+   "sha256": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a"
+  },
+  {
+   "name": "P1180161.JPG",
+   "sha256": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27"
+  }
+ ],
+ "thirty_two_photo_set": [
+  {
+   "name": "P1180141.JPG",
+   "sha256": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560"
+  },
+  {
+   "name": "P1180145.JPG",
+   "sha256": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81"
+  },
+  {
+   "name": "P1180149.JPG",
+   "sha256": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa"
+  },
+  {
+   "name": "P1180153.JPG",
+   "sha256": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f"
+  },
+  {
+   "name": "P1180157.JPG",
+   "sha256": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a"
+  },
+  {
+   "name": "P1180161.JPG",
+   "sha256": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27"
+  },
+  {
+   "name": "P1180165.JPG",
+   "sha256": "6347daa83d388bf04611899a3861da73681a3d22e97b6e1ede468d15153c9b35"
+  },
+  {
+   "name": "P1180169.JPG",
+   "sha256": "523708e760032167f6dfe03828c719633c9e1b60b942b1247ac97c17aa987ccd"
+  },
+  {
+   "name": "P1180173.JPG",
+   "sha256": "477fb522f1702411a5c97faa8df664945e974ab8a119cb72b2d1fc5468f67616"
+  },
+  {
+   "name": "P1180177.JPG",
+   "sha256": "9773e3098f2573285d6897f979a684a5b2de256663a57b524fa7771473ea5127"
+  },
+  {
+   "name": "P1180181.JPG",
+   "sha256": "c9c2898880a6bb8d5e9e6d7a343db1a5a21436aa4c0dc8d93d28581855b0754e"
+  },
+  {
+   "name": "P1180185.JPG",
+   "sha256": "2108609d7b35e0c43ea0323c81f1b34a12c6dc5f136464b97d7e2f5b0341ca8d"
+  },
+  {
+   "name": "P1180189.JPG",
+   "sha256": "8c4e06b5e2d6b5943825c1eb6ace745358966a2baf6f4937b0b6ccf6260438bd"
+  },
+  {
+   "name": "P1180193.JPG",
+   "sha256": "104dadbcb46cca17f65ec55ec6d3c245725668b2fadfcf8925210d50bc775591"
+  },
+  {
+   "name": "P1180197.JPG",
+   "sha256": "beb3c84231e151a3fa1c1a665a09042ec656d9a162a7981745b53fc812ef9dd3"
+  },
+  {
+   "name": "P1180201.JPG",
+   "sha256": "75c1af7d00380d9efb30fb2bf57f58f81ae943dae87dc16fcc94b5ac561fd8ac"
+  },
+  {
+   "name": "P1180205.JPG",
+   "sha256": "42c6b484c831784d4ef7e4e8e4faafb8779ec4fce814b109c607a15e9dd6f0ff"
+  },
+  {
+   "name": "P1180209.JPG",
+   "sha256": "f86f5eb93c09e1e7fb669c3b92b4d15e280dc31112eb19b015adbb7ce4a3e214"
+  },
+  {
+   "name": "P1180213.JPG",
+   "sha256": "f1d65884cdc62471fad26567b72cd12ce00a0ce60523d52ae0a3b3310bfb5efb"
+  },
+  {
+   "name": "P1180217.JPG",
+   "sha256": "ac114d5c7a8f22c981ffc62c8133391b251e2da55f49609f6964fde627ff320f"
+  },
+  {
+   "name": "P1180221.JPG",
+   "sha256": "ebbd9cf01b38c40d91634c7349d5511d3086780025d0b5824d82deaedb20dcc1"
+  },
+  {
+   "name": "P1180225.JPG",
+   "sha256": "db7360dc851da386cc10f3a3191ac880a51a0b830059c5a0e154811a2d757212"
+  },
+  {
+   "name": "P1180308.JPG",
+   "sha256": "43dcda77f284ba087bcbc9c48ad8ef55ac8316007d0dd3a6b464afddfd3be358"
+  },
+  {
+   "name": "P1180312.JPG",
+   "sha256": "9208666f44bf283e922c543562817a25441244a96f1a242413058e6364739ed6"
+  },
+  {
+   "name": "P1180316.JPG",
+   "sha256": "7f434fa6b78f0ca46ed58406c7c9e9140e597227ca1fa5be673b5e9bc88a14c7"
+  },
+  {
+   "name": "P1180320.JPG",
+   "sha256": "b2cf76c307a7a4e6e048c05384ad666f6b238128f31a27c561e45dd1db4c1f7e"
+  },
+  {
+   "name": "P1180324.JPG",
+   "sha256": "ea984bb006655a4c1ee416d109de09c20202e94df71c5752cff5892f2771c1dc"
+  },
+  {
+   "name": "P1180328.JPG",
+   "sha256": "d529f382396ce54a89608408fb8e571440ecefac8096a53fe0554b730949ffb6"
+  },
+  {
+   "name": "P1180332.JPG",
+   "sha256": "b42fcbaf55d7a5ac0ae9595ff7403719134433c0a2ab90150017c881d8722f10"
+  },
+  {
+   "name": "P1180336.JPG",
+   "sha256": "bb0f90328f2ce1e3dbb31fafc07961808cd696542f1b2f13723971fda8040673"
+  },
+  {
+   "name": "P1180340.JPG",
+   "sha256": "e86745312006735abafc156fff3a728b60a8ba91cb000039215107725c61dfc2"
+  },
+  {
+   "name": "P1180344.JPG",
+   "sha256": "0919b3419da020205a50c4ce48905990f9b74bc2ebb86649c2fa2b19b9f4d958"
+  }
+ ],
+ "photo_selection": "first N of the sorted file list (scripts/repro_export_stability.py --n-photos N)",
+ "runs": {
+  "six_photo_before": {
+   "file": "six_photo_before.json",
+   "code_revision": "c92b4be7 (probe + no-retry-after-timeout; matcher UNCAPPED)"
+  },
+  "six_photo_after": {
+   "file": "six_photo_after.json",
+   "code_revision": "557a39ee (keypoint cap + matcher release)"
+  },
+  "thirty_two_photo": {
+   "file": "thirty_two_photo.json",
+   "code_revision": "557a39ee (server started before the ladder.py diagnostic edit)"
+  }
+ },
+ "command": "python scripts/repro_export_stability.py --photos datasets/south_building/images --n-photos {6|32} --rounds 1 --formats gltf --port <p> --db <fresh> --storage <fresh> --worldstore <fresh>",
+ "config": {
+  "RE_MATCH_MAX_KEYPOINTS": "unset (default 2048 after 557a39ee; uncapped before)",
+  "JOB_TIMEOUT_SECONDS": "unset (1800)",
+  "RE_EVIDENCE_WORLD": "unset",
+  "colmap": "4.2.0 CUDA build, backend defaults (robust SIFT affine+DSP, guided matching off, mapper seeds 0/1/2)"
+ },
+ "environment": {
+  "os": "Windows-11-10.0.26300-SP0",
+  "python": "3.14.7",
+  "gpu": "NVIDIA RTX 4050 Laptop 6141 MiB",
+  "system_ram_mb": 16024,
+  "gpu_used_before_runs_mib": "6-photo before: ~4071 (desktop); 6-photo after: 0; 32-photo: not recorded -- desktop load differed between runs, so wall-clock comparisons across runs are NOT controlled"
+ },
+ "uncontrolled_differences": [
+  "desktop GPU/RAM load differed between runs",
+  "before-run server was memory-starved (system available <1 GB) and a 1800 s timeout fired in an earlier attempt",
+  "six-photo and 32-photo runs differ in input AND the six-photo input does not register in COLMAP (see diagnosis, pending)"
+ ]
+}

@@ -1,0 +1,521 @@
+{
+ "rounds": 1,
+ "formats": [
+  "gltf"
+ ],
+ "api_died": null,
+ "requests": 2,
+ "peak_rss_mb": 725.1,
+ "first_rss_mb": 2.0,
+ "last_rss_mb": 725.1,
+ "min_system_available_mb": 300,
+ "world": "wld_51fa6891d1bb",
+ "log": "C:\\Users\\shres\\AppData\\Local\\Temp\\export_stability_8314.log",
+ "log_tail": [
+  "INFO:     127.0.0.1:50070 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:50075 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:50077 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:59613 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64503 - \"GET /api/jobs HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64504 - \"GET /api/jobs/job_bb7f5b4b2b1f/stages HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64506 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64507 - \"GET /api/jobs/job_bb7f5b4b2b1f HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64507 - \"GET /api/jobs/job_bb7f5b4b2b1f/stages HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64508 - \"POST /api/worlds/wld_51fa6891d1bb/export HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64509 - \"GET /api/worlds/wld_51fa6891d1bb/export/1814b2a283b048070cc1706d1d30f597fd88b39470c20d2142f0f5e8666497bc/download?format=gltf HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:64510 - \"GET /healthz HTTP/1.1\" 200 OK"
+ ],
+ "memory_timeline": [
+  [
+   23.0,
+   721.3,
+   3203,
+   "reconstruct"
+  ],
+  [
+   48.1,
+   1583.6,
+   1829,
+   "reconstruct"
+  ],
+  [
+   73.1,
+   1563.2,
+   2677,
+   "reconstruct"
+  ],
+  [
+   98.2,
+   1665.4,
+   2561,
+   "reconstruct"
+  ],
+  [
+   123.3,
+   1665.5,
+   2057,
+   "reconstruct"
+  ],
+  [
+   148.5,
+   1665.6,
+   2474,
+   "reconstruct"
+  ],
+  [
+   173.7,
+   1666.5,
+   2459,
+   "reconstruct"
+  ],
+  [
+   198.9,
+   1463.8,
+   300,
+   "reconstruct"
+  ],
+  [
+   223.9,
+   1425.5,
+   670,
+   "reconstruct"
+  ],
+  [
+   249.1,
+   1425.5,
+   3262,
+   "reconstruct"
+  ],
+  [
+   274.2,
+   1425.5,
+   3250,
+   "reconstruct"
+  ],
+  [
+   299.3,
+   1292.1,
+   3645,
+   "reconstruct"
+  ],
+  [
+   324.4,
+   1293.1,
+   3522,
+   "reconstruct"
+  ],
+  [
+   349.5,
+   1293.1,
+   3585,
+   "reconstruct"
+  ],
+  [
+   374.6,
+   1293.4,
+   3337,
+   "reconstruct"
+  ],
+  [
+   399.7,
+   1293.4,
+   3360,
+   "reconstruct"
+  ],
+  [
+   424.9,
+   1293.4,
+   2897,
+   "reconstruct"
+  ],
+  [
+   450.0,
+   1294.2,
+   2782,
+   "reconstruct"
+  ],
+  [
+   475.0,
+   914.1,
+   2828,
+   "reconstruct"
+  ],
+  [
+   500.1,
+   914.1,
+   2757,
+   "reconstruct"
+  ],
+  [
+   525.2,
+   914.1,
+   2661,
+   "reconstruct"
+  ],
+  [
+   550.3,
+   475.5,
+   2073,
+   "reconstruct"
+  ],
+  [
+   575.6,
+   320.5,
+   1487,
+   "reconstruct"
+  ],
+  [
+   600.7,
+   290.9,
+   1102,
+   "reconstruct"
+  ],
+  [
+   625.8,
+   108.2,
+   1805,
+   "reconstruct"
+  ],
+  [
+   650.8,
+   108.8,
+   2741,
+   "reconstruct"
+  ],
+  [
+   676.0,
+   112.0,
+   5250,
+   "reconstruct"
+  ],
+  [
+   701.0,
+   115.8,
+   5088,
+   "reconstruct"
+  ],
+  [
+   726.1,
+   138.9,
+   4537,
+   "reconstruct"
+  ],
+  [
+   751.2,
+   744.9,
+   4262,
+   "reconstruct"
+  ],
+  [
+   776.3,
+   752.6,
+   4126,
+   "reconstruct"
+  ],
+  [
+   801.4,
+   1045.4,
+   3681,
+   "reconstruct"
+  ],
+  [
+   826.6,
+   1162.1,
+   3680,
+   "reconstruct"
+  ],
+  [
+   851.6,
+   1213.2,
+   3476,
+   "reconstruct"
+  ],
+  [
+   876.7,
+   1253.2,
+   3233,
+   "reconstruct"
+  ],
+  [
+   901.9,
+   1242.3,
+   3191,
+   "reconstruct"
+  ],
+  [
+   927.0,
+   1255.7,
+   3076,
+   "reconstruct"
+  ],
+  [
+   952.1,
+   1271.4,
+   2964,
+   "reconstruct"
+  ],
+  [
+   977.2,
+   1308.5,
+   2955,
+   "reconstruct"
+  ],
+  [
+   1002.3,
+   1322.7,
+   2415,
+   "reconstruct"
+  ],
+  [
+   1027.5,
+   1329.2,
+   2661,
+   "reconstruct"
+  ],
+  [
+   1052.6,
+   1253.9,
+   2664,
+   "reconstruct"
+  ],
+  [
+   1078.3,
+   1181.7,
+   2689,
+   "reconstruct"
+  ],
+  [
+   1108.7,
+   1411.5,
+   2720,
+   "reconstruct"
+  ],
+  [
+   1138.7,
+   1586.6,
+   2412,
+   "reconstruct"
+  ],
+  [
+   1167.5,
+   1039.8,
+   2818,
+   "reconstruct"
+  ]
+ ],
+ "results": [
+  {
+   "phase": "reconstruct",
+   "job": "job_bb7f5b4b2b1f",
+   "status": "partial",
+   "seconds": 1150.5,
+   "stages": [
+    {
+     "name": "evidence_resolve",
+     "status": "succeeded",
+     "duration_s": 0.094245,
+     "mem_rss_start_mb": 722.1,
+     "mem_rss_peak_mb": 757.5,
+     "mem_rss_end_mb": 757.5,
+     "mem_commit_peak_mb": 2103.2,
+     "mem_system_available_min_mb": 3410.4,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 0.0,
+     "mem_cuda_peak_reserved_mb": 0.0
+    },
+    {
+     "name": "evidence_quality",
+     "status": "succeeded",
+     "duration_s": 63.578547,
+     "mem_rss_start_mb": 757.5,
+     "mem_rss_peak_mb": 1604.5,
+     "mem_rss_end_mb": 1564.2,
+     "mem_commit_peak_mb": 5304.9,
+     "mem_system_available_min_mb": 1678.5,
+     "mem_samples": 232.0,
+     "mem_cuda_peak_allocated_mb": 1708.0,
+     "mem_cuda_peak_reserved_mb": 2270.0
+    },
+    {
+     "name": "reconstruct",
+     "status": "degraded",
+     "duration_s": 1080.28332,
+     "mem_rss_start_mb": 1564.2,
+     "mem_rss_peak_mb": 4374.2,
+     "mem_rss_end_mb": 965.0,
+     "mem_commit_peak_mb": 7736.4,
+     "mem_system_available_min_mb": 7.6,
+     "mem_samples": 3827.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 256.0
+    },
+    {
+     "name": "pose",
+     "status": "degraded",
+     "duration_s": 536.297751,
+     "mem_rss_start_mb": 1591.5,
+     "mem_rss_peak_mb": 4374.4,
+     "mem_rss_end_mb": 145.7,
+     "mem_commit_peak_mb": 5961.9,
+     "mem_system_available_min_mb": 7.6,
+     "mem_samples": 1930.0,
+     "mem_cuda_peak_allocated_mb": 8.1,
+     "mem_cuda_peak_reserved_mb": 12.0
+    },
+    {
+     "name": "scale",
+     "status": "succeeded",
+     "duration_s": 0.437693,
+     "mem_rss_start_mb": 146.4,
+     "mem_rss_peak_mb": 152.0,
+     "mem_rss_end_mb": 152.0,
+     "mem_commit_peak_mb": 3044.8,
+     "mem_system_available_min_mb": 4597.2,
+     "mem_samples": 3.0,
+     "mem_cuda_peak_allocated_mb": 8.1,
+     "mem_cuda_peak_reserved_mb": 12.0
+    },
+    {
+     "name": "depth",
+     "status": "succeeded",
+     "duration_s": 26.367023,
+     "mem_rss_start_mb": 152.0,
+     "mem_rss_peak_mb": 1426.9,
+     "mem_rss_end_mb": 746.3,
+     "mem_commit_peak_mb": 4269.3,
+     "mem_system_available_min_mb": 3483.0,
+     "mem_samples": 97.0,
+     "mem_cuda_peak_allocated_mb": 654.0,
+     "mem_cuda_peak_reserved_mb": 826.0
+    },
+    {
+     "name": "layout",
+     "status": "succeeded",
+     "duration_s": 13.731176,
+     "mem_rss_start_mb": 746.3,
+     "mem_rss_peak_mb": 751.9,
+     "mem_rss_end_mb": 748.3,
+     "mem_commit_peak_mb": 3458.7,
+     "mem_system_available_min_mb": 4199.5,
+     "mem_samples": 52.0,
+     "mem_cuda_peak_allocated_mb": 25.6,
+     "mem_cuda_peak_reserved_mb": 76.0
+    },
+    {
+     "name": "perception",
+     "status": "succeeded",
+     "duration_s": 374.684289,
+     "mem_rss_start_mb": 748.3,
+     "mem_rss_peak_mb": 1669.5,
+     "mem_rss_end_mb": 1105.1,
+     "mem_commit_peak_mb": 7736.4,
+     "mem_system_available_min_mb": 1236.2,
+     "mem_samples": 1332.0,
+     "mem_cuda_peak_allocated_mb": 3195.0,
+     "mem_cuda_peak_reserved_mb": 3620.0
+    },
+    {
+     "name": "mesh",
+     "status": "skipped",
+     "duration_s": 6.8e-05,
+     "mem_rss_start_mb": 1105.1,
+     "mem_rss_peak_mb": 1105.1,
+     "mem_rss_end_mb": 1030.4,
+     "mem_commit_peak_mb": 4372.2,
+     "mem_system_available_min_mb": 2786.9,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 256.0
+    },
+    {
+     "name": "dense",
+     "status": "skipped",
+     "duration_s": 0.047697,
+     "mem_rss_start_mb": 1030.4,
+     "mem_rss_peak_mb": 1033.0,
+     "mem_rss_end_mb": 1033.0,
+     "mem_commit_peak_mb": 4299.8,
+     "mem_system_available_min_mb": 2847.7,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 256.0
+    },
+    {
+     "name": "detail",
+     "status": "succeeded",
+     "duration_s": 24.239159,
+     "mem_rss_start_mb": 1033.0,
+     "mem_rss_peak_mb": 1050.8,
+     "mem_rss_end_mb": 1039.5,
+     "mem_commit_peak_mb": 4317.7,
+     "mem_system_available_min_mb": 2674.5,
+     "mem_samples": 84.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 256.0
+    },
+    {
+     "name": "finalize",
+     "status": "succeeded",
+     "duration_s": 0.471638,
+     "mem_rss_start_mb": 1039.5,
+     "mem_rss_peak_mb": 1039.9,
+     "mem_rss_end_mb": 1039.9,
+     "mem_commit_peak_mb": 4307.5,
+     "mem_system_available_min_mb": 2822.0,
+     "mem_samples": 3.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 256.0
+    },
+    {
+     "name": "quality_report",
+     "status": "skipped",
+     "duration_s": 4.3e-05,
+     "mem_rss_start_mb": 856.4,
+     "mem_rss_peak_mb": 856.4,
+     "mem_rss_end_mb": 856.4,
+     "mem_commit_peak_mb": 4121.3,
+     "mem_system_available_min_mb": 3032.6,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 216.0
+    },
+    {
+     "name": "compile_validate",
+     "status": "degraded",
+     "duration_s": 0.325025,
+     "mem_rss_start_mb": 856.5,
+     "mem_rss_peak_mb": 920.3,
+     "mem_rss_end_mb": 858.4,
+     "mem_commit_peak_mb": 4184.1,
+     "mem_system_available_min_mb": 2960.4,
+     "mem_samples": 3.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 216.0
+    },
+    {
+     "name": "changeset_commit",
+     "status": "succeeded",
+     "duration_s": 0.424642,
+     "mem_rss_start_mb": 858.4,
+     "mem_rss_peak_mb": 866.1,
+     "mem_rss_end_mb": 860.7,
+     "mem_commit_peak_mb": 4129.6,
+     "mem_system_available_min_mb": 3001.3,
+     "mem_samples": 3.0,
+     "mem_cuda_peak_allocated_mb": 89.6,
+     "mem_cuda_peak_reserved_mb": 216.0
+    }
+   ]
+  },
+  {
+   "round": 0,
+   "format": "gltf",
+   "export_status": 200,
+   "export_s": 0.11,
+   "download_status": 200,
+   "bytes": 64540,
+   "healthz": 200,
+   "rss_mb": 725.1
+  }
+ ]
+}

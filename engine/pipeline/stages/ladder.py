@@ -92,7 +92,10 @@ def _why_not_used(ladder: Ladder | None) -> str:
     if not level2:
         return "multi-view reconstruction not attempted (needs >= 2 usable photographs); single-image bootstrap used"
     last = level2[-1]
-    return f"multi-view rung {last.get('outcome')}: {last.get('detail')}"[:400]
+    text = f"multi-view rung {last.get('outcome')}: {last.get('detail')}"
+    # a failing tool's message is "<what failed>\ncommand: <very long>\nstderr tail:\n<the cause>": cutting the END hid the cause
+    # (measured: the persisted reason showed only the command line), so keep the head AND the tail
+    return text if len(text) <= 600 else f"{text[:200]} ... {text[-390:]}"
 
 
 class LadderReport:

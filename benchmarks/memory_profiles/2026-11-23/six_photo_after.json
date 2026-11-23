@@ -1,0 +1,443 @@
+{
+ "rounds": 1,
+ "formats": [
+  "gltf"
+ ],
+ "api_died": null,
+ "requests": 2,
+ "peak_rss_mb": 2266.8,
+ "first_rss_mb": 2.0,
+ "last_rss_mb": 2266.8,
+ "min_system_available_mb": 1234,
+ "world": "wld_b40ddc0ecd57",
+ "log": "C:\\Users\\shres\\AppData\\Local\\Temp\\export_stability_8313.log",
+ "log_tail": [
+  "INFO:     127.0.0.1:51369 - \"GET /api/jobs/job_9b6aeff42b8e HTTP/1.1\" 200 OK",
+  "Using cache found in C:\\Users\\shres/.cache\\torch\\hub\\intel-isl_MiDaS_master",
+  "INFO:     127.0.0.1:62968 - \"GET /api/jobs/job_9b6aeff42b8e HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:62970 - \"GET /api/jobs/job_9b6aeff42b8e HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:62971 - \"GET /api/jobs HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:62972 - \"GET /api/jobs/job_9b6aeff42b8e/stages HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:62973 - \"GET /api/jobs/job_9b6aeff42b8e HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:51305 - \"GET /api/jobs/job_9b6aeff42b8e HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:51305 - \"GET /api/jobs/job_9b6aeff42b8e/stages HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:51306 - \"POST /api/worlds/wld_b40ddc0ecd57/export HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:51307 - \"GET /api/worlds/wld_b40ddc0ecd57/export/532f0f3fa454e9c685014033fd0ead7facfdd9dc871d08a8c930e7b8e63661d4/download?format=gltf HTTP/1.1\" 200 OK",
+  "INFO:     127.0.0.1:51308 - \"GET /healthz HTTP/1.1\" 200 OK"
+ ],
+ "memory_timeline": [
+  [
+   20.7,
+   718.9,
+   3404,
+   "reconstruct"
+  ],
+  [
+   25.7,
+   1604.1,
+   2677,
+   "reconstruct"
+  ],
+  [
+   30.7,
+   1640.7,
+   2529,
+   "reconstruct"
+  ],
+  [
+   35.8,
+   1626.1,
+   1551,
+   "reconstruct"
+  ],
+  [
+   40.8,
+   1626.1,
+   1234,
+   "reconstruct"
+  ],
+  [
+   45.8,
+   1626.1,
+   1576,
+   "reconstruct"
+  ],
+  [
+   50.8,
+   1626.2,
+   2749,
+   "reconstruct"
+  ],
+  [
+   55.8,
+   1626.1,
+   3106,
+   "reconstruct"
+  ],
+  [
+   60.8,
+   1626.1,
+   3070,
+   "reconstruct"
+  ],
+  [
+   65.9,
+   1626.1,
+   3082,
+   "reconstruct"
+  ],
+  [
+   70.9,
+   1626.1,
+   3075,
+   "reconstruct"
+  ],
+  [
+   75.9,
+   1626.1,
+   2982,
+   "reconstruct"
+  ],
+  [
+   80.9,
+   1703.8,
+   2982,
+   "reconstruct"
+  ],
+  [
+   85.9,
+   1827.6,
+   2908,
+   "reconstruct"
+  ],
+  [
+   90.9,
+   2066.0,
+   2663,
+   "reconstruct"
+  ],
+  [
+   96.0,
+   2074.3,
+   2574,
+   "reconstruct"
+  ],
+  [
+   101.0,
+   2525.8,
+   2130,
+   "reconstruct"
+  ],
+  [
+   106.0,
+   2367.2,
+   2254,
+   "reconstruct"
+  ],
+  [
+   111.0,
+   2469.7,
+   2323,
+   "reconstruct"
+  ],
+  [
+   116.3,
+   2444.0,
+   2306,
+   "reconstruct"
+  ],
+  [
+   121.3,
+   2347.5,
+   2387,
+   "reconstruct"
+  ],
+  [
+   126.3,
+   2502.4,
+   2224,
+   "reconstruct"
+  ],
+  [
+   131.3,
+   2366.3,
+   2329,
+   "reconstruct"
+  ],
+  [
+   136.3,
+   2917.2,
+   1770,
+   "reconstruct"
+  ],
+  [
+   141.4,
+   2506.8,
+   2149,
+   "reconstruct"
+  ],
+  [
+   146.4,
+   2368.0,
+   2423,
+   "reconstruct"
+  ],
+  [
+   151.4,
+   2523.4,
+   2297,
+   "reconstruct"
+  ],
+  [
+   156.4,
+   2369.1,
+   2449,
+   "reconstruct"
+  ],
+  [
+   161.4,
+   2690.5,
+   2166,
+   "reconstruct"
+  ],
+  [
+   166.4,
+   2562.3,
+   2340,
+   "reconstruct"
+  ],
+  [
+   171.5,
+   2365.7,
+   2548,
+   "reconstruct"
+  ],
+  [
+   176.5,
+   2266.7,
+   2713,
+   "reconstruct"
+  ],
+  [
+   176.5,
+   2266.7,
+   2713,
+   "export gltf"
+  ]
+ ],
+ "results": [
+  {
+   "phase": "reconstruct",
+   "job": "job_9b6aeff42b8e",
+   "status": "partial",
+   "seconds": 155.8,
+   "stages": [
+    {
+     "name": "evidence_resolve",
+     "status": "succeeded",
+     "duration_s": 0.067864,
+     "mem_rss_start_mb": 720.0,
+     "mem_rss_peak_mb": 757.2,
+     "mem_rss_end_mb": 757.2,
+     "mem_commit_peak_mb": 2103.3,
+     "mem_system_available_min_mb": 3454.0,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 0.0,
+     "mem_cuda_peak_reserved_mb": 0.0
+    },
+    {
+     "name": "evidence_quality",
+     "status": "succeeded",
+     "duration_s": 4.682503,
+     "mem_rss_start_mb": 757.3,
+     "mem_rss_peak_mb": 1608.1,
+     "mem_rss_end_mb": 1604.2,
+     "mem_commit_peak_mb": 5304.2,
+     "mem_system_available_min_mb": 2669.6,
+     "mem_samples": 19.0,
+     "mem_cuda_peak_allocated_mb": 1681.6,
+     "mem_cuda_peak_reserved_mb": 2242.0
+    },
+    {
+     "name": "reconstruct",
+     "status": "degraded",
+     "duration_s": 146.653053,
+     "mem_rss_start_mb": 1604.2,
+     "mem_rss_peak_mb": 3244.3,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 8637.3,
+     "mem_system_available_min_mb": 765.4,
+     "mem_samples": 527.0,
+     "mem_cuda_peak_allocated_mb": 2983.1,
+     "mem_cuda_peak_reserved_mb": 3712.0
+    },
+    {
+     "name": "pose",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2654.0,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "scale",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2653.2,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "depth",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2649.9,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "layout",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2645.2,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "perception",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2645.8,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "mesh",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2646.3,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "dense",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2649.0,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "detail",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2651.6,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "finalize",
+     "status": "skipped",
+     "duration_s": 0.0,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2649.4,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "quality_report",
+     "status": "skipped",
+     "duration_s": 4.5e-05,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2650.3,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "compile_validate",
+     "status": "degraded",
+     "duration_s": 0.06177,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.6,
+     "mem_rss_end_mb": 2265.6,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2650.9,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    },
+    {
+     "name": "changeset_commit",
+     "status": "succeeded",
+     "duration_s": 0.085006,
+     "mem_rss_start_mb": 2265.6,
+     "mem_rss_peak_mb": 2265.7,
+     "mem_rss_end_mb": 2265.7,
+     "mem_commit_peak_mb": 4184.2,
+     "mem_system_available_min_mb": 2650.5,
+     "mem_samples": 2.0,
+     "mem_cuda_peak_allocated_mb": 25.4,
+     "mem_cuda_peak_reserved_mb": 156.0
+    }
+   ]
+  },
+  {
+   "round": 0,
+   "format": "gltf",
+   "export_status": 200,
+   "export_s": 0.26,
+   "download_status": 200,
+   "bytes": 320832,
+   "healthz": 200,
+   "rss_mb": 2266.8
+  }
+ ]
+}

@@ -1272,6 +1272,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                           "note": prog.stage_facts.get("scale_error_note"),
                           "scale_basis": (world_ir.metadata.get("scale") or {}).get("scale_basis"),
                           "dimension_state": (world_ir.metadata.get("scale") or {}).get("dimension_state"),
+                          "calibration": (world_ir.metadata.get("scale") or {}).get("calibration"),
                           "provisional_unit_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_k"),
                           "provisional_unit_base_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_base_k"),
                           "dropped": scale_ref_notes},

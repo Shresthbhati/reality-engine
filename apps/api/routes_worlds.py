@@ -2250,7 +2250,13 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
         raise HTTPException(422, str(exc)) from exc
     job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id, team_id=w.team_id)
     await db.commit()
-    return {"world_id": world_id, "job_id": job.id, "reference": ref,
+    from engine.multiengine.scale_anchors import calibrate_baseline
+
+    pending = None  # the SAME calibration record the evidence-world route returns; a photo-pair baseline's model separation is only known to the rebuild
+    if model_distance:
+        pending = calibrate_baseline(float(model_distance), float(distance_m), method=body.method, prior=body.method == PRIOR_ACCEPTED, anchor_ids=(a, b)).to_dict()
+    return {"world_id": world_id, "job_id": job.id, "reference": ref, "calibration": pending,
+            "calibration_applied_by": "reconstruction job (a new immutable version; the previous version is kept)",
             "dimension_state_after": "ESTIMATED" if body.method == PRIOR_ACCEPTED else "MEASURED",
             "note": "the same world will be re-evaluated with this measured distance; a new version is created "
                     "only if the authoritative geometry changes"}

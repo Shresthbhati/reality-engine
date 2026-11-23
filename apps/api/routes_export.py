@@ -184,6 +184,8 @@ async def export_world(
     db.add(export_rec)
     await db.commit()
 
+    from engine.multiengine.world_scale import scale_block
+
     elements = _element_report(world, report.entities_exported)
     by_state: dict = {}
     for r in elements:
@@ -201,6 +203,7 @@ async def export_world(
         "skip_reasons": list(report.skip_reasons),
         "elements": elements,
         "evidence_summary": {"total": len(elements), "by_state": by_state},
+        "scale": scale_block(world),  # model units vs metres, and on what evidence: the UI banner and API clients read this, not a guess
     }
 
 

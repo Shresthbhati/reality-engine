@@ -555,7 +555,10 @@ def test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_onc
     exp = client.post(_url(wid, "run-c2", "export"), json={"format": "glb"}, headers=A)  # no acknowledge_unscaled needed: it IS metric now
     assert exp.status_code == 200 and exp.headers["x-export-scale"] == "metric"
     again = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": anchors}, headers=A)
-    assert again.status_code == 409 and "twice" in again.json()["detail"]  # double scaling refused
+    assert again.status_code == 200 and again.json()["idempotent"] is True and again.json()["version_id"] == res["version_id"]  # a retry, not a second scaling
+    other = [_dist(i, *p, scale=3.0, held=(i == 3)) for i, p in enumerate(_PAIRS)]
+    different = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": other}, headers=A)
+    assert different.status_code == 409 and "different physical calibration" in different.json()["detail"]  # double scaling refused
     from worldstore.store import WorldStore
 
     store = WorldStore(tmp_path / "ws" / "evidence-world" / "tenant-a" / wid / "run-c2" / "worldstore")

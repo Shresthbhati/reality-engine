@@ -35,6 +35,15 @@ export interface ExportResult {
   /** per exported element: measured vs inferred and confidence (T-2.7) */
   elements: ExportElement[];
   evidence_summary: EvidenceSummary;
+  /** model units vs metres, and on what evidence (shared by the legacy and evidence-world exports) */
+  scale?: {
+    state: string;
+    units: "m" | "model_units";
+    metric_export_ready: boolean;
+    calibration_status: string | null;
+    basis: string | null;
+    warnings: string[];
+  };
 }
 
 /** Exports the world's current (or ?version=) WorldIR to a real format

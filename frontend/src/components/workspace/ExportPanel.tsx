@@ -92,6 +92,7 @@ export default function ExportPanel({
     elements: ExportElement[];
     summary: EvidenceSummary;
     showEvidence: boolean;
+    scaleNote: { metric: boolean; text: string } | null;
   } | null>(null);
 
   const [formatsTick, setFormatsTick] = useState(0);
@@ -141,6 +142,14 @@ export default function ExportPanel({
         elements: result.elements ?? [],
         summary: result.evidence_summary ?? { total: 0, by_state: {} },
         showEvidence: false,
+        scaleNote: result.scale
+          ? {
+              metric: result.scale.metric_export_ready,
+              text: result.scale.metric_export_ready
+                ? `Metric scale (metres)${result.scale.basis ? ` from ${result.scale.basis}` : ""}${result.scale.calibration_status ? `, ${result.scale.calibration_status}` : ""}.`
+                : result.scale.warnings[0] ?? "Geometry is in model units, not metres.",
+            }
+          : null,
       });
     } catch (err: unknown) {
       if (isApiError(err)) {
@@ -338,6 +347,14 @@ export default function ExportPanel({
             Exported {done.entitiesExported} entities successfully.
             {done.entitiesSkipped > 0 && ` (${done.entitiesSkipped} skipped due to non-mesh geometry)`}
           </div>
+          {done.scaleNote && (
+            <div
+              className={`text-[11px] ${done.scaleNote.metric ? "text-fg-muted" : "text-warning"}`}
+              data-testid="export-scale-note"
+            >
+              {done.scaleNote.text}
+            </div>
+          )}
           <div className="text-[11px] text-fg-muted" data-testid="export-evidence-headline">{evidenceHeadline(done.summary)}</div>
           {done.elements.length > 0 && (
             <div className="mt-1 pt-1 border-t border-success/20">

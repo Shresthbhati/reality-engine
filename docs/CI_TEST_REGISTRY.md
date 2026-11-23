@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 597
+Total: 599
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -141,6 +141,7 @@ Total: 597
 - `tests/integration/test_contract_compatibility.py`
 - `tests/integration/test_coordinate_frame_firewall.py`
 - `tests/integration/test_demo_journey.py`
+- `tests/integration/test_export_stability.py`
 - `tests/integration/test_failure_injection.py`
 - `tests/integration/test_golden_path_real_photos.py`
 - `tests/integration/test_golden_world_flow.py`
@@ -203,6 +204,7 @@ Total: 597
 - `tests/test_building_envelope.py`
 - `tests/test_building_grammar.py`
 - `tests/test_cad_importer.py`
+- `tests/test_calibration_failure_injection.py`
 - `tests/test_camera_calibration.py`
 - `tests/test_camera_calibration_integrity.py`
 - `tests/test_camera_coordinate_conventions.py`

@@ -50,6 +50,31 @@ def world_calibration(world: Any) -> dict[str, Any] | None:
     return cal if isinstance(cal, dict) else None
 
 
+def scale_block(world: Any) -> dict[str, Any]:
+    """What a consumer (export response, status, UI banner) may say about a world's scale, from ONE function for the legacy and the evidence-world
+    paths. ``units`` is "m" only when the scale is backed by an applicable measured calibration (or a device-depth scale); an accepted typical-size
+    prior is ESTIMATED and never reads as metric-export-ready; otherwise the geometry is in model units."""
+    md = getattr(world, "metadata", None) or {}
+    legacy = md.get("scale") or {}
+    cal = world_calibration(world)
+    status = (cal or {}).get("status")
+    state = str(legacy.get("state") or md.get("scale_state") or ("metric" if status in ("validated", "unvalidated", "estimated_prior") else "relative")).lower()
+    basis = (cal or {}).get("basis") or legacy.get("scale_basis")
+    device = basis == "device_depth"
+    metric_ready = state in ("metric", "metric_anchored") and (status in ("validated", "unvalidated") or device)
+    warnings: list[str] = []
+    if not metric_ready:
+        why = ("the scale is an accepted typical-size ESTIMATE, not a measurement" if status == "estimated_prior"
+               else "no physical scale has been set" if state not in ("metric", "metric_anchored")
+               else "the recorded scale has no applicable measured calibration")
+        warnings.append(f"Geometry is in model units, not metres ({why})")
+    elif status == "unvalidated":
+        warnings.append("Metric scale rests on measurements that were not independently validated")
+    return {"state": state, "units": "m" if metric_ready else "model_units", "metric_export_ready": metric_ready, "calibration_status": status,
+            "basis": basis, "dimension_state": (cal or {}).get("dimension_state") or legacy.get("dimension_state"),
+            "scale_m_per_gauge": (cal or {}).get("scale_m_per_gauge") or legacy.get("meters_per_unit"), "warnings": warnings}
+
+
 def _tf(cal: ScaleCalibration) -> Sim3:
     if cal.transform is not None:
         return cal.transform

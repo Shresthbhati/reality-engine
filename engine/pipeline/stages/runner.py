@@ -1,9 +1,11 @@
 """Sequential stage runner with checkpoint reuse and cancellation."""
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, timezone
 from typing import Callable, Mapping, Protocol, Sequence
 
+from engine.hardware.admission import RssSampler, StageAdmission, read_rss_mb
 from engine.pipeline.stages.base import (
     RunManifest,
     Stage,
@@ -64,6 +66,7 @@ def run_stages(
     pipeline_profile: str = "",
     pipeline_version: str = "",
     stage_timeouts: "Mapping[str, float] | None" = None,
+    admission: StageAdmission | None = None,
 ) -> RunManifest:
     manifest = RunManifest(pipeline_profile=pipeline_profile, pipeline_version=pipeline_version, stages=[])
     for stage in stages:
@@ -78,23 +81,48 @@ def run_stages(
             if on_start:
                 on_start(spec)
             started = datetime.now(timezone.utc)
-            attempts = 1 + (max(0, spec.retries) if spec.idempotent else 0)  # a non-idempotent stage is never re-run
-            for attempt in range(1, attempts + 1):
-                try:
-                    result = _run_with_deadline(stage, ctx, (stage_timeouts or {}).get(spec.name))
-                    result.inputs_hash = inputs_hash
-                    break
-                except Exception as exc:  # noqa: BLE001 - recorded as a failed StageResult, never swallowed
-                    result = StageResult(
-                        name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={},
-                        warnings=[], error=repr(exc), started_at=started,
-                        ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
-                    )
-                    if isinstance(exc, StageTimeout):
-                        result.metrics["timed_out"] = 1.0
-                        break  # an abandoned stage is never retried
-                    if should_cancel():
-                        break
+            adm = admission.admit(spec.name) if admission is not None else None  # memory-aware admission (engine.hardware.admission)
+            if adm is not None:
+                ctx.state.setdefault("admission", {})[spec.name] = {"decision": adm.decision, "reason": adm.reason, "fallback": adm.fallback}
+            attempt = 1
+            if adm is not None and adm.decision == "fail":  # refused, with the measured numbers: never a silent skip
+                result = StageResult(
+                    name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={**adm.metrics, "admission_refused": 1.0},
+                    warnings=[], error=f"admission refused: {adm.reason}", started_at=started,
+                    ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
+                )
+            else:
+                attempts = 1 + (max(0, spec.retries) if spec.idempotent else 0)  # a non-idempotent stage is never re-run
+                sampler = RssSampler(admission.sampler_interval_s) if admission is not None else contextlib.nullcontext()
+                with sampler:
+                    for attempt in range(1, attempts + 1):
+                        try:
+                            result = _run_with_deadline(stage, ctx, (stage_timeouts or {}).get(spec.name))
+                            result.inputs_hash = inputs_hash
+                            break
+                        except Exception as exc:  # noqa: BLE001 - recorded as a failed StageResult, never swallowed
+                            result = StageResult(
+                                name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={},
+                                warnings=[], error=repr(exc), started_at=started,
+                                ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
+                            )
+                            if isinstance(exc, StageTimeout):
+                                result.metrics["timed_out"] = 1.0
+                                break  # an abandoned stage is never retried
+                            if should_cancel():
+                                break
+                if adm is not None:
+                    rss_after = read_rss_mb()
+                    admission.after_stage(spec.name, adm.metrics.get("rss_before_mb"), rss_after, result.status == "failed")  # gc + cuda empty_cache when it can matter
+                    rss_after = read_rss_mb()
+                    result.metrics.update(adm.metrics)
+                    if rss_after is not None:
+                        result.metrics["rss_after_mb"] = round(rss_after, 1)
+                    result.peak_rss_mb = sampler.peak_mb
+                    if adm.decision == "degrade":  # a weaker path is recorded WITH its quality effect, and grades the job partial
+                        result.warnings.append(f"admission degraded to {adm.fallback!r}: {adm.quality_effect} ({adm.reason})")
+                        if result.status == "succeeded":
+                            result.status = "degraded"
             if attempt > 1:
                 result.metrics["attempts"] = float(attempt)
             missing = [n for n in spec.requires_outputs if n not in result.outputs]

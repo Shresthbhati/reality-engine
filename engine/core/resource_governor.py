@@ -236,6 +236,98 @@ def chunk_point_cloud_spatially(
         yield chunk
 
 
+class StageResourceProbe:
+    """MEASURES one stage (never estimates): peak resident memory of this process PLUS its child processes (COLMAP and other tools run as
+    subprocesses), the lowest system-available RAM seen, and the CUDA peak allocated / reserved bytes when torch is already loaded.
+    Sampled at ``interval`` seconds on a daemon thread; a stage shorter than one interval still gets its start and end samples.
+
+        with StageResourceProbe() as probe:
+            run_the_stage()
+        probe.metrics   # {"mem_rss_start_mb", "mem_rss_peak_mb", "mem_rss_end_mb", "mem_system_available_min_mb", "mem_cuda_peak_allocated_mb", ...}
+    """
+
+    def __init__(self, interval: float = 0.25) -> None:
+        self.interval = interval
+        self.metrics: Dict[str, float] = {}
+        self._stop = None
+        self._thread = None
+        self._rss: List[float] = []
+        self._avail: List[float] = []
+
+    @staticmethod
+    def _tree_rss_mb() -> float:
+        import psutil  # type: ignore
+
+        me = psutil.Process()
+        total = 0
+        for p in [me, *me.children(recursive=True)]:
+            try:
+                total += p.memory_info().rss
+            except Exception:  # noqa: BLE001 - a child that exited between listing and reading
+                pass
+        return total / (1024 * 1024)
+
+    def _sample(self) -> None:
+        import psutil  # type: ignore
+
+        self._rss.append(self._tree_rss_mb())
+        self._avail.append(psutil.virtual_memory().available / (1024 * 1024))
+
+    @staticmethod
+    def _torch():
+        mod = sys.modules.get("torch")  # only when something else already imported it: probing must never load a framework
+        try:
+            return mod if mod is not None and mod.cuda.is_available() else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    def __enter__(self) -> "StageResourceProbe":
+        import threading
+
+        try:
+            self._sample()
+        except Exception:  # noqa: BLE001 - psutil missing: the stage still runs, the metrics stay absent (not zero)
+            return self
+        t = self._torch()
+        if t is not None:
+            try:
+                t.cuda.reset_peak_memory_stats()
+            except Exception:  # noqa: BLE001
+                pass
+        self._stop = threading.Event()
+
+        def loop() -> None:
+            while not self._stop.wait(self.interval):
+                try:
+                    self._sample()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        self._thread = threading.Thread(target=loop, name="stage-resource-probe", daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._stop is None:
+            return
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+        try:
+            self._sample()
+        except Exception:  # noqa: BLE001
+            pass
+        m = {"mem_rss_start_mb": self._rss[0], "mem_rss_peak_mb": max(self._rss), "mem_rss_end_mb": self._rss[-1],
+             "mem_system_available_min_mb": min(self._avail), "mem_samples": float(len(self._rss))}
+        t = self._torch()
+        if t is not None:
+            try:
+                m["mem_cuda_peak_allocated_mb"] = t.cuda.max_memory_allocated() / (1024 * 1024)
+                m["mem_cuda_peak_reserved_mb"] = t.cuda.max_memory_reserved() / (1024 * 1024)
+            except Exception:  # noqa: BLE001
+                pass
+        self.metrics = {k: round(v, 1) for k, v in m.items()}
+
+
 class GovernedExecution:
     """Context manager that tracks runtime duration and memory against a budget."""
 

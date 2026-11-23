@@ -1635,6 +1635,16 @@ class LeaseLost(RuntimeError):
     Whatever this worker still holds in memory is stale, so it must not write any state for the job."""
 
 
+class HandlerTimeout(RuntimeError):
+    """The handler exceeded its deadline. Cancelling the awaiting task cannot stop work already running in a worker thread, so the
+    abandoned attempt keeps its models and arrays resident; a same-process retry would run a SECOND copy on top of it (measured: RSS
+    0.65 GB -> 2.37 GB and a CUDA out-of-memory in the retry). Deterministic for this process, so never retried: the job fails with an
+    explicit, persisted kind and an operator-started rerun gets a clean process."""
+
+    retryable = False
+    failure_kind = "handler_timeout"
+
+
 class JobOutcomeError(RuntimeError):
     """A handler finished but its result cannot be graded as success (unknown outcome, or a required output that the
     outcome promises is not there). Deterministic, so never retried."""
@@ -1944,7 +1954,7 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
                 raise _JobCancelled(
                     f"job {job.id} cancelled by operator (timed out simultaneously)"
                 ) from exc
-            raise RuntimeError(
+            raise HandlerTimeout(
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
         outcome = await _verify_outcome(db, job, outcome)  # success is checked against persisted state, never assumed

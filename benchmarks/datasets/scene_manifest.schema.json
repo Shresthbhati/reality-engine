@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "annotations": {
+      "items": {
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "mesh",
+              "point_cloud",
+              "semantic",
+              "instance",
+              "box3d",
+              "part",
+              "layout",
+              "dimension",
+              "structure",
+              "pose",
+              "depth"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provenance_class": {
+            "enum": [
+              "measured",
+              "estimated",
+              "fitted",
+              "synthetic"
+            ],
+            "type": "string"
+          },
+          "provenance_note": {
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uncertainty_m": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "provenance_class"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "data_kinds": {
+      "items": {
+        "enum": [
+          "synthetic",
+          "real_image",
+          "rgbd",
+          "physical_gt"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "dataset": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "extra": {
+      "type": "object"
+    },
+    "frame": {
+      "properties": {
+        "camera_axes": {
+          "enum": [
+            "opencv",
+            "opengl",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "handedness": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "pose_convention": {
+          "const": "camera_to_world"
+        },
+        "unit_to_metre": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "units": {
+          "type": "string"
+        },
+        "up_axis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit_to_metre",
+        "camera_axes"
+      ],
+      "type": "object"
+    },
+    "group_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "images": {
+      "items": {
+        "properties": {
+          "camera_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depth_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depth_provenance": {
+            "anyOf": [
+              {
+                "enum": [
+                  "measured",
+                  "estimated",
+                  "fitted",
+                  "synthetic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "depth_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "depth_unit_to_metre": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "intrinsics": {
+            "required": [
+              "fx",
+              "fy",
+              "cx",
+              "cy"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "pose_c2w": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pose_provenance": {
+            "anyOf": [
+              {
+                "enum": [
+                  "measured",
+                  "estimated",
+                  "fitted",
+                  "synthetic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "interior",
+        "exterior"
+      ],
+      "type": "string"
+    },
+    "layout_verified": {
+      "type": "boolean"
+    },
+    "licence": {
+      "required": [
+        "name"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "scene_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1"
+    },
+    "split": {
+      "enum": [
+        "unassigned",
+        "development",
+        "validation",
+        "test"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "dataset",
+    "scene_id",
+    "group_id",
+    "kind",
+    "split",
+    "data_kinds",
+    "frame",
+    "images",
+    "annotations"
+  ],
+  "title": "SceneManifest",
+  "type": "object"
+}

@@ -42,7 +42,7 @@ async def _photos_total(db: AsyncSession, j: Job) -> int | None:
 async def _progress_view(db: AsyncSession, j: Job) -> dict:
     """The fields a client needs to draw progress. `progress` is stage-weighted (coarse, monotonic, 100 only on
     success/partial); `photos_placed` is known only after the run, so it is None while building -- never guessed."""
-    placed = (j.payload or {}).get("cameras_registered") if j.status in _TERMINAL else None
+    placed = (j.payload or {}).get("cameras_registered") if j.status in ("succeeded", "partial") else None
     counts = (j.payload or {}).get("counts") or (j.payload or {}).get("compile") or {}
     failure_reason = None
     if j.status == "failed":

@@ -166,6 +166,9 @@ class CompileOptions:
     #: lower-confidence ADDITIONAL observation for the S2 solver: they can only raise a wall no point supports to
     #: OBSERVED with a layout basis, never move or outrank a measured wall. None = no layout evidence supplied.
     layout_edges_ab: Optional[Sequence] = None
+    #: False = do not detect room structure at all (no planes -> no walls / ceiling / floor / windows / rooms). Set by the
+    #: indoor/outdoor scene gate (perception.scene_type) for scenes that are not confidently interior.
+    structure_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -337,7 +340,12 @@ def compile_reconstruction_to_world(
     # provenance-recording refinement since PR #111; the compiler path
     # consuming raw detection was the defect.
     detection = None
-    if options.room_prior:           # floor/ceiling/walls from histograms; None = not room-like -> RANSAC below
+    if not options.structure_enabled:
+        from perception.geometry.planes import PlaneDetection
+
+        detection = PlaneDetection(planes=[], unassigned_point_ids=sorted(p.track_id for p in result.points),
+                                   points_total=len(result.points))
+    elif options.room_prior:         # floor/ceiling/walls from histograms; None = not room-like -> RANSAC below
         from perception.geometry.room_box import detect_room_planes
 
         detection = detect_room_planes(result, options.up)

@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 595
+Total: 597
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -585,6 +585,7 @@ Total: 595
 - `tests/test_scale_anchors.py`
 - `tests/test_scale_drift_absorb.py`
 - `tests/test_scale_gate.py`
+- `tests/test_scale_route_parity.py`
 - `tests/test_scene_complete_bench.py`
 - `tests/test_scene_complete_scorer.py`
 - `tests/test_scene_graph.py`
@@ -667,6 +668,7 @@ Total: 595
 - `tests/test_trajectory_diagnostics.py`
 - `tests/test_trim_dense_to_scene.py`
 - `tests/test_true_localized_incremental_acceptance.py`
+- `tests/test_uncertainty_calibration.py`
 - `tests/test_uncertainty_propagation.py`
 - `tests/test_units.py`
 - `tests/test_universal_expansion_e2e.py`

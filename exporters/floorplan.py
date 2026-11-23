@@ -19,7 +19,7 @@ and the legend says so (it never claims metres).
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from exporters.report import ExportReport, content_hash
 from world_ir import EntityType
@@ -42,7 +42,7 @@ _MEASURED_STATES = {"MEASURED", "VERIFIED", "OBSERVED"}
 _CAPPED_STATE = {"estimated": "ESTIMATED", "anchored_unvalidated": "ANCHORED-UNVALIDATED"}
 
 
-def _scale_units(world) -> Tuple[str, float]:
+def _scale_units(world) -> Tuple[_Unit, float]:
     """(unit, 1.0). Metres only when the ONE shared scale reader (world_scale.scale_block) says the scale is a recorded measured calibration;
     an accepted typical-size prior is an ESTIMATE and stays in model units. A legacy world that only carries a bare ``metric`` label (no
     calibration record at all) keeps its historic metre label."""
@@ -68,7 +68,7 @@ def _project(point_xyz: Sequence[float], e1: Sequence[float], e2: Sequence[float
     return (sum(a * b for a, b in zip(p, e1)), sum(a * b for a, b in zip(p, e2)))
 
 
-def _rooms(world) -> List[object]:
+def _rooms(world) -> List[Any]:
     return [e for e in world.entities.values() if e.type == EntityType.ROOM
             and (e.custom_properties or {}).get("footprint_polygon_m")
             and not (e.custom_properties or {}).get("superseded_by")]
@@ -491,7 +491,7 @@ def build_room_report(world) -> dict:
                 counts[kind] = counts.get(kind, 0) + 1
         dims = cp.get("dimensions") or {}
         states = sorted({(_CAPPED_STATE.get(unit.kind, d["state"]) if str(d["state"]).upper() in _MEASURED_STATES else d["state"])
-                         for d in dims.values() if isinstance(d, dict) and d.get("state")})
+                         for d in dims.values() if isinstance(d, dict) and d.get("state")}, key=str)
         confs = [float(w["confidence"]) for w in walls if w.get("confidence") is not None]
 
         # Fixtures in this room (T-2.3)

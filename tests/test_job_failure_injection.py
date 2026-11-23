@@ -289,8 +289,12 @@ def test_depth_cache_treats_damaged_entries_and_index_as_misses(tmp_path):
 
 # ---- model artifact missing / corrupted; fusion failure -------------------------------------------------------------------
 
-def test_a_corrupted_model_checkpoint_is_refused_and_a_missing_one_is_reported(tmp_path):
+def test_a_corrupted_model_checkpoint_is_refused_and_a_missing_one_is_reported(tmp_path, monkeypatch):
     from perception import model_registry as mr
+
+    # Isolate the process-wide registry so the probe entry cannot leak into other tests
+    # (test_model_licence_gate walks every registry entry and requires a licence).
+    monkeypatch.setattr(mr, "_REGISTRY", dict(mr._REGISTRY))
 
     ckpt = tmp_path / "w.pt"
     ckpt.write_bytes(b"real weights")

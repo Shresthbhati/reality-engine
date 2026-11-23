@@ -42,6 +42,13 @@ class CaptureIssueType(str, Enum):
     INSUFFICIENT_OVERLAP = "insufficient_overlap"
     INSUFFICIENT_RESOLUTION = "insufficient_resolution"
     HIDDEN_SURFACES = "hidden_surfaces"
+    UNSEEN_ROOM_REGION = "unseen_room_region"
+    OCCLUDED_OPENING = "occluded_opening"
+    POORLY_OBSERVED_CORNER = "poorly_observed_corner"
+    UNCERTAIN_DIMENSIONS = "uncertain_dimensions"
+    UNRESOLVED_MULTI_VIEW = "unresolved_multi_view"
+    MISSING_SURFACE_EVIDENCE = "missing_surface_evidence"
+    INADEQUATE_FIXTURE_COVERAGE = "inadequate_fixture_coverage"
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,9 @@ class CaptureRequest:
     suggested_distance: float = 0.0
     guidance_text: str = ""
     is_scale_request: bool = False
+    expected_evidence: str = ""
+    expected_uncertainty_reduction: float = 0.0
+    desired_viewpoint_description: str = ""
     details: dict[str, Any] = field(default_factory=dict)
 
     def __init__(
@@ -74,6 +84,9 @@ class CaptureRequest:
         suggested_distance: float = 0.0,
         guidance_text: str = "",
         is_scale_request: bool = False,
+        expected_evidence: str = "",
+        expected_uncertainty_reduction: float = 0.0,
+        desired_viewpoint_description: str = "",
         details: dict[str, Any] | None = None,
         target_position_m: tuple[float, float, float] | None = None,
         recommended_camera_pos_m: tuple[float, float, float] | None = None,
@@ -96,6 +109,9 @@ class CaptureRequest:
         object.__setattr__(self, "suggested_distance", float(eff_dist))
         object.__setattr__(self, "guidance_text", guidance_text)
         object.__setattr__(self, "is_scale_request", bool(is_scale_request))
+        object.__setattr__(self, "expected_evidence", expected_evidence)
+        object.__setattr__(self, "expected_uncertainty_reduction", float(expected_uncertainty_reduction))
+        object.__setattr__(self, "desired_viewpoint_description", desired_viewpoint_description)
         object.__setattr__(self, "details", details if details is not None else {})
 
     @property
@@ -135,6 +151,9 @@ class CaptureRequest:
             "suggested_distance_m": round(self.suggested_distance, 2) if self.is_scale_calibrated else 0.0,
             "guidance_text": self.guidance_text,
             "is_scale_request": self.is_scale_request,
+            "expected_evidence": self.expected_evidence,
+            "expected_uncertainty_reduction": round(self.expected_uncertainty_reduction, 3),
+            "desired_viewpoint_description": self.desired_viewpoint_description,
             "details": self.details,
         }
 

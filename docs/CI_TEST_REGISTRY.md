@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 593
+Total: 595
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -582,6 +582,7 @@ Total: 593
 - `tests/test_runtime_foundation.py`
 - `tests/test_sam2_backend.py`
 - `tests/test_sam_backend.py`
+- `tests/test_scale_anchors.py`
 - `tests/test_scale_drift_absorb.py`
 - `tests/test_scale_gate.py`
 - `tests/test_scene_complete_bench.py`
@@ -718,6 +719,7 @@ Total: 593
 - `tests/test_world_proposals.py`
 - `tests/test_world_query.py`
 - `tests/test_world_runtime.py`
+- `tests/test_world_scale.py`
 - `tests/test_world_store_atomicity.py`
 - `tests/test_world_store_concurrency.py`
 - `tests/test_world_topology_checks.py`

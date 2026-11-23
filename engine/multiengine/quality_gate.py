@@ -91,7 +91,15 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
             gates.append(_gate("mesh_validity", mesh.get("problems") or "valid", PASS if mesh.get("valid") else FAIL,
                                "the fused mesh has no degenerate or duplicate triangles, no non-finite vertices and no non-manifold edges"))
     scale = readiness.get("scale") or {}
-    if scale.get("records_by_scale_state"):
+    cal = readiness.get("calibration")
+    if cal:  # a recorded physical calibration decides the scale gate: only one tested on held-out anchors passes
+        gates.append(_gate("physical_scale", {"status": cal.get("status"), "scale_m_per_gauge": cal.get("scale_m_per_gauge"),
+                                              "scale_sigma": cal.get("scale_sigma"), "fit_anchors": cal.get("fit_anchors"),
+                                              "held_out": cal.get("held_out")},
+                           PASS if cal.get("status") == "validated" else NOT_MEASURED,
+                           "the physical scale was fitted on independent anchors and predicts held-out anchors it was not fitted to "
+                           "(an applied but untested calibration is reported, not passed)"))
+    elif scale.get("records_by_scale_state"):
         gates.append(_gate("physical_scale", scale.get("status"), PASS if scale.get("physical_metric") else FAIL,
                            "positions are physically anchored metres (otherwise gauge/relative units)"))
     else:
@@ -108,7 +116,15 @@ def assess(readiness: Mapping[str, Any]) -> dict[str, Any]:
             if up is None or not up.get("of"):
                 gates.append(_gate(key, None, NOT_MEASURED, "no geometry carries an evidence-derived uncertainty block"))
             else:
-                gates.append(_gate(key, f"{up.get('covered')}/{up.get('of')}", PASS if up["covered"] == up["of"] else FAIL,
+                full = up["covered"] == up["of"]
+                if key == "uncertainty_dimensions" and full and not up.get("calibrated"):
+                    # derived from evidence, but only the sampling spread of the extent estimator (no depth-alignment / mask-boundary / occlusion
+                    # error) and never checked against independent measurements: a lower bound is not a measured uncertainty
+                    gates.append(_gate(key, f"{up.get('covered')}/{up.get('of')} (sampling-spread lower bound, uncalibrated)", NOT_MEASURED,
+                                       "dimension uncertainty exists for every geometry but is an uncalibrated lower bound; it passes only once it "
+                                       "has been calibrated against independently measured dimensions"))
+                    continue
+                gates.append(_gate(key, f"{up.get('covered')}/{up.get('of')}", PASS if full else FAIL,
                                    f"every geometry's {what} uncertainty was derived from evidence (none is a stand-in)"))
         uc = cov.get("unresolved_conflicts")
         if uc is not None:

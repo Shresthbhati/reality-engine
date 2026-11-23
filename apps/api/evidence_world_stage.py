@@ -556,7 +556,15 @@ def readiness(root: Path) -> dict[str, Any]:
                                  "entities_with_geometry": len(sized), "state": world_state, "withheld_entities": withheld,
                                  "scale_states": {s: states.count(s) for s in sorted(set(states))}})
             out["coverage"] = _coverage(w, placed, sized)
-            out["metric_export_ready"] = bool(placed) and not problems and all(s == "metric_anchored" for s in states)
+            cal = (w.metadata or {}).get("scale_calibration")
+            cal_status = ((cal or {}).get("calibration") or {}).get("status")
+            out["calibration"] = None if not cal else {
+                "id": cal.get("id"), "status": cal_status, "scale_m_per_gauge": cal.get("scale_m_per_gauge"), "scale_sigma": cal.get("scale_sigma"),
+                "parent_version": cal.get("parent_version"), "held_out": len(((cal.get("calibration") or {}).get("held_out")) or []),
+                "fit_anchors": len(((cal.get("calibration") or {}).get("fit_ids")) or [])}
+            # metric export needs every placed entity metric AND a recorded, applicable calibration: a bare "metric_anchored" label is not evidence
+            out["metric_export_ready"] = (bool(placed) and not problems and all(s == "metric_anchored" for s in states)
+                                          and cal_status in ("validated", "unvalidated"))
             if placed and not out["metric_export_ready"]:
                 out["export_scale_warning"] = ("positions/dimensions are not physically anchored metres (scale states: "
                                                f"{sorted(set(states))}); an export carries unitless/gauge values, not a metric model")

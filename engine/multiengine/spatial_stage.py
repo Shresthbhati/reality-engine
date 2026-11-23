@@ -18,6 +18,7 @@ available in production yet (boxes only); relation kinds that need a vertical ax
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
@@ -93,6 +94,52 @@ def _axis_aligned_extents_job(points_working: Sequence[Sequence[float]], fallbac
         return [float(x) for x in fallback]
     pj = np.asarray(points_working, float) @ R_UP  # row-wise R_UP.T @ p
     return (np.percentile(pj, 95, axis=0) - np.percentile(pj, 5, axis=0)).tolist()
+
+
+MIN_EXTENT_POINTS = 200  # fewer unprojected points than this and the extent (and its uncertainty) is not estimated from them
+N_BOOT = 200
+
+
+def _detection_points_job(det: Any, depth: np.ndarray, cam_work: Any, *, max_points: int = 2500) -> np.ndarray:
+    """The detection's own depth points in the JOB frame: every mask pixel (box pixels when there is no mask) with a valid aligned depth,
+    depth-outliers (> 3 robust sigma from the median) dropped, unprojected through the working camera. (n, 3), possibly empty."""
+    h, w = depth.shape[:2]
+    x1, y1, x2, y2 = (float(v) for v in det.box_2d)
+    u0, u1, v0, v1 = max(0, int(x1)), min(w, int(np.ceil(x2))), max(0, int(y1)), min(h, int(np.ceil(y2)))
+    if u1 <= u0 or v1 <= v0:
+        return np.zeros((0, 3))
+    vv, uu = np.mgrid[v0:v1, u0:u1]
+    sel = np.ones(vv.shape, bool)
+    m = det.mask_2d
+    if m is not None and np.asarray(m).shape[:2] == (h, w):
+        sel &= np.asarray(m)[v0:v1, u0:u1].astype(bool)
+    d = depth[v0:v1, u0:u1]
+    sel &= np.isfinite(d) & (d > 0)
+    u, v, z = uu[sel], vv[sel], d[sel].astype(float)
+    if len(z) == 0:
+        return np.zeros((0, 3))
+    med = float(np.median(z))
+    sig = max(1.4826 * float(np.median(np.abs(z - med))), 1e-9)
+    keep = np.abs(z - med) <= 3.0 * sig
+    u, v, z = u[keep], v[keep], z[keep]
+    if len(z) > max_points:
+        idx = np.random.default_rng(0).choice(len(z), max_points, replace=False)
+        u, v, z = u[idx], v[idx], z[idx]
+    pts = np.array([[p.x, p.y, p.z] for p in (cam_work.unproject(float(a), float(b), float(c)) for a, b, c in zip(u, v, z, strict=True))])
+    return pts @ R_UP  # working (Z-up) -> job frame, row-wise R_UP.T @ p
+
+
+def _extent_covariance(pts_job: np.ndarray, *, seed: int) -> tuple[list[float], np.ndarray] | None:
+    """5th-95th percentile extent along the job axes and the covariance of that estimator by bootstrap over the points. This is a LOWER BOUND
+    of the dimension uncertainty: it captures sampling spread only, not the aligned-depth systematic error or mask-boundary error."""
+    if len(pts_job) < MIN_EXTENT_POINTS:
+        return None
+    ext = np.percentile(pts_job, 95, axis=0) - np.percentile(pts_job, 5, axis=0)
+    rng = np.random.default_rng(seed)
+    boots = np.array([np.percentile(s, 95, axis=0) - np.percentile(s, 5, axis=0)
+                      for s in (pts_job[rng.integers(0, len(pts_job), len(pts_job))] for _ in range(N_BOOT))])
+    cov = np.cov(boots, rowvar=False) + 1e-12 * np.eye(3)  # tiny ridge: a degenerate axis must stay positive semi-definite, not NaN
+    return ext.tolist(), cov
 
 
 def _bump(d: dict[str, int], key: str, n: int = 1) -> None:
@@ -246,10 +293,28 @@ def run_spatial_stage(
         pos_job = _to_job(le.position_m)
         cov_job = R_UP.T @ np.asarray(le.covariance_xyz, float) @ R_UP
         dims_job = _axis_aligned_extents_job(le.point_cloud_sample, np.abs(_to_job(le.dimensions_m)))
+        dim_cov, dim_unc = None, {"state": "unknown", "reason": f"fewer than {MIN_EXTENT_POINTS} usable depth points inside the detection, or no depth/camera"}
+        # With no direct extent the value below is the lifter's, which floors every axis at 4 cm: an axis at that floor is a floor, not a measurement
+        floored = [bool(abs(float(v) - 0.04) < 1e-9) for v in le.dimensions_m]
+        det_in = next((d for d in det_inputs if d.detection_id == le.entity_id), None)
+        if det_in is not None and src in depth_maps and src in work_cams:
+            pj = _detection_points_job(det_in, depth_maps[src], work_cams[src])
+            est = _extent_covariance(pj, seed=int(hashlib.sha256(le.entity_id.encode()).hexdigest()[:8], 16))
+            if est is not None:
+                dims_job, dcov = est[0], est[1]
+                dim_cov = tuple(tuple(float(x) for x in r) for r in dcov)
+                dim_unc = {"state": "estimated_from_visual_evidence", "method": "bootstrap of the 5-95 percentile extent over the detection's depth points",
+                           "n_points": int(len(pj)), "lower_bound": True, "calibrated": False,
+                           "includes": ["sampling spread of the extent estimator"],
+                           "excludes": ["aligned-depth systematic error", "mask boundary error", "occlusion (unseen extent)"]}
+        if dim_cov is None:
+            dim_unc["extent_source"] = "lifter_oriented_extents_fallback"
+            dim_unc["axes_at_lifter_floor_0.04"] = floored  # taxonomy / lifter floors are priors; flagged per axis, never presented as measured
         support = {"detection_observation": b.observation_id, "depth_observation": d_info["depth_observation"], "box_px": list(b.image_region),
                    "alignment": d_info["alignment"], "working_frame": "Z-up (job frame rotated +90 deg about X)",
                    "lifted_working_frame": le.to_dict(), "oriented_extents_w_d_h_working": list(le.dimensions_m),
-                   "axis_aligned_extents_job_frame": dims_job, "point_sample": [list(p) for p in le.point_cloud_sample[:64]]}
+                   "axis_aligned_extents_job_frame": dims_job, "dimension_uncertainty": dim_unc,
+                   "point_sample": [list(p) for p in le.point_cloud_sample[:64]]}
         ref, _ = matrix.artifacts.put(json.dumps(support, sort_keys=True, default=float).encode("utf-8"))
         common: dict[str, Any] = dict(
             engine_id=ENGINE_ID, architecture_id=ARCH, checkpoint_id="none:geometric-algorithm", source_id=src, units=s_units,
@@ -258,7 +323,7 @@ def run_spatial_stage(
             image_region=tuple(float(v) for v in b.image_region), raw_artifact_ref=ref)
         recs = [Metric3DObservation(quantity="position", value=tuple(float(v) for v in pos_job),
                                     covariance=tuple(tuple(float(x) for x in r) for r in cov_job), **common),
-                Metric3DObservation(quantity="dimensions", value=tuple(float(v) for v in dims_job), **common)]
+                Metric3DObservation(quantity="dimensions", value=tuple(float(v) for v in dims_job), covariance=dim_cov, **common)]
         res = ingest(matrix, recs, run_id=run_id, model_version=MODEL_VERSION)
         ok = len(res["accepted"]) == 2
         img = next(i for i in report["images"] if i["source"] == src)

@@ -30,7 +30,18 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_a_stage_deadline_fails_the_real_job_with_the_reason_and_adopts_nothing(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("RE_STAGE_TIMEOUTS_S", "reconstruct=0.01")  # failure injection: the reconstruction stage cannot finish in 10 ms
+    monkeypatch.setenv("RE_STAGE_TIMEOUTS_S", "reconstruct=0.05")  # failure injection: the reconstruction stage cannot finish in 50 ms
+    import time
+
+    import world_ir.artifact_store as store_mod
+
+    real_store = store_mod.FileArtifactStore
+
+    def slow_store(*a, **k):  # the stage's first action: make it take far longer than its deadline on ANY machine (a fast runner made 10 ms a race)
+        time.sleep(1.0)
+        return real_store(*a, **k)
+
+    monkeypatch.setattr(store_mod, "FileArtifactStore", slow_store)  # jobs.py imports it from here at call time
     sid, wid = _chain_setup(client, tmp_path, monkeypatch)
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=120.0)
     assert job["status"] == "failed" and "deadline" in str(job.get("error", "")).lower(), job

@@ -36,21 +36,26 @@ def _extents(P: np.ndarray) -> np.ndarray:
     return np.percentile(P, 95, axis=0) - np.percentile(P, 5, axis=0)
 
 
-def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: float, R: np.ndarray, t: np.ndarray) -> None:
+def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: float, R: np.ndarray, t: np.ndarray, ev2n: dict | None = None) -> None:
     """Lifting-step accuracy: re-measure each lifted box's pixels from the KINECT depth (same box, same robust extent, expressed in the
     job's axes and converted to metres by the ground-truth similarity) and compare with the pipeline's lifted dimensions. This tests the
     lifting (depth alignment + unprojection), NOT the detector: the box itself is taken as given."""
     from engine.multiengine.evidence_matrix import EvidenceMatrix
 
-    h2n = {v: k.replace(".color.png", "") for k, v in run["hashes"].items()}
+    import hashlib
+
+    # content hash -> the ground-truth frame whose bytes the run was given (exact, unlike the run's possibly renamed upload names)
+    gt_by_hash = {hashlib.sha256(f.read_bytes()).hexdigest(): f.name.replace(".color.png", "") for f in frames.glob("frame-*.color.png")}
+    h2n = {v: gt_by_hash.get(v, k.replace(".color.png", "")) for k, v in run["hashes"].items()}
     m = EvidenceMatrix(ev_root)
     fx, fy, cx, cy = K
     ratios, abs_err, rows = [], [], 0
+    zs: list[float] = []  # |error| / predicted sigma, for the axes that carry a stated covariance (uncertainty calibration)
     cache: dict[str, tuple] = {}
     for o in m.store.query(quantity="dimensions"):
         if not o.engine_id.startswith("lift:") or o.image_region is None or m.status(o.observation_id) == "rejected":
             continue
-        n = h2n.get(os.path.basename(o.source_id))
+        n = (ev2n or {}).get(os.path.splitext(os.path.basename(o.source_id))[0]) or h2n.get(os.path.basename(o.source_id))
         if n is None:
             continue
         if n not in cache:
@@ -77,6 +82,10 @@ def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: 
         if big.any():
             ratios.extend((got[big] / gt_ext[big]).tolist())
             abs_err.extend(np.abs(got - gt_ext)[big].tolist())
+            cov = (o.uncertainty or {}).get("covariance")
+            if cov is not None:
+                sig = np.sqrt(np.clip(np.diag(np.asarray(cov, float)), 1e-18, None)) * s
+                zs.extend((np.abs(got - gt_ext)[big] / sig[big]).tolist())
             rows += 1
     if not ratios:
         print("dimension check: no comparable boxes")
@@ -85,6 +94,11 @@ def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: 
     print(f"LIFTING dimension check vs Kinect depth over {rows} boxes ({len(r)} axes with extent > 5 cm): "
           f"lifted/Kinect extent ratio median {np.median(r):.2f} (p25 {np.percentile(r, 25):.2f}, p75 {np.percentile(r, 75):.2f}); "
           f"absolute error median {np.median(a) * 100:.1f} cm, p90 {np.percentile(a, 90) * 100:.1f} cm")
+    if zs:
+        z = np.array(zs)
+        print(f"UNCERTAINTY CALIBRATION (dimensions, {len(z)} axes with a stated sigma): |error|/sigma median {np.median(z):.1f}, "
+              f"within 1 sigma {np.mean(z <= 1):.0%}, within 2 sigma {np.mean(z <= 2):.0%}, within 3 sigma {np.mean(z <= 3):.0%} "
+              "(a calibrated 1-sigma would give ~68% / 95% / 99.7%); the stated sigma is a sampling-spread LOWER BOUND, so under-coverage is expected")
 
 
 def _surface_check(world, gt_points: np.ndarray, s: float, R: np.ndarray, t: np.ndarray) -> None:
@@ -143,6 +157,9 @@ def main(run_dir: Path, frames: Path) -> int:
             if b[:1] == b"{" and b"rotation_convention" in b[:600]:
                 cams_payload = json.loads(b)
     cams = {c["evidence_id"]: np.array(c["position_m"]) for c in cams_payload["cameras"]}
+    # candidates come from the ground-truth directory itself: the uploaded files may have been renamed (a subset copied as frame-000000..N),
+    # so the run's own file names are not a key into the pose / depth files
+    names = sorted(p.name.replace(".color.png", "") for p in frames.glob("frame-*.color.png"))
     orig = {n: _small(frames / f"{n}.color.png") for n in names}
     sess = glob.glob(str(run_dir / "ws/colmap-sessions/*/current/images"))[0]
     ev2n = {os.path.splitext(f)[0]: min(orig, key=lambda n: ((orig[n] - _small(os.path.join(sess, f))) ** 2).mean()) for f in os.listdir(sess)}
@@ -170,7 +187,7 @@ def main(run_dir: Path, frames: Path) -> int:
     print(f"positioned entities {len(ents)}; centre -> nearest Kinect surface point: median {np.median(d) * 100:.1f} cm, "
           f"p75 {np.percentile(d, 75) * 100:.1f} cm, p90 {np.percentile(d, 90) * 100:.1f} cm; within 10 cm {(d < 0.10).mean() * 100:.0f}%, "
           f"within 25 cm {(d < 0.25).mean() * 100:.0f}%")
-    _dimension_check(run, run_dir, ev_root, frames, orig, s, R, t)
+    _dimension_check(run, run_dir, ev_root, frames, orig, s, R, t, ev2n)
     _surface_check(w, G, s, R, t)
     multi = [e for e in w.entities.values() if len({o.data_uri for o in e.observations if o.metadata.get("quantity") == "bbox"}) > 1]
     print(f"entities with bbox evidence from >1 photograph: {len(multi)} of {len(w.entities)} (single-view {len(w.entities) - len(multi)}); "

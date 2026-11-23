@@ -489,3 +489,84 @@ def test_legacy_shared_store_routes_are_restricted_to_global_administrators(clie
     assert client.get("/api/engines/evidence", headers=ROOT).status_code == 200
     assert client.get("/api/engines", headers=A).status_code == 200  # the read-only registry view stays open
     assert client.get("/api/engines/stages", headers=A).status_code == 200
+
+
+def _gauge_run(client, tmp_path, run_id):
+    """A persisted gauge-scale run (synthetic depth/engines; real HTTP, auth, store and export layers)."""
+    import os
+
+    from PIL import Image
+
+    from apps.api import evidence_world_stage as ew
+    from tests.test_lift_stage_e2e import DX, H, W, _camera, _Depth, _inputs, _per_view, _points
+
+    wid = _world(client, A)
+    photos = []
+    for n in ("a.png", "b.png"):
+        p = tmp_path / n
+        Image.new("RGB", (W, H), (120, 120, 120)).save(p)
+        photos.append(str(p))
+    ew.run_for_job(team_id="tenant-a", world_id=wid, job_id=run_id, sources=photos, base=tmp_path / "ws", flow_inputs=_inputs(_Depth(_per_view())),
+                   depth_engines=["fake_depth"], cameras={p: _camera(DX[os.path.basename(p)]) for p in photos}, points3d=_points())
+    return wid
+
+
+def _dist(i, a, b, *, scale=2.0, noise=0.0, held=False):
+    import numpy as np
+
+    d = float(np.linalg.norm(np.subtract(a, b)))
+    return {"anchor_id": f"d{i}", "point_a": list(a), "point_b": list(b), "measured": scale * d * (1 + noise), "sigma": 0.005, "unit": "m",
+            "source": "laser_distance_meter", "measured_at": "2026-11-22T10:00:00+00:00", "provenance": "synthetic test anchor", "held_out": held}
+
+
+_PAIRS = [((0, 0, 0), (1, 0, 0)), ((0, 0, 0), (0, 1.5, 0)), ((0, 0, 0), (0, 0, 2)), ((1, 1, 0), (2, 1, 1))]
+
+
+def test_insufficient_or_contradictory_anchors_change_nothing_and_keep_metric_export_blocked(client, tmp_path):
+    wid = _gauge_run(client, tmp_path, "run-c1")
+    head = client.get(_url(wid, "run-c1", "readiness"), headers=A).json()["world"]["version_id"]
+    one = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0])]}, headers=A)
+    assert one.status_code == 409 and one.json()["detail"]["calibration"]["status"] == "insufficient"
+    bad = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0]), _dist(1, *_PAIRS[1], noise=0.5)]}, headers=A)
+    assert bad.status_code == 409 and bad.json()["detail"]["calibration"]["status"] == "failed"
+    assert client.post(_url(wid, "run-c1", "calibrate"), json={}, headers=A).status_code == 422
+    stale = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(i, *p) for i, p in enumerate(_PAIRS)],
+                                                             "expected_version_id": "v-old"}, headers=A)
+    assert stale.status_code == 409 and "stale" in stale.json()["detail"]
+    rd = client.get(_url(wid, "run-c1", "readiness"), headers=A).json()
+    assert rd["world"]["version_id"] == head and rd["metric_export_ready"] is False and rd["calibration"] is None  # no version was created
+    assert client.post(_url(wid, "run-c1", "export"), json={"format": "glb"}, headers=A).status_code == 409  # metric export stays blocked
+
+
+def test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_once_and_cannot_be_applied_twice(client, tmp_path):
+    wid = _gauge_run(client, tmp_path, "run-c2")
+    gauge = client.get(_url(wid, "run-c2", "readiness"), headers=A).json()["world"]["version_id"]
+    anchors = [_dist(i, *p, held=(i == 3)) for i, p in enumerate(_PAIRS)]
+    ok = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": anchors, "expected_version_id": gauge}, headers=A)
+    assert ok.status_code == 200, ok.text
+    res = ok.json()
+    assert res["status"] == "validated" and res["parent_version_id"] == gauge and res["version_id"] != gauge
+    assert res["scale_m_per_gauge"] == pytest.approx(2.0, rel=5e-3) and res["applied"]["entities"] >= 1
+    rd = client.get(_url(wid, "run-c2", "readiness"), headers=A).json()
+    assert rd["world"]["version_id"] == res["version_id"] and rd["metric_export_ready"] is True
+    assert rd["calibration"]["status"] == "validated" and rd["calibration"]["parent_version"] == gauge and rd["integrity"]["ok"] is True
+    gate = {g["name"]: g for g in rd["quality"]["gates"]}["physical_scale"]
+    assert gate["status"] == "pass"
+    exp = client.post(_url(wid, "run-c2", "export"), json={"format": "glb"}, headers=A)  # no acknowledge_unscaled needed: it IS metric now
+    assert exp.status_code == 200 and exp.headers["x-export-scale"] == "metric"
+    again = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": anchors}, headers=A)
+    assert again.status_code == 409 and "twice" in again.json()["detail"]  # double scaling refused
+    from worldstore.store import WorldStore
+
+    store = WorldStore(tmp_path / "ws" / "evidence-world" / "tenant-a" / wid / "run-c2" / "worldstore")
+    assert store.parents(res["version_id"]) == [gauge] and store.verify_version(gauge) == []  # the unscaled world is preserved and intact
+
+
+def test_corrections_on_a_metric_calibrated_version_are_refused_with_guidance(client, tmp_path):
+    wid = _gauge_run(client, tmp_path, "run-c3")
+    anchors = [_dist(i, *p, held=(i == 3)) for i, p in enumerate(_PAIRS)]
+    assert client.post(_url(wid, "run-c3", "calibrate"), json={"distance_anchors": anchors}, headers=A).status_code == 200
+    ents = client.get(_url(wid, "run-c3", "entities"), headers=A).json()["entities"]
+    ids = [e["entity_id"] for e in ents if e["ontology_path"] != "architecture/fused_surface"][:2]
+    r = client.post(_url(wid, "run-c3", "entities", ids[0], "merge"), json={"other_entity_id": ids[-1]}, headers=A)
+    assert r.status_code == 409 and "gauge version" in r.json()["detail"], r.text

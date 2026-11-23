@@ -4,7 +4,10 @@ The ground-truth camera centres (KinectFusion, metres) were never given to the p
 reference: centimetre-level estimates, not a laser survey. sigma_m below is therefore a stated assumption, recorded in the output.
 Alternate registered cameras are held out, so the reported error is on cameras the transform never saw.
 
-    python benchmarks/measured_rooms/anchor_office7.py <run_dir> <frames_dir_with_pose_files> [sigma_m]
+    python benchmarks/measured_rooms/anchor_office7.py <run_dir> <frames_dir_with_pose_files> [sigma_m] [--apply]
+
+--apply commits an applicable calibration to the run's persisted world as a NEW immutable version (the gauge version is kept) and prints the
+result of a fresh-process reload.
 """
 
 from __future__ import annotations
@@ -51,7 +54,7 @@ def _job_frame_camera_centres(run_dir: Path, frames: Path) -> dict[str, list[flo
     return out
 
 
-def main(run_dir: Path, frames: Path, sigma_m: float = ASSUMED_POSE_SIGMA_M) -> int:
+def main(run_dir: Path, frames: Path, sigma_m: float = ASSUMED_POSE_SIGMA_M, apply: bool = False) -> int:
     sfm = _job_frame_camera_centres(run_dir, frames)
     gt = {p.name.replace(".pose.txt", ""): np.loadtxt(p).reshape(4, 4)[:3, 3] for p in frames.glob("frame-*.pose.txt")}
     cams = sfm
@@ -68,8 +71,33 @@ def main(run_dir: Path, frames: Path, sigma_m: float = ASSUMED_POSE_SIGMA_M) -> 
     (run_dir / "scale_calibration.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     brief = {k: v for k, v in cal.to_dict().items() if k not in ("residuals", "transform")}
     print(json.dumps({**{k: v for k, v in out.items() if k != "calibration"}, "calibration": brief}, indent=1))
+    if apply:
+        return _apply(run_dir, cal, {n: sfm[n] for n in names})
     return 0
 
 
+def _apply(run_dir: Path, cal, cameras) -> int:
+    import subprocess
+
+    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version
+    from engine.multiengine.evidence_matrix import EvidenceMatrix
+    from engine.multiengine.world_scale import commit_calibrated_version
+    from worldstore.store import WorldStore
+
+    root = next(p for p in (run_dir / "ws" / "evidence-world").glob("*/*/job_*") if p.is_dir())
+    store = WorldStore(root / WORLDSTORE_REL)
+    parent = head_version(root)
+    vid, rec = commit_calibrated_version(store, parent, cal, artifacts=EvidenceMatrix(root).artifacts, cameras=cameras)
+    code = ("import json,sys;from worldstore.store import WorldStore;s=WorldStore(sys.argv[1]);w=s.load_version(sys.argv[2]);"
+            "ms=[e.transform['scale_state'] for e in w.entities.values() if (e.transform or {}).get('position')];"
+            "print(json.dumps({'verify':s.verify_version(sys.argv[2]),'scale_state':w.metadata['scale_state'],'entities':len(w.entities),"
+            "'metric_positioned':ms.count('metric_anchored'),'positioned':len(ms),'parent':s.parents(sys.argv[2])}))")
+    out = subprocess.run([sys.executable, "-c", code, str(root / WORLDSTORE_REL), vid], capture_output=True, text=True, timeout=300)
+    print(json.dumps({"applied_version": vid, "parent_version": parent, "applied": rec["applied"], "scale_m_per_gauge": rec["scale_m_per_gauge"],
+                      "fresh_process_reload": json.loads(out.stdout) if out.returncode == 0 else out.stderr[-400:]}, indent=1))
+    return 0 if out.returncode == 0 else 1
+
+
 if __name__ == "__main__":
-    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2]), float(sys.argv[3]) if len(sys.argv) > 3 else ASSUMED_POSE_SIGMA_M))
+    args = [a for a in sys.argv[1:] if a != "--apply"]
+    sys.exit(main(Path(args[0]), Path(args[1]), float(args[2]) if len(args) > 2 else ASSUMED_POSE_SIGMA_M, apply="--apply" in sys.argv))

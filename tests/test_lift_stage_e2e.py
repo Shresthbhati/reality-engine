@@ -227,6 +227,7 @@ def test_without_cameras_nothing_is_lifted_and_the_reason_is_recorded(tmp_path, 
 
 
 def test_surface_entities_cite_the_depth_records_they_were_fitted_from(tmp_path, photos):
+    pytest.importorskip("open3d")  # optional geometry extra: absent from the CI dev install, where the stage records the step as unavailable
     from worldstore.store import WorldStore
 
     r = _run(tmp_path, photos, _Depth(_per_view()), points3d=_points())
@@ -234,7 +235,7 @@ def test_surface_entities_cite_the_depth_records_they_were_fitted_from(tmp_path,
     store = WorldStore(_root(tmp_path) / ew.WORLDSTORE_REL)
     w = store.load_version(ew.head_version(_root(tmp_path)))
     surfaces = [e for k, e in w.entities.items() if k.startswith("surf-")]
-    assert surfaces
+    assert surfaces, {"surfaces": r.get("surfaces"), "lifting": r.get("lifting")}  # the report says WHY none were built
     for e in surfaces:
         assert e.observations and {o.metadata["quantity"] for o in e.observations} == {"depth_relative"}  # traceable to the aligned depth maps
         assert all("fitted_from:aligned_depth_map" in o.metadata["roles"] for o in e.observations)

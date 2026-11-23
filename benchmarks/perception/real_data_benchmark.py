@@ -127,8 +127,9 @@ class MaskQualityMetrics:
     mean_mask_iou: float | None
     median_mask_iou: float | None
     mean_boundary_iou: float | None
-    masks_above_50_iou: float | None
-    masks_above_75_iou: float | None
+    mean_boundary_f_score: float | None = None
+    masks_above_50_iou: float | None = None
+    masks_above_75_iou: float | None = None
     total_gt_masks: int = 0
     status: str = "measured"  # "measured", "unmeasured_no_gt", or "no_matches"
 
@@ -139,6 +140,7 @@ class MaskQualityMetrics:
             "mean_mask_iou": round(self.mean_mask_iou, 4) if self.mean_mask_iou is not None else None,
             "median_mask_iou": round(self.median_mask_iou, 4) if self.median_mask_iou is not None else None,
             "mean_boundary_iou": round(self.mean_boundary_iou, 4) if self.mean_boundary_iou is not None else None,
+            "mean_boundary_f_score": round(self.mean_boundary_f_score, 4) if self.mean_boundary_f_score is not None else None,
             "masks_above_50_iou_fraction": round(self.masks_above_50_iou, 4) if self.masks_above_50_iou is not None else None,
             "masks_above_75_iou_fraction": round(self.masks_above_75_iou, 4) if self.masks_above_75_iou is not None else None,
             "status": self.status,
@@ -159,6 +161,10 @@ class TrackingMetrics:
     mota: float | None
     total_gt_instances: int = 0
     total_predicted_instances: int = 0
+    frame_tp: int = 0
+    frame_fn: int = 0
+    frame_fp: int = 0
+    id_tp: int = 0
     hota: float | None = None
     deta: float | None = None
     assa: float | None = None
@@ -171,6 +177,10 @@ class TrackingMetrics:
             "total_gt_instances": self.total_gt_instances,
             "total_predicted_tracks": self.total_predicted_tracks,
             "total_predicted_instances": self.total_predicted_instances,
+            "frame_tp": self.frame_tp,
+            "frame_fn": self.frame_fn,
+            "frame_fp": self.frame_fp,
+            "id_tp": self.id_tp,
             "id_switches": self.id_switches,
             "track_fragmentations": self.track_fragmentations,
             "idf1": round(self.idf1, 4) if self.idf1 is not None else None,
@@ -202,6 +212,7 @@ class MultiViewAssociationMetrics:
     cluster_purity: float | None = None
     identity_completeness: float | None = None
     false_merge_rate: float | None = None
+    false_split_rate: float | None = None
     single_view_entity_rate: float | None = None
     multi_view_entity_rate: float | None = None
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
@@ -227,6 +238,7 @@ class MultiViewAssociationMetrics:
             "association_precision": round(self.association_precision, 4) if self.association_precision is not None else None,
             "association_recall": round(self.association_recall, 4) if self.association_recall is not None else None,
             "false_merge_rate": round(self.false_merge_rate, 4) if self.false_merge_rate is not None else None,
+            "false_split_rate": round(self.false_split_rate, 4) if self.false_split_rate is not None else None,
             "cluster_purity": round(self.cluster_purity, 4) if self.cluster_purity is not None else None,
             "identity_completeness": round(self.identity_completeness, 4) if self.identity_completeness is not None else None,
             "single_view_entity_rate": round(self.single_view_entity_rate, 4) if self.single_view_entity_rate is not None else None,
@@ -300,10 +312,10 @@ def compute_box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float
 
 
 def compute_boundary_iou(mask_a: np.ndarray, mask_b: np.ndarray, dilation_radius: int | None = None) -> float:
-    """Evaluates Boundary IoU between two boolean segmentation masks."""
+    """Evaluates Boundary IoU between two boolean segmentation masks using Euclidean Distance Transform."""
     if mask_a.shape != mask_b.shape:
         return 0.0
-    from scipy.ndimage import binary_dilation, binary_erosion
+    from scipy.ndimage import distance_transform_edt
 
     if dilation_radius is None:
         # Standard boundary thickness is ~1.5% of min dimension (Cheng et al., CVPR 2021)
@@ -321,16 +333,58 @@ def compute_boundary_iou(mask_a: np.ndarray, mask_b: np.ndarray, dilation_radius
     c1 = max(0, min(cols_a.min(), cols_b.min()) - dilation_radius - 2)
     c2 = min(mask_a.shape[1], max(cols_a.max(), cols_b.max()) + dilation_radius + 3)
 
-    crop_a = mask_a[r1:r2, c1:c2]
-    crop_b = mask_b[r1:r2, c1:c2]
+    crop_a = mask_a[r1:r2, c1:c2].astype(bool)
+    crop_b = mask_b[r1:r2, c1:c2].astype(bool)
 
-    struc = np.ones((dilation_radius * 2 + 1, dilation_radius * 2 + 1), dtype=bool)
-    bound_a = binary_dilation(crop_a, structure=struc) ^ binary_erosion(crop_a, structure=struc)
-    bound_b = binary_dilation(crop_b, structure=struc) ^ binary_erosion(crop_b, structure=struc)
+    d_bg_a = distance_transform_edt(crop_a)
+    d_fg_a = distance_transform_edt(~crop_a)
+    bound_a = ((d_bg_a <= dilation_radius) & (d_bg_a > 0)) | ((d_fg_a <= dilation_radius) & (d_fg_a > 0))
+
+    d_bg_b = distance_transform_edt(crop_b)
+    d_fg_b = distance_transform_edt(~crop_b)
+    bound_b = ((d_bg_b <= dilation_radius) & (d_bg_b > 0)) | ((d_fg_b <= dilation_radius) & (d_fg_b > 0))
 
     inter = np.logical_and(bound_a, bound_b).sum()
     union = np.logical_or(bound_a, bound_b).sum()
     return float(inter / union) if union > 0 else 1.0 if not bound_a.any() and not bound_b.any() else 0.0
+
+
+def compute_boundary_f_score(
+    mask_a: np.ndarray,
+    mask_b: np.ndarray,
+    distance_threshold: float | None = None,
+) -> float:
+    """Computes standard Boundary F-score (BF-score) between two binary instance masks."""
+    if mask_a.shape != mask_b.shape:
+        return 0.0
+    if not np.any(mask_a) and not np.any(mask_b):
+        return 1.0
+    if not np.any(mask_a) or not np.any(mask_b):
+        return 0.0
+    from scipy.ndimage import distance_transform_edt
+
+    if distance_threshold is None:
+        distance_threshold = max(2.0, 0.015 * min(mask_a.shape[:2]))
+
+    # 1-pixel boundary extraction via morphological gradient
+    d_bg_a = distance_transform_edt(mask_a.astype(bool))
+    bound_a = (d_bg_a >= 1) & (d_bg_a <= 1.5)
+    d_bg_b = distance_transform_edt(mask_b.astype(bool))
+    bound_b = (d_bg_b >= 1) & (d_bg_b <= 1.5)
+
+    n_a = int(bound_a.sum())
+    n_b = int(bound_b.sum())
+    if n_a == 0 and n_b == 0:
+        return 1.0
+    if n_a == 0 or n_b == 0:
+        return 0.0
+
+    dist_to_b = distance_transform_edt(~bound_b)
+    dist_to_a = distance_transform_edt(~bound_a)
+
+    prec = float(np.sum(dist_to_b[bound_a] <= distance_threshold) / n_a)
+    rec = float(np.sum(dist_to_a[bound_b] <= distance_threshold) / n_b)
+    return float(2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0.0 else 0.0
 
 
 def compute_class_average_precision(
@@ -697,6 +751,7 @@ def evaluate_mask_quality(
             mean_mask_iou=None,
             median_mask_iou=None,
             mean_boundary_iou=None,
+            mean_boundary_f_score=None,
             masks_above_50_iou=None,
             masks_above_75_iou=None,
             status="unmeasured_no_gt",
@@ -704,6 +759,7 @@ def evaluate_mask_quality(
 
     ious: list[float] = []
     bound_ious: list[float] = []
+    bf_scores: list[float] = []
 
     for g in gt_boxes:
         if g.mask_2d is None:
@@ -720,6 +776,8 @@ def evaluate_mask_quality(
                 ious.append(m_iou)
                 bnd_iou = compute_boundary_iou(p_mask.astype(bool), g.mask_2d.astype(bool))
                 bound_ious.append(bnd_iou)
+                bf = compute_boundary_f_score(p_mask.astype(bool), g.mask_2d.astype(bool))
+                bf_scores.append(bf)
                 break
 
     if not ious:
@@ -729,6 +787,7 @@ def evaluate_mask_quality(
             mean_mask_iou=0.0,
             median_mask_iou=0.0,
             mean_boundary_iou=0.0,
+            mean_boundary_f_score=0.0,
             masks_above_50_iou=0.0,
             masks_above_75_iou=0.0,
             status="no_matches",
@@ -740,6 +799,7 @@ def evaluate_mask_quality(
         mean_mask_iou=float(np.mean(ious)),
         median_mask_iou=float(np.median(ious)),
         mean_boundary_iou=float(np.mean(bound_ious)),
+        mean_boundary_f_score=float(np.mean(bf_scores)) if bf_scores else 0.0,
         masks_above_50_iou=float(np.mean([1.0 if v >= 0.50 else 0.0 for v in ious])),
         masks_above_75_iou=float(np.mean([1.0 if v >= 0.75 else 0.0 for v in ious])),
         status="measured",
@@ -798,7 +858,7 @@ def evaluate_temporal_tracking(
     id_rec = float(id_tp / total_gt_instances) if total_gt_instances > 0 else 0.0
     idf1 = float(2 * id_tp / (total_gt_instances + total_pred_instances)) if (total_gt_instances + total_pred_instances) > 0 else 0.0
 
-    # 2. CLEAR MOT metrics: ID Switches and Fragmentations
+    # 2. CLEAR MOT metrics: Frame-level TP, FN, FP, ID Switches and Fragmentations
     all_frames = sorted(set(
         [f[0] for frames in gt_trajectories.values() for f in frames] +
         [f[0] for frames in pred_tracks.values() for f in frames]
@@ -806,6 +866,9 @@ def evaluate_temporal_tracking(
     id_switches = 0
     fragmentations = 0
     prev_gt_matched: dict[str, str | None] = {g_id: None for g_id in gt_id_list}
+    frame_tp_total = 0
+    frame_fn_total = 0
+    frame_fp_total = 0
 
     for f_idx in all_frames:
         f_gts = [(g_id, box) for g_id, frames in gt_trajectories.items() for fi, box in frames if fi == f_idx]
@@ -822,6 +885,13 @@ def evaluate_temporal_tracking(
                 if iou_mat[r, c] >= 0.40:
                     curr_frame_matches[f_gts[r][0]] = f_preds[c][0]
 
+        frame_tp = len(curr_frame_matches)
+        frame_fn = len(f_gts) - frame_tp
+        frame_fp = len(f_preds) - frame_tp
+        frame_tp_total += frame_tp
+        frame_fn_total += frame_fn
+        frame_fp_total += frame_fp
+
         for g_id, _ in f_gts:
             curr_tid = curr_frame_matches.get(g_id)
             prev_tid = prev_gt_matched[g_id]
@@ -832,11 +902,10 @@ def evaluate_temporal_tracking(
             if curr_tid is not None:
                 prev_gt_matched[g_id] = curr_tid
 
-    # MOTA = 1 - (FN + FP + IDSW) / GT
-    fn_count = max(0, total_gt_instances - id_tp)
-    fp_count = max(0, total_pred_instances - id_tp)
-    mota = 1.0 - float(fn_count + fp_count + id_switches) / float(total_gt_instances) if total_gt_instances > 0 else 0.0
-    track_cov = float(id_tp / total_gt_instances) if total_gt_instances > 0 else 0.0
+    # Standard CLEAR MOT metrics (Bernardin & Stiefelhagen, EURASIP 2008):
+    # MOTA = 1 - (sum_t FN_t + sum_t FP_t + sum_t IDSW_t) / sum_t GT_t
+    mota = 1.0 - float(frame_fn_total + frame_fp_total + id_switches) / float(total_gt_instances) if total_gt_instances > 0 else 0.0
+    track_cov = float(frame_tp_total / total_gt_instances) if total_gt_instances > 0 else 0.0
 
     # 3. Standard HOTA (Luiten et al., IJCV 2021) across 19 localization thresholds alpha in [0.05, 0.95]
     alpha_thresholds = np.linspace(0.05, 0.95, 19)
@@ -918,6 +987,10 @@ def evaluate_temporal_tracking(
         total_gt_instances=total_gt_instances,
         total_predicted_tracks=total_pred_tracks,
         total_predicted_instances=total_pred_instances,
+        frame_tp=frame_tp_total,
+        frame_fn=frame_fn_total,
+        frame_fp=frame_fp_total,
+        id_tp=id_tp,
         id_switches=id_switches,
         track_fragmentations=fragmentations,
         idf1=idf1,
@@ -1002,7 +1075,7 @@ def evaluate_multiview_association(
     purity_numer = 0
     purity_denom = 0
     for entity in merged_entities:
-        obs_ids = getattr(entity, "constituent_observation_ids", ())
+        obs_ids = getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ()))
         if not obs_ids:
             continue
         gt_counts: Counter[str] = Counter()
@@ -1024,7 +1097,7 @@ def evaluate_multiview_association(
             continue
         c_counts: Counter[int] = Counter()
         for c_idx, entity in enumerate(merged_entities):
-            c_obs = set(getattr(entity, "constituent_observation_ids", ()))
+            c_obs = set(getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ())))
             intersect = len(obs_set & c_obs)
             if intersect > 0:
                 c_counts[c_idx] = intersect
@@ -1033,10 +1106,24 @@ def evaluate_multiview_association(
 
     identity_completeness = float(completeness_sum / total_mapped_gt_obs) if total_mapped_gt_obs > 0 else 0.0
 
+    # 2b. False-Split Rate: fraction of multi-observation GT entities fragmented across multiple clusters
+    split_gt_entities = 0
+    multiview_gt_count = sum(1 for s in gt_entity_observations.values() if len(s) > 1)
+    for gt_id, obs_set in gt_entity_observations.items():
+        if len(obs_set) <= 1:
+            continue
+        matching_clusters = sum(
+            1 for entity in merged_entities
+            if len(obs_set & set(getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ())))) > 0
+        )
+        if matching_clusters > 1:
+            split_gt_entities += 1
+    false_split_rate = float(split_gt_entities / multiview_gt_count) if multiview_gt_count > 0 else 0.0
+
     # 3. Single-view and Multi-view entity rates
     tot_entities = len(merged_entities)
-    single_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "constituent_observation_ids", ())) <= 1)
-    multi_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "constituent_observation_ids", ())) >= 2)
+    single_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "member_observation_ids", getattr(e, "constituent_observation_ids", ()))) <= 1)
+    multi_view_cnt = sum(1 for e in merged_entities if len(getattr(e, "member_observation_ids", getattr(e, "constituent_observation_ids", ()))) >= 2)
     single_view_rate = float(single_view_cnt / tot_entities) if tot_entities > 0 else 0.0
     multi_view_rate = float(multi_view_cnt / tot_entities) if tot_entities > 0 else 0.0
 
@@ -1055,6 +1142,7 @@ def evaluate_multiview_association(
         cluster_purity=cluster_purity,
         identity_completeness=identity_completeness,
         false_merge_rate=false_merge_rate,
+        false_split_rate=false_split_rate,
         single_view_entity_rate=single_view_rate,
         multi_view_entity_rate=multi_view_rate,
         inlier_mean_reprojection_residual_px=mean_inlier,
@@ -1292,15 +1380,8 @@ def run_real_perception_benchmark(
         cal_file = Path("artifacts/perception/calibrator_dev.json")
     if cal_file.is_file():
         try:
-            import json
-            with open(cal_file, "r", encoding="utf-8") as f:
-                c_data = json.load(f)
-            calibrator = LearnedConfidenceCalibrator(
-                temperature=c_data.get("temperature", 1.0),
-                bias=c_data.get("bias", 0.0),
-            )
-            calibrator.is_fitted = True
-            print(f"Loaded learned confidence calibrator from {cal_file} (T={calibrator.temperature:.4f}, bias={calibrator.bias:.4f})")
+            calibrator = LearnedConfidenceCalibrator.load(cal_file)
+            print(f"Loaded learned confidence calibrator from {cal_file} (T={calibrator.temperature:.4f}, bias={calibrator.bias:.4f}, classes={len(calibrator.class_params)})")
         except Exception as e:
             print(f"Warning: could not load calibrator from {cal_file}: {e}")
 
@@ -1499,6 +1580,99 @@ def run_real_perception_benchmark(
     return summary
 
 
+def fit_calibrator_on_dev_split(
+    dataset_dir: str | Path = "datasets/real_room_capture",
+    output_dir: str | Path = "artifacts/perception",
+    detector_engine: Any = None,
+) -> LearnedConfidenceCalibrator:
+    """Fits LearnedConfidenceCalibrator on the development split (IMG_0000..IMG_0010) with full provenance."""
+    from engine.multiengine.spatial_intelligence.detection_pipeline import (
+        DetectionPipeline,
+        LearnedConfidenceCalibrator,
+        create_default_detector,
+        create_default_segmenter,
+    )
+    from PIL import Image
+    import hashlib
+    import json
+
+    ds_p = Path(dataset_dir)
+    out_p = Path(output_dir)
+    out_p.mkdir(parents=True, exist_ok=True)
+
+    gt_boxes, metadata = load_ground_truth_from_dataset(ds_p, split="dev")
+    images_dir = ds_p / "images"
+
+    dev_image_ids = sorted(set(b.image_id for b in gt_boxes))
+    gt_by_img: dict[str, list[GroundTruthBox]] = defaultdict(list)
+    for b in gt_boxes:
+        gt_by_img[b.image_id].append(b)
+
+    if detector_engine is None:
+        detector_engine = create_default_detector()
+    segmenter_engine = create_default_segmenter()
+
+    pipe = DetectionPipeline(detector=detector_engine, segmenter=segmenter_engine, calibrator=None)
+    annotated_classes = sorted(set(g.class_name for g in gt_boxes))
+
+    raw_scores: list[float] = []
+    binary_labels: list[int] = []
+    class_names: list[str] = []
+
+    print(f"Fitting calibrator on {len(dev_image_ids)} development images...")
+    for img_id in dev_image_ids:
+        img_file = ds_p / img_id if (ds_p / img_id).is_file() else (images_dir / img_id)
+        if not img_file.is_file():
+            continue
+        with Image.open(img_file) as pil_img:
+            img_rgb = np.array(pil_img.convert("RGB"))
+
+        pipeline_res = pipe.run_pipeline(img_rgb, image_id=img_id, text_prompts=annotated_classes)
+        img_gt = gt_by_img.get(img_id, [])
+
+        matched_gt = set()
+        for p in pipeline_res.refined_boxes:
+            best_iou = 0.0
+            best_idx = None
+            for idx, g in enumerate(img_gt):
+                if idx in matched_gt or g.class_name != p.class_name:
+                    continue
+                iou = compute_box_iou(p.box_2d, g.box_2d)
+                if iou >= 0.50 and iou > best_iou:
+                    best_iou = iou
+                    best_idx = idx
+
+            label = 0
+            if best_idx is not None:
+                label = 1
+                matched_gt.add(best_idx)
+
+            raw_scores.append(float(p.confidence))
+            binary_labels.append(label)
+            class_names.append(p.class_name)
+
+    dev_split_hash = hashlib.sha256(json.dumps(dev_image_ids).encode()).hexdigest()[:16]
+
+    calibrator = LearnedConfidenceCalibrator()
+    calibrator.fit(
+        raw_scores,
+        binary_labels,
+        class_names=class_names,
+        provenance={
+            "model_name": getattr(detector_engine, "name", "grounding_dino_swint_ogc"),
+            "checkpoint_hash": getattr(detector_engine, "checkpoint_hash", "default"),
+            "dataset_split": "dev",
+            "dataset_split_hash": dev_split_hash,
+            "sample_count": len(raw_scores),
+            "dev_images": dev_image_ids,
+        },
+    )
+    cal_file = out_p / "calibrator_dev.json"
+    calibrator.save(cal_file)
+    print(f"Fitted and saved LearnedConfidenceCalibrator to {cal_file} (T={calibrator.temperature:.4f}, bias={calibrator.bias:.4f}, {len(calibrator.class_params)} classes)")
+    return calibrator
+
+
 def main() -> int:
     """CLI runner for Real-Data Perception Benchmark."""
     import argparse
@@ -1509,7 +1683,12 @@ def main() -> int:
     parser.add_argument("--out-dir", type=str, default="artifacts/perception", help="Output directory for reports")
     parser.add_argument("--benchmark-id", type=str, default="perception_real_benchmark", help="Benchmark run identifier")
     parser.add_argument("--split", type=str, default="all", choices=["dev", "test", "all"], help="Dataset split to evaluate")
+    parser.add_argument("--fit-calibrator", action="store_true", help="Fit confidence calibrator on dev split before benchmark")
     args = parser.parse_args()
+
+    if args.fit_calibrator:
+        print(f"Fitting confidence calibrator on development split of {args.dataset}...")
+        fit_calibrator_on_dev_split(dataset_dir=args.dataset, output_dir=args.out_dir)
 
     print(f"Running Real-Data Perception Benchmark on {args.dataset} (split: {args.split})...")
     summary = run_real_perception_benchmark(
@@ -1547,8 +1726,9 @@ def main() -> int:
     print("INSTANCE MASK & BOUNDARY QUALITY:")
     m_iou_str = f"{summary.mask_quality.mean_mask_iou:.4f}" if summary.mask_quality.mean_mask_iou is not None else "N/A"
     b_iou_str = f"{summary.mask_quality.mean_boundary_iou:.4f}" if summary.mask_quality.mean_boundary_iou is not None else "N/A"
+    bf_str = f"{summary.mask_quality.mean_boundary_f_score:.4f}" if summary.mask_quality.mean_boundary_f_score is not None else "N/A"
     m_50_str = f"{summary.mask_quality.masks_above_50_iou:.2%}" if summary.mask_quality.masks_above_50_iou is not None else "N/A"
-    print(f"  Status: {summary.mask_quality.status} | Mean Mask IoU: {m_iou_str}, Mean Boundary IoU: {b_iou_str}")
+    print(f"  Status: {summary.mask_quality.status} | Mean Mask IoU: {m_iou_str}, Mean Boundary IoU: {b_iou_str}, Boundary F1: {bf_str}")
     print(f"  Evaluated Masks: {summary.mask_quality.evaluated_masks} / {summary.mask_quality.total_gt_masks} | Masks > 50% IoU: {m_50_str}")
     print("-" * 60)
     print("PART HIERARCHY ACCURACY:")
@@ -1564,18 +1744,20 @@ def main() -> int:
     trk_mota = f"{summary.tracking.mota:.4f}" if summary.tracking.mota is not None else "N/A"
     trk_cov = f"{summary.tracking.track_coverage:.2%}" if summary.tracking.track_coverage is not None else "N/A"
     print(f"  Status: {summary.tracking.status} | IDF1: {trk_idf1}, HOTA: {trk_hota}, MOTA: {trk_mota}, Track Coverage: {trk_cov}")
-    print(f"  ID Switches: {summary.tracking.id_switches}, Track Fragmentations: {summary.tracking.track_fragmentations}")
+    print(f"  Frame TP={summary.tracking.frame_tp}, FN={summary.tracking.frame_fn}, FP={summary.tracking.frame_fp} | ID Switches: {summary.tracking.id_switches}, Fragmentations: {summary.tracking.track_fragmentations}")
     print("-" * 60)
     print("MULTI-VIEW ASSOCIATION:")
     mv_prec = f"{summary.multi_view.association_precision:.4f}" if summary.multi_view.association_precision is not None else "N/A"
     mv_rec = f"{summary.multi_view.association_recall:.4f}" if summary.multi_view.association_recall is not None else "N/A"
     mv_purity = f"{summary.multi_view.cluster_purity:.4f}" if summary.multi_view.cluster_purity is not None else "N/A"
+    mv_comp = f"{summary.multi_view.identity_completeness:.4f}" if summary.multi_view.identity_completeness is not None else "N/A"
     mv_fmr = f"{summary.multi_view.false_merge_rate:.4f}" if summary.multi_view.false_merge_rate is not None else "N/A"
+    mv_fsr = f"{summary.multi_view.false_split_rate:.4f}" if summary.multi_view.false_split_rate is not None else "N/A"
     inlier_mean = f"{summary.multi_view.inlier_mean_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_mean_reprojection_residual_px is not None else "N/A"
     inlier_med = f"{summary.multi_view.inlier_median_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_median_reprojection_residual_px is not None else "N/A"
     inlier_p90 = f"{summary.multi_view.inlier_p90_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_p90_reprojection_residual_px is not None else "N/A"
     print(f"  Status: {summary.multi_view.status} | Association Precision: {mv_prec}, Recall: {mv_rec}")
-    print(f"  Cluster Purity: {mv_purity}, False Merge Rate: {mv_fmr}")
+    print(f"  Cluster Purity: {mv_purity}, Identity Completeness: {mv_comp} | False Merges: {mv_fmr}, False Splits: {mv_fsr}")
     print(f"  Inlier Reprojection Residuals: Mean={inlier_mean}, Median={inlier_med}, P90={inlier_p90}")
     print("=" * 60 + "\n")
 

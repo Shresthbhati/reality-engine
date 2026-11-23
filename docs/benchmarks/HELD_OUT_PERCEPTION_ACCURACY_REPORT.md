@@ -4,10 +4,14 @@
 
 This report documents the rigorous empirical benchmark evaluation of Reality Engine's perception and scene-understanding subsystem on real-world multi-view indoor photography (`datasets/real_room_capture`).
 
-- **Sprint Mission:** Perception Accuracy, Physical Identity and Scene Understanding Sprint 2.
-- **Branch:** `feat/gemini-perception-scene-understanding-sprint2`
-- **Base Commit:** `4feb30877457debd81921c17dbc8eeb7b53f4fa9` (PR #370)
-- **Architecture:** Zero-shot open-vocabulary detection via `GroundingDinoDetectorAdapter` with learned confidence calibration (`LearnedConfidenceCalibrator`, $T=10.0, b=-0.7134$ fit on dev split), SAM mask bounding box tightening, amodal door occlusion boundary completion, architectural scale priors, full-image and crop-based subpart containment linking, motion-compensated temporal tracking (`TemporalIdentityTracker` with dual-centroid distance fallback), and calibrated epipolar multi-view ray triangulation (`MultiViewIntelligenceEngine`).
+- **Sprint Mission:** Perception Generalisation, Fine-Grained Recognition and Benchmark Integrity (Sprint 3).
+- **Branch:** `feat/gemini-perception-generalisation-sprint3`
+- **Base Commit:** `e67d1a2f4d59798a9dc44c22b5317b576f6a0dd5` (PR #373, merging Sprint 2 PR #371)
+- **Architecture:**
+  - **Resolution-Invariant Spatial Geometric Reasoning:** Replaced hardcoded pixel coordinates and dimensions with normalized coordinates $\bar{x}, \bar{y} \in [0, 1]$, aspect ratios $AR = h/w$, relative area $\bar{A} = A / A_{\text{img}}$, inter-object spatial containment ($IoA$), and topological foreground occlusion geometry.
+  - **Learned Confidence Calibration:** Platt scaling fit on dedicated development split (`IMG_0000.jpg` – `IMG_0010.jpg`) with global and per-class calibration, tracking ECE, Brier score, and NLL with full model/dataset provenance.
+  - **Benchmark Metric Integrity:** Standard CLEAR MOTA Hungarian bipartite frame matching ($\sum_t \text{FN}_t + \text{FP}_t + \text{IDSW}_t$), Contour Boundary F-score (BF-score), Euclidean Distance Transform (`distance_transform_edt`) accelerated Boundary IoU, and `PhysicalMergedEntity` member lookup with `false_split_rate`.
+  - **Fine-Grained Structural Subparts:** 15 canonical taxonomy subpart classes across doors, windows, tables, chairs, cabinets, lighting, and plumbing, with multi-host crop discovery (throttle relaxed to 4 per class) and micro-fixture full-image hallucination filtering.
 - **Separation of Concerns:** Strict division between development split (`IMG_0000.jpg` – `IMG_0010.jpg`, 11 frames) used exclusively for calibration and the **strictly held-out test split** (`IMG_0011.jpg` – `IMG_0020.jpg`, 10 frames, 50 ground truth targets, 40 ground truth part links) for unbiased validation.
 - **Hardware Profile:** Intel Core i7, NVIDIA GeForce RTX 4050 Laptop GPU (6 GB VRAM), Windows 11, PyTorch 2.14.0+cu130.
 
@@ -80,6 +84,20 @@ Using a dual centroid distance with last-position fallback ($c\_dist = \min(c\_d
 
 ### 5. Multi-View Calibrated Denominator Alignment (Precision: 0.2800 → 0.7273)
 Ground-truth multi-view pairs were previously computed across all 10 test images, even though only 5 of those images (`IMG_0012, 14, 16, 18, 20`) had valid COLMAP camera extrinsics. This inflated the denominator with uncalibrated observations that could never be triangulated without fabricating camera poses. Restricting the multi-view denominator strictly to calibrated camera frames raised Association Precision to **0.7273** (+159.7% gain) and Recall to **0.4444** with **1.0000 Cluster Purity**.
+
+### 6. Sprint 3 Resolution Invariance: Removal of Pixel Heuristics
+Sprint 2 introduced localized geometric adjustments based on absolute pixel thresholds (e.g. `width < 250`, `y1 in [950, 1450]`). Sprint 3 completely removed all fixed-pixel cutoffs, replacing them with resolution-independent geometric properties:
+- Normalized bounding box coordinates $\bar{x}, \bar{y} \in [0.0, 1.0]$.
+- Relative bounding box area $\bar{A} = \frac{\text{area}}{\text{image\_width} \times \text{image\_height}}$.
+- Aspect ratio $AR = \frac{\text{height}}{\text{width}}$.
+- Relative intersection-over-area $IoA$ and topological occlusion checks for foreground furniture.
+Identical geometric reasoning operates seamlessly across $1280 \times 960$, $1920 \times 1080$, and $4032 \times 3024$ resolutions without retuning.
+
+### 7. Sprint 3 Benchmark Metric Integrity & Contour BF-Score
+- **CLEAR MOTA Hungarian Frame Matching:** Replaced greedy trajectory matches with standard frame-level bipartite Hungarian matching on detection IoU ($\ge 0.50$), evaluating $(\sum_t \text{FN}_t + \text{FP}_t + \text{IDSW}_t) / \sum_t \text{GT}_t$.
+- **Boundary F-Score (BF-score):** Implemented contour-based boundary F-measure evaluation within distance threshold $\theta = 3$ px to assess pixel-accurate boundary sharpness.
+- **Euclidean Distance Transform Boundary IoU:** Replaced brute-force morphological dilation with `scipy.ndimage.distance_transform_edt`, reducing boundary dilation evaluation time from seconds to milliseconds per mask.
+- **Multi-View Entity Lookup & False Split Rate:** Fixed entity member lookups using `getattr(entity, "member_observation_ids", getattr(entity, "constituent_observation_ids", ()))` and added empirical `false_split_rate` reporting.
 
 ---
 

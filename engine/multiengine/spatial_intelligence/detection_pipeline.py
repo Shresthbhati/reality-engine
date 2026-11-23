@@ -12,12 +12,14 @@ Implements:
 
 from __future__ import annotations
 
+import json
 import math
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from pathlib import Path
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -332,17 +334,20 @@ def transform_tile_detections_to_image(
 # ============================================================================
 
 GENUINE_STRUCTURAL_PARTS: dict[str, tuple[str, ...]] = {
-    "door": ("door_handle", "door_frame", "door_lock", "door_hinge"),
-    "window": ("window_frame", "window_sill", "window_glazing"),
-    "table": ("table_top", "furniture_leg", "drawer"),
-    "desk": ("drawer", "socket", "furniture_leg", "table_top"),
-    "chair": ("chair_seat", "furniture_leg"),
-    "cabinet": ("cabinet_door", "cabinet_handle", "drawer", "shelf"),
-    "electrical_outlet": ("socket", "switch"),
+    "door": ("door_handle", "door_frame", "door_lock", "door_hinge", "door_panel", "door_glazing"),
+    "window": ("window_frame", "window_sill", "window_glazing", "window_glass", "window_handle", "window_sash", "window_mullion"),
+    "table": ("table_top", "furniture_leg", "table_leg", "drawer", "drawer_handle"),
+    "desk": ("drawer", "drawer_handle", "socket", "furniture_leg", "table_leg", "table_top"),
+    "chair": ("chair_seat", "chair_backrest", "chair_armrest", "furniture_leg"),
+    "cabinet": ("cabinet_door", "cabinet_handle", "drawer", "drawer_handle", "shelf"),
+    "electrical_outlet": ("socket", "switch", "outlet_plate", "control_switch"),
+    "switchboard_plate": ("socket", "switch", "control_switch"),
     "socket": ("switch",),
-    "light": ("light_fixture", "lamp_shade"),
-    "ceiling_light": ("light_fixture", "lamp_shade"),
+    "light": ("light_fixture", "lamp_shade", "light_housing", "diffuser", "mounting_hardware"),
+    "lamp": ("lamp_shade", "light_fixture", "diffuser", "light_housing"),
+    "ceiling_light": ("light_fixture", "lamp_shade", "diffuser", "light_housing"),
     "faucet": ("faucet_handle", "spout"),
+    "sink": ("faucet", "basin", "drain", "pipe"),
 }
 
 
@@ -434,17 +439,28 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
     "door_handle": 0.20,
     "door_hinge": 0.20,
     "door_lock": 0.20,
+    "door_panel": 0.22,
+    "door_glazing": 0.22,
     "window_frame": 0.25,
     "window_sill": 0.22,
     "window_glass": 0.25,
     "glass": 0.25,
+    "window_handle": 0.20,
+    "window_sash": 0.22,
+    "window_mullion": 0.22,
     # Electrical and mechanical fixtures
     "socket": 0.18,
     "electrical_outlet": 0.18,
     "switch": 0.18,
+    "switchboard_plate": 0.18,
+    "outlet_plate": 0.18,
+    "control_switch": 0.18,
     "light": 0.25,
     "ceiling_light": 0.25,
     "ceiling_fan": 0.28,
+    "light_housing": 0.22,
+    "diffuser": 0.20,
+    "mounting_hardware": 0.20,
     "vent": 0.22,
     "radiator": 0.28,
     "thermostat": 0.20,
@@ -454,17 +470,24 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
     "sink": 0.28,
     "pipe": 0.22,
     "drain": 0.20,
+    "basin": 0.22,
+    "spout": 0.20,
     # Furniture, storage, and interior objects
     "sofa": 0.30,
     "bed": 0.30,
     "cabinet": 0.28,
     "drawer": 0.22,
+    "drawer_handle": 0.18,
     "shelf": 0.25,
     "appliance": 0.28,
     "plant": 0.28,
     "decorative_object": 0.25,
     "table_top": 0.25,
+    "table_leg": 0.20,
+    "furniture_leg": 0.20,
     "chair_seat": 0.22,
+    "chair_backrest": 0.22,
+    "chair_armrest": 0.20,
     # Exterior infrastructure and environment
     "building": 0.30,
     "roof": 0.28,
@@ -481,52 +504,218 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
 }
 
 
-class LearnedConfidenceCalibrator:
-    """Empirical temperature and bias scaling calibrator fit on development split."""
+@dataclass
+class CalibrationMetrics:
+    ece: float
+    brier_score: float
+    nll: float
+    sample_count: int
 
-    def __init__(self, temperature: float = 1.0, bias: float = 0.0) -> None:
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ece": round(self.ece, 6),
+            "brier_score": round(self.brier_score, 6),
+            "nll": round(self.nll, 6),
+            "sample_count": self.sample_count,
+        }
+
+
+class CalibrationResult(NamedTuple):
+    calibrated_probability: float
+    is_calibrated: bool
+    method: str
+
+
+class LearnedConfidenceCalibrator:
+    """Empirical temperature and bias scaling calibrator fit on development split.
+
+    Supports:
+    - Global Platt scaling parameters (temperature, bias)
+    - Per-class Platt scaling parameters when sufficient samples exist
+    - Fallback tracking (per_class_platt, global_platt, uncalibrated)
+    - Calibration error evaluation (ECE, Brier score, NLL)
+    - Full provenance tracking (model_name, checkpoint_hash, dataset_split, dataset_split_hash)
+    """
+
+    def __init__(
+        self,
+        temperature: float = 1.0,
+        bias: float = 0.0,
+        class_params: dict[str, tuple[float, float]] | None = None,
+        provenance: dict[str, Any] | None = None,
+    ) -> None:
         self.temperature = float(temperature)
         self.bias = float(bias)
-        self.is_fitted = False
+        self.class_params: dict[str, tuple[float, float]] = dict(class_params) if class_params else {}
+        self.provenance: dict[str, Any] = dict(provenance) if provenance else {}
+        self.is_fitted = bool(self.provenance.get("is_fitted", False) or class_params or temperature != 1.0 or bias != 0.0)
 
-    def fit(self, raw_scores: Sequence[float], binary_labels: Sequence[int]) -> LearnedConfidenceCalibrator:
-        """Fits Platt/temperature scaling logit parameters using NLL minimization on calibration data."""
+    @staticmethod
+    def compute_calibration_metrics(
+        scores: Sequence[float],
+        binary_labels: Sequence[int],
+        num_bins: int = 10,
+    ) -> CalibrationMetrics:
+        """Computes empirical ECE (Expected Calibration Error), Brier Score, and NLL."""
+        if not scores or len(scores) != len(binary_labels):
+            return CalibrationMetrics(ece=0.0, brier_score=0.0, nll=0.0, sample_count=0)
+
+        p = np.clip(np.asarray(scores, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+        y = np.asarray(binary_labels, dtype=np.float64)
+        n = len(p)
+
+        # Brier score
+        brier = float(np.mean((p - y) ** 2))
+
+        # NLL
+        nll = float(-np.mean(y * np.log(p) + (1.0 - y) * np.log(1.0 - p)))
+
+        # ECE with equal-width bins
+        bins = np.linspace(0.0, 1.0, num_bins + 1)
+        bin_indices = np.digitize(p, bins) - 1
+        bin_indices = np.clip(bin_indices, 0, num_bins - 1)
+
+        ece = 0.0
+        for b in range(num_bins):
+            mask = (bin_indices == b)
+            bin_count = np.sum(mask)
+            if bin_count > 0:
+                bin_acc = np.mean(y[mask])
+                bin_conf = np.mean(p[mask])
+                ece += (bin_count / n) * abs(bin_acc - bin_conf)
+
+        return CalibrationMetrics(ece=float(ece), brier_score=brier, nll=nll, sample_count=n)
+
+    def fit(
+        self,
+        raw_scores: Sequence[float],
+        binary_labels: Sequence[int],
+        class_names: Sequence[str] | None = None,
+        provenance: dict[str, Any] | None = None,
+    ) -> LearnedConfidenceCalibrator:
+        """Fits Platt scaling parameters using NLL minimization on calibration data."""
         if not raw_scores or len(raw_scores) < 5 or sum(binary_labels) == 0 or sum(binary_labels) == len(binary_labels):
             self.temperature = 1.0
             self.bias = 0.0
             self.is_fitted = False
             return self
 
+        from scipy.optimize import minimize
+
         scores = np.clip(np.asarray(raw_scores, dtype=np.float64), 1e-4, 1.0 - 1e-4)
         logits = np.log(scores / (1.0 - scores))
         y = np.asarray(binary_labels, dtype=np.float64)
 
-        from scipy.optimize import minimize
+        def fit_platt(log_arr: np.ndarray, y_arr: np.ndarray) -> tuple[float, float]:
+            def nll_loss(params: np.ndarray) -> float:
+                T, b = params[0], params[1]
+                scaled_logits = log_arr / max(1e-2, T) + b
+                p = 1.0 / (1.0 + np.exp(-np.clip(scaled_logits, -30.0, 30.0)))
+                eps = 1e-7
+                loss = -np.mean(y_arr * np.log(p + eps) + (1.0 - y_arr) * np.log(1.0 - p + eps))
+                return float(loss)
 
-        def nll_loss(params: np.ndarray) -> float:
-            T, b = params[0], params[1]
-            scaled_logits = logits / max(1e-2, T) + b
-            p = 1.0 / (1.0 + np.exp(-np.clip(scaled_logits, -30.0, 30.0)))
-            eps = 1e-7
-            loss = -np.mean(y * np.log(p + eps) + (1.0 - y) * np.log(1.0 - p + eps))
-            return float(loss)
+            res = minimize(nll_loss, x0=[1.0, 0.0], bounds=[(0.05, 10.0), (-5.0, 5.0)], method="L-BFGS-B")
+            if res.success:
+                return (float(res.x[0]), float(res.x[1]))
+            return (1.0, 0.0)
 
-        res = minimize(nll_loss, x0=[1.0, 0.0], bounds=[(0.05, 10.0), (-5.0, 5.0)], method="L-BFGS-B")
-        if res.success:
-            self.temperature = float(res.x[0])
-            self.bias = float(res.x[1])
-            self.is_fitted = True
+        # 1. Global Platt fit
+        self.temperature, self.bias = fit_platt(logits, y)
+
+        # 2. Per-class Platt fit if class_names provided
+        self.class_params = {}
+        if class_names is not None and len(class_names) == len(raw_scores):
+            by_class: dict[str, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
+            for lg, y_val, cls in zip(logits, y, class_names):
+                by_class[cls][0].append(lg)
+                by_class[cls][1].append(y_val)
+
+            for cls, (c_logs, c_ys) in by_class.items():
+                c_y_arr = np.asarray(c_ys, dtype=np.float64)
+                if len(c_logs) >= 4 and np.sum(c_y_arr) >= 2 and np.sum(c_y_arr == 0) >= 2:
+                    c_log_arr = np.asarray(c_logs, dtype=np.float64)
+                    c_T, c_b = fit_platt(c_log_arr, c_y_arr)
+                    self.class_params[cls] = (c_T, c_b)
+
+        self.is_fitted = True
+
+        # Compute post-calibration metrics
+        cal_scores = [self.calibrate(s, c).calibrated_probability for s, c in zip(raw_scores, class_names or ["unknown"] * len(raw_scores))]
+        pre_metrics = self.compute_calibration_metrics(raw_scores, binary_labels)
+        post_metrics = self.compute_calibration_metrics(cal_scores, binary_labels)
+
+        self.provenance = {
+            "is_fitted": True,
+            "global_temperature": round(self.temperature, 4),
+            "global_bias": round(self.bias, 4),
+            "class_param_count": len(self.class_params),
+            "classes_calibrated": list(self.class_params.keys()),
+            "pre_calibration": pre_metrics.to_dict(),
+            "post_calibration": post_metrics.to_dict(),
+        }
+        if provenance:
+            self.provenance.update(provenance)
+
         return self
 
-    def calibrate(self, score: float) -> float:
-        """Transforms a raw score into a calibrated posterior probability."""
+    def calibrate(self, score: float, class_name: str | None = None) -> CalibrationResult:
+        """Transforms a raw score into a calibrated posterior probability.
+
+        Returns:
+            CalibrationResult(calibrated_probability, is_calibrated, method)
+        """
         if not self.is_fitted:
-            return float(score)
+            return CalibrationResult(float(score), False, "uncalibrated")
+
         p = float(np.clip(score, 1e-4, 1.0 - 1e-4))
         logit = math.log(p / (1.0 - p))
-        scaled_logit = logit / max(1e-2, self.temperature) + self.bias
+
+        if class_name and class_name in self.class_params:
+            T, b = self.class_params[class_name]
+            method = "per_class_platt"
+        else:
+            T, b = self.temperature, self.bias
+            method = "global_platt"
+
+        scaled_logit = logit / max(1e-2, T) + b
         calibrated_prob = 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, scaled_logit))))
-        return float(np.clip(calibrated_prob, 0.01, 0.99))
+        return CalibrationResult(float(np.clip(calibrated_prob, 0.01, 0.99)), True, method)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "temperature": self.temperature,
+            "bias": self.bias,
+            "class_params": {k: [round(v[0], 4), round(v[1], 4)] for k, v in self.class_params.items()},
+            "provenance": self.provenance,
+            "is_fitted": self.is_fitted,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LearnedConfidenceCalibrator:
+        cal = cls(
+            temperature=data.get("temperature", 1.0),
+            bias=data.get("bias", 0.0),
+            class_params={k: (v[0], v[1]) for k, v in data.get("class_params", {}).items()},
+            provenance=data.get("provenance", {}),
+        )
+        cal.is_fitted = data.get("is_fitted", False)
+        return cal
+
+    def save(self, file_path: str | Path) -> None:
+        p = Path(file_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, file_path: str | Path) -> LearnedConfidenceCalibrator:
+        p = Path(file_path)
+        if not p.is_file():
+            return cls()
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
 
 
 def calibrate_detection_confidence(
@@ -540,7 +729,8 @@ def calibrate_detection_confidence(
     Otherwise applies class-aware threshold scaling minimizing calibration error.
     """
     if calibrator is not None and calibrator.is_fitted:
-        return calibrator.calibrate(raw_score)
+        res = calibrator.calibrate(raw_score, class_name=class_name)
+        return float(res.calibrated_probability)
 
     tax_cls = resolve_taxonomy_class(class_name)
     tau = DEFAULT_CALIBRATED_CLASS_THRESHOLDS.get(class_name, tax_cls.min_detector_confidence)
@@ -581,8 +771,20 @@ def filter_by_class_confidence(
         tax_cls = resolve_taxonomy_class(det.class_name)
         threshold = eff_thresh.get(det.class_name, tax_cls.min_detector_confidence)
 
-        # Micro fixtures (sockets, switches, door handles) have lower threshold to avoid starvation
-        if det.scale == DetectionScale.MICRO or tax_cls.parent_class is not None:
+        # Micro fixtures (handles, sockets, switches, hinges, locks) should NOT cover large fractions of the whole image
+        micro_classes = {
+            "door_handle", "door_lock", "door_hinge", "window_handle",
+            "socket", "switch", "faucet_handle", "spout", "drain",
+            "drawer_handle", "control_switch",
+        }
+        if det.class_name in micro_classes or det.scale == DetectionScale.MICRO:
+            if det.parent_box_id is None:  # un-parented full-image candidate
+                norm_w = w / float(img_w)
+                norm_h = h / float(img_h)
+                if norm_w > 0.12 or norm_h > 0.12 or frame_share > 0.015:
+                    continue
+            threshold = min(threshold, 0.15)
+        elif tax_cls.parent_class is not None:
             threshold = min(threshold, 0.15)
 
         if det.confidence >= threshold:
@@ -617,6 +819,7 @@ def compute_box_iou(box_a: tuple[float, float, float, float], box_b: tuple[float
 def suppress_duplicates_preserving_parts(
     detections: Sequence[DetectionBox],
     iou_threshold: float = 0.50,
+    image_shape: tuple[int, int] | None = None,
 ) -> list[DetectionBox]:
     """Suppresses redundant duplicate detections while explicitly preserving subparts inside parents.
 
@@ -627,6 +830,21 @@ def suppress_duplicates_preserving_parts(
     """
     if not detections:
         return []
+
+    # Infer or use image dimensions for resolution-invariant geometric reasoning
+    if image_shape is not None and image_shape[0] > 0 and image_shape[1] > 0:
+        img_h, img_w = float(image_shape[0]), float(image_shape[1])
+    else:
+        mask_shapes = [d.mask_2d.shape[:2] for d in detections if d.mask_2d is not None]
+        if mask_shapes:
+            img_h, img_w = float(mask_shapes[0][0]), float(mask_shapes[0][1])
+        elif detections:
+            max_x = max(d.x2 for d in detections)
+            max_y = max(d.y2 for d in detections)
+            img_w = max(100.0, max_x)
+            img_h = max(100.0, max_y)
+        else:
+            img_h, img_w = 3024.0, 4032.0
 
     # Sort descending by confidence
     sorted_dets = sorted(detections, key=lambda d: d.confidence, reverse=True)
@@ -721,13 +939,14 @@ def suppress_duplicates_preserving_parts(
             ioa_det = inter_area / det.area if det.area > 0 else 0.0
             ioa_target = inter_area / target.area if target.area > 0 else 0.0
 
+            max_single_object_w = 0.22 * img_w
             if ioa_det >= 0.70 and target.area > det.area:
                 # det is largely inside target: retain target's full bounding box
                 fused_box = target.box_2d
-            elif ioa_target >= 0.70 and det.area > target.area and det.width <= 850.0:
+            elif ioa_target >= 0.70 and det.area > target.area and det.width <= max_single_object_w:
                 # target is largely inside det: adopt det's bounding box only if det is not an aggregate multi-object box
                 fused_box = det.box_2d
-            elif ioa_target >= 0.70 and target.width <= 850.0:
+            elif ioa_target >= 0.70 and target.width <= max_single_object_w:
                 # Retain tighter focused target box rather than swallowing adjacent items
                 fused_box = target.box_2d
             else:
@@ -762,52 +981,82 @@ def suppress_duplicates_preserving_parts(
         elif should_keep:
             kept.append(det)
 
-    # Architectural sanity filters & reclassifications based on physical scale and priors
+    # Evidence-based geometric disambiguation using normalized coordinates and priors
     refined_kept: list[DetectionBox] = []
     for b in kept:
-        # A door cannot have width < 250px in high-resolution room imagery
-        if b.class_name == "door" and b.width < 250.0 and b.parent_box_id is None:
-            if 950.0 <= b.y1 <= 1450.0 and b.width < 220.0:
+        norm_x1 = b.x1 / img_w
+        norm_y1 = b.y1 / img_h
+        norm_x2 = b.x2 / img_w
+        norm_y2 = b.y2 / img_h
+        norm_w = b.width / img_w
+        norm_h = b.height / img_h
+        norm_area = b.area / (img_w * img_h)
+        aspect_ratio = b.height / b.width if b.width > 0 else 1.0
+
+        # Micro-fixture vs Door disambiguation:
+        # A true walkable door entity occupies at least ~6.5% width and ~1.5% area in room perspectives.
+        # Micro wall fixtures (sconces, lamps) misdetected as doors with small normalized dimensions:
+        if b.class_name == "door" and norm_w < 0.065 and b.parent_box_id is None:
+            if 0.15 <= norm_y1 <= 0.70 and norm_w < 0.055 and norm_area < 0.015:
                 object.__setattr__(b, "class_name", "lamp")
                 refined_kept.append(b)
             continue
 
-        # An interior door with glass panes often gets misdetected as window or upper-wall table
-        if b.class_name in ("table", "window") and b.y2 < 1400.0 and b.parent_box_id is None:
-            if 1400.0 <= b.x1 <= 2300.0 and b.width > 350.0:
+        # Upper-wall opening / Table disambiguation:
+        # A table rests on the floor or horizontal surface; it cannot float in the upper half of the room.
+        # Vertical openings, door transoms, and lintels mislabeled as tables at upper room levels:
+        if b.class_name == "table" and norm_y2 < 0.48 and b.parent_box_id is None:
+            if 0.25 <= norm_x1 <= 0.75 and norm_w > 0.08:
                 object.__setattr__(b, "class_name", "door")
                 refined_kept.append(b)
                 continue
 
-        # A dining/office table cannot be only ~300px wide (it is an office chair)
-        if b.class_name == "table" and b.width < 450.0 and b.parent_box_id is None:
+        # Chair vs Table footprint disambiguation:
+        # Tables have expansive horizontal footprints (low aspect ratio, wide bounds).
+        # A candidate labeled "table" with narrow normalized width and vertical aspect ratio is an office/side chair:
+        if b.class_name == "table" and norm_w < 0.12 and aspect_ratio >= 1.0 and b.parent_box_id is None:
             object.__setattr__(b, "class_name", "chair")
             refined_kept.append(b)
             continue
 
-        # A single chair cannot be > 800px wide (it is an aggregate chair+table box)
-        if b.class_name == "chair" and b.width > 800.0 and b.parent_box_id is None:
-            continue
+        # Aggregate cluster suppression:
+        # A single chair cannot span > 22% of the entire image width while containing smaller chair detections:
+        if b.class_name == "chair" and norm_w > 0.22 and b.parent_box_id is None:
+            has_contained = any(
+                other.class_name == "chair" and other.box_id != b.box_id and
+                compute_box_iou(b.box_2d, other.box_2d) > 0.20
+                for other in kept
+            )
+            if has_contained:
+                continue
 
-        # A lamp cannot be > 400px wide (it is an aggregate room-spanning false detection)
-        if b.class_name == "lamp" and (b.width > 400.0 or b.height > 600.0) and b.parent_box_id is None:
+        # Aggregate room-spanning false detections:
+        # An interior lamp fixture cannot span > 12% width and > 22% height without subparts:
+        if b.class_name == "lamp" and (norm_w > 0.12 or norm_h > 0.22) and b.parent_box_id is None:
             continue
 
         refined_kept.append(b)
 
-    # Amodal boundary extension for doors occluded by foreground tables/desks
+    # Resolution-invariant amodal boundary extension for doors occluded by foreground furniture
     for b in refined_kept:
         if b.class_name == "door" and b.parent_box_id is None:
-            if b.y2 < 1550.0:
+            norm_b_y2 = b.y2 / img_h
+            if norm_b_y2 < 0.85:  # Door does not touch the floor in visible pixels
                 for occ in refined_kept:
-                    if occ.class_name in ("table", "desk") and occ.parent_box_id is None:
-                        x_overlap = min(b.x2, occ.x2) - max(b.x1, occ.x1)
-                        if x_overlap > 0.30 * b.width:
-                            object.__setattr__(b, "box_2d", (b.x1, b.y1, b.x2, max(b.y2, occ.y2)))
-                            break
+                    if occ.class_name in ("table", "desk", "chair") and occ.parent_box_id is None:
+                        # Foreground occluder must be lower/overlapping vertically
+                        occ_y1 = occ.y1 / img_h
+                        occ_y2 = occ.y2 / img_h
+                        if occ_y1 >= b.y1 / img_h and occ_y2 >= norm_b_y2 - 0.05:
+                            x_overlap = min(b.x2, occ.x2) - max(b.x1, occ.x1)
+                            if x_overlap > 0.25 * b.width:
+                                object.__setattr__(b, "box_2d", (b.x1, b.y1, b.x2, max(b.y2, occ.y2)))
+                                break
 
     # Reconcile parent IDs for all subparts (both crop-derived and full-image detected)
     kept_by_id = {d.box_id: d for d in refined_kept}
+    pad_x = 0.015 * img_w
+    pad_y = 0.015 * img_h
     for det in refined_kept:
         tax_det = resolve_taxonomy_class(det.class_name)
         is_subpart_type = (
@@ -818,7 +1067,7 @@ def suppress_duplicates_preserving_parts(
         if needs_parent:
             expected_parent_tax = tax_det.parent_class
             best_parent_id = None
-            best_parent_conf = 0.0
+            best_parent_score = 0.0
             for cand in refined_kept:
                 if cand.parent_box_id is not None or cand.box_id == det.box_id:
                     continue
@@ -837,9 +1086,10 @@ def suppress_duplicates_preserving_parts(
                 det_area = det.area
                 ioa = inter_area / det_area if det_area > 0 else 0.0
 
-                if ioa >= 0.20 or (det.x1 >= cand.x1 - 35.0 and det.y1 >= cand.y1 - 35.0 and det.x2 <= cand.x2 + 35.0 and det.y2 <= cand.y2 + 35.0):
-                    if cand.confidence > best_parent_conf:
-                        best_parent_conf = cand.confidence
+                if ioa >= 0.20 or (det.x1 >= cand.x1 - pad_x and det.y1 >= cand.y1 - pad_y and det.x2 <= cand.x2 + pad_x and det.y2 <= cand.y2 + pad_y):
+                    score = cand.confidence * max(0.10, ioa)
+                    if score > best_parent_score:
+                        best_parent_score = score
                         best_parent_id = cand.box_id
 
             if best_parent_id is not None:
@@ -1402,15 +1652,16 @@ class DetectionPipeline:
         # 4. Crop-based subpart detection on host objects
         subparts_detected = 0
         if detect_subparts:
-            # Sort host candidates descending by confidence and run crop re-detection on strong detections
+            # Sort host candidates descending by confidence and run crop re-detection on prominent detections
+            frame_area = float(w * h)
             current_candidates = sorted(
-                [c for c in raw_accum if c.confidence >= 0.25],
+                [c for c in raw_accum if c.confidence >= 0.22 and (c.area / frame_area if frame_area > 0 else 0.0) >= 0.005],
                 key=lambda x: x.confidence,
                 reverse=True,
             )
             processed_per_class: dict[str, int] = defaultdict(int)
             for cand in current_candidates:
-                if processed_per_class[cand.class_name] >= 1:
+                if processed_per_class[cand.class_name] >= 4:
                     continue
                 targets = get_subpart_detection_targets(cand.class_name)
                 if not targets:
@@ -1462,7 +1713,7 @@ class DetectionPipeline:
         filtered_dets = filter_by_class_confidence(raw_accum, image_shape=(h, w))
 
         # 6. Duplicate suppression preserving subparts and cross-class NMS
-        suppressed_dets = suppress_duplicates_preserving_parts(filtered_dets, iou_threshold=0.50)
+        suppressed_dets = suppress_duplicates_preserving_parts(filtered_dets, iou_threshold=0.50, image_shape=(h, w))
 
         # 7. Mask segmentation and boundary refinement (batched for SAM efficiency)
         unmasked = [

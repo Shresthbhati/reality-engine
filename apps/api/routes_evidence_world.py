@@ -179,6 +179,9 @@ async def export_run_world(
         raise HTTPException(409, f"{rd.get('export_scale_warning')} Re-send with acknowledge_unscaled=true to export gauge-unit geometry.")
     vid = head_version(d)
     world = WorldStore(d / WORLDSTORE_REL).load_version(vid)
+    from engine.multiengine.world_scale import scale_block
+
+    sb = scale_block(world)
     try:
         content, report = reality.export(world, body.format, artifact_store=FileArtifactStore(d / "export-artifacts"))
     except reality.UnsupportedExportFormatError as exc:
@@ -190,6 +193,7 @@ async def export_run_world(
     data = json.dumps(content, sort_keys=True).encode("utf-8") if isinstance(content, dict) else content.encode("utf-8") if isinstance(content, str) else content
     return Response(content=data, media_type=_EXPORT_MEDIA.get(body.format, "application/octet-stream"), headers={
         "X-Export-Version": vid, "X-Export-Scale": "metric" if rd.get("metric_export_ready") else "sfm_units-NOT-metres",
+        "X-Scale-Units": sb["units"], "X-Scale-Calibration": str(sb["calibration_status"]),
         "X-Entities-Exported": str(len(report.entities_exported)), "X-Entities-Skipped": str(len(report.entities_skipped)),
         "X-Physical-Accuracy": str(rd.get("physical_accuracy")), "X-Quality-Verdict": str(q.get("verdict", "UNKNOWN"))})
 
@@ -247,8 +251,7 @@ async def calibrate_run_world(
     if bool(body.distance_anchors) == bool(body.point_anchors):
         raise HTTPException(422, "send either distance_anchors or point_anchors (exactly one kind), not both and not neither")
     store = WorldStore(d / WORLDSTORE_REL)
-    if (store.load_version(head).metadata or {}).get(CAL_KEY):
-        raise HTTPException(409, "this world already carries a physical calibration; it will not be scaled twice")
+    head_cal = (store.load_version(head).metadata or {}).get(CAL_KEY)
     try:
         if body.distance_anchors:
             cal = calibrate_distances([DistanceAnchor(**{**a.model_dump(), "point_a": tuple(a.point_a), "point_b": tuple(a.point_b)}) for a in body.distance_anchors])
@@ -256,6 +259,14 @@ async def calibrate_run_world(
             cal = calibrate_points([PointAnchor(**{**a.model_dump(), "recon_xyz": tuple(a.recon_xyz), "physical_xyz": tuple(a.physical_xyz)}) for a in body.point_anchors])
     except AnchorError as exc:
         raise HTTPException(422, f"invalid anchor: {exc}") from exc
+    if head_cal:
+        from engine.multiengine.world_scale import calibration_id
+
+        if cal.applicable and calibration_id(cal, head_cal["parent_version"]) == head_cal["id"]:  # the same request again: a retry, not a second scaling
+            return {"version_id": head, "parent_version_id": head_cal["parent_version"], "status": cal.status, "scale_m_per_gauge": cal.scale_m_per_gauge,
+                    "scale_sigma": cal.scale_sigma, "calibration_id": head_cal["id"], "applied": head_cal["applied"], "warnings": cal.warnings,
+                    "idempotent": True, "calibration": cal.to_dict()}
+        raise HTTPException(409, "this world already carries a different physical calibration; it will not be scaled twice (calibrate the gauge version instead)")
     if not cal.applicable:
         raise HTTPException(409, {"message": f"calibration {cal.status}: {cal.reason}; the world was not changed", "calibration": cal.to_dict()})
     try:
@@ -265,7 +276,8 @@ async def calibrate_run_world(
     except (CalibrationRefused, WorldStoreError) as exc:
         raise HTTPException(422, f"the calibration could not be applied and no version was saved: {exc}") from exc
     return {"version_id": vid, "parent_version_id": head, "status": cal.status, "scale_m_per_gauge": cal.scale_m_per_gauge,
-            "scale_sigma": cal.scale_sigma, "calibration_id": record["id"], "applied": record["applied"], "warnings": cal.warnings}
+            "scale_sigma": cal.scale_sigma, "calibration_id": record["id"], "applied": record["applied"], "warnings": cal.warnings,
+            "idempotent": False, "calibration": cal.to_dict()}
 
 
 class ProposeBody(BaseModel):

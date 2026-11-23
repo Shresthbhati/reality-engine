@@ -36,7 +36,8 @@ def _extents(P: np.ndarray) -> np.ndarray:
     return np.percentile(P, 95, axis=0) - np.percentile(P, 5, axis=0)
 
 
-def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: float, R: np.ndarray, t: np.ndarray, ev2n: dict | None = None) -> None:
+def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: float, R: np.ndarray, t: np.ndarray, ev2n: dict | None = None,
+                     collect: list | None = None) -> None:
     """Lifting-step accuracy: re-measure each lifted box's pixels from the KINECT depth (same box, same robust extent, expressed in the
     job's axes and converted to metres by the ground-truth similarity) and compare with the pipeline's lifted dimensions. This tests the
     lifting (depth alignment + unprojection), NOT the detector: the box itself is taken as given."""
@@ -86,6 +87,16 @@ def _dimension_check(run, run_dir: Path, ev_root: Path, frames: Path, names, s: 
             if cov is not None:
                 sig = np.sqrt(np.clip(np.diag(np.asarray(cov, float)), 1e-18, None)) * s
                 zs.extend((np.abs(got - gt_ext)[big] / sig[big]).tolist())
+                if collect is not None:  # per-axis records for the empirical uncertainty calibration (never the pipeline's input)
+                    try:
+                        det = m.store.get(json.loads(m.artifacts.get(o.predicted["metric3d"]["raw_artifact_ref"]))["detection_observation"])
+                        label = str(det.predicted.get("label", "unknown"))
+                    except Exception:  # noqa: BLE001
+                        label = "unknown"
+                    for ax in np.flatnonzero(big):
+                        collect.append({"scene_id": "7scenes-office-seq01", "frame_id": n, "cls": label, "axis": int(ax), "depth_m": float(med),
+                                        "extent_m": float(gt_ext[ax]), "err_m": float(got[ax] - gt_ext[ax]), "sigma_m": float(sig[ax]),
+                                        "truncated": bool(x0 == 0 or y0 == 0 or x1 >= 640 or y1 >= 480), "reference": "kinect_depth_estimate"})
             rows += 1
     if not ratios:
         print("dimension check: no comparable boxes")
@@ -187,7 +198,9 @@ def main(run_dir: Path, frames: Path) -> int:
     print(f"positioned entities {len(ents)}; centre -> nearest Kinect surface point: median {np.median(d) * 100:.1f} cm, "
           f"p75 {np.percentile(d, 75) * 100:.1f} cm, p90 {np.percentile(d, 90) * 100:.1f} cm; within 10 cm {(d < 0.10).mean() * 100:.0f}%, "
           f"within 25 cm {(d < 0.25).mean() * 100:.0f}%")
-    _dimension_check(run, run_dir, ev_root, frames, orig, s, R, t, ev2n)
+    records: list = []
+    _dimension_check(run, run_dir, ev_root, frames, orig, s, R, t, ev2n, collect=records)
+    (run_dir / "dimension_errors.json").write_text(json.dumps(records, indent=0), encoding="utf-8")
     _surface_check(w, G, s, R, t)
     multi = [e for e in w.entities.values() if len({o.data_uri for o in e.observations if o.metadata.get("quantity") == "bbox"}) > 1]
     print(f"entities with bbox evidence from >1 photograph: {len(multi)} of {len(w.entities)} (single-view {len(w.entities) - len(multi)}); "

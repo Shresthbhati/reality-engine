@@ -1501,15 +1501,18 @@ _ALIAS_MAP: dict[str, TaxonomyClass] = {}
 
 def _build_alias_map() -> None:
     _ALIAS_MAP.clear()
+    # 1. Register aliases first
+    for tax_cls in _TAXONOMY_REGISTRY.values():
+        for alias in tax_cls.aliases:
+            alias_lower = alias.lower().strip()
+            _ALIAS_MAP[alias_lower] = tax_cls
+            _ALIAS_MAP[alias_lower.replace("_", " ")] = tax_cls
+    # 2. Canonical taxonomy_id and primary name have strict precedence over aliases
     for tax_cls in _TAXONOMY_REGISTRY.values():
         name_lower = tax_cls.name.lower().strip()
         _ALIAS_MAP[name_lower] = tax_cls
         _ALIAS_MAP[name_lower.replace("_", " ")] = tax_cls
         _ALIAS_MAP[tax_cls.taxonomy_id.lower().strip()] = tax_cls
-        for alias in tax_cls.aliases:
-            alias_lower = alias.lower().strip()
-            _ALIAS_MAP[alias_lower] = tax_cls
-            _ALIAS_MAP[alias_lower.replace("_", " ")] = tax_cls
 
 
 _build_alias_map()

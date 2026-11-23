@@ -280,7 +280,19 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                                    # DetectionBox fields persisted AS GIVEN (same meaning as the perception contract), never reinterpreted
                                    "is_truncated": bool(getattr(b, "is_truncated", False)), "occlusion_level": getattr(b, "occlusion_level", "none"),
                                    "mask_area_px": int(getattr(b, "mask_area_px", 0) or 0), "child_box_ids": list(getattr(b, "child_box_ids", ()) or ()),
-                                   "box_normalized": [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h]},
+                                   "box_normalized": [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h],
+                                   "calibrated_confidence": float(b.calibrated_confidence) if b.calibrated_confidence is not None else None,
+                                   "mask_polygon": [list(pt) for pt in b.mask_polygon] if b.mask_polygon else None,
+                                   "mask_topology": b.attributes.get("mask_topology"),
+                                   "missing_expected_parts": b.attributes.get("missing_expected_parts", []),
+                                   "ambiguous_parent": b.attributes.get("ambiguous_parent", False),
+                                   "detection_uncertainty": b.attributes.get("detection_uncertainty"),
+                                   "provenance": b.attributes.get("provenance"),
+                                   "material": b.attributes.get("material"),
+                                   "surface_finish": b.attributes.get("surface_finish"),
+                                   "dominant_color_name": b.attributes.get("dominant_color_name"),
+                                   "operational_state": b.attributes.get("operational_state"),
+                                   "condition": b.attributes.get("condition")},
                         original_coordinates={"box_xyxy_px": [float(v) for v in b.box_2d], "image_size_px": [w, h]},
                         confidence=float(b.confidence) if emitted else None))
                 stats = {**res.execution_stats, "source": str(src), "seconds": round(time.monotonic() - t0, 2), "masks": masks,
@@ -289,6 +301,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                 drafts.append(ObservationDraft(
                     task="detection", quantity="detection_pipeline_summary", source_id=str(src), coordinate_system=coord,
                     predicted={"execution_stats": stats, "parent_part_tree": res.parent_part_tree, "raw_detections": raw_rows,
+                               "rejection_ledger": list(res.rejection_ledger),
                                "prompts": {"standard": n_std, "micro": n_micro}, "inner_detector": self.detector.spec.engine_id,
                                "segmentation": {"status": "ran" if self._seg_ok else "unavailable", "reason": self._seg_reason,
                                                 "engine": self.segmenter.spec.engine_id if self.segmenter else None,

@@ -202,3 +202,26 @@ def test_an_entity_orientation_with_a_rotating_calibration_is_refused_rather_tha
     with pytest.raises(CalibrationRefused, match="orientation"):
         apply_calibration(w, _cal("points"), parent_version="v0", artifacts=arts)
     apply_calibration(w, _cal(), parent_version="v0", artifacts=arts)  # a pure scale needs no rotation of the orientation: allowed
+
+
+def test_interrupted_persistence_of_a_calibration_leaves_no_partial_or_reachable_version(tmp_path, monkeypatch):
+    """Failure injection at the calibration persistence step: a crash while saving, and a version that saves but fails verification."""
+    arts = _Arts()
+    store = WorldStore(tmp_path / "ws")
+    v0 = store.save_version(_world(arts), parent=None, version_id="v-gauge").version_id
+
+    def boom(*a, **k):
+        raise OSError("disk full while saving the calibrated version")
+
+    monkeypatch.setattr(store, "save_version", boom)
+    with pytest.raises(OSError):
+        commit_calibrated_version(store, v0, _cal(), artifacts=arts)
+    assert [v.version_id for v in store.list_versions()] == [v0]  # nothing was adopted; the gauge world is still HEAD
+    monkeypatch.undo()
+    monkeypatch.setattr(store, "verify_version", lambda vid: [{"problem": "hash mismatch"}])
+    with pytest.raises(CalibrationRefused, match="quarantined"):
+        commit_calibrated_version(store, v0, _cal(), artifacts=arts)
+    monkeypatch.undo()
+    assert [v.version_id for v in store.list_versions()] == [v0]  # the unverifiable version is quarantined, not reachable as HEAD
+    vid, _ = commit_calibrated_version(store, v0, _cal(), artifacts=arts)  # recovery: retrying after the fault produces exactly one calibrated version
+    assert [v.version_id for v in store.list_versions()] == [v0, vid] and store.verify_version(vid) == []

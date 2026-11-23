@@ -85,6 +85,7 @@ def run_stages(
             if adm is not None:
                 ctx.state.setdefault("admission", {})[spec.name] = {"decision": adm.decision, "reason": adm.reason, "fallback": adm.fallback}
             attempt = 1
+            rss_start = read_rss_mb() if adm is not None else None  # same source as rss_after: the growth test must compare like with like
             if adm is not None and adm.decision == "fail":  # refused, with the measured numbers: never a silent skip
                 result = StageResult(
                     name=spec.name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={**adm.metrics, "admission_refused": 1.0},
@@ -113,7 +114,7 @@ def run_stages(
                                 break
                 if adm is not None:
                     rss_after = read_rss_mb()
-                    admission.after_stage(spec.name, adm.metrics.get("rss_before_mb"), rss_after, result.status == "failed")  # gc + cuda empty_cache when it can matter
+                    admission.after_stage(spec.name, rss_start, rss_after, result.status == "failed")  # gc + cuda empty_cache when it can matter
                     rss_after = read_rss_mb()
                     result.metrics.update(adm.metrics)
                     if rss_after is not None:

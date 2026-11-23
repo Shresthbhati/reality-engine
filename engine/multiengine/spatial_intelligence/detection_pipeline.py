@@ -521,6 +521,130 @@ def extract_host_crop_roi(
     return (cx1, cy1, cx2, cy2)
 
 
+def generate_component_rois_for_host(
+    parent_box: DetectionBox,
+    image_width: int,
+    image_height: int,
+) -> list[tuple[int, int, int, int, str]]:
+    """Generates targeted sub-regions (cx1, cy1, cx2, cy2, zone_name) for high-resolution component discovery (Sprint 8)."""
+    rois: list[tuple[int, int, int, int, str]] = []
+    # 1. Full aperture crop
+    rois.append((*extract_host_crop_roi(parent_box, image_width, image_height, padding_ratio=0.10), "full_host"))
+
+    cname = parent_box.class_name.lower()
+    pw = parent_box.width
+    ph = parent_box.height
+
+    # High-resolution region proposals for fine-grained small fixtures:
+    if "door" in cname and ph >= 120:
+        # Left latch / handle zone
+        y_mid_1 = max(0, int(parent_box.y1 + 0.35 * ph))
+        y_mid_2 = min(image_height, int(parent_box.y1 + 0.68 * ph))
+        xl_1 = max(0, int(parent_box.x1 - 0.05 * pw))
+        xl_2 = min(image_width, int(parent_box.x1 + 0.45 * pw))
+        if xl_2 > xl_1 and y_mid_2 > y_mid_1:
+            rois.append((xl_1, y_mid_1, xl_2, y_mid_2, "door_latch_left"))
+        # Right latch / handle zone
+        xr_1 = max(0, int(parent_box.x2 - 0.45 * pw))
+        xr_2 = min(image_width, int(parent_box.x2 + 0.05 * pw))
+        if xr_2 > xr_1 and y_mid_2 > y_mid_1:
+            rois.append((xr_1, y_mid_1, xr_2, y_mid_2, "door_latch_right"))
+    elif ("table" in cname or "desk" in cname) and ph >= 80:
+        # Upper band: table top surface and drawers
+        yt_1 = max(0, int(parent_box.y1 - 0.08 * ph))
+        yt_2 = min(image_height, int(parent_box.y1 + 0.45 * ph))
+        xt_1 = max(0, int(parent_box.x1 - 0.05 * pw))
+        xt_2 = min(image_width, int(parent_box.x2 + 0.05 * pw))
+        if xt_2 > xt_1 and yt_2 > yt_1:
+            rois.append((xt_1, yt_1, xt_2, yt_2, "table_top_band"))
+    elif "window" in cname and ph >= 80:
+        # Lower sash and window sill
+        ys_1 = max(0, int(parent_box.y1 + 0.50 * ph))
+        ys_2 = min(image_height, int(parent_box.y2 + 0.12 * ph))
+        xs_1 = max(0, int(parent_box.x1 - 0.05 * pw))
+        xs_2 = min(image_width, int(parent_box.x2 + 0.05 * pw))
+        if xs_2 > xs_1 and ys_2 > ys_1:
+            rois.append((xs_1, ys_1, xs_2, ys_2, "window_lower_sill"))
+    elif "chair" in cname and ph >= 80:
+        # Seat level zone
+        ys_1 = max(0, int(parent_box.y1 + 0.35 * ph))
+        ys_2 = min(image_height, int(parent_box.y1 + 0.70 * ph))
+        xs_1 = max(0, int(parent_box.x1 - 0.05 * pw))
+        xs_2 = min(image_width, int(parent_box.x2 + 0.05 * pw))
+        if xs_2 > xs_1 and ys_2 > ys_1:
+            rois.append((xs_1, ys_1, xs_2, ys_2, "chair_seat_zone"))
+
+    return rois
+
+
+def resolve_component_ownership(
+    component_box: tuple[float, float, float, float],
+    component_class: str,
+    candidate_hosts: Sequence[DetectionBox],
+    min_containment_ioa: float = 0.35,
+) -> tuple[str | None, bool, list[str]]:
+    """Resolves which host object a component physically belongs to with semantic specificity (Sprint 8).
+
+    Guarantees:
+    - Specific host binding over distant background surfaces (e.g. door_handle -> door, NOT wall).
+    - Ambiguous parent preservation when multiple hosts of the same class overlap.
+    - Subparts cannot accidentally claim other subparts as parents unless explicitly supported.
+
+    Returns:
+        (best_host_id, is_ambiguous, candidate_parent_ids)
+    """
+    tax_comp = resolve_taxonomy_class(component_class)
+    comp_area = max(1.0, (component_box[2] - component_box[0]) * (component_box[3] - component_box[1]))
+
+    qualifying_hosts: list[tuple[float, int, DetectionBox]] = []
+
+    for host in candidate_hosts:
+        if host.parent_box_id is not None:
+            continue  # Subparts cannot host other components
+
+        tax_host = resolve_taxonomy_class(host.class_name)
+
+        # Check semantic hierarchy compatibility
+        is_direct_part = (
+            tax_comp.parent_class in (tax_host.taxonomy_id, tax_host.name) or
+            tax_comp.name in GENUINE_STRUCTURAL_PARTS.get(tax_host.name, ())
+        )
+        is_potential = tax_comp.name in tax_host.potential_parts
+        is_generic_host = host.class_name in tax_comp.hosts
+
+        if not (is_direct_part or is_potential or is_generic_host):
+            continue
+
+        # Specificity score: direct structural part (3) > potential part (2) > generic mounting host (1)
+        specificity = 3 if is_direct_part else (2 if is_potential else 1)
+
+        # Containment IoA
+        inter_x = max(0.0, min(component_box[2], host.x2) - max(component_box[0], host.x1))
+        inter_y = max(0.0, min(component_box[3], host.y2) - max(component_box[1], host.y1))
+        inter_area = inter_x * inter_y
+        ioa = inter_area / comp_area
+
+        if ioa >= min_containment_ioa and comp_area <= 0.85 * host.area:
+            qualifying_hosts.append((ioa, specificity, host))
+
+    if not qualifying_hosts:
+        return None, False, []
+
+    # Sort descending by specificity first, then by containment IoA
+    qualifying_hosts.sort(key=lambda item: (item[1], item[0]), reverse=True)
+
+    best_spec = qualifying_hosts[0][1]
+    best_ioa = qualifying_hosts[0][0]
+    best_host = qualifying_hosts[0][2]
+
+    # Check for ambiguity among hosts with the same top specificity
+    same_spec_candidates = [h for ioa, spec, h in qualifying_hosts if spec == best_spec and ioa >= best_ioa - 0.08]
+    if len(same_spec_candidates) > 1 and same_spec_candidates[0].class_name == same_spec_candidates[1].class_name:
+        return None, True, [h.box_id for h in same_spec_candidates]
+
+    return best_host.box_id, False, [best_host.box_id]
+
+
 def extract_appearance_features(image_rgb: np.ndarray, box_2d: Sequence[float]) -> tuple[float, ...]:
     """Extracts normalized 24-bin color histogram appearance features from a detection crop."""
     h, w = image_rgb.shape[:2]
@@ -1145,20 +1269,20 @@ def suppress_duplicates_preserving_parts(
             ioa_det = inter_area / area_det if area_det > 0 else 0.0
             ioa_existing = inter_area / area_existing if area_existing > 0 else 0.0
 
-            # Genuine taxonomy part-parent relationships: require containment (IoA >= 0.45, area <= 0.70x parent)
+            # Genuine taxonomy part-parent relationships: require containment (IoA >= 0.35, area <= 0.85x parent)
             det_is_part_of_existing = (
                 (det.parent_box_id == existing.box_id) or
-                ((tax_det.parent_class == tax_existing.taxonomy_id or
+                ((tax_det.parent_class in (tax_existing.taxonomy_id, tax_existing.name) or
                   tax_det.name in GENUINE_STRUCTURAL_PARTS.get(tax_existing.name, ()) or
                   (tax_det.name in tax_existing.potential_parts and det.scale == DetectionScale.MICRO))
-                 and ioa_det >= 0.45 and area_det <= 0.70 * area_existing)
+                 and ioa_det >= 0.35 and area_det <= 0.85 * area_existing)
             )
             existing_is_part_of_det = (
                 (existing.parent_box_id == det.box_id) or
-                ((tax_existing.parent_class == tax_det.taxonomy_id or
+                ((tax_existing.parent_class in (tax_det.taxonomy_id, tax_det.name) or
                   tax_existing.name in GENUINE_STRUCTURAL_PARTS.get(tax_det.name, ()) or
                   (tax_existing.name in tax_det.potential_parts and existing.scale == DetectionScale.MICRO))
-                 and ioa_existing >= 0.45 and area_existing <= 0.70 * area_det)
+                 and ioa_existing >= 0.35 and area_existing <= 0.85 * area_det)
             )
 
             if det_is_part_of_existing:
@@ -1170,7 +1294,8 @@ def suppress_duplicates_preserving_parts(
                     object.__setattr__(existing, "parent_box_id", det.box_id)
                 continue
 
-            is_compat = are_semantically_compatible(det.class_name, existing.class_name)
+            # Duplicate candidate matching: MUST NOT treat parent-child pairs as duplicate candidates (Sprint 7/8)
+            is_compat = are_semantically_compatible(det.class_name, existing.class_name, allow_parent_part=False)
 
             if is_compat and (iou >= iou_threshold or ioa_det >= 0.65 or ioa_existing >= 0.65):
                 # Same physical entity detected multiple times or partial sub-window detection: fuse boxes
@@ -1998,7 +2123,7 @@ class DetectionPipeline:
             # Sort host candidates descending by confidence and run crop re-detection on deduplicated canonical detections
             frame_area = float(w * h)
             current_candidates = sorted(
-                [c for c in canonical_hosts if c.parent_box_id is None and (c.area / frame_area if frame_area > 0 else 0.0) >= 0.005],
+                [c for c in canonical_hosts if c.parent_box_id is None and (c.area / frame_area if frame_area > 0 else 0.0) >= 0.001],
                 key=lambda x: x.confidence,
                 reverse=True,
             )
@@ -2009,142 +2134,153 @@ class DetectionPipeline:
                 targets = get_subpart_detection_targets(cand.class_name)
                 if not targets:
                     continue
-                cx1, cy1, cx2, cy2 = extract_host_crop_roi(cand, w, h)
-                if cx2 <= cx1 or cy2 <= cy1:
+                rois = generate_component_rois_for_host(cand, w, h)
+                if not rois:
                     continue
-                crop_img = image_rgb[cy1:cy2, cx1:cx2]
-                off_x, off_y = cx1, cy1
-                crop_w = float(cx2 - cx1)
-                crop_h = float(cy2 - cy1)
-                crop_area = crop_w * crop_h
-                target_names = [t.name for t in targets]
-                if text_prompts:
-                    # If text_prompts contains specific subpart classes, filter targets to those requested:
-                    has_subpart_prompts = any(
-                        any(p == cls.name or p in cls.name or cls.name in p for p in text_prompts)
-                        for cls in get_all_taxonomy_classes() if cls.parent_class is not None
-                    )
-                    if has_subpart_prompts:
-                        target_names = [name for name in target_names if any(name == p or name in p or p in name for p in text_prompts)]
-                        if not target_names:
-                            continue
-                part_dets = self.detector.detect(crop_img, target_names)
                 cand_subparts: list[DetectionBox] = []
-                for pd in part_dets:
-                    if pd.class_name == cand.class_name:
+                for cx1, cy1, cx2, cy2, roi_name in rois:
+                    if cx2 <= cx1 or cy2 <= cy1:
                         continue
-                    pw = pd.width
-                    ph = pd.height
-                    p_area = pw * ph
-                    # Reject whole-crop hallucinated detections:
-                    if (pw / crop_w > 0.92 and ph / crop_h > 0.92) or (p_area / crop_area > 0.88):
-                        rejection_records.append({
-                            "box_id": f"part_{pd.box_id}_{cand.box_id}",
-                            "class_name": pd.class_name,
-                            "confidence": pd.confidence,
-                            "stage": "subpart_crop_validation",
-                            "reason": "whole_crop_hallucination",
-                        })
-                        continue
-                    px1 = max(0.0, min(float(w), pd.x1 + off_x))
-                    py1 = max(0.0, min(float(h), pd.y1 + off_y))
-                    px2 = max(0.0, min(float(w), pd.x2 + off_x))
-                    py2 = max(0.0, min(float(h), pd.y2 + off_y))
-                    if px2 <= px1 or py2 <= py1:
-                        continue
+                    crop_img = image_rgb[cy1:cy2, cx1:cx2]
+                    off_x, off_y = cx1, cy1
+                    crop_w = float(cx2 - cx1)
+                    crop_h = float(cy2 - cy1)
+                    crop_area = crop_w * crop_h
+                    target_names = [t.name for t in targets]
+                    if text_prompts:
+                        # If text_prompts contains specific subpart classes, filter targets to those requested:
+                        has_subpart_prompts = any(
+                            any(p == cls.name or p in cls.name or cls.name in p for p in text_prompts)
+                            for cls in get_all_taxonomy_classes() if cls.parent_class is not None
+                        )
+                        if has_subpart_prompts:
+                            target_names = [name for name in target_names if any(name == p or name in p or p in name for p in text_prompts)]
+                            if not target_names:
+                                continue
+                    part_dets = self.detector.detect(crop_img, target_names)
+                    for pd in part_dets:
+                        if pd.class_name == cand.class_name:
+                            continue
+                        pw = pd.width
+                        ph = pd.height
+                        p_area = pw * ph
+                        # Reject whole-crop hallucinated detections:
+                        if (pw / crop_w > 0.92 and ph / crop_h > 0.92) or (p_area / crop_area > 0.88):
+                            rejection_records.append({
+                                "box_id": f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
+                                "class_name": pd.class_name,
+                                "confidence": pd.confidence,
+                                "stage": "subpart_crop_validation",
+                                "reason": "whole_crop_hallucination",
+                            })
+                            continue
+                        px1 = max(0.0, min(float(w), pd.x1 + off_x))
+                        py1 = max(0.0, min(float(h), pd.y1 + off_y))
+                        px2 = max(0.0, min(float(w), pd.x2 + off_x))
+                        py2 = max(0.0, min(float(h), pd.y2 + off_y))
+                        if px2 <= px1 or py2 <= py1:
+                            continue
 
-                    # Geometric containment constraint:
-                    inter_x = max(0.0, min(px2, cand.x2) - max(px1, cand.x1))
-                    inter_y = max(0.0, min(py2, cand.y2) - max(py1, cand.y1))
-                    inter_area = inter_x * inter_y
-                    part_area = (px2 - px1) * (py2 - py1)
-                    ioa = inter_area / part_area if part_area > 0 else 0.0
-                    if ioa < 0.40 or part_area > 1.05 * cand.area:
-                        rejection_records.append({
-                            "box_id": f"part_{pd.box_id}_{cand.box_id}",
-                            "class_name": pd.class_name,
-                            "confidence": pd.confidence,
-                            "stage": "subpart_crop_validation",
-                            "reason": "containment_ioa_below_0.40",
-                        })
-                        continue
+                        # Geometric containment constraint:
+                        inter_x = max(0.0, min(px2, cand.x2) - max(px1, cand.x1))
+                        inter_y = max(0.0, min(py2, cand.y2) - max(py1, cand.y1))
+                        inter_area = inter_x * inter_y
+                        part_area = (px2 - px1) * (py2 - py1)
+                        ioa = inter_area / part_area if part_area > 0 else 0.0
+                        if ioa < 0.35 or part_area > 1.05 * cand.area:
+                            rejection_records.append({
+                                "box_id": f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
+                                "class_name": pd.class_name,
+                                "confidence": pd.confidence,
+                                "stage": "subpart_crop_validation",
+                                "reason": "containment_ioa_below_0.35",
+                            })
+                            continue
 
-                    # Reject subparts that heavily overlap a foreground fixture (e.g. lamp in front of door)
-                    collides_foreground_fixture = any(
-                        other.class_name == "lamp" and other.box_id != cand.box_id and other.parent_box_id is None and
-                        compute_box_iou((px1, py1, px2, py2), other.box_2d) > 0.40
-                        for other in canonical_hosts
-                    )
-                    if collides_foreground_fixture:
-                        rejection_records.append({
-                            "box_id": f"part_{pd.box_id}_{cand.box_id}",
-                            "class_name": pd.class_name,
-                            "confidence": pd.confidence,
-                            "stage": "subpart_crop_validation",
-                            "reason": "foreground_fixture_collision",
-                        })
-                        continue
+                        # Reject subparts that heavily overlap a foreground fixture (e.g. lamp in front of door)
+                        collides_foreground_fixture = any(
+                            other.class_name in ("lamp", "pendant_light", "track_light") and other.box_id != cand.box_id and other.parent_box_id is None and
+                            compute_box_iou((px1, py1, px2, py2), other.box_2d) > 0.40
+                            for other in canonical_hosts
+                        )
+                        if collides_foreground_fixture:
+                            rejection_records.append({
+                                "box_id": f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
+                                "class_name": pd.class_name,
+                                "confidence": pd.confidence,
+                                "stage": "subpart_crop_validation",
+                                "reason": "foreground_fixture_collision",
+                            })
+                            continue
 
-                    # Intra-host component deduplication:
-                    is_dup = False
-                    for existing_part in cand_subparts:
-                        if existing_part.class_name == pd.class_name:
-                            p_iou = compute_box_iou((px1, py1, px2, py2), existing_part.box_2d)
-                            p_inter = max(0.0, min(px2, existing_part.x2) - max(px1, existing_part.x1)) * max(0.0, min(py2, existing_part.y2) - max(py1, existing_part.y1))
-                            p_ioa = p_inter / part_area if part_area > 0 else 0.0
-                            if p_iou >= 0.45 or p_ioa >= 0.60:
-                                is_dup = True
-                                break
-                    if is_dup:
-                        rejection_records.append({
-                            "box_id": f"part_{pd.box_id}_{cand.box_id}",
-                            "class_name": pd.class_name,
-                            "confidence": pd.confidence,
-                            "stage": "subpart_crop_validation",
-                            "reason": "intra_host_duplicate",
-                        })
-                        continue
+                        # Specificity-based ownership resolution:
+                        best_parent_id, is_ambig, cand_parent_ids = resolve_component_ownership(
+                            (px1, py1, px2, py2),
+                            pd.class_name,
+                            canonical_hosts,
+                            min_containment_ioa=0.35,
+                        )
+                        if best_parent_id is None:
+                            best_parent_id = cand.box_id
+                            is_ambig = False
+                            cand_parent_ids = [cand.box_id]
 
-                    # Check for ambiguous parents:
-                    ambiguous_hosts = [
-                        other.box_id for other in canonical_hosts
-                        if other.box_id != cand.box_id and other.parent_box_id is None and
-                        ((max(0.0, min(px2, other.x2) - max(px1, other.x1)) * max(0.0, min(py2, other.y2) - max(py1, other.y1))) / max(1.0, part_area)) >= 0.35
-                    ]
-                    is_ambiguous = len(ambiguous_hosts) > 0
+                        # Intra-host component deduplication across ROIs:
+                        is_dup = False
+                        for existing_part in cand_subparts:
+                            if existing_part.class_name == pd.class_name:
+                                p_iou = compute_box_iou((px1, py1, px2, py2), existing_part.box_2d)
+                                p_inter = max(0.0, min(px2, existing_part.x2) - max(px1, existing_part.x1)) * max(0.0, min(py2, existing_part.y2) - max(py1, existing_part.y1))
+                                p_ioa = p_inter / part_area if part_area > 0 else 0.0
+                                if p_iou >= 0.40 or p_ioa >= 0.55:
+                                    is_dup = True
+                                    if pd.confidence > existing_part.raw_score:
+                                        cand_subparts.remove(existing_part)
+                                        is_dup = False
+                                    break
+                        if is_dup:
+                            rejection_records.append({
+                                "box_id": f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
+                                "class_name": pd.class_name,
+                                "confidence": pd.confidence,
+                                "stage": "subpart_crop_validation",
+                                "reason": "intra_host_duplicate",
+                            })
+                            continue
 
-                    # Confidence propagation: host-conditional probability
-                    prop_conf = round(math.sqrt(float(pd.confidence) * float(cand.confidence)), 4)
+                        # Confidence propagation: host-conditional probability
+                        prop_conf = round(math.sqrt(float(pd.confidence) * float(cand.confidence)), 4)
 
-                    subpart_box = DetectionBox(
-                        box_id=f"part_{pd.box_id}_{cand.box_id}",
-                        class_name=pd.class_name,
-                        box_2d=(px1, py1, px2, py2),
-                        confidence=prop_conf,
-                        source_engine=f"{pd.source_engine}_subpart",
-                        source_image_id=image_id,
-                        parent_box_id=cand.box_id,
-                        scale=DetectionScale.MICRO,
-                        frame_index=frame_index,
-                        timestamp_sec=timestamp_sec,
-                        shot_id=shot_id,
-                        raw_score=pd.confidence,
-                        attributes={
-                            "host_class": cand.class_name,
-                            "host_box_id": cand.box_id,
-                            "host_confidence": round(float(cand.confidence), 4),
-                            "ambiguous_parent": is_ambiguous,
-                            "candidate_parent_box_ids": [cand.box_id, *ambiguous_hosts] if is_ambiguous else [cand.box_id],
-                            "provenance": {
-                                "detector_model": getattr(self.detector, "model_id", type(self.detector).__name__),
-                                "crop_origin": (off_x, off_y),
-                                "containment_ioa": round(float(ioa), 4),
+                        subpart_box = DetectionBox(
+                            box_id=f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
+                            class_name=pd.class_name,
+                            box_2d=(px1, py1, px2, py2),
+                            confidence=prop_conf,
+                            source_engine=f"{pd.source_engine}_subpart",
+                            source_image_id=image_id,
+                            parent_box_id=best_parent_id,
+                            scale=DetectionScale.MICRO,
+                            frame_index=frame_index,
+                            timestamp_sec=timestamp_sec,
+                            shot_id=shot_id,
+                            raw_score=pd.confidence,
+                            attributes={
+                                "host_class": cand.class_name,
+                                "host_box_id": best_parent_id,
+                                "host_confidence": round(float(cand.confidence), 4),
+                                "roi_source": roi_name,
+                                "ambiguous_parent": is_ambig,
+                                "candidate_parent_box_ids": cand_parent_ids,
+                                "provenance": {
+                                    "detector_model": getattr(self.detector, "model_id", type(self.detector).__name__),
+                                    "crop_origin": (off_x, off_y),
+                                    "containment_ioa": round(float(ioa), 4),
+                                },
                             },
-                        },
-                    )
-                    cand_subparts.append(subpart_box)
-                    raw_accum.append(subpart_box)
-                    subparts_detected += 1
+                        )
+                        cand_subparts.append(subpart_box)
+                        raw_accum.append(subpart_box)
+                        subparts_detected += 1
 
                 verified_subparts.extend(cand_subparts)
                 processed_per_class[cand.class_name] += 1
@@ -2156,8 +2292,71 @@ class DetectionPipeline:
             missing = [exp for exp in expected if exp not in attached_part_classes]
             host.attributes["missing_expected_parts"] = missing
 
-        # 6. Combine canonical hosts and verified subparts
-        suppressed_dets = list(canonical_hosts) + verified_subparts
+        # 6. Resolve ownership for any primary detections that are subparts & combine detections
+        resolved_primary: list[DetectionBox] = []
+        for det in canonical_hosts:
+            if det.parent_box_id is None:
+                tax = resolve_taxonomy_class(det.class_name)
+                if tax.parent_class is not None or len(tax.hosts) > 0:
+                    p_id, is_ambig, cand_parents = resolve_component_ownership(
+                        det.box_2d, det.class_name, canonical_hosts, min_containment_ioa=0.35
+                    )
+                    if p_id is not None:
+                        new_attrs = dict(det.attributes)
+                        new_attrs["host_box_id"] = p_id
+                        new_attrs["ambiguous_parent"] = is_ambig
+                        new_attrs["candidate_parent_box_ids"] = cand_parents
+                        det = DetectionBox(
+                            box_id=det.box_id,
+                            class_name=det.class_name,
+                            box_2d=det.box_2d,
+                            confidence=det.confidence,
+                            source_engine=det.source_engine,
+                            source_image_id=det.source_image_id,
+                            mask_2d=det.mask_2d,
+                            parent_box_id=p_id,
+                            scale=det.scale,
+                            frame_index=det.frame_index,
+                            timestamp_sec=det.timestamp_sec,
+                            shot_id=det.shot_id,
+                            attributes=new_attrs,
+                            raw_score=det.raw_score,
+                        )
+            resolved_primary.append(det)
+
+        # Deduplicate overlapping subparts between primary detections and crop re-detections
+        combined_subparts: list[DetectionBox] = []
+        for vp in verified_subparts:
+            # Check if an equivalent subpart was already captured in resolved_primary
+            is_dup = False
+            for idx, p_det in enumerate(resolved_primary):
+                if p_det.class_name == vp.class_name and p_det.parent_box_id == vp.parent_box_id:
+                    if compute_box_iou(p_det.box_2d, vp.box_2d) >= 0.40:
+                        is_dup = True
+                        if vp.confidence > p_det.confidence:
+                            new_attrs = dict(p_det.attributes)
+                            new_attrs.update(vp.attributes)
+                            resolved_primary[idx] = DetectionBox(
+                                box_id=vp.box_id,
+                                class_name=p_det.class_name,
+                                box_2d=vp.box_2d,
+                                confidence=vp.confidence,
+                                source_engine=vp.source_engine,
+                                source_image_id=vp.source_image_id,
+                                mask_2d=p_det.mask_2d,
+                                parent_box_id=p_det.parent_box_id,
+                                scale=p_det.scale,
+                                frame_index=p_det.frame_index,
+                                timestamp_sec=p_det.timestamp_sec,
+                                shot_id=p_det.shot_id,
+                                attributes=new_attrs,
+                                raw_score=vp.raw_score,
+                            )
+                        break
+            if not is_dup:
+                combined_subparts.append(vp)
+
+        suppressed_dets = resolved_primary + combined_subparts
 
         # 7. Mask segmentation and boundary refinement (batched for SAM efficiency)
         unmasked = [
@@ -2180,7 +2379,7 @@ class DetectionPipeline:
             mask = det.mask_2d
             if mask is None or mask.shape[:2] != (h, w):
                 mask = mask_map.get(idx)
-                if mask is None:
+                if mask is None and idx not in mask_map:
                     mask = self.segmenter.segment_box(image_rgb, det.box_2d)
 
             if mask is not None and mask.shape[:2] == (h, w):

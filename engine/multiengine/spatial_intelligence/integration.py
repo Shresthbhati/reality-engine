@@ -659,6 +659,29 @@ def reconstruct_spatial_scene(
             except ValueError:
                 pass
 
+    # 4b. Preserve explicit component-host PART_OF relationships discovered during perception
+    for det in effective_detections:
+        if det.parent_id:
+            existing = any(
+                r.source_id == det.detection_id and r.target_id == det.parent_id and r.relation.value == "part_of"
+                for r in spatial_rels
+            )
+            if not existing:
+                try:
+                    from engine.multiengine.spatial_intelligence.spatial_lifting import SpatialRelationKind
+                    spatial_rels.append(SpatialRelationship(
+                        source_id=det.detection_id,
+                        target_id=det.parent_id,
+                        relation=SpatialRelationKind.PART_OF,
+                        confidence=det.confidence,
+                        distance=0.0,
+                        distance_units="relative",
+                        basis="perception_component_ownership",
+                        details={"component_class": det.class_name},
+                    ))
+                except Exception:
+                    pass
+
     # 5. Geometry validation on lifted entities
     geometry_validations: dict[str, GeometryValidationResult] = {}
     for lent in lifted_entities:

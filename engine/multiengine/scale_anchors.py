@@ -115,7 +115,7 @@ class PointAnchor:
 
 @dataclass
 class ScaleCalibration:
-    status: str                                 # validated | unvalidated | insufficient | failed
+    status: str                                 # validated | unvalidated | estimated_prior | insufficient | failed
     reason: str
     kind: str                                   # "distance" | "points"
     scale_m_per_gauge: float | None = None
@@ -126,10 +126,12 @@ class ScaleCalibration:
     residuals: list[dict[str, Any]] = field(default_factory=list)       # fit anchors, with location for spatial inspection
     held_out: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    basis: str | None = None                    # how the reference was obtained (laser_distance_meter / known_length / prior_accepted_by_user ...)
+    dimension_state: str | None = None          # MEASURED (an instrument or user measurement) | ESTIMATED (an accepted typical-size prior)
 
     @property
     def applicable(self) -> bool:
-        return self.status in ("validated", "unvalidated") and self.scale_m_per_gauge is not None
+        return self.status in ("validated", "unvalidated", "estimated_prior") and self.scale_m_per_gauge is not None
 
     def to_dict(self) -> dict[str, Any]:
         t = self.transform
@@ -138,8 +140,28 @@ class ScaleCalibration:
                 "transform": None if t is None else {"scale": t.scale, "rotation": [list(r) for r in t.rotation],
                                                      "translation": list(t.translation)},
                 "fit_ids": self.fit_ids, "rejected": self.rejected, "residuals": self.residuals, "held_out": self.held_out,
-                "warnings": self.warnings,
+                "warnings": self.warnings, "basis": self.basis, "dimension_state": self.dimension_state,
                 "note": "estimated from the listed independent measurements; the unscaled reconstruction is preserved"}
+
+
+# ---------------------------------------------------------------------------------------------------------- single baseline
+def calibrate_baseline(model_distance: float, distance_m: float, *, method: str, prior: bool = False,
+                       anchor_ids: Sequence[str] = ()) -> ScaleCalibration:
+    """The legacy single-reference semantics (one measured camera baseline / one known model length / one accepted typical size) expressed as
+    the SAME calibration record the multi-anchor estimator returns. ONE reference cannot be checked against anything, so the status is
+    ``unvalidated`` (measured) or ``estimated_prior`` (an accepted typical size: ESTIMATED, never validated), and no scale sigma is claimed."""
+    if not (math.isfinite(model_distance) and model_distance > 0 and math.isfinite(distance_m) and distance_m > 0):
+        raise AnchorError("model_distance and distance_m must be positive and finite")
+    return ScaleCalibration(
+        status="estimated_prior" if prior else "unvalidated", kind="baseline", scale_m_per_gauge=distance_m / model_distance, scale_sigma=None,
+        fit_ids=list(anchor_ids), basis=method, dimension_state="ESTIMATED" if prior else "MEASURED",
+        reason=("an accepted typical size: ESTIMATED, not measured" if prior else "one measured reference: not checked against any other measurement"),
+        warnings=["single reference: no consistency check and no held-out validation; the scale uncertainty is not stated"])
+
+
+def scale_xyz(xyz: Sequence[float], scale: float) -> tuple[float, ...]:
+    """THE uniform scale of a position (used by the legacy reconstruction path and the world path alike)."""
+    return tuple(c * scale for c in xyz)
 
 
 # ----------------------------------------------------------------------------------------------------------------- distances
@@ -196,6 +218,7 @@ def calibrate_distances(anchors: Sequence[DistanceAnchor]) -> ScaleCalibration:
     birge = max(1.0, math.sqrt(chi2 / (len(cur) - 1)))
     sigma_s = float(birge / math.sqrt(w.sum()))
     cal.scale_m_per_gauge, cal.scale_sigma, cal.fit_ids = s, sigma_s, [a.anchor_id for a in cur]
+    cal.basis, cal.dimension_state = ",".join(sorted({a.source for a in cur})), "MEASURED"
     cal.residuals = [{"anchor_id": a.anchor_id, "gauge_length": a.gauge_length, "measured_m": a.metres,
                       "predicted_m": s * a.gauge_length, "error_m": s * a.gauge_length - a.metres,
                       "location_gauge": ((_vec(a.point_a, "a") + _vec(a.point_b, "b")) / 2).tolist()} for a in cur]
@@ -281,6 +304,7 @@ def calibrate_points(anchors: Sequence[PointAnchor]) -> ScaleCalibration:
     n = len(loo)
     sigma_s = float(math.sqrt((n - 1) / n * np.sum((np.array(loo) - np.mean(loo)) ** 2))) if n > 2 else None
     cal.transform, cal.scale_m_per_gauge, cal.scale_sigma, cal.fit_ids = t, float(t.scale), sigma_s, [a.anchor_id for a in cur]
+    cal.basis, cal.dimension_state = ",".join(sorted({a.source for a in cur})), "MEASURED"
     cal.residuals = [{"anchor_id": a.anchor_id, "residual_m": r, "location_gauge": list(a.recon_xyz)} for a, r in zip(cur, res)]
     fit_rms = float(math.sqrt(np.mean(np.square(res))))
     bad = False

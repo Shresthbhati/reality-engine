@@ -71,6 +71,8 @@ __all__ = [
 
 #: Scale methods whose length is given in MODEL space (a length measured in the
 #: reconstruction's own units) instead of between two camera positions.
+from engine.multiengine.scale_anchors import calibrate_baseline, scale_xyz  # noqa: E402  (one estimator / one scaling for both paths)
+
 KNOWN_LENGTH = "known_length"                 # user states the real length of an edge / two picked points
 PRIOR_ACCEPTED = "prior_accepted_by_user"     # engine-suggested typical size, explicitly accepted (ESTIMATED)
 #: metric depth from a LiDAR / structured-light sensor (F2): a measured scale, never an estimate
@@ -180,6 +182,8 @@ class ScaledReconstruction:
     state: str                       # ScaleState value
     meters_per_unit: Optional[float]
     diagnostics: ScaleDiagnostics
+    #: The shared calibration record (engine.multiengine.scale_anchors) this scale came from; None for an unscaled result.
+    calibration: Optional[object] = None
 
 
 #: The relative pairwise ratios must agree this closely (relative
@@ -237,11 +241,15 @@ def anchor_metric_scale(
                     f"{reference.evidence_id_a!r}/{reference.evidence_id_b!r} are now {model_sep:.6g} apart, "
                     f"were {reference.unit_check_sep:.6g}); measure again in the current model"
                 )
-        meters_per_unit = reference.meters_per_unit
+        calibration = calibrate_baseline(reference.model_distance, reference.distance_m, method=reference.method,
+                                         prior=reference.method == PRIOR_ACCEPTED,
+                                         anchor_ids=(reference.evidence_id_a, reference.evidence_id_b))
     else:
         # Scale from the single measured pair (one baseline = one ratio); the
         # spread gate below validates it against the model's own rigidity.
-        meters_per_unit = reference.distance_m / model_sep
+        calibration = calibrate_baseline(model_sep, reference.distance_m, method=reference.method,
+                                         anchor_ids=(reference.evidence_id_a, reference.evidence_id_b))
+    meters_per_unit = calibration.scale_m_per_gauge  # the SAME estimator and record the evidence-world calibration uses
 
     # Rigidity gate: with the scale applied, every pairwise camera
     # separation must match the model's own proportions -- i.e. the
@@ -288,7 +296,7 @@ def anchor_metric_scale(
     scaled_poses = [
         ReconstructedCameraPose(
             evidence_id=p.evidence_id,
-            position=tuple(c * meters_per_unit for c in p.position),
+            position=scale_xyz(p.position, meters_per_unit),
             rotation=p.rotation,
             uncertainty=p.uncertainty,
         )
@@ -296,7 +304,7 @@ def anchor_metric_scale(
     ]
     scaled_points = [
         ReconstructedPoint(
-            position=tuple(c * meters_per_unit for c in p.position),
+            position=scale_xyz(p.position, meters_per_unit),
             track_id=p.track_id,
             source_evidence_ids=p.source_evidence_ids,
             uncertainty=p.uncertainty,
@@ -324,6 +332,7 @@ def anchor_metric_scale(
         state=ScaleState.METRIC,
         meters_per_unit=meters_per_unit,
         diagnostics=diagnostics,
+        calibration=calibration,
     )
 
 

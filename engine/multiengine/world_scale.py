@@ -39,6 +39,17 @@ class AlreadyCalibrated(CalibrationRefused):
     """The world already carries a physical calibration: scaling it again would multiply the scale twice."""
 
 
+def world_calibration(world: Any) -> dict[str, Any] | None:
+    """The shared calibration record of a world, wherever its producer stored it: the evidence-world calibration (``metadata['scale_calibration']``)
+    or the legacy job's ``metadata['scale']['calibration']``. One reader, so readiness / export behave the same for both."""
+    md = getattr(world, "metadata", None) or {}
+    rec = md.get(CAL_KEY)
+    if rec and isinstance(rec.get("calibration"), dict):
+        return rec["calibration"]
+    cal = (md.get("scale") or {}).get("calibration")
+    return cal if isinstance(cal, dict) else None
+
+
 def _tf(cal: ScaleCalibration) -> Sim3:
     if cal.transform is not None:
         return cal.transform

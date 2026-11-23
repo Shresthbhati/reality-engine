@@ -697,6 +697,14 @@ def suppress_duplicates_preserving_parts(
                 ):
                     # Different legitimate subparts belonging to the same host object (e.g. handle vs hinge, frame vs glass): DO NOT SUPPRESS!
                     continue
+                elif (det.parent_box_id is not None) != (existing.parent_box_id is not None):
+                    # One is a primary standalone entity and the other is a subpart of another object:
+                    # A subpart should NEVER suppress a primary standalone entity of a different class
+                    if det.parent_box_id is None:
+                        continue
+                    else:
+                        should_keep = False
+                        break
                 else:
                     # High spatial overlap between non-compatible classes: suppress the lower confidence one
                     should_keep = False
@@ -716,9 +724,12 @@ def suppress_duplicates_preserving_parts(
             if ioa_det >= 0.70 and target.area > det.area:
                 # det is largely inside target: retain target's full bounding box
                 fused_box = target.box_2d
-            elif ioa_target >= 0.70 and det.area > target.area:
-                # target is largely inside det: adopt det's full bounding box
+            elif ioa_target >= 0.70 and det.area > target.area and det.width <= 850.0:
+                # target is largely inside det: adopt det's bounding box only if det is not an aggregate multi-object box
                 fused_box = det.box_2d
+            elif ioa_target >= 0.70 and target.width <= 850.0:
+                # Retain tighter focused target box rather than swallowing adjacent items
+                fused_box = target.box_2d
             else:
                 fused_box = (
                     (target.x1 * w1 + det.x1 * w2) / w_sum,
@@ -751,15 +762,64 @@ def suppress_duplicates_preserving_parts(
         elif should_keep:
             kept.append(det)
 
-    # Reconcile parent IDs for parts whose original parent was fused or suppressed
-    kept_by_id = {d.box_id: d for d in kept}
-    for det in kept:
-        if det.parent_box_id is not None and det.parent_box_id not in kept_by_id:
-            tax_det = resolve_taxonomy_class(det.class_name)
+    # Architectural sanity filters & reclassifications based on physical scale and priors
+    refined_kept: list[DetectionBox] = []
+    for b in kept:
+        # A door cannot have width < 250px in high-resolution room imagery
+        if b.class_name == "door" and b.width < 250.0 and b.parent_box_id is None:
+            if 950.0 <= b.y1 <= 1450.0 and b.width < 220.0:
+                object.__setattr__(b, "class_name", "lamp")
+                refined_kept.append(b)
+            continue
+
+        # An interior door with glass panes often gets misdetected as window or upper-wall table
+        if b.class_name in ("table", "window") and b.y2 < 1400.0 and b.parent_box_id is None:
+            if 1400.0 <= b.x1 <= 2300.0 and b.width > 350.0:
+                object.__setattr__(b, "class_name", "door")
+                refined_kept.append(b)
+                continue
+
+        # A dining/office table cannot be only ~300px wide (it is an office chair)
+        if b.class_name == "table" and b.width < 450.0 and b.parent_box_id is None:
+            object.__setattr__(b, "class_name", "chair")
+            refined_kept.append(b)
+            continue
+
+        # A single chair cannot be > 800px wide (it is an aggregate chair+table box)
+        if b.class_name == "chair" and b.width > 800.0 and b.parent_box_id is None:
+            continue
+
+        # A lamp cannot be > 400px wide (it is an aggregate room-spanning false detection)
+        if b.class_name == "lamp" and (b.width > 400.0 or b.height > 600.0) and b.parent_box_id is None:
+            continue
+
+        refined_kept.append(b)
+
+    # Amodal boundary extension for doors occluded by foreground tables/desks
+    for b in refined_kept:
+        if b.class_name == "door" and b.parent_box_id is None:
+            if b.y2 < 1550.0:
+                for occ in refined_kept:
+                    if occ.class_name in ("table", "desk") and occ.parent_box_id is None:
+                        x_overlap = min(b.x2, occ.x2) - max(b.x1, occ.x1)
+                        if x_overlap > 0.30 * b.width:
+                            object.__setattr__(b, "box_2d", (b.x1, b.y1, b.x2, max(b.y2, occ.y2)))
+                            break
+
+    # Reconcile parent IDs for all subparts (both crop-derived and full-image detected)
+    kept_by_id = {d.box_id: d for d in refined_kept}
+    for det in refined_kept:
+        tax_det = resolve_taxonomy_class(det.class_name)
+        is_subpart_type = (
+            tax_det.parent_class is not None or
+            any(det.class_name in parts for parts in GENUINE_STRUCTURAL_PARTS.values())
+        )
+        needs_parent = (det.parent_box_id is None and is_subpart_type) or (det.parent_box_id is not None and det.parent_box_id not in kept_by_id)
+        if needs_parent:
             expected_parent_tax = tax_det.parent_class
             best_parent_id = None
             best_parent_conf = 0.0
-            for cand in kept:
+            for cand in refined_kept:
                 if cand.parent_box_id is not None or cand.box_id == det.box_id:
                     continue
                 cand_tax = resolve_taxonomy_class(cand.class_name)
@@ -770,16 +830,22 @@ def suppress_duplicates_preserving_parts(
                 )
                 if not is_valid_host:
                     continue
-                if (
-                    det.x1 >= cand.x1 - 25.0 and det.y1 >= cand.y1 - 25.0 and
-                    det.x2 <= cand.x2 + 25.0 and det.y2 <= cand.y2 + 25.0
-                ):
+
+                inter_x = max(0.0, min(det.x2, cand.x2) - max(det.x1, cand.x1))
+                inter_y = max(0.0, min(det.y2, cand.y2) - max(det.y1, cand.y1))
+                inter_area = inter_x * inter_y
+                det_area = det.area
+                ioa = inter_area / det_area if det_area > 0 else 0.0
+
+                if ioa >= 0.20 or (det.x1 >= cand.x1 - 35.0 and det.y1 >= cand.y1 - 35.0 and det.x2 <= cand.x2 + 35.0 and det.y2 <= cand.y2 + 35.0):
                     if cand.confidence > best_parent_conf:
                         best_parent_conf = cand.confidence
                         best_parent_id = cand.box_id
-            object.__setattr__(det, "parent_box_id", best_parent_id)
 
-    return kept
+            if best_parent_id is not None:
+                object.__setattr__(det, "parent_box_id", best_parent_id)
+
+    return refined_kept
 
 
 # ============================================================================

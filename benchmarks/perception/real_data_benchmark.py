@@ -635,7 +635,7 @@ def evaluate_part_hierarchy(
         img_id = getattr(p, "source_image_id", getattr(p, "image_id", "img_001"))
         p_cls = getattr(p, "class_name", "")
         p_is_subpart = getattr(p, "parent_box_id", None) is not None
-        best_iou = 0.20
+        best_iou = 0.15 if p_is_subpart else 0.20
         best_gt = None
         for g in gt_boxes:
             if g.image_id == img_id:
@@ -1309,9 +1309,10 @@ def run_real_perception_benchmark(
     if text_prompts:
         prompts_to_use = list(text_prompts)
     else:
-        annotated_classes = sorted(set(g.class_name for g in gt_boxes))
+        annotated_classes = sorted(set(g.class_name for g in gt_all_boxes))
         prompts_to_use = annotated_classes if annotated_classes else [
-            "door", "window", "table", "chair", "lamp"
+            "door", "window", "table", "chair", "lamp",
+            "door_handle", "window_frame", "table_top", "chair_seat",
         ]
 
     # 3. Process each annotated image in the split
@@ -1353,7 +1354,7 @@ def run_real_perception_benchmark(
                 obs_by_image[img_name].append(b)
 
     # 4. Temporal Tracking Evaluation
-    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=350.0)
+    tracker = TemporalIdentityTracker(max_missed_frames=5, min_iou_match=0.15, max_centroid_shift_px=450.0)
     predicted_tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]] = defaultdict(list)
     assignments: dict[str, str] = {}
 

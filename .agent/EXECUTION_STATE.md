@@ -3,6 +3,31 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-24 -- Sprint 1C: the two P0 breaks fixed and PROVEN on a real job (branch `feat/reconstruction-sprint1c`)
+
+FIXED (both P0):
+- export resolved geometry from `<run>/export-artifacts` (never written), so every real mesh became a placeholder box.
+  Now `ChainedArtifactStore` (`world_ir/artifact_store.py`) resolves `<run>/artifacts` then `<run>/worldstore/artifacts`,
+  used by `apps/api/evidence_world_stage.py::run_artifact_store` from the export route.
+- the fused TSDF surface never reached the persisted WorldIR: `spatial_stage.py` published aligned depth only on the
+  detections path (empty detections -> `surfaces: no aligned depth maps` -> 0 entities -> `not_persisted`). State is
+  now published before that branch. `exporters/gltf/exporter.py::_resolve_real_mesh` also accepts PLY payloads.
+- tests: `tests/test_evidence_export_geometry.py` (8) + `tests/test_midas_inverse_depth.py` -> **11 passed**.
+
+PROVEN END-TO-END (`artifacts/sprint1/p0run10`, real 7-Scenes photos, real COLMAP/TSDF, job `job_d1c9a0a05ac6`):
+10 photos, 4/10 cameras registered, 344.1 s, job `partial`; world `wld_4e1337b432a4` version `v-d621237151fa524d`
+**persisted** with 6 entities / 6 geometries (4 walls, 1 support surface, 1 fused surface). Fused mesh 42,235 v /
+75,700 t, sha256 `116606a9...`, payload matches through the chained store. Fresh process (`scripts/sprint1/p0_proof.py`):
+`verify_version` clean, PLY counts = geometry counts, `GET /{run}/world` 200 with `surf-fused-surface`,
+`POST /{run}/export` glb 200 -> 75,724 triangles, 6 exported / 0 skipped, `sfm_units-NOT-metres`,
+`NOT_MEASURED`, verdict PARTIAL. Proof result **PASS**.
+
+HONEST LIMITS: 0 object entities (1 raw detection, 0 refined, SAM `segment_anything` not installed); 1 plane correctly
+`skipped` (|n.up| = 0.39). Failed first: `p0run` (10 photos) timed out at 1800 s under GPU contention with a sticky CUDA
+OOM and never wrote a snapshot; `p0run7` (6 photos) registered 0/6 cameras and honestly reported `not_persisted`.
+Registration is the limiting factor, not persistence: 10 frames -> 4 cameras, 6 frames -> 0. `JOB_TIMEOUT_SECONDS=5400`
+was used for the proof runs (environment override, no code change). Full detail: audit §9.
+
 ## 2026-11-24 -- Freebuff reconstruction Sprint 1A/1B (production audit + real TSDF)
 
 REPORT: `docs/audits/2026-11-SPRINT1_PRODUCTION_RECONSTRUCTION_AUDIT.md` (call graph, measured facts, defects D1-D7).

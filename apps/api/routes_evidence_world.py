@@ -163,9 +163,13 @@ async def export_run_world(
     409 when no entity has a measured position (nothing to place), 409 when the geometry is not in metres unless the caller sets
     ``acknowledge_unscaled`` (the file then carries unitless/gauge values and the response says so in ``X-Export-Scale``). The exporter's
     own skipped entities are reported in headers, never hidden."""
-    from apps.api.evidence_world_stage import WORLDSTORE_REL, head_version, readiness
+    from apps.api.evidence_world_stage import (
+        WORLDSTORE_REL,
+        head_version,
+        readiness,
+        run_artifact_store,
+    )
     from sdk import reality
-    from world_ir.artifact_store import FileArtifactStore
     from worldstore.store import WorldStore
 
     d = _run_dir(await _world_dir(db, world_id, auth), run_id)
@@ -183,7 +187,10 @@ async def export_run_world(
 
     sb = scale_block(world)
     try:
-        content, report = reality.export(world, body.format, artifact_store=FileArtifactStore(d / "export-artifacts"))
+        # Geometry payloads were written into the run's Evidence Matrix store by the bridge / surfaces stage; resolve them through a
+        # chain that also covers the run's own WorldStore. Handing the exporter an empty directory made it emit placeholder boxes for
+        # every real geometry (silent substitution of the reconstruction's surface).
+        content, report = reality.export(world, body.format, artifact_store=run_artifact_store(d))
     except reality.UnsupportedExportFormatError as exc:
         raise HTTPException(422, str(exc)) from exc
     except ImportError as exc:

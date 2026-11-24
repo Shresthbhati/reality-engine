@@ -21,6 +21,7 @@ import os
 import re
 import uuid
 from abc import abstractmethod
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +162,35 @@ class FileArtifactStore(ArtifactStore):
     def has(self, digest: str) -> bool:
         path = self._path_for(digest)
         return path.is_file() and not path.is_symlink()
+
+
+class ChainedArtifactStore(ArtifactStore):
+    """Read-through chain over several stores, in order.
+
+    A world's geometry payloads do not all live in one place: the evidence-to-world flow writes meshes and point clouds
+    into the run's Evidence Matrix store (`<run>/artifacts`), while a WorldStore keeps its own (`<run>/worldstore/artifacts`).
+    Consumers that resolve a `data_uri` from a persisted world (export, viewer) must therefore consult both, or a real
+    mesh silently degrades to a placeholder. `put` always writes to the FIRST store, so new payloads have one owner.
+    """
+
+    def __init__(self, stores: Sequence[ArtifactStore]):
+        if not stores:
+            raise ValueError("ChainedArtifactStore needs at least one store")
+        self.stores = list(stores)
+
+    def put(self, data: bytes) -> tuple[str, str]:
+        return self.stores[0].put(data)
+
+    def get(self, data_uri: str) -> bytes:
+        for store in self.stores:
+            try:
+                return store.get(data_uri)
+            except ArtifactNotFoundError:
+                continue
+        raise ArtifactNotFoundError(data_uri)
+
+    def has(self, digest: str) -> bool:
+        return any(store.has(digest) for store in self.stores)
 
 
 class S3ArtifactStore(ArtifactStore):

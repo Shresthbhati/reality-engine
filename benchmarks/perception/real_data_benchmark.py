@@ -109,6 +109,12 @@ class PartHierarchyMetrics:
     f1: float | None
     false_parent_assignments: int = 0
     missed_components: int = 0
+    part_detection_precision: float | None = None
+    part_detection_recall: float | None = None
+    parent_assignment_precision: float | None = None
+    parent_assignment_recall: float | None = None
+    incorrect_parent_assignments: int = 0
+    duplicate_component_detections: int = 0
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,6 +124,12 @@ class PartHierarchyMetrics:
             "correct_part_links": self.correct_part_links,
             "false_parent_assignments": self.false_parent_assignments,
             "missed_components": self.missed_components,
+            "incorrect_parent_assignments": self.incorrect_parent_assignments,
+            "duplicate_component_detections": self.duplicate_component_detections,
+            "part_detection_precision": round(self.part_detection_precision, 4) if self.part_detection_precision is not None else None,
+            "part_detection_recall": round(self.part_detection_recall, 4) if self.part_detection_recall is not None else None,
+            "parent_assignment_precision": round(self.parent_assignment_precision, 4) if self.parent_assignment_precision is not None else None,
+            "parent_assignment_recall": round(self.parent_assignment_recall, 4) if self.parent_assignment_recall is not None else None,
             "precision": round(self.precision, 4) if self.precision is not None else None,
             "recall": round(self.recall, 4) if self.recall is not None else None,
             "f1": round(self.f1, 4) if self.f1 is not None else None,
@@ -215,6 +227,9 @@ class MultiViewAssociationMetrics:
     inlier_mean_reprojection_residual_px: float | None = None
     inlier_median_reprojection_residual_px: float | None = None
     inlier_p90_reprojection_residual_px: float | None = None
+    inlier_p25_reprojection_residual_px: float | None = None
+    inlier_p75_reprojection_residual_px: float | None = None
+    inlier_p95_reprojection_residual_px: float | None = None
     all_pairs_mean_residual_px: float | None = None
     total_gt_pairs: int = 0
     cluster_purity: float | None = None
@@ -223,6 +238,8 @@ class MultiViewAssociationMetrics:
     false_split_rate: float | None = None
     single_view_entity_rate: float | None = None
     multi_view_entity_rate: float | None = None
+    results_by_class: dict[str, dict[str, Any]] | None = None
+    results_by_view_count: dict[str, dict[str, Any]] | None = None
     status: str = "measured"  # "measured" or "unmeasured_no_gt"
 
     @property
@@ -238,7 +255,7 @@ class MultiViewAssociationMetrics:
         return self.inlier_p90_reprojection_residual_px if self.inlier_p90_reprojection_residual_px is not None else 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "candidate_pairs_evaluated": self.candidate_pairs_evaluated,
             "merged_pairs": self.merged_pairs,
             "refused_pairs": self.refused_pairs,
@@ -253,13 +270,21 @@ class MultiViewAssociationMetrics:
             "multi_view_entity_rate": round(self.multi_view_entity_rate, 4) if self.multi_view_entity_rate is not None else None,
             "inlier_mean_reprojection_residual_px": round(self.inlier_mean_reprojection_residual_px, 2) if self.inlier_mean_reprojection_residual_px is not None else None,
             "inlier_median_reprojection_residual_px": round(self.inlier_median_reprojection_residual_px, 2) if self.inlier_median_reprojection_residual_px is not None else None,
+            "inlier_p25_reprojection_residual_px": round(self.inlier_p25_reprojection_residual_px, 2) if self.inlier_p25_reprojection_residual_px is not None else None,
+            "inlier_p75_reprojection_residual_px": round(self.inlier_p75_reprojection_residual_px, 2) if self.inlier_p75_reprojection_residual_px is not None else None,
             "inlier_p90_reprojection_residual_px": round(self.inlier_p90_reprojection_residual_px, 2) if self.inlier_p90_reprojection_residual_px is not None else None,
+            "inlier_p95_reprojection_residual_px": round(self.inlier_p95_reprojection_residual_px, 2) if self.inlier_p95_reprojection_residual_px is not None else None,
             "all_pairs_mean_residual_px": round(self.all_pairs_mean_residual_px, 2) if self.all_pairs_mean_residual_px is not None else None,
             "mean_reprojection_residual_px": round(self.mean_reprojection_residual_px, 2),
             "median_reprojection_residual_px": round(self.median_reprojection_residual_px, 2),
             "p90_reprojection_residual_px": round(self.p90_reprojection_residual_px, 2),
             "status": self.status,
         }
+        if self.results_by_class is not None:
+            d["results_by_class"] = self.results_by_class
+        if self.results_by_view_count is not None:
+            d["results_by_view_count"] = self.results_by_view_count
+        return d
 
 
 @dataclass(frozen=True)
@@ -727,12 +752,24 @@ def evaluate_part_hierarchy(
 
     correct_links = 0
     false_parent_assignments = 0
+    claimed_gt_parts: set[tuple[str, str]] = set()
+    duplicate_component_detections = 0
+    detected_part_candidates = 0
+
     for child_pid, parent_pid in pred_links.items():
         child_p = pred_by_id[child_pid]
         img_id = getattr(child_p, "source_image_id", getattr(child_p, "image_id", "img_001"))
         child_gt = pred_to_gt_entity.get(child_pid)
         parent_gt = pred_to_gt_entity.get(parent_pid)
         expected_parent = gt_links.get((img_id, child_gt)) if child_gt else None
+
+        if child_gt and (img_id, child_gt) in gt_links:
+            detected_part_candidates += 1
+            if (img_id, child_gt) in claimed_gt_parts:
+                duplicate_component_detections += 1
+            else:
+                claimed_gt_parts.add((img_id, child_gt))
+
         if child_gt and expected_parent is not None:
             if parent_gt == expected_parent:
                 correct_links += 1
@@ -744,15 +781,25 @@ def evaluate_part_hierarchy(
     total_gt = len(gt_links)
     total_pred = len(pred_links)
     missed_components = max(0, total_gt - correct_links)
+    incorrect_parent_assignments = false_parent_assignments
+
     if total_gt == 0:
         prec = 0.0 if total_pred > 0 else None
         rec = None
         f1_val = None
+        part_det_prec = 0.0 if total_pred > 0 else None
+        part_det_rec = None
+        parent_assign_prec = 0.0 if total_pred > 0 else None
+        parent_assign_rec = None
         status = "unmeasured_no_gt"
     else:
         prec = float(correct_links / total_pred) if total_pred > 0 else 0.0
         rec = float(correct_links / total_gt)
         f1_val = float(2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+        part_det_prec = float(detected_part_candidates / total_pred) if total_pred > 0 else 0.0
+        part_det_rec = float(len(claimed_gt_parts) / total_gt)
+        parent_assign_prec = float(correct_links / detected_part_candidates) if detected_part_candidates > 0 else 0.0
+        parent_assign_rec = float(correct_links / total_gt)
         status = "measured"
 
     return PartHierarchyMetrics(
@@ -761,6 +808,12 @@ def evaluate_part_hierarchy(
         correct_part_links=correct_links,
         false_parent_assignments=false_parent_assignments,
         missed_components=missed_components,
+        part_detection_precision=part_det_prec,
+        part_detection_recall=part_det_rec,
+        parent_assignment_precision=parent_assign_prec,
+        parent_assignment_recall=parent_assign_rec,
+        incorrect_parent_assignments=incorrect_parent_assignments,
+        duplicate_component_detections=duplicate_component_detections,
         precision=prec,
         recall=rec,
         f1=f1_val,
@@ -1067,6 +1120,7 @@ def evaluate_multiview_association(
     gt_entity_observations: dict[str, set[str]],  # gt_entity_id -> set of observation_ids
     merged_entities: Sequence[Any],
     association_decisions: Sequence[Any],
+    gt_entity_classes: dict[str, str] | None = None,
 ) -> MultiViewAssociationMetrics:
     """Evaluates cross-view association precision, recall, and reprojection residuals."""
     obs_to_gt: dict[str, str] = {}
@@ -1192,8 +1246,81 @@ def evaluate_multiview_association(
 
     mean_inlier = float(np.mean(inlier_residuals)) if inlier_residuals else None
     med_inlier = float(np.median(inlier_residuals)) if inlier_residuals else None
+    p25_inlier = float(np.percentile(inlier_residuals, 25)) if inlier_residuals else None
+    p75_inlier = float(np.percentile(inlier_residuals, 75)) if inlier_residuals else None
     p90_inlier = float(np.percentile(inlier_residuals, 90)) if inlier_residuals else None
+    p95_inlier = float(np.percentile(inlier_residuals, 95)) if inlier_residuals else None
     all_mean = float(np.mean(all_residuals)) if all_residuals else None
+
+    # Breakdown by class
+    results_by_class: dict[str, dict[str, Any]] = {}
+    if gt_entity_classes:
+        for cname in sorted(set(gt_entity_classes.values())):
+            c_gt_ids = {gid for gid, c in gt_entity_classes.items() if c == cname}
+            c_gt_pairs = sum((len(gt_entity_observations[gid]) * (len(gt_entity_observations[gid]) - 1)) // 2 for gid in c_gt_ids if gid in gt_entity_observations)
+            c_merged = 0
+            c_correct = 0
+            c_residuals: list[float] = []
+            for d in valid_decisions:
+                outcome = getattr(d, "outcome", "")
+                is_merged = (outcome == "merged" or getattr(outcome, "value", "") == "merged")
+                obs_a = getattr(d, "obs_a_id", "")
+                obs_b = getattr(d, "obs_b_id", "")
+                gt_a = obs_to_gt.get(obs_a)
+                gt_b = obs_to_gt.get(obs_b)
+                if (gt_a in c_gt_ids) or (gt_b in c_gt_ids):
+                    if is_merged:
+                        c_merged += 1
+                        if gt_a and gt_b and gt_a == gt_b:
+                            c_correct += 1
+                            err = getattr(d, "reprojection_err_px", None)
+                            if err is not None and math.isfinite(err):
+                                c_residuals.append(float(err))
+            results_by_class[cname] = {
+                "total_gt_pairs": c_gt_pairs,
+                "merged_pairs": c_merged,
+                "correct_merges": c_correct,
+                "precision": round(c_correct / c_merged, 4) if c_merged > 0 else 0.0,
+                "recall": round(c_correct / c_gt_pairs, 4) if c_gt_pairs > 0 else 0.0,
+                "inlier_mean_residual_px": round(float(np.mean(c_residuals)), 2) if c_residuals else None,
+            }
+
+    # Breakdown by view count (1, 2, 3+ views)
+    results_by_view_count: dict[str, dict[str, Any]] = {}
+    for vc_bucket, vc_filter in [
+        ("1_view", lambda n: n == 1),
+        ("2_views", lambda n: n == 2),
+        ("3+_views", lambda n: n >= 3),
+    ]:
+        b_gt_ids = {gid for gid, s in gt_entity_observations.items() if vc_filter(len(s))}
+        b_gt_pairs = sum((len(gt_entity_observations[gid]) * (len(gt_entity_observations[gid]) - 1)) // 2 for gid in b_gt_ids)
+        b_merged = 0
+        b_correct = 0
+        b_residuals: list[float] = []
+        for d in valid_decisions:
+            outcome = getattr(d, "outcome", "")
+            is_merged = (outcome == "merged" or getattr(outcome, "value", "") == "merged")
+            obs_a = getattr(d, "obs_a_id", "")
+            obs_b = getattr(d, "obs_b_id", "")
+            gt_a = obs_to_gt.get(obs_a)
+            gt_b = obs_to_gt.get(obs_b)
+            if (gt_a in b_gt_ids) or (gt_b in b_gt_ids):
+                if is_merged:
+                    b_merged += 1
+                    if gt_a and gt_b and gt_a == gt_b:
+                        b_correct += 1
+                        err = getattr(d, "reprojection_err_px", None)
+                        if err is not None and math.isfinite(err):
+                            b_residuals.append(float(err))
+        results_by_view_count[vc_bucket] = {
+            "entity_count": len(b_gt_ids),
+            "total_gt_pairs": b_gt_pairs,
+            "merged_pairs": b_merged,
+            "correct_merges": b_correct,
+            "precision": round(b_correct / b_merged, 4) if b_merged > 0 else 0.0,
+            "recall": round(b_correct / b_gt_pairs, 4) if b_gt_pairs > 0 else 0.0,
+            "inlier_mean_residual_px": round(float(np.mean(b_residuals)), 2) if b_residuals else None,
+        }
 
     return MultiViewAssociationMetrics(
         candidate_pairs_evaluated=len(valid_decisions),
@@ -1210,8 +1337,13 @@ def evaluate_multiview_association(
         multi_view_entity_rate=multi_view_rate,
         inlier_mean_reprojection_residual_px=mean_inlier,
         inlier_median_reprojection_residual_px=med_inlier,
+        inlier_p25_reprojection_residual_px=p25_inlier,
+        inlier_p75_reprojection_residual_px=p75_inlier,
         inlier_p90_reprojection_residual_px=p90_inlier,
+        inlier_p95_reprojection_residual_px=p95_inlier,
         all_pairs_mean_residual_px=all_mean,
+        results_by_class=results_by_class if results_by_class else None,
+        results_by_view_count=results_by_view_count if results_by_view_count else None,
         status="measured",
     )
 
@@ -1687,7 +1819,13 @@ def run_real_perception_benchmark(
         if best_box_id and best_iou >= 0.30:
             gt_entity_obs[g.entity_id].add(best_box_id)
 
-    mv_metrics = evaluate_multiview_association(gt_entity_obs, merged_entities, assoc_decisions)
+    gt_entity_classes = {g.entity_id: g.class_name for g in gt_boxes}
+    mv_metrics = evaluate_multiview_association(
+        gt_entity_obs,
+        merged_entities,
+        assoc_decisions,
+        gt_entity_classes=gt_entity_classes,
+    )
 
     # 6. Quantitative Detection, Part, and Mask Metrics
     # Primary detections are evaluated on primary GT boxes
@@ -1891,8 +2029,13 @@ def main() -> int:
     part_prec = f"{summary.part_hierarchy.precision:.4f}" if summary.part_hierarchy.precision is not None else "N/A"
     part_rec = f"{summary.part_hierarchy.recall:.4f}" if summary.part_hierarchy.recall is not None else "N/A"
     part_f1 = f"{summary.part_hierarchy.f1:.4f}" if summary.part_hierarchy.f1 is not None else "N/A"
+    p_det_prec = f"{summary.part_hierarchy.part_detection_precision:.4f}" if summary.part_hierarchy.part_detection_precision is not None else "N/A"
+    p_det_rec = f"{summary.part_hierarchy.part_detection_recall:.4f}" if summary.part_hierarchy.part_detection_recall is not None else "N/A"
+    p_ass_prec = f"{summary.part_hierarchy.parent_assignment_precision:.4f}" if summary.part_hierarchy.parent_assignment_precision is not None else "N/A"
+    p_ass_rec = f"{summary.part_hierarchy.parent_assignment_recall:.4f}" if summary.part_hierarchy.parent_assignment_recall is not None else "N/A"
     print(f"  Status: {summary.part_hierarchy.status} | Links Precision: {part_prec}, Recall: {part_rec}, F1: {part_f1}")
-    print(f"  Total Links Evaluated: {summary.part_hierarchy.correct_part_links} / {summary.part_hierarchy.total_gt_part_links}")
+    print(f"  Part Detection: Prec={p_det_prec}, Rec={p_det_rec} | Parent Assignment: Prec={p_ass_prec}, Rec={p_ass_rec}")
+    print(f"  Total Links Evaluated: {summary.part_hierarchy.correct_part_links} / {summary.part_hierarchy.total_gt_part_links} | False Parent: {summary.part_hierarchy.false_parent_assignments}, Duplicates: {summary.part_hierarchy.duplicate_component_detections}")
     print("-" * 60)
     print("TEMPORAL IDENTITY TRACKING:")
     trk_idf1 = f"{summary.tracking.idf1:.4f}" if summary.tracking.idf1 is not None else "N/A"
@@ -1911,10 +2054,13 @@ def main() -> int:
     mv_fsr = f"{summary.multi_view.false_split_rate:.4f}" if summary.multi_view.false_split_rate is not None else "N/A"
     inlier_mean = f"{summary.multi_view.inlier_mean_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_mean_reprojection_residual_px is not None else "N/A"
     inlier_med = f"{summary.multi_view.inlier_median_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_median_reprojection_residual_px is not None else "N/A"
+    inlier_p25 = f"{summary.multi_view.inlier_p25_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_p25_reprojection_residual_px is not None else "N/A"
+    inlier_p75 = f"{summary.multi_view.inlier_p75_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_p75_reprojection_residual_px is not None else "N/A"
     inlier_p90 = f"{summary.multi_view.inlier_p90_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_p90_reprojection_residual_px is not None else "N/A"
+    inlier_p95 = f"{summary.multi_view.inlier_p95_reprojection_residual_px:.2f}px" if summary.multi_view.inlier_p95_reprojection_residual_px is not None else "N/A"
     print(f"  Status: {summary.multi_view.status} | Association Precision: {mv_prec}, Recall: {mv_rec}")
     print(f"  Cluster Purity: {mv_purity}, Identity Completeness: {mv_comp} | False Merges: {mv_fmr}, False Splits: {mv_fsr}")
-    print(f"  Inlier Reprojection Residuals: Mean={inlier_mean}, Median={inlier_med}, P90={inlier_p90}")
+    print(f"  Inlier Reprojection Residuals: Mean={inlier_mean}, Med={inlier_med}, P25={inlier_p25}, P75={inlier_p75}, P90={inlier_p90}, P95={inlier_p95}")
     print("=" * 60 + "\n")
 
     return 0

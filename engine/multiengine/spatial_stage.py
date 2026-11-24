@@ -271,10 +271,25 @@ def run_spatial_stage(
             det_obs[b.observation_id] = b
     report["fusion"] = _fuse_depth(matrix, [(s, cameras[s], depth_maps[s], images[s]) for s in depth_maps if s in cameras])
     state["fusion"] = report["fusion"]  # the surface compiler prefers this fused surface over its own point-cloud mesh
+    # Publish the aligned depth and its cameras BEFORE the detection branch: the surfaces stage builds room
+    # geometry from depth alone, and an empty detection set must not starve it (measured: a real 10-photo run
+    # fused 2 depth maps into a verified 78,869-triangle mesh while the surfaces stage reported "no aligned
+    # depth maps", because this state was only written on the detections path).
+    state.update({
+        "aligned": {src: (depth_maps[src], cameras[src]) for src in depth_maps},  # per image: aligned depth + its JOB-frame camera
+        "aligned_depth_observations": {src: image_of[src][3]["depth_observation"] for src in depth_maps},
+        "surface_depth_available": len(depth_maps),
+    })
     if not det_inputs:
         refused = sum(i["rejected"] for i in report["images"])
         if refused:  # the depth maps WERE examined and refused: that is a result (rejections on record), not a skipped stage
             return {**report, "lifted": 0, "rejected": refused, "reason": "no image's depth map could be aligned to the SfM geometry"}
+        if depth_maps:
+            # depth WAS aligned and fused; only lifting needed detections. The old message claimed no image had
+            # alignable depth, which was false on a real run that had already produced a TSDF mesh.
+            return {**report, "status": "skipped",
+                    "reason": f"depth was aligned for {len(depth_maps)} image(s) and fused into a surface, but no detection was "
+                              "available to lift into a physical entity"}
         return {**report, "status": "skipped", "reason": "no image has both a registered camera and an alignable depth map"}
 
     z_med = float(np.median([np.median(m[np.isfinite(m) & (m > 0)]) for m in depth_maps.values()]))
@@ -361,8 +376,6 @@ def run_spatial_stage(
     state.update({
         "lifted_ids": lifted_ids, "entity_of": entity_of, "merged": {e.canonical_entity_id: e for e in scene.merged_entities},
         "relationships": list(scene.spatial_relationships), "refusals": dict(scene.refusal_reasons), "ray_threshold": ray,
-        "aligned": {src: (depth_maps[src], cameras[src]) for src in depth_maps},  # per image: aligned depth + its JOB-frame camera (for surfaces)
-        "aligned_depth_observations": {src: image_of[src][3]["depth_observation"] for src in depth_maps},  # the depth record each map came from
     })
     report.update({
         "lifted": len(lifted_ids), "detections_in": len(det_inputs), "merged_entities": len(scene.merged_entities),

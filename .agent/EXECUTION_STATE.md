@@ -3,6 +3,32 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-24 -- Freebuff reconstruction Sprint 1A/1B (production audit + real TSDF)
+
+REPORT: `docs/audits/2026-11-SPRINT1_PRODUCTION_RECONSTRUCTION_AUDIT.md` (call graph, measured facts, defects D1-D7).
+EVIDENCE (local, untracked): `artifacts/sprint1/` — reg10/reg10seq/reg6 (COLMAP registration diagnosis),
+prod10 (real production job, 10 real photos, 317.9 s, peak RSS 3814.6 MB / CUDA 647.2 MB), dense (real COLMAP MVS,
+3 views, 11,043 fused points), tsdf_real (real TSDF mesh 871 v / 1 399 f, fresh-process PASS), fresh_process_report.json.
+
+FIXED (tests: `tests/test_depth_fusion.py tests/test_spatial_stage.py tests/test_midas_inverse_depth.py tests/test_evidence_world_job.py` -> 33 passed, 1 skipped):
+- MiDaS returns unnormalised inverse depth (measured raw range -374..6101), and 9 of 10 production MiDaS maps were
+  rejected `DEPTH_MAP_NEGATIVE`; `midas_inverse_depth_to_relative` shifts them into a strictly positive relative field
+  (exact affine reparametrisation, facts recorded per observation).
+- `run_spatial_stage` published aligned depth only on the detections path, so `surfaces` reported "no aligned depth
+  maps" while fusion had used them; state is now published before that branch and the no-detection reason is truthful.
+
+MEASURED DEFECTS NOT FIXED: default `/reconstruct` never produces a surface (mesh+dense skipped; 3/10 cameras);
+evidence-world TSDF mesh is persisted as an artifact but the world is `not_persisted` (DESIGN_DECISIONS §7 BLOCKED);
+registration reproduces 3/10 and 0/6 on real subsets (pair graph: 11-14 verified pairs of 45, many at the 15-inlier
+floor); occlusion-free depth reference needs >= 4 common cameras; `artifacts/interior_room_reconstruction.worldir.json`
+is unreadable (PermissionError) on this host.
+
+NOT DONE: P3 geometry integrity, P4 scale lifecycle audit, P5 failure injection, P6 quality-gate rework, P7 browser
+journey, full P8 profiling (only the two per-run numbers above). A re-run of the 10-photo job after the MiDaS fix
+did not complete: it sat in `analyzing_evidence` (LightGlue/ALIKED scene-identity gate) for 30+ min under GPU/CPU
+contention from an unrelated perception benchmark and was killed; the fix is verified by the stored depth arrays and
+by unit/integration tests, not by a second end-to-end job.
+
 ## 2026-11-21 (later) -- FIRST REAL FURNISHED-INTERIOR RUN (7-Scenes "office" seq-01, 12 frames, production job, real COLMAP + Depth Anything V2)
 
 EXECUTED ON REAL DATA (local, not committed: 7-Scenes is research/non-commercial): 12/12 cameras registered; camera poses vs Kinect GT: 5.5 cm RMSE over a

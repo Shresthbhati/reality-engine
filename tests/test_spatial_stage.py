@@ -12,6 +12,8 @@ import pytest
 from apps.api import evidence_world_stage as ew
 from engine.math import Quat, Vec3
 from engine.multiengine.metric3d import ScaleState
+from engine.multiengine.registry import EngineRegistry
+from tests.test_multiengine_evidence_flow import FakeDetector, _spec
 from engine.multiengine.spatial_intelligence.integration import SpatialSceneResult
 from engine.multiengine.spatial_stage import R_UP, _quat_to_R, _R_to_quat, to_working_camera
 from tests.test_lift_stage_e2e import DX, F, H, W, _camera, _chair, _Depth, _inputs, _per_view, _points, photos  # noqa: F401
@@ -105,6 +107,37 @@ def test_depth_fusion_runs_in_the_production_stage_and_any_surface_it_records_is
         assert hashlib.sha256(data).hexdigest() == f["mesh_artifact"]["sha256"] and data[:3] == b"ply" and len(data) == f["mesh_artifact"]["bytes"]
     else:
         assert f.get("reason")  # no surface: the reason is on the record, and no artifact is claimed
+
+
+class _NoBoxDetector(FakeDetector):
+    """A detector that finds nothing -- the real case on a 10-photo south-building run (0 of 38 raw candidates survived)."""
+
+    def infer(self, request):
+        return []
+
+
+def _no_box_inputs(depth):
+    def f():
+        reg = EngineRegistry()
+        sp = _spec("det_a", "fam-a")
+        reg.register(sp)
+        return reg, {"det_a": _NoBoxDetector(sp), "fake_depth": depth}, None
+
+    return f
+
+
+def test_aligned_depth_reaches_the_surfaces_stage_even_when_no_detection_was_made(tmp_path, photos, monkeypatch):  # noqa: F811
+    """Regression: the stage used to return before publishing aligned depth, so the surfaces stage reported
+    "no aligned depth maps" while fusion had already produced a mesh from those same maps."""
+    monkeypatch.delenv(ew.ENV_LIFT, raising=False)
+    cams = {p: _camera(DX[os.path.basename(p)]) for p in photos}
+    r = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-nobox", sources=photos, base=tmp_path / "ws",
+                       flow_inputs=_no_box_inputs(_Depth(_per_view())), depth_engines=["fake_depth"], cameras=cams, points3d=_points())
+    assert r["lifting"]["status"] == "skipped"
+    assert "no detection was available" in r["lifting"]["reason"], r["lifting"]["reason"]
+    surfaces = r["surfaces"]
+    assert surfaces.get("reason") != "no aligned depth maps", surfaces
+    assert surfaces["status"] == "ran" and surfaces["planes"], surfaces
 
 
 def test_the_legacy_lifter_remains_selectable_and_says_so(tmp_path, photos, monkeypatch):  # noqa: F811

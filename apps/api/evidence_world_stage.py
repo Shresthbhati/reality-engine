@@ -293,6 +293,19 @@ def run_for_job(
 WORLDSTORE_REL = "worldstore"
 
 
+def run_artifact_store(run_dir: Path) -> Any:
+    """The stores that hold one run's geometry payloads, in resolution order.
+
+    The evidence-to-world flow writes meshes and point clouds into the run's Evidence Matrix store (`<run>/artifacts`); the run's
+    WorldStore keeps the version records and any payload written through it (`<run>/worldstore/artifacts`). A reader handed only one
+    of them silently loses the other's geometry, so export and the viewer resolve through both.
+    """
+    from world_ir.artifact_store import ChainedArtifactStore, FileArtifactStore
+
+    d = Path(run_dir)
+    return ChainedArtifactStore([FileArtifactStore(d / "artifacts"), FileArtifactStore(d / WORLDSTORE_REL / "artifacts")])
+
+
 _CYCLE_RE = re.compile(r"cross_entity_cyclic_support: cyclic vertical support relationship detected between (\S+) and (\S+)")
 _DUP_RE = re.compile(r"invariant_6_duplicate_entity: entities (\S+) and (\S+) are the same class and overlap (\d+)%")
 

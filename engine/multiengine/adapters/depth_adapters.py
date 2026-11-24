@@ -284,6 +284,39 @@ class DepthAnythingV3EngineAdapter(DepthAnythingV2EngineAdapter):
         super().__init__(spec, checkpoint=self.DEFAULT_CHECKPOINT)
 
 
+def midas_inverse_depth_to_relative(raw: np.ndarray) -> tuple[np.ndarray, dict]:
+    """Shift MiDaS's unnormalised INVERSE relative depth into a strictly positive relative-depth field.
+
+    MiDaS DPT returns inverse depth (disparity): larger means nearer, the range is unbounded, and the far tail
+    is routinely negative. The alignment stage fits an affine model with a free intercept -- so a constant shift
+    changes nothing it can observe -- but it rejects maps containing negative values, a guard that must stay for
+    depth maps (a negative metric depth is impossible). Shifting by ``-min`` (plus a 1% margin so no pixel is
+    exactly zero, which downstream reads as 'no measurement') is therefore an exact reparametrisation, not a
+    repair: monotonicity, ordering and relative distances are preserved and the semantics remain inverse relative
+    depth in SfM gauge, never metres.
+
+    Returns ``(shifted, facts)``; ``facts`` is recorded with the observation so the transform is auditable.
+    """
+    arr = np.asarray(raw, dtype=np.float64)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return np.zeros_like(arr, dtype=np.float32), {"status": "all_non_finite"}
+    lo = float(arr[finite].min())
+    hi = float(arr[finite].max())
+    span = hi - lo
+    eps = max(span * 0.01, 1e-6)
+    out = np.where(finite, arr - lo + eps, 0.0).astype(np.float32)
+    return out, {
+        "transform": "inverse_depth_shifted_to_positive",
+        "raw_min": lo,
+        "raw_max": hi,
+        "raw_negative_fraction": round(float((arr[finite] < 0).mean()), 4),
+        "offset": -lo + eps,
+        "semantics": "inverse relative depth (larger = nearer), SfM gauge; NOT metric depth",
+        "exactness": "affine intercept absorbed by the scale-alignment fit; relative ordering unchanged",
+    }
+
+
 class MidasEngineAdapter(BaseModelEngineAdapter):
     """Adapter for MiDaS DPT_Hybrid baseline depth estimation."""
 
@@ -363,7 +396,10 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                     mode="bicubic",
                     align_corners=False,
                 ).squeeze()
-                depth_np = pred.cpu().numpy()
+                raw_np = pred.cpu().numpy()
+
+            # MiDaS emits inverse depth; shift it into the positive relative field the aligner accepts (see helper).
+            depth_np, depth_facts = midas_inverse_depth_to_relative(raw_np)
 
             d_min = float(np.min(depth_np))
             d_max = float(np.max(depth_np))
@@ -381,8 +417,11 @@ class MidasEngineAdapter(BaseModelEngineAdapter):
                         "width": int(depth_np.shape[1]),
                         "height": int(depth_np.shape[0]),
                         "scale_state": "relative",
+                        "depth_semantics": depth_facts.get("semantics"),
+                        "inverse_depth_transform": depth_facts,
                     },
-                    original_coordinates={"raw_min": d_min, "raw_max": d_max},
+                    original_coordinates={"raw_min": depth_facts.get("raw_min"), "raw_max": depth_facts.get("raw_max"),
+                                          "raw_format": "inverse_depth", "negative_fraction": depth_facts.get("raw_negative_fraction")},
                     confidence=None,
                 )
             )

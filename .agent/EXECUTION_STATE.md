@@ -3,6 +3,57 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-24 -- Sprint 1C: the two P0 breaks fixed and PROVEN on a real job (branch `feat/reconstruction-sprint1c`)
+
+FIXED (both P0):
+- export resolved geometry from `<run>/export-artifacts` (never written), so every real mesh became a placeholder box.
+  Now `ChainedArtifactStore` (`world_ir/artifact_store.py`) resolves `<run>/artifacts` then `<run>/worldstore/artifacts`,
+  used by `apps/api/evidence_world_stage.py::run_artifact_store` from the export route.
+- the fused TSDF surface never reached the persisted WorldIR: `spatial_stage.py` published aligned depth only on the
+  detections path (empty detections -> `surfaces: no aligned depth maps` -> 0 entities -> `not_persisted`). State is
+  now published before that branch. `exporters/gltf/exporter.py::_resolve_real_mesh` also accepts PLY payloads.
+- tests: `tests/test_evidence_export_geometry.py` (8) + `tests/test_midas_inverse_depth.py` -> **11 passed**.
+
+PROVEN END-TO-END (`artifacts/sprint1/p0run10`, real 7-Scenes photos, real COLMAP/TSDF, job `job_d1c9a0a05ac6`):
+10 photos, 4/10 cameras registered, 344.1 s, job `partial`; world `wld_4e1337b432a4` version `v-d621237151fa524d`
+**persisted** with 6 entities / 6 geometries (4 walls, 1 support surface, 1 fused surface). Fused mesh 42,235 v /
+75,700 t, sha256 `116606a9...`, payload matches through the chained store. Fresh process (`scripts/sprint1/p0_proof.py`):
+`verify_version` clean, PLY counts = geometry counts, `GET /{run}/world` 200 with `surf-fused-surface`,
+`POST /{run}/export` glb 200 -> 75,724 triangles, 6 exported / 0 skipped, `sfm_units-NOT-metres`,
+`NOT_MEASURED`, verdict PARTIAL. Proof result **PASS**.
+
+HONEST LIMITS: 0 object entities (1 raw detection, 0 refined, SAM `segment_anything` not installed); 1 plane correctly
+`skipped` (|n.up| = 0.39). Failed first: `p0run` (10 photos) timed out at 1800 s under GPU contention with a sticky CUDA
+OOM and never wrote a snapshot; `p0run7` (6 photos) registered 0/6 cameras and honestly reported `not_persisted`.
+Registration is the limiting factor, not persistence: 10 frames -> 4 cameras, 6 frames -> 0. `JOB_TIMEOUT_SECONDS=5400`
+was used for the proof runs (environment override, no code change). Full detail: audit §9.
+
+## 2026-11-24 -- Freebuff reconstruction Sprint 1A/1B (production audit + real TSDF)
+
+REPORT: `docs/audits/2026-11-SPRINT1_PRODUCTION_RECONSTRUCTION_AUDIT.md` (call graph, measured facts, defects D1-D7).
+EVIDENCE (local, untracked): `artifacts/sprint1/` — reg10/reg10seq/reg6 (COLMAP registration diagnosis),
+prod10 (real production job, 10 real photos, 317.9 s, peak RSS 3814.6 MB / CUDA 647.2 MB), dense (real COLMAP MVS,
+3 views, 11,043 fused points), tsdf_real (real TSDF mesh 871 v / 1 399 f, fresh-process PASS), fresh_process_report.json.
+
+FIXED (tests: `tests/test_depth_fusion.py tests/test_spatial_stage.py tests/test_midas_inverse_depth.py tests/test_evidence_world_job.py` -> 33 passed, 1 skipped):
+- MiDaS returns unnormalised inverse depth (measured raw range -374..6101), and 9 of 10 production MiDaS maps were
+  rejected `DEPTH_MAP_NEGATIVE`; `midas_inverse_depth_to_relative` shifts them into a strictly positive relative field
+  (exact affine reparametrisation, facts recorded per observation).
+- `run_spatial_stage` published aligned depth only on the detections path, so `surfaces` reported "no aligned depth
+  maps" while fusion had used them; state is now published before that branch and the no-detection reason is truthful.
+
+MEASURED DEFECTS NOT FIXED: default `/reconstruct` never produces a surface (mesh+dense skipped; 3/10 cameras);
+evidence-world TSDF mesh is persisted as an artifact but the world is `not_persisted` (DESIGN_DECISIONS §7 BLOCKED);
+registration reproduces 3/10 and 0/6 on real subsets (pair graph: 11-14 verified pairs of 45, many at the 15-inlier
+floor); occlusion-free depth reference needs >= 4 common cameras; `artifacts/interior_room_reconstruction.worldir.json`
+is unreadable (PermissionError) on this host.
+
+NOT DONE: P3 geometry integrity, P4 scale lifecycle audit, P5 failure injection, P6 quality-gate rework, P7 browser
+journey, full P8 profiling (only the two per-run numbers above). A re-run of the 10-photo job after the MiDaS fix
+did not complete: it sat in `analyzing_evidence` (LightGlue/ALIKED scene-identity gate) for 30+ min under GPU/CPU
+contention from an unrelated perception benchmark and was killed; the fix is verified by the stored depth arrays and
+by unit/integration tests, not by a second end-to-end job.
+
 ## 2026-11-21 (later) -- FIRST REAL FURNISHED-INTERIOR RUN (7-Scenes "office" seq-01, 12 frames, production job, real COLMAP + Depth Anything V2)
 
 EXECUTED ON REAL DATA (local, not committed: 7-Scenes is research/non-commercial): 12/12 cameras registered; camera poses vs Kinect GT: 5.5 cm RMSE over a

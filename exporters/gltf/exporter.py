@@ -634,7 +634,12 @@ def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> "tu
     try:
         mesh = _MeshData.from_bytes(payload)
     except (ValueError, struct.error):
-        return None  # not a MeshData payload this exporter understands
+        # PLY is what the evidence-to-world surfaces stage stores (Open3D marching-cubes / ball-pivoting output). Without this
+        # fallback a real reconstructed surface is not "unresolvable" to the caller -- it silently becomes the placeholder cube.
+        try:
+            mesh = _MeshData.from_ply_bytes(payload)
+        except (ValueError, struct.error):
+            return None  # not a payload this exporter understands
     return mesh.vertices, mesh.faces, getattr(mesh, "uvs", None)
 
 

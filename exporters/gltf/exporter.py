@@ -279,7 +279,8 @@ def _resolve_material(
     return None
 
 
-def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> dict:
+def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None,
+                   _unresolved: Optional[list] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.
 
     Only entities with a transform position AND a BOX/PLANE/MESH
@@ -366,7 +367,19 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         mesh_index = 0  # default: shared placeholder cube
         points_mesh_index = None
 
+        expects_payload = artifact_store is not None and bool(getattr(geometry, "data_uri", None))
         real_mesh = _resolve_real_mesh(artifact_store, geometry)
+        if expects_payload and not (real_mesh is not None and real_mesh[0] and real_mesh[1]):
+            # The geometry names a payload this store cannot resolve (missing, truncated or corrupt). Drawing the
+            # placeholder cube would put a fabricated box where the reconstruction's real surface belongs, so the
+            # entity is skipped and named instead. A geometry with NO data_uri is an abstract box/plane: the cube is
+            # its documented AABB proxy, not a substitute for a payload.
+            if _resolve_real_points(artifact_store, geometry) is None:
+                if _unresolved is not None:
+                    _unresolved.append({"entity_id": entity.id, "geometry_id": getattr(geometry, "id", None),
+                                        "data_uri": getattr(geometry, "data_uri", None),
+                                        "reason": "geometry payload could not be resolved from the artifact store"})
+                continue
         if real_mesh is not None and real_mesh[0] and real_mesh[1]:
             vertices, faces = real_mesh[0], real_mesh[1]
             uvs = real_mesh[2] if len(real_mesh) > 2 else None
@@ -695,7 +708,7 @@ def write_gltf_file(world: "WorldIR", path: str, artifact_store: Optional[Artifa
         json.dump(export_to_gltf(world, artifact_store), f)
 
 
-def _classify_entities(world: "WorldIR"):
+def _classify_entities(world: "WorldIR", unresolved: Optional[dict] = None):
     """(exported_ids, skipped_ids, reasons) in sorted-id order, matching
     export_to_gltf()'s own per-entity skip conditions exactly."""
     exported, skipped, reasons = [], [], []
@@ -707,6 +720,9 @@ def _classify_entities(world: "WorldIR"):
         elif not _entity_box_geometry(world, entity):
             skipped.append(entity_id)
             reasons.append("no BOX/PLANE/MESH geometry to export")
+        elif unresolved and entity_id in unresolved:
+            skipped.append(entity_id)
+            reasons.append(unresolved[entity_id])
         else:
             exported.append(entity_id)
     return tuple(exported), tuple(skipped), tuple(reasons)
@@ -718,8 +734,10 @@ def export_to_gltf_with_report(
     """Same as export_to_gltf(), plus a structured ExportReport naming
     exactly which entities were exported/skipped and why, and a
     deterministic content hash of the resulting JSON."""
-    gltf = export_to_gltf(world, artifact_store)
-    exported, skipped, reasons = _classify_entities(world)
+    unresolved_rows: list = []
+    gltf = export_to_gltf(world, artifact_store, _unresolved=unresolved_rows)
+    exported, skipped, reasons = _classify_entities(
+        world, {r["entity_id"]: f"{r['reason']} ({r['data_uri']})" for r in unresolved_rows})
     report = ExportReport(
         format="gltf",
         world_id=world.id,

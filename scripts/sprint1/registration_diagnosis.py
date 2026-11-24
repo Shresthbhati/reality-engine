@@ -64,8 +64,34 @@ def _run(step: str, args: list[str], log_dir: Path, timeout: float = 3600.0) -> 
     return rec
 
 
+def _connected_components(pairs: list[tuple[str, str]]) -> list[list[str]]:
+    """Vertex sets of the verified-pair graph. A capture that registers nothing usually has a graph that is one or two
+    small components, not a connected set of overlaps -- that is what the mapper's initialiser needs."""
+    adj: dict[str, set[str]] = {}
+    for a, b in pairs:
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    seen: set[str] = set()
+    out: list[list[str]] = []
+    for start in sorted(adj):
+        if start in seen:
+            continue
+        stack, comp = [start], []
+        seen.add(start)
+        while stack:
+            n = stack.pop()
+            comp.append(n)
+            for m in sorted(adj[n]):
+                if m not in seen:
+                    seen.add(m)
+                    stack.append(m)
+        out.append(sorted(comp))
+    return sorted(out, key=len, reverse=True)
+
+
 def _db_facts(db: Path) -> dict:
-    """COLMAP's own database counts: per-image keypoints, match totals, verified two-view inliers."""
+    """COLMAP's own database counts: per-image keypoints, match totals, verified two-view inliers, per-pair detail and
+    the connected components of the verified-pair graph."""
     if not db.is_file():
         return {"status": "database missing"}
     con = sqlite3.connect(str(db))
@@ -83,6 +109,18 @@ def _db_facts(db: Path) -> dict:
         except sqlite3.Error as exc:
             n_ver, inl = None, []
             kp["two_view_error"] = str(exc)
+        # per-pair detail: which two photographs, how many raw matches, how many survived COLMAP's own two-view verification
+        detail: list[dict] = []
+        try:
+            # COLMAP stores one `pair_id` per pair, encoded as image_id_1 * 2^31-1 + image_id_2 (the smaller id first).
+            for pair_id, inl_rows in cur.execute(
+                "SELECT pair_id, rows FROM two_view_geometries WHERE rows > 0"
+            ).fetchall():
+                a, b = int(pair_id) // 2147483647, int(pair_id) % 2147483647
+                detail.append({"a": names.get(a, str(a)), "b": names.get(b, str(b)), "inliers": int(inl_rows)})
+        except sqlite3.Error as exc:
+            detail = [{"error": str(exc)}]
+        detail.sort(key=lambda d: -int(d.get("inliers", 0)))
         return {
             "images": len(names),
             "keypoints_per_image": {names.get(k, str(k)): v for k, v in sorted(kp.items())},
@@ -92,6 +130,9 @@ def _db_facts(db: Path) -> dict:
             "verified_inliers": sorted(int(v) for v in inl),
             "verified_inliers_median": float(statistics.median(inl)) if inl else None,
             "verified_inliers_max": int(max(inl)) if inl else None,
+            "verified_pairs_detail": detail,
+            "verified_graph_components": _connected_components([(d["a"], d["b"]) for d in detail if "a" in d]),
+            "possible_pairs": len(names) * (len(names) - 1) // 2,
         }
     finally:
         con.close()
@@ -127,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, default=10)
     ap.add_argument("--max-image-size", type=int, default=1024)
     ap.add_argument("--gpu", type=int, default=1)
+    ap.add_argument("--robust-sift", action="store_true",
+                    help="the production backend's default SIFT config (affine-shape estimation + domain-size pooling, CPU only)")
     args = ap.parse_args(argv)
 
     src = Path(args.images)
@@ -151,10 +194,13 @@ def main(argv: list[str] | None = None) -> int:
     for p in chosen:
         shutil.copy2(p, work / p.name)
 
+    sift_extra = (["--SiftExtraction.estimate_affine_shape", "1",
+                   "--SiftExtraction.domain_size_pooling", "1"] if args.robust_sift else [])
+    use_gpu = "0" if args.robust_sift else str(args.gpu)   # affine-shape SIFT is CPU-only in COLMAP
     report: dict = {
         "images_source": str(src), "selected_count": len(chosen), "selection": sel,
         "colmap_version": subprocess.run(["colmap", "--version"], capture_output=True, text=True).stdout.strip(),
-        "parameters": {"max_image_size": args.max_image_size, "gpu": bool(args.gpu),
+        "parameters": {"max_image_size": args.max_image_size, "gpu": bool(args.gpu), "robust_sift": bool(args.robust_sift),
                        "camera_model": "SIMPLE_RADIAL", "single_camera": "0 (one camera per image)"},
         "exif": [_exif(p) for p in chosen],
         "stages": [],
@@ -166,10 +212,10 @@ def main(argv: list[str] | None = None) -> int:
     report["stages"].append(_run("feature_extractor", [
         "--database_path", str(db), "--image_path", str(work),
         "--ImageReader.camera_model", "SIMPLE_RADIAL", "--ImageReader.single_camera", "0",
-        "--FeatureExtraction.use_gpu", str(args.gpu),
+        "--FeatureExtraction.use_gpu", use_gpu, *sift_extra,
         "--FeatureExtraction.max_image_size", str(args.max_image_size)], out))
     report["stages"].append(_run("exhaustive_matcher", [
-        "--database_path", str(db), "--FeatureMatching.use_gpu", str(args.gpu)], out))
+        "--database_path", str(db), "--FeatureMatching.use_gpu", use_gpu], out))
     report["stages"].append(_run("mapper", [
         "--database_path", str(db), "--image_path", str(work), "--output_path", str(sparse),
         "--Mapper.multiple_models", "1", "--Mapper.min_model_size", "2",
@@ -181,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
         models.append({"model": d.name, **_model_facts(d, [p.name for p in chosen])})
     report["models"] = models
     report["any_registered"] = any(m.get("registered", 0) > 0 for m in models)
+    # COLMAP's own words for why a model is missing, so a failure reason is quoted, not guessed
+    mlog = (report["stages"][-1].get("stderr_tail") or "") + (report["stages"][-1].get("stdout_tail") or "")
+    report["mapper_failure_lines"] = [ln.strip() for ln in mlog.splitlines()
+                                      if "No good initial image pair" in ln or "bad initial pair" in ln
+                                      or "Failed to create any sparse model" in ln]
     (out / "diagnosis.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(json.dumps({
         "selected": len(chosen),

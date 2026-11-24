@@ -107,3 +107,57 @@ class TestPlyMeshExport:
             data_uri=uri, bounds_min=Vector3(0.0, 0.0, 0.0), bounds_max=Vector3(1.0, 1.0, 1.0),
         )
         assert _resolve_real_mesh(store, geometry) is None
+
+
+class TestUnresolvablePayloadIsNeverASubstitutedBox:
+    """A geometry that NAMES a payload the store cannot produce must not become a placeholder cube.
+
+    A cube in its place is a fabricated surface standing exactly where the reconstruction's real geometry belongs;
+    the export silently claims success and the entity is reported as exported. The entity is skipped and named
+    instead. A geometry with no ``data_uri`` at all is an abstract box/plane and keeps its documented AABB cube.
+    """
+
+    @staticmethod
+    def _world(data_uri: str):
+        from provenance import Provenance
+        from world_ir.schema_v1 import Entity, EntityType
+        from world_ir.world_v1 import WorldIR
+
+        world = WorldIR(id="w-unresolved-payload")
+        world.geometries["geom-fused-surface"] = Geometry(
+            id="geom-fused-surface", type=GeometryType.MESH, lod_level=0, vertex_count=4, triangle_count=4,
+            data_uri=data_uri, data_hash="sha256:" + "0" * 64,
+            bounds_min=Vector3(0.0, 0.0, 0.0), bounds_max=Vector3(1.0, 1.0, 1.0), provenance=Provenance.ESTIMATED,
+        )
+        world.entities["surf-fused-surface"] = Entity(
+            id="surf-fused-surface", type=EntityType.STRUCTURE, name="Fused depth surface",
+            geometry_ids=["geom-fused-surface"], transform={"position": {"x": 0.5, "y": 0.5, "z": 0.5}},
+            provenance=Provenance.ESTIMATED, semantic_labels=["architecture/fused_surface"],
+        )
+        return world
+
+    def test_missing_payload_skips_the_entity_and_names_it_in_the_report(self):
+        from exporters.gltf.exporter import export_to_gltf_with_report
+
+        world = self._world("artifact://" + "a" * 64)
+        gltf, report = export_to_gltf_with_report(world, artifact_store=MemoryArtifactStore())
+
+        assert "surf-fused-surface" not in report.entities_exported
+        assert "surf-fused-surface" in report.entities_skipped
+        assert any("could not be resolved" in r for r in report.skip_reasons)
+        # no node at all: nothing was placed where the real surface belongs
+        assert gltf["nodes"] == []
+
+    def test_resolvable_payload_still_exports_real_triangles(self):
+        from exporters.gltf.exporter import export_to_gltf_with_report
+
+        store = MemoryArtifactStore()
+        payload, _ = _tetra_ply()
+        uri, _ = store.put(payload)
+        gltf, report = export_to_gltf_with_report(self._world(uri), artifact_store=store)
+
+        assert "surf-fused-surface" in report.entities_exported
+        assert gltf["nodes"], "a resolvable mesh must produce a node"
+        prim = gltf["meshes"][gltf["nodes"][0]["mesh"]]["primitives"][0]
+        assert prim["mode"] == 4
+        assert gltf["accessors"][prim["indices"]]["count"] == 12  # 4 triangles

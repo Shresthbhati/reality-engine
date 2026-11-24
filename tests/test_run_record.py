@@ -53,3 +53,26 @@ def test_colmap_info_reports_the_backends_seed_constant_and_a_version_string():
 
     info = colmap_info()
     assert info["seed"] == COLMAP_SEED and isinstance(info["version"], str) and info["version"]
+
+
+def test_stage_record_carries_duration_warnings_error_metrics_and_peak_memory():
+    """A run record must answer "how long, and why did it degrade" — these fields used to be dropped."""
+    from engine.pipeline.stages.base import RunManifest
+
+    start = datetime(2026, 11, 24, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 11, 24, 12, 0, 7, tzinfo=timezone.utc)
+    degraded = StageResult("perception", "degraded", "ih", {}, {"detections": 0.0}, ["no masks available"], None,
+                           start, end, 512.5)
+    failed = StageResult("mesh", "failed", "ih2", {}, {}, [], "COLMAP MVS unavailable", start, end, None)
+    manifest = RunManifest("p", "v9", [degraded, failed])
+    rec = build_run_record(manifest, seeds={}, commit="abc", models=[], colmap={"version": "x", "seed": 0})
+
+    first = rec["stages"][0]
+    assert first["duration_s"] == 7.0
+    assert first["warnings"] == ["no masks available"]
+    assert first["metrics"] == {"detections": 0.0}
+    assert first["peak_rss_mb"] == 512.5
+    second = rec["stages"][1]
+    assert second["error"] == "COLMAP MVS unavailable"
+    assert "peak_rss_mb" not in second and "warnings" not in second  # absent, never invented
+    json.dumps(rec)

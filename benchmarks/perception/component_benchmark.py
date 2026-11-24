@@ -47,13 +47,56 @@ from engine.multiengine.spatial_intelligence.taxonomy import (
 
 
 class ComponentFamily(str, Enum):
-    """Canonical component families required by Sprint 8."""
+    """Canonical component families required by Sprint 8 & 9."""
 
     DOORS_AND_WINDOWS = "doors_and_windows"
     ELECTRICAL = "electrical"
     FURNITURE = "furniture"
     PLUMBING_AND_HVAC = "plumbing_and_hvac"
     BUILDING_AND_EXTERIOR = "building_and_exterior"
+
+
+class EvaluationMode(str, Enum):
+    """Evaluation modes for benchmark integrity (Sprint 9 P0)."""
+
+    FRAME_LEVEL = "frame_level"
+    PHYSICAL_IDENTITY = "physical_identity"
+
+
+def is_class_compatible(pred_class: str, gt_class: str) -> bool:
+    """Checks whether prediction class is compatible with GT class or known synonym."""
+    if pred_class == gt_class:
+        return True
+    pred_clean = pred_class.lower().strip()
+    gt_clean = gt_class.lower().strip()
+    if pred_clean == gt_clean:
+        return True
+
+    # Synonyms mapping
+    synonyms = {
+        "door_knob": {"door_handle", "door_knob", "door_lever"},
+        "door_handle": {"door_handle", "door_knob", "door_lever"},
+        "door_lever": {"door_handle", "door_knob", "door_lever"},
+        "window_glass": {"window_glazing", "window_glass"},
+        "window_glazing": {"window_glazing", "window_glass"},
+        "socket": {"socket", "socket_plate", "outlet_plate", "plug_socket"},
+        "socket_plate": {"socket", "socket_plate", "outlet_plate", "plug_socket"},
+        "outlet_plate": {"socket", "socket_plate", "outlet_plate", "plug_socket"},
+        "plug_socket": {"socket", "socket_plate", "outlet_plate", "plug_socket"},
+        "switch": {"switch", "switch_plate", "control_switch"},
+        "switch_plate": {"switch", "switch_plate", "control_switch"},
+        "control_switch": {"switch", "switch_plate", "control_switch"},
+        "tap": {"tap", "faucet"},
+        "faucet": {"tap", "faucet"},
+        "table_leg": {"table_leg", "furniture_leg", "table_support"},
+        "chair_back": {"chair_back", "chair_backrest"},
+        "chair_backrest": {"chair_back", "chair_backrest"},
+    }
+    if gt_clean in synonyms and pred_clean in synonyms[gt_clean]:
+        return True
+
+    # Fallback to semantic compatibility
+    return are_semantically_compatible(pred_clean, gt_clean)
 
 
 COMPONENT_FAMILY_MEMBERS: dict[ComponentFamily, tuple[str, ...]] = {
@@ -106,11 +149,22 @@ class GroundTruthComponent:
     image_id: str
     box_2d: tuple[float, float, float, float]  # (x1, y1, x2, y2)
     parent_entity_id: str | None = None
+    physical_identity_id: str | None = None
     visibility: str = "visible"  # "visible", "occluded", "truncated", "absent"
     occlusion_level: str = "none"  # "none", "partial", "heavy"
     mask_polygon: tuple[tuple[float, float], ...] | None = None
     dataset_source: str = "unknown"  # "synthetic", "public_real", "independent_captured"
     is_component: bool = False
+
+    @property
+    def frame_instance_key(self) -> tuple[str, str]:
+        """Unique key for frame-level evaluation: (image_id, entity_id)."""
+        return (self.image_id, self.entity_id)
+
+    @property
+    def physical_key(self) -> str:
+        """Physical identity across sequential frames/viewpoints."""
+        return self.physical_identity_id if self.physical_identity_id else self.entity_id
 
     @property
     def area(self) -> float:
@@ -141,10 +195,15 @@ class ClassComponentMetrics:
     recall_50: float | None = None
     f1_50: float | None = None
     ap_50: float | None = None
+    ap50_101: float | None = None
+    ap50_11: float | None = None
     precision_75: float | None = None
     recall_75: float | None = None
     f1_75: float | None = None
     ap_75: float | None = None
+    ap75_101: float | None = None
+    ap75_11: float | None = None
+    ap_coco_50_95: float | None = None
     mean_mask_iou: float | None = None
     mean_boundary_iou: float | None = None
     boundary_f1: float | None = None
@@ -181,13 +240,20 @@ class ClassComponentMetrics:
                 "precision": round(self.precision_50, 4) if self.precision_50 is not None else None,
                 "recall": round(self.recall_50, 4) if self.recall_50 is not None else None,
                 "f1": round(self.f1_50, 4) if self.f1_50 is not None else None,
+                "ap50_101": round(self.ap50_101, 4) if self.ap50_101 is not None else (round(self.ap_50, 4) if self.ap_50 is not None else None),
+                "ap50_11": round(self.ap50_11, 4) if self.ap50_11 is not None else None,
                 "ap50": round(self.ap_50, 4) if self.ap_50 is not None else None,
             },
             "metrics_iou75": {
                 "precision": round(self.precision_75, 4) if self.precision_75 is not None else None,
                 "recall": round(self.recall_75, 4) if self.recall_75 is not None else None,
                 "f1": round(self.f1_75, 4) if self.f1_75 is not None else None,
+                "ap75_101": round(self.ap75_101, 4) if self.ap75_101 is not None else (round(self.ap_75, 4) if self.ap_75 is not None else None),
+                "ap75_11": round(self.ap75_11, 4) if self.ap75_11 is not None else None,
                 "ap75": round(self.ap_75, 4) if self.ap_75 is not None else None,
+            },
+            "metrics_coco": {
+                "map_50_95": round(self.ap_coco_50_95, 4) if self.ap_coco_50_95 is not None else None,
             },
             "mask_quality": {
                 "mean_mask_iou": round(self.mean_mask_iou, 4) if self.mean_mask_iou is not None else None,
@@ -226,6 +292,14 @@ class ComponentBenchmarkReport:
     results_by_class: dict[str, ClassComponentMetrics]
     results_by_family: dict[str, dict[str, Any]]
     telemetry: dict[str, Any] = field(default_factory=dict)
+    mode: str = "frame_level"
+    parent_detection_ap50_101: float | None = None
+    parent_detection_ap50_11: float | None = None
+    component_detection_ap50_101: float | None = None
+    component_detection_ap50_11: float | None = None
+    component_parent_link_precision: float | None = None
+    component_parent_link_recall: float | None = None
+    physical_identity_metrics: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -233,19 +307,27 @@ class ComponentBenchmarkReport:
             "dataset_name": self.dataset_name,
             "dataset_type": self.dataset_type,
             "split": self.split,
+            "mode": self.mode,
             "total_images": self.total_images,
             "summary": {
                 "evaluated_classes": self.evaluated_classes_count,
                 "measured_classes": self.measured_classes_count,
                 "unmeasured_classes": self.unmeasured_classes_count,
                 "parent_macro_f1": round(self.parent_detection_macro_f1, 4) if self.parent_detection_macro_f1 is not None else None,
+                "parent_ap50_101": round(self.parent_detection_ap50_101, 4) if self.parent_detection_ap50_101 is not None else (round(self.parent_detection_ap50, 4) if self.parent_detection_ap50 is not None else None),
+                "parent_ap50_11": round(self.parent_detection_ap50_11, 4) if self.parent_detection_ap50_11 is not None else None,
                 "parent_ap50": round(self.parent_detection_ap50, 4) if self.parent_detection_ap50 is not None else None,
                 "component_macro_f1": round(self.component_detection_macro_f1, 4) if self.component_detection_macro_f1 is not None else None,
+                "component_ap50_101": round(self.component_detection_ap50_101, 4) if self.component_detection_ap50_101 is not None else (round(self.component_detection_ap50, 4) if self.component_detection_ap50 is not None else None),
+                "component_ap50_11": round(self.component_detection_ap50_11, 4) if self.component_detection_ap50_11 is not None else None,
                 "component_ap50": round(self.component_detection_ap50, 4) if self.component_detection_ap50 is not None else None,
                 "component_parent_link_macro_f1": round(self.component_parent_link_macro_f1, 4) if self.component_parent_link_macro_f1 is not None else None,
+                "component_parent_link_precision": round(self.component_parent_link_precision, 4) if self.component_parent_link_precision is not None else None,
+                "component_parent_link_recall": round(self.component_parent_link_recall, 4) if self.component_parent_link_recall is not None else None,
             },
             "results_by_family": self.results_by_family,
             "results_by_class": {k: v.to_dict() for k, v in self.results_by_class.items()},
+            "physical_identity_metrics": self.physical_identity_metrics,
             "telemetry": self.telemetry,
         }
 
@@ -267,11 +349,11 @@ def compute_box_iou(box_a: Sequence[float], box_b: Sequence[float]) -> float:
     return inter / union if union > 0.0 else 0.0
 
 
-def compute_average_precision(
+def compute_voc_ap_11(
     precisions: Sequence[float],
     recalls: Sequence[float],
 ) -> float:
-    """Computes 11-point interpolated Average Precision (AP)."""
+    """Computes legacy 11-point interpolated Average Precision (PASCAL VOC style)."""
     if not precisions or not recalls:
         return 0.0
     rec_arr = np.array(recalls)
@@ -281,7 +363,32 @@ def compute_average_precision(
         p_candidates = prec_arr[rec_arr >= t]
         p_interp = float(np.max(p_candidates)) if len(p_candidates) > 0 else 0.0
         ap += p_interp / 11.0
-    return ap
+    return float(ap)
+
+
+def compute_coco_ap_101(
+    precisions: Sequence[float],
+    recalls: Sequence[float],
+) -> float:
+    """Computes standard 101-point interpolated Average Precision (COCO style)."""
+    if not precisions or not recalls:
+        return 0.0
+    rec_arr = np.array(recalls)
+    prec_arr = np.array(precisions)
+    ap = 0.0
+    for t in np.linspace(0.0, 1.0, 101):
+        p_candidates = prec_arr[rec_arr >= t]
+        p_interp = float(np.max(p_candidates)) if len(p_candidates) > 0 else 0.0
+        ap += p_interp / 101.0
+    return float(ap)
+
+
+def compute_average_precision(
+    precisions: Sequence[float],
+    recalls: Sequence[float],
+) -> float:
+    """Default AP computation: uses 101-point COCO interpolation."""
+    return compute_coco_ap_101(precisions, recalls)
 
 
 class ComponentBenchmarkEvaluator:
@@ -299,6 +406,7 @@ class ComponentBenchmarkEvaluator:
         eval_split: str = "test",
         split: str | None = None,
         benchmark_id: str = "component_benchmark",
+        mode: EvaluationMode | str = EvaluationMode.FRAME_LEVEL,
         telemetry: dict[str, Any] | None = None,
     ) -> ComponentBenchmarkReport:
         """Alias for evaluate_dataset."""
@@ -310,6 +418,7 @@ class ComponentBenchmarkEvaluator:
             dataset_type=dataset_type,
             split=actual_split,
             benchmark_id=benchmark_id,
+            mode=mode,
             telemetry=telemetry,
         )
 
@@ -321,9 +430,12 @@ class ComponentBenchmarkEvaluator:
         dataset_type: str = "synthetic",
         split: str = "test",
         benchmark_id: str = "component_benchmark",
+        mode: EvaluationMode | str = EvaluationMode.FRAME_LEVEL,
         telemetry: dict[str, Any] | None = None,
     ) -> ComponentBenchmarkReport:
         """Evaluates ground truth vs predictions across all canonical classes and component families."""
+        eval_mode = EvaluationMode(mode) if isinstance(mode, str) else mode
+
         # 1. Index GT and Predictions
         gt_by_class: dict[str, list[GroundTruthComponent]] = defaultdict(list)
         gt_by_img: dict[str, list[GroundTruthComponent]] = defaultdict(list)
@@ -351,10 +463,14 @@ class ComponentBenchmarkEvaluator:
         results_by_class: dict[str, ClassComponentMetrics] = {}
 
         parent_f1s: list[float] = []
-        parent_aps: list[float] = []
+        parent_aps_101: list[float] = []
+        parent_aps_11: list[float] = []
         comp_f1s: list[float] = []
-        comp_aps: list[float] = []
+        comp_aps_101: list[float] = []
+        comp_aps_11: list[float] = []
         comp_link_f1s: list[float] = []
+        comp_link_precs: list[float] = []
+        comp_link_recs: list[float] = []
 
         measured_count = 0
         unmeasured_count = 0
@@ -371,13 +487,16 @@ class ComponentBenchmarkEvaluator:
             if not gt_items:
                 # UNMEASURED: no ground truth in this dataset
                 unmeasured_count += 1
+                n_preds = len(pred_items)
                 results_by_class[cname] = ClassComponentMetrics(
                     class_name=cname,
                     family=fam,
                     is_component=is_comp,
                     status="UNMEASURED",
                     gt_count=0,
-                    pred_count=len(pred_items),
+                    pred_count=n_preds,
+                    false_positives_50=n_preds,
+                    false_positives_75=n_preds,
                     unmeasured_reason="NO_GROUND_TRUTH_IN_DATASET",
                 )
                 continue
@@ -392,23 +511,36 @@ class ComponentBenchmarkEvaluator:
             n_pred = len(pred_items)
 
             # Match predictions to GT at IoU 0.50 and 0.75
-            tp50, fp50, fn50, prec50, rec50, f1_50, ap50 = self._evaluate_box_matches(
-                gt_items, pred_items, iou_thresh=0.50
+            tp50, fp50, fn50, prec50, rec50, f1_50, ap50_101, ap50_11 = self._evaluate_box_matches(
+                gt_items, pred_items, iou_thresh=0.50, mode=eval_mode
             )
-            tp75, fp75, fn75, prec75, rec75, f1_75, ap75 = self._evaluate_box_matches(
-                gt_items, pred_items, iou_thresh=0.75
+            tp75, fp75, fn75, prec75, rec75, f1_75, ap75_101, ap75_11 = self._evaluate_box_matches(
+                gt_items, pred_items, iou_thresh=0.75, mode=eval_mode
             )
+
+            # COCO 10-threshold mAP [0.50:0.05:0.95]
+            coco_aps = []
+            for iou_t in np.linspace(0.50, 0.95, 10):
+                _, _, _, _, _, _, ap_t, _ = self._evaluate_box_matches(
+                    gt_items, pred_items, iou_thresh=float(iou_t), mode=eval_mode
+                )
+                coco_aps.append(ap_t)
+            ap_coco_50_95 = float(np.mean(coco_aps)) if coco_aps else 0.0
 
             # Evaluate parent-child link accuracy if component
             link_tp, link_fp, link_fn = 0, 0, 0
             link_prec, link_rec, link_f1 = None, None, None
 
             if is_comp:
-                link_tp, link_fp, link_fn = self._evaluate_parent_child_links(gt_items, pred_items, ground_truth, predictions)
+                link_tp, link_fp, link_fn = self._evaluate_parent_child_links(
+                    gt_items, pred_items, ground_truth, predictions, mode=eval_mode
+                )
                 if (link_tp + link_fp) > 0:
                     link_prec = float(link_tp) / float(link_tp + link_fp)
+                    comp_link_precs.append(link_prec)
                 if (link_tp + link_fn) > 0:
                     link_rec = float(link_tp) / float(link_tp + link_fn)
+                    comp_link_recs.append(link_rec)
                 if link_prec is not None and link_rec is not None and (link_prec + link_rec) > 0:
                     link_f1 = 2.0 * link_prec * link_rec / (link_prec + link_rec)
                 if link_f1 is not None:
@@ -434,11 +566,16 @@ class ComponentBenchmarkEvaluator:
                 precision_50=prec50,
                 recall_50=rec50,
                 f1_50=f1_50,
-                ap_50=ap50,
+                ap_50=ap50_101,
+                ap50_101=ap50_101,
+                ap50_11=ap50_11,
                 precision_75=prec75,
                 recall_75=rec75,
                 f1_75=f1_75,
-                ap_75=ap75,
+                ap_75=ap75_101,
+                ap75_101=ap75_101,
+                ap75_11=ap75_11,
+                ap_coco_50_95=ap_coco_50_95,
                 parent_assignment_tp=link_tp,
                 parent_assignment_fp=link_fp,
                 parent_assignment_fn=link_fn,
@@ -450,13 +587,17 @@ class ComponentBenchmarkEvaluator:
             if is_comp:
                 if f1_50 is not None:
                     comp_f1s.append(f1_50)
-                if ap50 is not None:
-                    comp_aps.append(ap50)
+                if ap50_101 is not None:
+                    comp_aps_101.append(ap50_101)
+                if ap50_11 is not None:
+                    comp_aps_11.append(ap50_11)
             else:
                 if f1_50 is not None:
                     parent_f1s.append(f1_50)
-                if ap50 is not None:
-                    parent_aps.append(ap50)
+                if ap50_101 is not None:
+                    parent_aps_101.append(ap50_101)
+                if ap50_11 is not None:
+                    parent_aps_11.append(ap50_11)
 
         # Aggregate by family
         results_by_family: dict[str, dict[str, Any]] = {}
@@ -474,22 +615,35 @@ class ComponentBenchmarkEvaluator:
                 "total_pred_samples": sum(r.pred_count for r in fam_res),
             }
 
+        # Multi-view physical identity metrics if requested
+        phys_metrics = None
+        if eval_mode == EvaluationMode.PHYSICAL_IDENTITY:
+            phys_metrics = self._evaluate_physical_identity_clustering(ground_truth, predictions)
+
         return ComponentBenchmarkReport(
             benchmark_id=benchmark_id,
             dataset_name=dataset_name,
             dataset_type=dataset_type,
             split=split,
+            mode=eval_mode.value,
             total_images=len(all_gt_images),
             evaluated_classes_count=len(all_eval_classes),
             measured_classes_count=measured_count,
             unmeasured_classes_count=unmeasured_count,
             parent_detection_macro_f1=float(np.mean(parent_f1s)) if parent_f1s else None,
-            parent_detection_ap50=float(np.mean(parent_aps)) if parent_aps else None,
+            parent_detection_ap50=float(np.mean(parent_aps_101)) if parent_aps_101 else None,
+            parent_detection_ap50_101=float(np.mean(parent_aps_101)) if parent_aps_101 else None,
+            parent_detection_ap50_11=float(np.mean(parent_aps_11)) if parent_aps_11 else None,
             component_detection_macro_f1=float(np.mean(comp_f1s)) if comp_f1s else None,
-            component_detection_ap50=float(np.mean(comp_aps)) if comp_aps else None,
+            component_detection_ap50=float(np.mean(comp_aps_101)) if comp_aps_101 else None,
+            component_detection_ap50_101=float(np.mean(comp_aps_101)) if comp_aps_101 else None,
+            component_detection_ap50_11=float(np.mean(comp_aps_11)) if comp_aps_11 else None,
             component_parent_link_macro_f1=float(np.mean(comp_link_f1s)) if comp_link_f1s else None,
+            component_parent_link_precision=float(np.mean(comp_link_precs)) if comp_link_precs else None,
+            component_parent_link_recall=float(np.mean(comp_link_recs)) if comp_link_recs else None,
             results_by_class=results_by_class,
             results_by_family=results_by_family,
+            physical_identity_metrics=phys_metrics,
             telemetry=telemetry or {},
         )
 
@@ -498,13 +652,22 @@ class ComponentBenchmarkEvaluator:
         gt_boxes: Sequence[GroundTruthComponent],
         pred_boxes: Sequence[DetectionBox],
         iou_thresh: float = 0.50,
-    ) -> tuple[int, int, int, float, float, float, float]:
-        """Greedy matching of predicted boxes to GT boxes ordered by confidence."""
-        if not gt_boxes:
-            return 0, len(pred_boxes), 0, 0.0, 0.0, 0.0, 0.0
+        mode: EvaluationMode | str = EvaluationMode.FRAME_LEVEL,
+    ) -> tuple[int, int, int, float, float, float, float, float]:
+        """Greedy matching of predicted boxes to GT boxes ordered by confidence.
 
+        Returns:
+            (tp, fp, fn, prec, rec, f1, ap50_101, ap50_11)
+        """
+        if not gt_boxes:
+            return 0, len(pred_boxes), 0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+        eval_mode = EvaluationMode(mode) if isinstance(mode, str) else mode
         sorted_preds = sorted(pred_boxes, key=lambda p: p.confidence, reverse=True)
-        matched_gt: set[str] = set()
+
+        # In FRAME_LEVEL mode, identity key is (image_id, entity_id)
+        # In PHYSICAL_IDENTITY mode, identity key is physical_key
+        matched_gt_keys: set[Any] = set()
 
         tp = 0
         fp = 0
@@ -514,21 +677,26 @@ class ComponentBenchmarkEvaluator:
         for p in sorted_preds:
             p_img = getattr(p, "source_image_id", "img")
             best_iou = 0.0
-            best_gt_id = None
+            best_gt_key = None
 
             for g in gt_boxes:
                 if g.image_id != p_img:
                     continue
-                if g.entity_id in matched_gt:
+                if not is_class_compatible(p.class_name, g.class_name):
                     continue
+
+                gt_key = g.frame_instance_key if eval_mode == EvaluationMode.FRAME_LEVEL else g.physical_key
+                if gt_key in matched_gt_keys:
+                    continue
+
                 iou = compute_box_iou(p.box_2d, g.box_2d)
                 if iou > best_iou:
                     best_iou = iou
-                    best_gt_id = g.entity_id
+                    best_gt_key = gt_key
 
-            if best_iou >= iou_thresh and best_gt_id is not None:
+            if best_iou >= iou_thresh and best_gt_key is not None:
                 tp += 1
-                matched_gt.add(best_gt_id)
+                matched_gt_keys.add(best_gt_key)
             else:
                 fp += 1
 
@@ -539,9 +707,10 @@ class ComponentBenchmarkEvaluator:
         prec = float(tp) / float(tp + fp) if (tp + fp) > 0 else 0.0
         rec = float(tp) / float(len(gt_boxes)) if len(gt_boxes) > 0 else 0.0
         f1 = (2.0 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
-        ap = compute_average_precision(precisions, recalls)
+        ap_101 = compute_coco_ap_101(precisions, recalls)
+        ap_11 = compute_voc_ap_11(precisions, recalls)
 
-        return tp, fp, fn, prec, rec, f1, ap
+        return tp, fp, fn, prec, rec, f1, ap_101, ap_11
 
     def _evaluate_parent_child_links(
         self,
@@ -549,27 +718,41 @@ class ComponentBenchmarkEvaluator:
         pred_components: Sequence[DetectionBox],
         all_gt: Sequence[GroundTruthComponent],
         all_preds: Sequence[DetectionBox],
+        mode: EvaluationMode | str = EvaluationMode.FRAME_LEVEL,
     ) -> tuple[int, int, int]:
-        """Evaluates whether components were correctly linked to their designated host parents."""
-        # Map GT entity IDs to parent entity IDs
-        gt_parent_map: dict[str, str] = {g.entity_id: g.parent_entity_id for g in gt_components if g.parent_entity_id}
+        """Evaluates whether components were correctly linked to their designated host parents.
+
+        Strict 1-to-1 matching:
+        - A GT component can be claimed at most once.
+        - Redundant component predictions claiming the same GT are penalized as false positives.
+        - Predictions with missing or incorrect parent boxes are penalized as false positives.
+        - Unclaimed GT components are counted as false negatives.
+        """
+        # Map GT entity IDs / frame keys to parent entity IDs
+        gt_parent_map: dict[tuple[str, str], str] = {
+            (g.image_id, g.entity_id): g.parent_entity_id
+            for g in gt_components if g.parent_entity_id
+        }
 
         # Build prediction box ID -> DetectionBox lookup
         pred_lookup = {p.box_id: p for p in all_preds}
 
-        # Match predicted components to GT components
+        # Match predicted components to GT components strictly 1-to-1
         link_tp = 0
         link_fp = 0
+        claimed_gt_keys: set[tuple[str, str]] = set()
 
-        claimed_gt: set[str] = set()
+        sorted_pred_comps = sorted(pred_components, key=lambda p: p.confidence, reverse=True)
 
-        for p in pred_components:
+        for p in sorted_pred_comps:
             p_img = getattr(p, "source_image_id", "img")
-            # Find matching GT component
             best_iou = 0.0
             matched_g: GroundTruthComponent | None = None
+
             for g in gt_components:
                 if g.image_id != p_img:
+                    continue
+                if not is_class_compatible(p.class_name, g.class_name):
                     continue
                 iou = compute_box_iou(p.box_2d, g.box_2d)
                 if iou > best_iou:
@@ -577,13 +760,18 @@ class ComponentBenchmarkEvaluator:
                     matched_g = g
 
             if best_iou >= 0.35 and matched_g is not None:
-                claimed_gt.add(matched_g.entity_id)
-                expected_parent_gt_id = gt_parent_map.get(matched_g.entity_id)
+                gt_key = (matched_g.image_id, matched_g.entity_id)
+                # 1-to-1 enforcement: if this GT component was already claimed, penalize as FP
+                if gt_key in claimed_gt_keys:
+                    link_fp += 1
+                    continue
 
-                # Check if predicted component has a parent box
+                expected_parent_gt_id = gt_parent_map.get(gt_key)
+
+                # Check if predicted component has a valid parent box
                 if p.parent_box_id and p.parent_box_id in pred_lookup:
                     parent_pred = pred_lookup[p.parent_box_id]
-                    # Find which GT object parent_pred matches
+                    # Find which GT parent object parent_pred matches
                     best_parent_iou = 0.0
                     matched_parent_gt_id = None
                     for g_parent in all_gt:
@@ -596,6 +784,7 @@ class ComponentBenchmarkEvaluator:
 
                     if best_parent_iou >= 0.35 and matched_parent_gt_id == expected_parent_gt_id:
                         link_tp += 1
+                        claimed_gt_keys.add(gt_key)
                     else:
                         link_fp += 1
                 else:
@@ -604,8 +793,53 @@ class ComponentBenchmarkEvaluator:
                 if p.parent_box_id:
                     link_fp += 1
 
-        link_fn = len(gt_parent_map) - len(claimed_gt)
+        link_fn = len(gt_parent_map) - len(claimed_gt_keys)
         return link_tp, link_fp, max(0, link_fn)
+
+    def _evaluate_physical_identity_clustering(
+        self,
+        ground_truth: Sequence[GroundTruthComponent],
+        predictions: Sequence[DetectionBox],
+    ) -> dict[str, Any]:
+        """Evaluates physical identity clustering across multiple viewpoints."""
+        gt_phys_map: dict[tuple[str, str], str] = {
+            (g.image_id, g.entity_id): g.physical_key for g in ground_truth
+        }
+        pred_phys_clusters: dict[str, list[tuple[str, str]]] = defaultdict(list)
+
+        for p in predictions:
+            p_img = getattr(p, "source_image_id", "img")
+            p_id = getattr(p, "physical_identity_id", None) or getattr(p, "track_id", None) or p.box_id
+            best_iou = 0.0
+            matched_gt_key = None
+            for g in ground_truth:
+                if g.image_id != p_img:
+                    continue
+                if not is_class_compatible(p.class_name, g.class_name):
+                    continue
+                iou = compute_box_iou(p.box_2d, g.box_2d)
+                if iou > best_iou:
+                    best_iou = iou
+                    matched_gt_key = (g.image_id, g.entity_id)
+            if best_iou >= 0.50 and matched_gt_key is not None:
+                pred_phys_clusters[str(p_id)].append(matched_gt_key)
+
+        purities = []
+        for cluster_id, items in pred_phys_clusters.items():
+            if not items:
+                continue
+            gt_phys_counts = defaultdict(int)
+            for it in items:
+                gt_phys_counts[gt_phys_map.get(it, "unknown")] += 1
+            dominant_count = max(gt_phys_counts.values())
+            purities.append(float(dominant_count) / float(len(items)))
+
+        mean_cluster_purity = float(np.mean(purities)) if purities else 1.0
+        return {
+            "total_predicted_clusters": len(pred_phys_clusters),
+            "mean_cluster_purity": round(mean_cluster_purity, 4),
+            "evaluated_cluster_instances": sum(len(c) for c in pred_phys_clusters.values()),
+        }
 
 
 def load_component_ground_truth(
@@ -670,7 +904,8 @@ def load_component_ground_truth(
             bbox = ann.get("bbox_2d") or ann.get("box_2d")
             if not bbox or len(bbox) != 4:
                 continue
-            entity_id = ann.get("ground_truth_id") or ann.get("entity_id", f"gt_{len(gt_components)}")
+            phys_id = ann.get("ground_truth_id") or ann.get("physical_identity_id") or ann.get("entity_id")
+            entity_id = ann.get("instance_id") or ann.get("entity_id") or phys_id or f"gt_{len(gt_components)}"
             cls_name = ann.get("class_name", "unknown")
             parent_id = ann.get("parent_entity_id") or ann.get("parent_id")
             is_occl = bool(ann.get("is_occluded", False))
@@ -683,6 +918,7 @@ def load_component_ground_truth(
 
             gt_components.append(GroundTruthComponent(
                 entity_id=entity_id,
+                physical_identity_id=phys_id,
                 class_name=cls_name,
                 image_id=img_name,
                 box_2d=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
@@ -707,6 +943,7 @@ def run_component_benchmark(
     target_width: int = 1280,
     target_height: int = 960,
     max_images: int | None = None,
+    mode: str = "frame_level",
 ) -> ComponentBenchmarkReport:
     """Executes the component-level perception benchmark on a dataset split."""
     import cv2
@@ -717,6 +954,8 @@ def run_component_benchmark(
 
     if max_images and len(image_files) > max_images:
         image_files = image_files[:max_images]
+        kept_img_names = {p.name for p in image_files}
+        gt_components = [g for g in gt_components if g.image_id in kept_img_names]
 
     # Initialize production pipeline with calibrator
     calibrator = load_default_production_calibrator()
@@ -728,7 +967,7 @@ def run_component_benchmark(
 
     all_predictions: list[DetectionBox] = []
 
-    print(f"Starting component benchmark on {dataset_path.name} (split={split}). Images: {len(image_files)}, GT boxes: {len(gt_components)}")
+    print(f"Starting component benchmark on {dataset_path.name} (split={split}, mode={mode}). Images: {len(image_files)}, GT boxes: {len(gt_components)}")
 
     for idx, img_path in enumerate(image_files):
         img_bgr = cv2.imread(str(img_path))
@@ -774,6 +1013,7 @@ def run_component_benchmark(
                 source_image_id=img_path.name,
                 parent_box_id=det.parent_box_id,
                 scale=det.scale,
+                physical_identity_id=getattr(det, "physical_identity_id", None),
                 attributes=det.attributes,
                 raw_score=det.raw_score,
             ))
@@ -784,6 +1024,7 @@ def run_component_benchmark(
         predictions=all_predictions,
         eval_split=split,
         dataset_name=dataset_path.name,
+        mode=mode,
     )
 
     if output_path:
@@ -798,10 +1039,11 @@ def run_component_benchmark(
 
 def main() -> int:
     """CLI entrypoint for running the component-level perception benchmark."""
-    parser = argparse.ArgumentParser(description="Reality Engine Component-Level Perception Benchmark (Sprint 8)")
+    parser = argparse.ArgumentParser(description="Reality Engine Component-Level Perception Benchmark (Sprint 9)")
     parser.add_argument("--dataset", type=str, default="datasets/real_room_capture", help="Path to dataset directory")
     parser.add_argument("--split", type=str, default="test", choices=["test", "dev", "all"], help="Evaluation split")
-    parser.add_argument("--output", type=str, default="artifacts/perception/component_benchmark_eval_sprint8.json", help="Output JSON path")
+    parser.add_argument("--mode", type=str, default="frame_level", choices=["frame_level", "physical_identity"], help="Evaluation mode")
+    parser.add_argument("--output", type=str, default="artifacts/perception/component_benchmark_eval_sprint9.json", help="Output JSON path")
     parser.add_argument("--width", type=int, default=1280, help="Target evaluation width")
     parser.add_argument("--height", type=int, default=960, help="Target evaluation height")
     parser.add_argument("--max-images", type=int, default=None, help="Max images to evaluate")
@@ -810,18 +1052,27 @@ def main() -> int:
     report = run_component_benchmark(
         dataset_path=args.dataset,
         split=args.split,
+        mode=args.mode,
         output_path=args.output,
         target_width=args.width,
         target_height=args.height,
         max_images=args.max_images,
     )
     print("\n" + "=" * 60)
-    print(f"COMPONENT BENCHMARK SUMMARY ({report.dataset_name} - {report.split}):")
+    print(f"COMPONENT BENCHMARK SUMMARY ({report.dataset_name} - {report.split} - mode={report.mode}):")
     print(f"Total taxonomy classes evaluated: {report.evaluated_classes_count}")
     print(f"Measured classes: {report.measured_classes_count}, Unmeasured classes: {report.unmeasured_classes_count}")
-    print(f"Parent Detection Macro F1: {report.parent_detection_macro_f1:.4f}, AP50: {report.parent_detection_ap50:.4f}")
-    print(f"Component Detection Macro F1: {report.component_detection_macro_f1:.4f}, AP50: {report.component_detection_ap50:.4f}")
-    print(f"Component-Parent Link Macro F1: {report.component_parent_link_macro_f1:.4f}")
+    p_f1 = report.parent_detection_macro_f1 if report.parent_detection_macro_f1 is not None else 0.0
+    p_ap_coco = report.parent_detection_ap50_101 if report.parent_detection_ap50_101 is not None else 0.0
+    p_ap_voc = report.parent_detection_ap50_11 if report.parent_detection_ap50_11 is not None else 0.0
+    c_f1 = report.component_detection_macro_f1 if report.component_detection_macro_f1 is not None else 0.0
+    c_ap_coco = report.component_detection_ap50_101 if report.component_detection_ap50_101 is not None else 0.0
+    link_f1 = report.component_parent_link_macro_f1 if report.component_parent_link_macro_f1 is not None else 0.0
+    print(f"Parent Detection Macro F1: {p_f1:.4f}, COCO AP50: {p_ap_coco:.4f}, VOC AP50: {p_ap_voc:.4f}")
+    print(f"Component Detection Macro F1: {c_f1:.4f}, COCO AP50: {c_ap_coco:.4f}")
+    print(f"Component-Parent Link Macro F1: {link_f1:.4f}")
+    if report.physical_identity_metrics:
+        print(f"Physical Identity Purity: {report.physical_identity_metrics.get('mean_cluster_purity', 0.0):.4f}")
     print("=" * 60)
     return 0
 

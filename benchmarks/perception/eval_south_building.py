@@ -35,7 +35,7 @@ from engine.multiengine.spatial_intelligence.taxonomy import resolve_taxonomy_cl
 def evaluate_south_building(
     dataset_dir: str = "datasets/south_building",
     max_images: int = 10,
-    output_path: str = "artifacts/perception/south_building_generalisation_sprint8.json",
+    output_path: str = "artifacts/perception/south_building_generalisation_sprint9.json",
 ) -> dict[str, Any]:
     """Runs perception on real outdoor images of South Building."""
     img_dir = Path(dataset_dir) / "images"
@@ -116,7 +116,7 @@ def evaluate_south_building(
     ]
 
     report = {
-        "benchmark_id": "south_building_outdoor_generalisation_sprint8",
+        "benchmark_id": "south_building_outdoor_generalisation_sprint9",
         "dataset": "south_building",
         "dataset_type": "independent_captured_outdoor",
         "domain": "exterior",

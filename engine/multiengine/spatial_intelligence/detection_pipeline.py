@@ -58,6 +58,7 @@ class DetectionBox:
     parent_box_id: str | None = None
     child_box_ids: tuple[str, ...] = ()
     scale: DetectionScale = DetectionScale.STANDARD
+    physical_identity_id: str | None = None
     mask_polygon: tuple[tuple[float, float], ...] | None = None
     mask_area_px: int = 0
     is_truncated: bool = False
@@ -448,24 +449,28 @@ def transform_tile_detections_to_image(
 # ============================================================================
 
 GENUINE_STRUCTURAL_PARTS: dict[str, tuple[str, ...]] = {
-    "door": ("door_handle", "door_frame", "door_lock", "door_hinge", "door_panel", "door_glazing", "door_hardware"),
-    "window": ("window_frame", "window_sill", "window_glazing", "window_glass", "window_handle", "window_sash", "window_mullion"),
+    "door": ("door_handle", "door_knob", "door_lever", "door_frame", "door_leaf", "door_lock", "door_hinge", "door_latch", "door_threshold", "door_panel", "door_glazing", "door_hardware"),
+    "window": ("window_frame", "window_sash", "window_sill", "window_glazing", "window_glass", "window_mullion", "window_handle", "window_hinge", "window_shutter"),
     "table": ("table_top", "furniture_leg", "table_leg", "table_support", "drawer", "drawer_handle"),
-    "desk": ("drawer", "drawer_handle", "socket", "furniture_leg", "table_leg", "table_top"),
+    "desk": ("drawer", "drawer_handle", "socket", "outlet_plate", "furniture_leg", "table_leg", "table_top"),
     "chair": ("chair_seat", "chair_backrest", "chair_back", "chair_armrest", "chair_arm", "furniture_leg", "chair_leg"),
     "cabinet": ("cabinet_carcass", "cabinet_door", "cabinet_handle", "drawer", "drawer_handle", "shelf"),
-    "wardrobe": ("cabinet_door", "cabinet_handle", "drawer", "drawer_handle", "shelf"),
-    "outlet_plate": ("socket", "switch", "control_switch"),
-    "electrical_outlet": ("socket", "switch", "outlet_plate", "control_switch"),
-    "switchboard_plate": ("socket", "switch", "control_switch", "outlet_plate"),
-    "socket": ("switch", "outlet_plate"),
+    "wardrobe": ("cabinet_carcass", "cabinet_door", "cabinet_handle", "drawer", "drawer_handle", "shelf"),
+    "outlet_plate": ("socket", "plug_socket", "switch", "control_switch", "plug_head"),
+    "electrical_outlet": ("socket", "plug_socket", "switch", "outlet_plate", "control_switch", "plug_head"),
+    "switchboard_plate": ("socket", "plug_socket", "switch", "control_switch", "outlet_plate", "distribution_board"),
+    "distribution_board": ("switch", "control_switch", "conduit", "cable"),
+    "socket": ("switch", "outlet_plate", "plug_head"),
     "light": ("diffuser", "light_housing", "mounting_hardware"),
     "lamp": ("diffuser", "light_housing", "mounting_hardware"),
     "ceiling_light": ("diffuser", "light_housing", "mounting_hardware"),
     "faucet": ("faucet_handle", "spout", "tap", "fitting"),
     "sink": ("faucet", "basin", "drain", "pipe", "spout", "tap", "fitting"),
     "pipe": ("fitting", "valve"),
-    "radiator": ("valve", "pipe", "mounting_hardware"),
+    "radiator": ("valve", "pipe", "vent", "mounting_hardware"),
+    "tree": ("trunk", "branch"),
+    "street_furniture": ("sign", "signboard", "lamppost"),
+    "road": ("curb", "road_edge", "footpath"),
 }
 
 EXPECTED_KEY_COMPONENTS: dict[str, tuple[str, ...]] = {
@@ -624,7 +629,12 @@ def resolve_component_ownership(
         inter_area = inter_x * inter_y
         ioa = inter_area / comp_area
 
-        if ioa >= min_containment_ioa and comp_area <= 0.85 * host.area:
+        # Perimeter/structural parts (frames, sashes, carcasses) can be up to 1.15x host area
+        max_ratio = 1.15 if component_class in (
+            "window_frame", "door_frame", "door_leaf", "cabinet_carcass", "door_panel", "window_sash", "table_top"
+        ) else 0.85
+
+        if ioa >= min_containment_ioa and comp_area <= max_ratio * host.area:
             qualifying_hosts.append((ioa, specificity, host))
 
     if not qualifying_hosts:
@@ -1269,20 +1279,23 @@ def suppress_duplicates_preserving_parts(
             ioa_det = inter_area / area_det if area_det > 0 else 0.0
             ioa_existing = inter_area / area_existing if area_existing > 0 else 0.0
 
-            # Genuine taxonomy part-parent relationships: require containment (IoA >= 0.35, area <= 0.85x parent)
+            # Genuine taxonomy part-parent relationships: require containment (IoA >= 0.35, area ratio checked)
+            max_ratio_det = 1.15 if det.class_name in ("window_frame", "door_frame", "door_leaf", "cabinet_carcass", "door_panel", "window_sash", "table_top") else 0.85
+            max_ratio_existing = 1.15 if existing.class_name in ("window_frame", "door_frame", "door_leaf", "cabinet_carcass", "door_panel", "window_sash", "table_top") else 0.85
+
             det_is_part_of_existing = (
                 (det.parent_box_id == existing.box_id) or
                 ((tax_det.parent_class in (tax_existing.taxonomy_id, tax_existing.name) or
                   tax_det.name in GENUINE_STRUCTURAL_PARTS.get(tax_existing.name, ()) or
                   (tax_det.name in tax_existing.potential_parts and det.scale == DetectionScale.MICRO))
-                 and ioa_det >= 0.35 and area_det <= 0.85 * area_existing)
+                 and ioa_det >= 0.35 and area_det <= max_ratio_det * area_existing)
             )
             existing_is_part_of_det = (
                 (existing.parent_box_id == det.box_id) or
                 ((tax_existing.parent_class in (tax_det.taxonomy_id, tax_det.name) or
                   tax_existing.name in GENUINE_STRUCTURAL_PARTS.get(tax_det.name, ()) or
                   (tax_existing.name in tax_det.potential_parts and existing.scale == DetectionScale.MICRO))
-                 and ioa_existing >= 0.35 and area_existing <= 0.85 * area_det)
+                 and ioa_existing >= 0.35 and area_existing <= max_ratio_existing * area_det)
             )
 
             if det_is_part_of_existing:
@@ -1528,7 +1541,10 @@ def suppress_duplicates_preserving_parts(
                 det_area = det.area
                 ioa = inter_area / det_area if det_area > 0 else 0.0
 
-                if ioa >= 0.45 and det.area <= 0.70 * cand.area:
+                max_cand_ratio = 1.15 if det.class_name in (
+                    "window_frame", "door_frame", "door_leaf", "cabinet_carcass", "door_panel", "window_sash", "table_top"
+                ) else 0.85
+                if ioa >= 0.40 and det.area <= max_cand_ratio * cand.area:
                     score = cand.confidence * max(0.10, ioa)
                     if score > best_parent_score:
                         best_parent_score = score
@@ -1859,15 +1875,33 @@ class GroundingDinoDetectorAdapter:
         for i in range(0, len(queries), self.batch_size):
             chunk = list(queries[i:i + self.batch_size])
             text_queries = [f"{q}." if not q.endswith(".") else q for q in chunk]
-            inp = self._proc(
-                images=[img_infer] * len(chunk),
-                text=text_queries,
-                return_tensors="pt",
-                padding=True,
-            ).to(self._device)
+            try:
+                inp = self._proc(
+                    images=[img_infer] * len(chunk),
+                    text=text_queries,
+                    return_tensors="pt",
+                    padding=True,
+                ).to(self._device)
 
-            with torch.no_grad():
-                res = self._model(**inp)
+                with torch.no_grad():
+                    res = self._model(**inp)
+            except Exception as exc:
+                # If CUDA sticky error or memory pressure occurs, clear cache and fall back gracefully
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                try:
+                    self._device = "cpu"
+                    self._model = self._model.to("cpu")
+                    inp = self._proc(
+                        images=[img_infer] * len(chunk),
+                        text=text_queries,
+                        return_tensors="pt",
+                        padding=True,
+                    ).to("cpu")
+                    with torch.no_grad():
+                        res = self._model(**inp)
+                except Exception:
+                    continue
 
             post = self._proc.post_process_grounded_object_detection(
                 res,
@@ -1876,6 +1910,11 @@ class GroundingDinoDetectorAdapter:
                 text_threshold=max(0.15, self.box_threshold * 0.8),
                 target_sizes=[(new_h, new_w)] * len(chunk),
             )
+
+            # Release tensor allocations immediately to preserve VRAM
+            del inp, res
+            if torch.cuda.is_available() and self._device == "cuda":
+                torch.cuda.empty_cache()
 
             for q, r in zip(chunk, post):
                 clean_cls = q.rstrip(".").replace(" ", "_").lower()

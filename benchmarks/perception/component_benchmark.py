@@ -95,8 +95,8 @@ def is_class_compatible(pred_class: str, gt_class: str) -> bool:
     if gt_clean in synonyms and pred_clean in synonyms[gt_clean]:
         return True
 
-    # Fallback to semantic compatibility
-    return are_semantically_compatible(pred_clean, gt_clean)
+    # Fallback to semantic compatibility (strictly excluding parent-part relationships)
+    return are_semantically_compatible(pred_clean, gt_clean, allow_parent_part=False)
 
 
 COMPONENT_FAMILY_MEMBERS: dict[ComponentFamily, tuple[str, ...]] = {
@@ -768,6 +768,14 @@ class ComponentBenchmarkEvaluator:
 
                 expected_parent_gt_id = gt_parent_map.get(gt_key)
 
+                # If the ground-truth component itself is unparented
+                if expected_parent_gt_id is None:
+                    if p.parent_box_id:
+                        # Hallucinated a parent link on an unparented component
+                        link_fp += 1
+                    # If p.parent_box_id is None, it correctly has no parent link
+                    continue
+
                 # Check if predicted component has a valid parent box
                 if p.parent_box_id and p.parent_box_id in pred_lookup:
                     parent_pred = pred_lookup[p.parent_box_id]
@@ -835,9 +843,38 @@ class ComponentBenchmarkEvaluator:
             purities.append(float(dominant_count) / float(len(items)))
 
         mean_cluster_purity = float(np.mean(purities)) if purities else 1.0
+
+        # Cluster Completeness: For each GT physical entity, what fraction is captured in its dominant predicted cluster?
+        gt_cluster_assignments: dict[str, list[str]] = defaultdict(list)
+        for p_id, items in pred_phys_clusters.items():
+            for it in items:
+                gt_phys_id = gt_phys_map.get(it)
+                if gt_phys_id:
+                    gt_cluster_assignments[gt_phys_id].append(str(p_id))
+
+        completeness_scores = []
+        for gt_phys_id, cluster_ids in gt_cluster_assignments.items():
+            if not cluster_ids:
+                continue
+            counts: dict[str, int] = defaultdict(int)
+            for c_id in cluster_ids:
+                counts[c_id] += 1
+            dominant_c_count = max(counts.values())
+            completeness_scores.append(float(dominant_c_count) / float(len(cluster_ids)))
+
+        mean_cluster_completeness = float(np.mean(completeness_scores)) if completeness_scores else 1.0
+
+        # Harmonic mean (Physical Identity Association F1 / V-measure)
+        if (mean_cluster_purity + mean_cluster_completeness) > 0:
+            phys_f1 = 2.0 * mean_cluster_purity * mean_cluster_completeness / (mean_cluster_purity + mean_cluster_completeness)
+        else:
+            phys_f1 = 0.0
+
         return {
             "total_predicted_clusters": len(pred_phys_clusters),
             "mean_cluster_purity": round(mean_cluster_purity, 4),
+            "mean_cluster_completeness": round(mean_cluster_completeness, 4),
+            "physical_identity_f1": round(phys_f1, 4),
             "evaluated_cluster_instances": sum(len(c) for c in pred_phys_clusters.values()),
         }
 
@@ -858,9 +895,13 @@ def load_component_ground_truth(
     if not gt_file.is_file():
         gt_file = path / "ground_truth.json"
 
-    # Find image files
+    # Find image files (handling both lowercase and uppercase extensions)
     img_dir = path / "images" if (path / "images").is_dir() else path
-    all_images = sorted(list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.png")) + list(img_dir.glob("*.jpeg")))
+    all_images = sorted(list(set(
+        list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.JPG")) +
+        list(img_dir.glob("*.png")) + list(img_dir.glob("*.PNG")) +
+        list(img_dir.glob("*.jpeg")) + list(img_dir.glob("*.JPEG"))
+    )))
 
     if not gt_file.is_file():
         return [], all_images, {

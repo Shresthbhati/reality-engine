@@ -1393,10 +1393,13 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     from apps.api.stage_checkpoints import DbCheckpointStore
     from engine.pipeline.stages.base import StageContext
     from engine.hardware.admission import StageAdmission
-    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, build_stages
+    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, SPATIAL_PROFILE_NAME, build_stages
     from engine.pipeline.stages.runner import StageCancelled, run_stages
+    from apps.api import spatial_global_stage as _sg
 
-    stages = build_stages(PROFILE_NAME)
+    # opt-in, default OFF: the default profile is untouched unless RE_SPATIAL_GLOBAL is set
+    profile_name = SPATIAL_PROFILE_NAME if _sg.enabled() else PROFILE_NAME
+    stages = build_stages(profile_name)
     specs = [stage.spec for stage in stages]
     ctx = StageContext(
         job_id=job.id, workdir=Path(tempfile.gettempdir()), artifacts={}, params={"session_id": job.entity_id},
@@ -1406,6 +1409,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             "changeset_commit": seg_changeset_commit,
         }},
     )
+    if profile_name == SPATIAL_PROFILE_NAME:
+        ctx.params["spatial_solver"] = _sg.solver()
+        ctx.state["spatial_inputs"] = _sg.inputs_for_job(job)   # None until a perception producer registers spatial_inputs.v1
+        # opened lazily, when the stage runs: the world is only bound by then (segments load it)
+        ctx.state["spatial_store_opener"] = lambda: _sg.open_store(
+            os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"), world.team_id, world.id)
     ended = [0]
 
     cancel_before = {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate"}
@@ -1428,7 +1437,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                                   versions={s.name: s.version for s in specs}),
                 abandoned),
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
-            pipeline_profile=PROFILE_NAME, pipeline_version=PIPELINE_VERSION,
+            pipeline_profile=profile_name, pipeline_version=PIPELINE_VERSION,
             stage_timeouts=_stage_timeouts(),
             admission=StageAdmission.from_env(),  # memory-aware admission + per-stage RSS (RE_MEMORY_ADMISSION=off|record|enforce)
         )
@@ -1437,6 +1446,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         manifest = await asyncio.to_thread(drive)
     except StageCancelled:
         raise _JobCancelled(f"job {job.id} cancelled by operator") from None
+    if ctx.state.get("spatial_facts"):
+        holder["spatial_global"] = ctx.state["spatial_facts"]
     if any(r.status == "failed" for r in manifest.stages):
         # the ORIGINAL exception (type, message, failure_kind, retryable) drives process_next_job's grading
         raise ctx.state.get("stage_exc") or RuntimeError(next(r.error for r in manifest.stages if r.status == "failed"))
@@ -1518,6 +1529,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "skipped_evidence": skipped_evidence,
         "scene_identity": scene_info,
         **({"evidence_world": holder["evidence_world"]} if holder.get("evidence_world") else {}),
+        **_sg.facts_for_report(holder.get("spatial_global")),
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)

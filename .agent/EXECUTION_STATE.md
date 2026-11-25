@@ -2509,3 +2509,28 @@ Already true on this branch before this work: B01 stage resume (`DbCheckpointSto
 Not started: B03 (one ontology + attributes in YAML), B06 SAM2-on-live-path wiring (SAM 2 already default perception masks here),
 B07 wiring, B12 deterministic COLMAP, B16 refinement loop, B18 Studio UI, B19 exporter parts/attributes, B20 release run (needs real photos twice,
 external tools, a person with a laser measure).
+
+## 2026-11-25 Spatial reasoning & reconstruction compiler sprint (branch claude/reality-engine-spatial-compiler-367e36)
+- Added `reconstruction/spatial/` (model, association, constraints, uncertainty, refinement, topology, completeness, compiler),
+  `benchmarks/spatial/` (synth, run_spatial_benchmark) and `tests/test_spatial_compiler.py`; regenerated `docs/CI_TEST_REGISTRY.md`.
+- Pipeline: StructuralObservation -> associate_structure -> solve_spatial_constraints -> validate_topology (rooms as planar faces,
+  STRUCTURAL_ERROR / CONTRADICTION / INCOMPLETE / INFO) -> assess_completeness (separate axes, no score) -> to_worldir -> WorldStore.
+- `world.geometries` regression: still NOT reproduced; guarded by `test_world_geometries_survive_save_reload_and_incremental_save`.
+- Not wired: no producer yet emits `StructuralObservation` (FreeBuff contract needed); `apps/api` does not call `compile_spatial`.
+- Verification: see the final report of this sprint; results file `benchmarks/results/spatial_compiler_benchmark.json`.
+
+## 2026-11-25 Phase 2: global geometric reconstruction (uncommitted at time of writing)
+- Reproduced Phase 1: 91 neighbouring tests pass; Phase-1 benchmark JSON kept verbatim as `benchmarks/results/spatial_phase1_baseline.json`.
+- Association failures (same 84 runs, 7 scenes x seeds 0-11): initial 12 -> 1 now (a 4.1-sigma single-view fragment, excluded as tentative). Detail: `benchmarks/results/spatial_failure_analysis.json`.
+- Added `frames.py` (Sim3 + registry, provenance, loop/scale checks), `multiview.py` (joint pose + wall-line optimizer, Cauchy loss, posterior covariance, raw preserved), `validation.py` (invalid / uncertain / incomplete / valid_partial / valid_complete), `compile_multiview` (separated sigma parts), `benchmarks/spatial/run_multiview_benchmark.py`, `tests/test_spatial_multiview.py`.
+- Not done: no real image set with independent 3D ground truth; no scale/tilt optimization; Gemini's observation contract is not wired (nothing emits image-frame `StructuralObservation` yet).
+
+## 2026-11-25 Sparse solver + pipeline integration (uncommitted at time of writing)
+- `multiview.py`: solver auto|dense|sparse, analytic sparse Jacobian, sparse-LU covariance; association fit memoisation (48 views 3.3 s -> 0.54 s).
+- `reconstruction/spatial/stage.py` (spatial_inputs.v1 contract, structured refusals, SCALE_NOT_METRIC, input-hash dedup, WorldStore lineage),
+  `engine/pipeline/stages/s14_spatial_global.py` (optional stage), non-default profile `interior_survey_spatial`, `apps/api/spatial_global_stage.py`
+  (RE_SPATIAL_GLOBAL, default OFF; producer seam `register_inputs_provider`), jobs.py wiring; facts land in `job.payload.spatial_global`.
+- Tests: `tests/test_spatial_global_stage.py` (21, includes two real API-job tests). NOTE: `tests/test_spatial_stage.py` is a PRE-EXISTING different test file
+  (from #380); an overwrite of it during this work was caught and restored from git.
+- Pre-existing failures reproduced on 7aa752e7 (not caused by this work): 3 in tests/test_stage_ladder.py.
+- Not done: no real producer of spatial_inputs.v1; failure-taxonomy rewrite (only split/merge/opening classes exist); API route dedicated to spatial facts.

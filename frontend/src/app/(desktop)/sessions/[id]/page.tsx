@@ -36,6 +36,15 @@ export default async function SessionDetailPage({
         action={
           <div className="flex items-center gap-2">
             <StatusBadge state={session.state} />
+            {session.worldId && (
+              <Link
+                href={`/worlds/${session.worldId}`}
+                className="text-sm font-semibold px-3 h-8 flex items-center rounded-md transition-colors"
+                style={{ background: "var(--primary)", color: "var(--on-primary)" }}
+              >
+                Open 3D Studio
+              </Link>
+            )}
             <Link
               href={`/sessions/${session.id}/map`}
               className="text-sm font-medium px-3 h-8 flex items-center rounded-md transition-colors"

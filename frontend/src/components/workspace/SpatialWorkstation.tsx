@@ -100,6 +100,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // Entities hidden from the viewport through the Scene tree eye toggles.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
@@ -251,7 +252,20 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
   const handleSelectEntity = useCallback((id: string | null) => {
     setSelectedEntityId(id);
+    setSelectedEntityIds((prev) => {
+      if (id === null) return prev.length === 0 ? prev : [];
+      if (prev.length === 1 && prev[0] === id) return prev;
+      if (prev.length > 1 && prev.includes(id)) return prev;
+      return [id];
+    });
     if (id !== null) {
+      setInspectorOpen(true);
+    }
+  }, []);
+
+  const handleSelectEntities = useCallback((ids: string[]) => {
+    setSelectedEntityIds(ids);
+    if (ids.length > 0) {
       setInspectorOpen(true);
     }
   }, []);
@@ -274,6 +288,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
   const handleClearSelection = useCallback(() => {
     setSelectedEntityId(null);
+    setSelectedEntityIds([]);
     setSelectedEvidenceId(null);
   }, []);
 
@@ -349,6 +364,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   if (resetForWorldId !== worldId) {
     setResetForWorldId(worldId);
     setSelectedEntityId(null);
+    setSelectedEntityIds([]);
     setSelectedEvidenceId(null);
     setActiveQuery(null);
     setSelectedVersionId(null);
@@ -356,6 +372,26 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setHiddenIds(new Set());
     setBrowseOpen(false);
   }
+
+  // Deep-link support: /worlds/[id]?entity=<id> or ?evidence=<id>
+  useEffect(() => {
+    if (typeof window === "undefined" || !worldId) return;
+    const sp = new URLSearchParams(window.location.search);
+    const entParam = sp.get("entity");
+    const evParam = sp.get("evidence");
+    if (entParam) {
+      queueMicrotask(() => {
+        setSelectedEntityId(entParam);
+        setSelectedEntityIds([entParam]);
+        setInspectorOpen(true);
+      });
+    } else if (evParam) {
+      queueMicrotask(() => {
+        setSelectedEvidenceId(evParam);
+        setInspectorOpen(true);
+      });
+    }
+  }, [worldId]);
 
   // Undo/Redo studio history state
   const [canUndo, setCanUndo] = useState(false);
@@ -562,10 +598,18 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       worldId={worldId}
       activeVersion={currentVersionId ?? undefined}
       selectedEntityId={selectedEntityId}
+      selectedEntityIds={selectedEntityIds}
       onSelectEntity={handleSelectEntity}
+      onSelectEntities={handleSelectEntities}
       onFrameEntity={handleFrameEntity}
       onTraceEvidence={handleTraceEvidence}
       onCommitCorrection={handleCommitCorrection}
+      onVersionMutated={() => {
+        refetchVersions();
+        refetchIr();
+        refreshStatus();
+      }}
+      isHistoricalVersion={!viewingCurrent}
       onOpenDiff={handleOpenDiff}
       onOpenRoomConstruction={() => setConstructionModalOpen(true)}
       onExport={handleExport}
@@ -709,6 +753,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               captureQuality={captureQuality}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
+              selectedEntityIds={selectedEntityIds}
+              onSelectEntities={handleSelectEntities}
               highlightedEvidenceId={selectedEvidenceId}
               onSelectEvidence={setSelectedEvidenceId}
               queryMatchingIds={queryMatchingIds}
@@ -760,6 +806,24 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
               Viewing evidence run {evidenceView.runId}: a candidate world, not the committed version. Positions may be in SfM units, not metres.
               <button type="button" className="underline" onClick={() => setEvidenceView(null)}>Back to the committed world</button>
+            </div>
+          )}
+
+          {!viewingCurrent && !evidenceView && (
+            <div
+              role="status"
+              data-testid="stale-version-banner"
+              className="absolute top-14 left-1/2 -translate-x-1/2 z-20 text-xs rounded-md px-3 py-1.5 flex gap-3 items-center shadow-lg"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--warning)", color: "var(--warning)" }}
+            >
+              <span>Viewing historical version (read-only).</span>
+              <button
+                type="button"
+                className="underline font-semibold text-[var(--text-primary)] cursor-pointer"
+                onClick={() => setSelectedVersionId(null)}
+              >
+                Return to current version
+              </button>
             </div>
           )}
 
@@ -949,6 +1013,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         onClose={() => setDiffModalOpen(false)}
         baseVersion={diffVersions.base || versions[0]?.parentVersionId || ""}
         headVersion={diffVersions.head || versions[0]?.id || ""}
+        versions={versions.map((v) => ({
+          id: v.id,
+          label: v.label || v.id.slice(0, 8),
+          commitMessage: v.changeSummary ?? undefined,
+          parentVersionId: v.parentVersionId,
+        }))}
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);
           handleFrameEntity(eid);

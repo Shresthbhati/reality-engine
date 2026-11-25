@@ -48,6 +48,12 @@ export default async function EvidenceDetailPage({
               alt={evidence.name}
               className="max-h-full max-w-full object-contain"
             />
+          ) : evidence.type === "VIDEO" ? (
+            <video
+              src={evidenceArtifactUrl(evidence.id)}
+              controls
+              className="max-h-full max-w-full"
+            />
           ) : (
             <div className="flex flex-col items-center gap-2 text-sm" style={{ color: "var(--text-tertiary)" }}>
               <Icon className="w-8 h-8" />
@@ -95,15 +101,26 @@ export default async function EvidenceDetailPage({
         </aside>
       </div>
 
-      {evidence.sessionId && (
-        <div className="shrink-0 border-t px-6 py-3" style={{ borderColor: "var(--border)" }}>
-          <Link
-            href={`/sessions/${evidence.sessionId}`}
-            className="text-sm font-medium hover:underline"
-            style={{ color: "var(--accent)" }}
-          >
-            View Session →
-          </Link>
+      {(evidence.sessionId || evidence.worldId) && (
+        <div className="shrink-0 border-t px-6 py-3 flex items-center gap-4" style={{ borderColor: "var(--border)" }}>
+          {evidence.worldId && (
+            <Link
+              href={`/worlds/${evidence.worldId}?evidence=${encodeURIComponent(evidence.id)}`}
+              className="text-sm font-semibold hover:underline"
+              style={{ color: "var(--accent)" }}
+            >
+              Inspect in 3D Studio →
+            </Link>
+          )}
+          {evidence.sessionId && (
+            <Link
+              href={`/sessions/${evidence.sessionId}`}
+              className="text-sm font-medium hover:underline"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              View Session →
+            </Link>
+          )}
         </div>
       )}
     </div>

@@ -49,22 +49,34 @@ def open_store(root: str | os.PathLike, team_id: str, world_id: str):
     return store, (versions[-1].version_id if versions else None)
 
 
+# Module-global seam kept for backward compatibility with tests and ad-hoc registration.
+# Production jobs should prefer the per-job provider stored in ``ctx.state["spatial_inputs_provider"]``
+# (set by the host before running stages) to avoid cross-job contamination when multiple jobs run
+# concurrently. The stage checks the per-job provider first.
 _PROVIDER = None
 
 
 def register_inputs_provider(fn) -> None:
-    """Seam for the perception producer: ``fn(job) -> spatial_inputs.v1 dict | None``. None unregisters. Until one is registered
-    the stage is skipped (nothing is fabricated)."""
+    """Seam for the perception producer: ``fn(job) -> spatial_inputs.v1 dict | None``. None unregisters.
+    Until one is registered the stage is skipped (nothing is fabricated).
+
+    Deprecated for production use: module-global state is not safe when multiple jobs run
+    concurrently. Prefer ``ctx.state["spatial_inputs_provider"]`` set by the host per job."""
     global _PROVIDER
     _PROVIDER = fn
 
 
-def inputs_for_job(job):
-    if _PROVIDER is None:
+def inputs_for_job(job, provider=None) -> dict | None:
+    """Return the spatial_inputs.v1 dict for a job, or None when no producer supplies it.
+
+    ``provider`` (when given) takes precedence over the module-global seam. A producer bug is
+    logged and the stage skips -- it never sinks the reconstruction job."""
+    fn = provider or _PROVIDER
+    if fn is None:
         return None
     try:
-        return _PROVIDER(job)
-    except Exception:  # noqa: BLE001 - a producer bug must not sink the reconstruction job; it is logged and the stage skips
+        return fn(job)
+    except Exception:  # noqa: BLE001 - a producer bug must not sink the reconstruction job
         import logging
         logging.getLogger("reality.api.spatial_global").exception("spatial inputs provider failed")
         return None

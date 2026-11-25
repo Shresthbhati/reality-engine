@@ -284,8 +284,6 @@ def _scale_extras(world: "WorldIR") -> dict:
 
     sb = scale_block(world)
     return {k: sb[k] for k in ("units", "scale_kind", "physically_measured", "calibration_status", "dimension_state", "scale_m_per_gauge", "warnings")}
-
-
 def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None,
                    _unresolved: Optional[list] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.

@@ -31,8 +31,27 @@ class SpatialGlobal:
 
         inputs = ctx.state.get("spatial_inputs")
         if inputs is None:
-            ctx.state["spatial_facts"] = {"status": "skipped", "reason": "no structural observations were supplied by a producer"}
-            return done("skipped", ["no structural observations supplied: nothing to optimize (producer not wired for this job)"])
+            # Lazy per-job provider (set by the host before running stages): avoids module-global state
+            # so concurrent jobs never observe each other's observations.
+            provider = ctx.state.get("spatial_inputs_provider")
+            if provider is not None:
+                try:
+                    inputs = provider()
+                except Exception:  # noqa: BLE001 - a producer bug skips the stage, never sinks the job
+                    import logging
+                    logging.getLogger("reality.api.spatial_global").exception("spatial inputs provider failed")
+                    inputs = None
+            if inputs is None:
+                # Module-global seam (backward compatibility with tests and ad-hoc registration).
+                # The per-job provider above takes precedence; this is the fallback.
+                try:
+                    from apps.api.spatial_global_stage import inputs_for_job as _inputs_for_job
+                    inputs = _inputs_for_job(ctx.state.get("job_obj"))
+                except Exception:  # noqa: BLE001
+                    inputs = None
+            if inputs is None:
+                ctx.state["spatial_facts"] = {"status": "skipped", "reason": "no structural observations were supplied by a producer"}
+                return done("skipped", ["no structural observations supplied: nothing to optimize (producer not wired for this job)"])
         store, parent, warn = ctx.state.get("spatial_store"), ctx.state.get("spatial_parent"), []
         opener = ctx.state.get("spatial_store_opener")
         if opener is not None and store is None:

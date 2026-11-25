@@ -44,6 +44,7 @@ from apps.api.routes_registration import registration
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_sites import sites
 from apps.api.routes_splats import splats_router
+from apps.api.routes_spatial_global import spatial_global_router
 from apps.api.routes_temporal import temporal_router
 from apps.api.routes_bcf import bcf_router
 from apps.api.routes_surface_quality import surface_quality_router

@@ -13,6 +13,7 @@ from engine.pipeline.stages.base import Stage, StageContext, StageResult, StageS
 
 PIPELINE_VERSION = "p108-ladder"
 PROFILE_NAME = "interior_survey_standard"
+SPATIAL_PROFILE_NAME = "interior_survey_spatial"
 
 #: P108: the progressive ladder (``reconstruct``: multi-view, falling back to single-image) is kept; the fine stages run
 #: inside its multi-view rung and are reported right after it (``ladder.LadderReport``), ``skipped`` with a reason when

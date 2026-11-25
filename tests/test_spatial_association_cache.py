@@ -220,3 +220,135 @@ def test_the_stage_maps_insufficient_to_skipped_with_the_code():
     stage = [s for s in build_stages("interior_survey_spatial") if s.spec.name == "spatial_global"]
     r = run_stages(stage, ctx, pipeline_profile="interior_survey_spatial", pipeline_version="t").stages[0]
     assert r.status == "skipped" and "NO_EVIDENCE" in r.warnings[0]
+
+
+# --------------------------------------------------------------------------- identity decisions: split / merge / history
+
+def _wall_obs(tag, segs, n=3):
+    from reconstruction.spatial.model import Kind, StructuralObservation
+    return [StructuralObservation(f"{tag}{i}#w{k}", f"{tag}{i}", Kind.WALL, a, b, 0.03)
+            for k, (a, b) in enumerate(segs) for i in range(n)]
+
+
+def test_identity_split_merge_and_history_are_recorded_not_hidden():
+    from reconstruction.spatial.compiler import compile_spatial, identity_report, to_worldir
+    whole = compile_spatial(_wall_obs("a", [((0, 0), (4, 0))]))
+    halves = compile_spatial(_wall_obs("b", [((0, 0), (1.8, 0)), ((2.3, 0), (4, 0))]))
+    w_whole, w_halves = to_worldir(whole), to_worldir(halves)
+
+    split = identity_report(halves, w_whole)                       # one wall became two
+    kinds = sorted(d["decision"] for d in split.decisions if d.get("kind") == "wall")
+    assert kinds == ["split", "split_inherits"]
+    assert len(split.mapping) == 1                                           # exactly one inherits the old id; the other is genuinely new
+
+    merge = identity_report(whole, w_halves)                       # two walls became one
+    md = [d for d in merge.decisions if d.get("kind") == "wall"]
+    assert any(d["decision"] == "merge" and len(d["also_explains"]) == 1 for d in md)
+    assert any(d["decision"] == "lost" for d in merge.decisions) is False      # the unclaimed one is explained by the merge, not silently dropped
+
+    # unrelated building: nothing is inherited, previous entities are reported as lost
+    far = compile_spatial(_wall_obs("c", [((50, 50), (54, 50))]))
+    d = identity_report(far, w_whole)
+    assert not d.mapping and {x["decision"] for x in d.decisions} == {"new", "lost"}
+
+    # history accumulates per stable id across versions
+    h1 = identity_report(whole, w_halves)
+    h2 = identity_report(whole, w_halves, previous_history=h1.history)
+    assert any(len(v) == 2 and [x["version"] for x in v] == [1, 2] for v in h2.history.values())
+
+
+def test_ambiguous_identity_is_flagged_when_two_previous_walls_are_equally_close():
+    from reconstruction.spatial.compiler import compile_spatial, identity_report, to_worldir
+    twin = compile_spatial(_wall_obs("a", [((0, 0), (4, 0)), ((0, 0.4), (4, 0.4))]))       # two parallel walls 0.4 m apart
+    one = compile_spatial(_wall_obs("b", [((0, 0.2), (4, 0.2))]))                           # a wall exactly between them
+    r = identity_report(one, to_worldir(twin))
+    wall = next(d for d in r.decisions if d.get("kind") == "wall")
+    assert wall["decision"] in ("ambiguous", "merge") and wall["runner_up_cost_m"] is not None
+
+
+def test_identity_decisions_survive_the_store(tmp_path):
+    from benchmarks.spatial.synth import two_rooms_shared_wall
+    from reconstruction.spatial.stage import SCHEMA, run_spatial_global
+    from worldstore.store import WorldStore
+
+    def inputs(n):
+        local, prior, _ = simulate_multiview(two_rooms_shared_wall(), SimConfig(n_images=n, seed=101, p_truncate=0.0), PoseSim())
+        return {"schema": SCHEMA, "scale_state": "metric", "frame": "world", "storeys": {"L0": 0.0},
+                "poses": [{"image_id": p.image_id, "theta": p.theta, "tx": p.tx, "ty": p.ty, "sigma_theta": p.sigma_theta, "sigma_t": p.sigma_t}
+                          for p in prior.values()], "observations": [o.to_dict() for o in local]}
+    store = WorldStore(tmp_path / "s")
+    a = run_spatial_global(inputs(6), store=store)
+    b = run_spatial_global(inputs(7), store=store, parent=a.version_id)
+    c = run_spatial_global(inputs(8), store=store, parent=b.version_id)
+    ident = store.load_version(c.version_id).metadata["spatial_identity"]
+    assert ident["carried"] > 0 and c.facts["identity"].get("carried", 0) > 0
+    assert any(len(v) >= 2 for v in ident["history"].values())                   # lineage spans versions, keyed by the STABLE id
+    assert set(store.load_version(a.version_id).entities) == set(store.load_version(c.version_id).entities)
+
+
+# --------------------------------------------------------- user corrections / exclusions carried across runs (stage level)
+
+def _stage_inputs(n, seed=101):
+    from benchmarks.spatial.synth import two_rooms_shared_wall
+    from reconstruction.spatial.stage import SCHEMA
+    local, prior, _ = simulate_multiview(two_rooms_shared_wall(), SimConfig(n_images=n, seed=seed, p_truncate=0.0), PoseSim())
+    return {"schema": SCHEMA, "scale_state": "metric", "frame": "world", "storeys": {"L0": 0.0},
+            "poses": [{"image_id": p.image_id, "theta": p.theta, "tx": p.tx, "ty": p.ty, "sigma_theta": p.sigma_theta, "sigma_t": p.sigma_t}
+                      for p in prior.values()], "observations": [o.to_dict() for o in local]}
+
+
+def test_user_dimension_and_class_corrections_are_replayed_onto_the_next_run(tmp_path):
+    from reconstruction.spatial.stage import run_spatial_global
+    from world_ir.corrections import make_correction, reclassify_entity, record_correction
+    from worldstore.store import WorldStore
+    store = WorldStore(tmp_path / "s")
+    a = run_spatial_global(_stage_inputs(6), store=store)
+    w = store.load_version(a.version_id)
+    assert w.metadata["scale"]["state"] == "metric"                                    # needed for VERIFIED dimensions; declared by the producer
+    wall = next(i for i, e in w.entities.items() if e.type.value == "wall")
+    door = next(i for i, e in w.entities.items() if e.type.value == "door")
+    record_correction(w, make_correction(w, wall, "length_m", 7.77, "tape measure"))
+    reclassify_entity(w, door, "door/double", "it is a double door")
+    v2 = store.save_version(w, parent=a.version_id)
+    c = run_spatial_global(_stage_inputs(9), store=store, parent=v2.version_id)         # more evidence arrives later
+    out = store.load_version(c.version_id)
+    assert wall in out.entities and door in out.entities                               # identity carried, so the corrections find their entity
+    cp = out.entities[wall].custom_properties
+    assert cp["length_m"] == 7.77 and cp["dimensions"]["length_m"]["state"] == "VERIFIED"
+    assert out.entities[door].custom_properties["classification_basis"] == "user" and out.entities[door].semantic_labels[0] == "door/double"
+    assert c.facts["user_carry"]["corrections"]["applied"] >= 1 and c.facts["user_carry"]["decisions"]["applied"] >= 1
+
+
+def test_exclusions_drop_evidence_before_optimisation_but_never_lose_it(tmp_path):
+    from reconstruction.spatial.stage import HASH_KEY, run_spatial_global
+    from worldstore.store import WorldStore
+    store = WorldStore(tmp_path / "s")
+    a = run_spatial_global(_stage_inputs(8), store=store)
+    w = store.load_version(a.version_id)
+    wall = next(i for i, e in w.entities.items() if e.type.value == "wall")
+    evidence = set(w.entities[wall].custom_properties["evidence_ids"])
+    w.metadata["spatial_exclusions"] = [{"entity_id": wall, "note": "this is a curtain, not a wall"}]
+    v2 = store.save_version(w, parent=a.version_id)
+    same_inputs = run_spatial_global(_stage_inputs(8), store=store, parent=v2.version_id)
+    assert same_inputs.status != "unchanged"                                           # an exclusion changes the input hash: reprocess
+    out = store.load_version(same_inputs.version_id)
+    f = same_inputs.facts["user_exclusions"]
+    assert f["applied"][0]["observations_dropped"] == len(evidence) and not f["unresolved"]
+    kept = {o["evidence_id"] for o in out.metadata["spatial_evidence"]}
+    assert not (kept & evidence)                                                       # not in the reconstruction ...
+    assert {o["evidence_id"] for o in out.metadata["spatial_excluded_evidence"]} == evidence   # ... but still in the record
+    assert out.metadata["spatial_exclusions"] and out.metadata[HASH_KEY] != w.metadata[HASH_KEY]
+    again = run_spatial_global(_stage_inputs(8), store=store, parent=same_inputs.version_id)
+    assert again.status == "unchanged"                                                 # stable once the exclusion is part of the hash
+
+
+def test_an_exclusion_that_matches_nothing_is_reported_not_silently_ignored(tmp_path):
+    from reconstruction.spatial.stage import run_spatial_global
+    from worldstore.store import WorldStore
+    store = WorldStore(tmp_path / "s")
+    a = run_spatial_global(_stage_inputs(6), store=store)
+    w = store.load_version(a.version_id)
+    w.metadata["spatial_exclusions"] = [{"evidence_id": "img999#nothing"}]
+    v2 = store.save_version(w, parent=a.version_id)
+    c = run_spatial_global(_stage_inputs(7), store=store, parent=v2.version_id)
+    assert c.facts["user_exclusions"]["unresolved"] and not c.facts["user_exclusions"]["applied"]

@@ -283,12 +283,22 @@ def _cluster_walls(wobs: Sequence[StructuralObservation], storey: str | None, cf
     ambiguous: dict[str, tuple[str, ...]] = {}
     gate_of: dict[str, _Gate] = {}
 
+    fit_cache: dict[tuple[str, ...], LineFit] = {}
+
+    def fit_of(ms):
+        # a cluster's fit only changes when its membership does; memoised by the (sorted) evidence ids it contains
+        key = tuple(sorted(m.evidence_id for m in ms))
+        f = fit_cache.get(key)
+        if f is None:
+            f = fit_cache[key] = fit_line(ms)
+        return f
+
     def candidates(o, excl=None):
         out = []
         for ci, members in enumerate(clusters):
             ms = [m for m in members if m is not excl]
             if ms:
-                g = _gate(o, fit_line(ms), ms, cfg)
+                g = _gate(o, fit_of(ms), ms, cfg)
                 if g.passed:
                     out.append((g.score, ci, g))
         return sorted(out, key=lambda x: (x[0], x[1]))

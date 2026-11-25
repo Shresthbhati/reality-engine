@@ -32,6 +32,8 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 from scipy.optimize import least_squares
+from scipy.sparse import csr_matrix, identity
+from scipy.sparse.linalg import splu
 
 from .association import AssociationConfig, associate_structure
 from .model import Kind, StructuralObservation
@@ -57,6 +59,8 @@ class MultiViewConfig:
     outlier_k: float = 3.5
     max_nfev: int = 100
     observed_ratio: float = 0.7           # posterior/prior sigma below this => the data constrains that parameter
+    solver: str = "auto"                  # 'auto' | 'dense' | 'sparse'; auto = dense up to `auto_sparse_above` images, sparse above
+    auto_sparse_above: int = 16           # measured crossover: dense is faster below ~20 images, sparse wins on time and memory above
     association: AssociationConfig = field(default_factory=AssociationConfig)
 
 
@@ -90,6 +94,11 @@ class MultiViewResult:
     rounds: int
     seconds: float
     converged: bool
+    solver: str = "dense"
+    jac_seconds: float = 0.0
+    n_params: int = 0
+    n_residuals: int = 0
+    jac_nnz: int = 0
 
     def to_dict(self) -> dict:
         return {"poses": {k: {"theta": p.theta, "tx": p.tx, "ty": p.ty, "cov": None if p.cov is None else p.cov.tolist(),
@@ -151,6 +160,8 @@ def optimize_multiview(
     cov: dict[str, np.ndarray | None] = {k: None for k in img_ids}
     cost0 = cost1 = 0.0
     nfev_total, rounds_done, converged, in_clusters = 0, 0, True, set()
+    jac_seconds, shape_info, solver_used = 0.0, (0, 0, 0), "dense"
+    nI = len(img_ids)
     n_clusters, z_obs = 0, {}
     for rnd in range(cfg.n_rounds):
         world = [apply_pose(o, *cur[o.image_id], sigma=_inflated_sigma(o, post_sigma[o.image_id])) for o in walls]
@@ -242,15 +253,59 @@ def optimize_multiview(
                     Jm[m + 3 * r_i + j, 3 * fpos[i] + j] = 1.0 / prior_sig[i][j]
             return Jm
 
-        sol = least_squares(resid, x0, jac=jac, loss=cfg.loss, f_scale=cfg.f_scale, method="trf",
-                            max_nfev=cfg.max_nfev, x_scale="jac")
+        # Sparsity structure: row r (an observation end point) touches its image's 3 pose parameters and its wall's 2 line
+        # parameters; a prior row touches one pose parameter. The (row, col) index arrays are built ONCE per round and reused
+        # on every iteration; only the values are recomputed.
+        k_of = np.array([fpos[i] for i in im])
+        obs_rows = np.repeat(np.arange(m), 5)
+        obs_cols = np.stack([3 * k_of, 3 * k_of + 1, 3 * k_of + 2, nP + cl, nP + n_clusters + cl], axis=1).ravel()
+        pr_rows = m + np.arange(3 * len(prior_rows))
+        pr_cols = np.array([3 * fpos[i] + j for i in prior_rows for j in range(3)], dtype=int)
+        pr_inv = np.array([1.0 / prior_sig[i][j] for i in prior_rows for j in range(3)])
+        all_rows, all_cols = np.concatenate([obs_rows, pr_rows]), np.concatenate([obs_cols, pr_cols])
+        shape = (m + 3 * len(prior_rows), len(x0))
+
+        def jac_sparse(x):
+            th, tx, ty, al, rho = unpack(x)
+            c, s_ = np.cos(th[im]), np.sin(th[im])
+            wx, wy = c * X - s_ * Y + tx[im], s_ * X + c * Y + ty[im]
+            ca, sa = np.cos(al[cl]), np.sin(al[cl])
+            vals = np.stack([(ca * (-s_ * X - c * Y) + sa * (c * X - s_ * Y)) / SG, ca / SG, sa / SG,
+                             (-sa * wx + ca * wy) / SG, -1.0 / SG], axis=1).ravel()
+            return csr_matrix((np.concatenate([vals, pr_inv]), (all_rows, all_cols)), shape=shape)
+
+        use_sparse = cfg.solver == "sparse" or (cfg.solver == "auto" and nI > cfg.auto_sparse_above)
+        solver_used = "sparse" if use_sparse else "dense"
+        jt = [0.0]
+        jfun = jac_sparse if use_sparse else jac
+
+        def timed_jac(x):
+            t_ = time.perf_counter()
+            out = jfun(x)
+            jt[0] += time.perf_counter() - t_
+            return out
+
+        kw = {"tr_solver": "lsmr", "tr_options": {"atol": 1e-12, "btol": 1e-12}} if use_sparse else {}
+        sol = least_squares(resid, x0, jac=timed_jac, loss=cfg.loss, f_scale=cfg.f_scale, method="trf",
+                            max_nfev=cfg.max_nfev, x_scale="jac", **kw)
+        jac_seconds += jt[0]
+        shape_info = (len(x0), shape[0], int(len(all_rows)))
         nfev_total += int(sol.nfev)
         converged = converged and bool(sol.success)
         th, tx, ty, al, rho = unpack(sol.x)
         for i in used_imgs:
             cur[img_ids[i]] = (float(th[i]), float(tx[i]), float(ty[i]))
-        J = sol.jac.toarray() if hasattr(sol.jac, "toarray") else sol.jac
-        C = np.linalg.pinv(J.T @ J)
+        if use_sparse:
+            # posterior blocks for the pose parameters only: solve (J^T J + eps I) X = E_pose with one sparse LU
+            Js = csr_matrix(sol.jac)
+            H = (Js.T @ Js).tocsc() + 1e-12 * identity(Js.shape[1], format="csc")
+            E = np.zeros((Js.shape[1], nP))
+            E[np.arange(nP), np.arange(nP)] = 1.0
+            Cp = splu(H).solve(E)
+            C = Cp
+        else:
+            J = sol.jac.toarray() if hasattr(sol.jac, "toarray") else sol.jac
+            C = np.linalg.pinv(J.T @ J)
         for i, k in fpos.items():
             cov[img_ids[i]] = C[3 * k:3 * k + 3, 3 * k:3 * k + 3].copy()
             post_sigma[img_ids[i]] = (math.sqrt(max(cov[img_ids[i]][0, 0], 0.0)),
@@ -283,7 +338,7 @@ def optimize_multiview(
         pres[k] = PoseResult(k, *cur[k], cov[k], pr, obs_dims)
     outliers = sorted(ev for ev, z in z_obs.items() if z > cfg.outlier_k)
     return MultiViewResult(pres, out_obs, raw, z_obs, outliers, n_clusters, cost0, cost1, nfev_total, rounds_done,
-                           time.perf_counter() - t0, converged)
+                           time.perf_counter() - t0, converged, solver_used, jac_seconds, *shape_info)
 
 
 def attach_optimization(world, result: MultiViewResult) -> None:

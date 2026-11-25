@@ -26,7 +26,15 @@ PIPELINE_PROFILES: dict[str, list[str]] = {
         "pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize",
         "quality_report", "compile_validate", "changeset_commit",
     ],
+    # NON-DEFAULT: the standard ladder plus the optional global spatial optimization before compile_validate. The host selects it
+    # only when RE_SPATIAL_GLOBAL is on (see SPATIAL_PROFILE_NAME); the default profile above is unchanged.
+    "interior_survey_spatial": [
+        "evidence_resolve", "evidence_quality", "reconstruct",
+        "pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize",
+        "quality_report", "spatial_global", "compile_validate", "changeset_commit",
+    ],
 }
+SPATIAL_PROFILE_NAME = "interior_survey_spatial"
 
 
 @dataclass
@@ -64,8 +72,9 @@ def build_stages(profile: str = PROFILE_NAME) -> list[Stage]:
     from engine.pipeline.stages.s11_compile_validate import CompileValidate
     from engine.pipeline.stages.s12_quality_report import QualityReport
     from engine.pipeline.stages.s13_changeset import ChangesetCommit
+    from engine.pipeline.stages.s14_spatial_global import SpatialGlobal
 
     by_name: dict[str, Stage] = {c.spec.name: c() for c in (
-        EvidenceResolve, EvidenceQuality, Reconstruct, QualityReport, CompileValidate, ChangesetCommit)}
+        EvidenceResolve, EvidenceQuality, Reconstruct, QualityReport, CompileValidate, ChangesetCommit, SpatialGlobal)}
     by_name.update({c.spec.name: LadderReport(c.spec) for c in fine_chain()})
     return [by_name[n] for n in PIPELINE_PROFILES[profile]]

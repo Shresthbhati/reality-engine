@@ -138,3 +138,15 @@ Availability observed on this machine: OpenCV 5.0.0, pycolmap 4.2.1, Open3D 0.20
 | Robust least squares | adopted: Cauchy (default) / Huber / soft-L1 via scipy | downweights a grossly wrong pose without hard rejection |
 
 Scaling measured (corridor scene, analytic Jacobian, cold / warm restart): 8 images 0.6 s, 32 images 2.2 s, 64 images 7.6 s (warm restart 3.3 s, 16 vs 44 function evaluations). Dense (JᵀJ)⁻¹ covariance is the remaining super-linear term.
+
+## 8. Sparse multi-view solve and pipeline stage (2026-11-25)
+
+Measured (`benchmarks/results/spatial_solver_benchmark.json`; 3 scenes x 4 evaluation seeds = 12 runs per row; this machine only):
+the analytic **sparse** Jacobian (5 nonzeros per observation row, index arrays reused across iterations) with SciPy `least_squares`
+`tr_solver="lsmr"`, plus a sparse-LU posterior covariance for the pose block, reproduces the dense solution (wall offset identical to 1e-4 m,
+pose error within 2e-3 m, one 16-view run with a 4e-2 cost difference) but is **slower below ~20 images** (more LSMR iterations) and faster above:
+24 views 0.83 -> 0.78 s, 48 views 2.0 -> 1.4 s, 96 views 11.8 -> 5.0 s, peak traced memory 27.8 -> 4.5 MB at 96 views. One sparse run at 96 views failed to converge
+(none dense). Decision: `solver="auto"` (dense up to 16 images, sparse above), both retained because neither dominates.
+The larger finding: association, not the solver, dominated wall time (90% at 48 images); memoising cluster fits cut 48 views from 3.3 s to 0.54 s.
+Ceres / GTSAM: not adopted (not installed; SciPy's sparse trust-region solves this problem structure); revisit only if a block Schur / marginalisation
+solver is needed beyond ~500 images.

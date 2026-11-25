@@ -218,7 +218,7 @@ class PoseSim:
     sigma_theta: float = 0.02         # rad, true prior pose error AND the sigma declared for it
     sigma_t: float = 0.10             # m
     declared_scale: float = 1.0       # declared sigma = true sigma * this (<1 = overconfident producer)
-    bad_image: Optional[int] = None   # one image whose prior pose is grossly wrong (but declared with the usual sigma)
+    bad_image: int | None = None   # one image whose prior pose is grossly wrong (but declared with the usual sigma)
     bad_t: float = 0.6
     seed: int = 100
 

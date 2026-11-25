@@ -150,3 +150,25 @@ pose error within 2e-3 m, one 16-view run with a 4e-2 cost difference) but is **
 The larger finding: association, not the solver, dominated wall time (90% at 48 images); memoising cluster fits cut 48 views from 3.3 s to 0.54 s.
 Ceres / GTSAM: not adopted (not installed; SciPy's sparse trust-region solves this problem structure); revisit only if a block Schur / marginalisation
 solver is needed beyond ~500 images.
+
+## 9. Exact sparse LM, per-technology decision table (2026-11-25)
+
+Correction to section 8: the first sparse path (SciPy TRF with `tr_solver="lsmr"` and an analytic sparse Jacobian) was not merely slower below 20 views; it
+failed to converge in 1/12 runs at 96 views (irregular room, seed 101: optimality 39 -> 27 over 400 evaluations, cost ~317 vs the dense 293.5). Cause:
+inexact LSMR trust-region steps on a badly scaled system (radians vs metres vs a 1e-4 gauge prior), not the iteration limit. Replaced by
+`sparse_lm.py` (sparse-LU Levenberg-Marquardt, IRLS weights, Nielsen damping, scipy-default tolerances). On 36 DEVELOPMENT-seed problems
+(seeds 0-2; 2/4/12/96 views x 3 scenes): 0 non-converged (6 with the first LM settings, 2 with default tolerances), sparse cost never above dense. In the 2-4 view
+problems dense TRF stops early (xtol) at a higher objective than the LM reaches, yet lower objective did not mean better geometry there (2 views: wall offset
+0.114 dense vs 0.119 sparse in the v2 table), which is why `auto` keeps dense for small problems.
+
+| Technology | Purpose | Licence (source) | Dependency / hardware | Measured benefit here | Decision |
+|---|---|---|---|---|---|
+| SciPy `least_squares` (TRF), `sparse.linalg.splu` | dense solve; sparse LU for LM + covariance | BSD-3 (read from the installed distribution) | core dependency, CPU | baseline solver; sparse-LU is the exact linear solve the LM needs | adopted |
+| Own sparse LM (`sparse_lm.py`, ~120 lines) | exact sparse robust solve | repo code | none | fixes LSMR stall; 96 views 2.5 s vs dense 13.7 s on the reproduced case | adopted (justified by the measured failure) |
+| Ceres Solver | large sparse NLLS, Schur complement | Apache-2.0 (upstream, not re-read) | native build, CPU | not measured; not installed | rejected for now: no measured need below ~500 images |
+| GTSAM | factor graphs, incremental iSAM2 | BSD (upstream, not re-read) | native build, CPU | not measured; not installed | rejected for now; revisit for true incremental SLAM-style updates |
+| PyPose | GPU-batched Lie-group optimization | Apache-2.0 (upstream, not re-read) | PyTorch (installed), GPU optional | not measured; not installed | rejected: problem is SO(2) x R^2, no manifold need |
+| COLMAP / pycolmap 4.2.1 | SfM poses and intrinsics | BSD (per repo registry; pycolmap installed) | CPU/GPU | consumed as pose priors, not re-implemented | adopted as the pose source |
+| OpenCV 5.0.0 | features, PnP | Apache-2.0 (upstream) | installed, CPU | not needed for plan-view structure | not used here |
+| Open3D 0.20.0 | point-cloud cleanup | MIT (`.agent/LICENSES.yaml`) | installed, CPU/GPU | wall-point refinement consumes `ReconstructionResult` points only | adopted (existing) |
+| Shapely 2.1.2 / NetworkX 3.6.1 | polygons, graphs | not re-read | installed; shapely bundles GEOS | would also close unevidenced gaps / is only an optional extra | not used: own half-edge faces keep junctions evidence-gated; `scipy.sparse.csgraph` covers components |

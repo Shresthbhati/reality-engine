@@ -46,6 +46,8 @@ class SpatialGlobal:
         if out.status in ("failed", "refused"):
             e = out.errors[0]
             return done("failed", [f"{e['code']}: {e['message']}"], error=f"{e['code']}: {e['message']}")
+        if out.status == "insufficient":
+            return done("skipped", [f"{out.facts['code']}: {out.facts['reason']}"])
         if out.status == "unchanged":
             return done("skipped", ["identical input hash: the existing spatial version stands"])
         f = out.facts

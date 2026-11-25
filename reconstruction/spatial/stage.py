@@ -24,7 +24,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from .compiler import compile_multiview, to_worldir
+from .compiler import compile_multiview, stable_id_map, to_worldir
 from .model import DIMENSIONS, Kind, StructuralObservation
 from .multiview import ImagePose, MultiViewConfig, attach_optimization
 from .validation import classify_reconstruction
@@ -81,7 +81,7 @@ def parse_inputs(d: dict):
 
 @dataclass
 class SpatialStageOutput:
-    status: str                       # succeeded | degraded | failed | refused | unchanged
+    status: str                       # succeeded | degraded | failed | refused | unchanged | insufficient
     facts: dict[str, Any]
     world: Any = None
     version_id: str | None = None
@@ -96,6 +96,8 @@ def latest_input_hash(store, parent: str | None) -> str | None:
 
 def run_spatial_global(inputs: dict, *, store=None, parent: str | None = None, solver: str = "auto",
                        source_session_ids: list[str] | None = None) -> SpatialStageOutput:
+    import time as _t
+    _T0 = _t.perf_counter()
     h = input_hash(inputs) if isinstance(inputs, dict) else None
     base = {"schema": SCHEMA, "input_hash": h}
     try:
@@ -107,10 +109,20 @@ def run_spatial_global(inputs: dict, *, store=None, parent: str | None = None, s
         msg = f"scale_state={scale!r}: metric scale is never assumed, so metre-valued optimization was not run"
         return SpatialStageOutput("refused", {**base, "status": "refused", "error": {"code": "SCALE_NOT_METRIC", "message": msg}},
                                   errors=[{"code": "SCALE_NOT_METRIC", "message": msg}])
+    walls_seen = [o for o in obs if o.kind is Kind.WALL]
+    if not obs:
+        return SpatialStageOutput("insufficient", {**base, "status": "insufficient", "code": "NO_EVIDENCE",
+                                                   "reason": "the producer supplied poses but no observations: nothing to reconstruct (no geometry fabricated)"})
+    if len({o.image_id for o in walls_seen}) < 2:
+        return SpatialStageOutput("insufficient", {**base, "status": "insufficient", "code": "INSUFFICIENT_OBSERVATIONS", "n_observations": len(obs),
+                                                   "n_images_with_walls": len({o.image_id for o in walls_seen}),
+                                                   "reason": "fewer than 2 views of structure: no cross-view constraint exists, so no joint optimization or canonical geometry is produced"})
     if latest_input_hash(store, parent) == h:
         return SpatialStageOutput("unchanged", {**base, "status": "unchanged", "version_id": parent, "reason": "identical input hash"},
                                   version_id=parent)
+    _T1 = _t.perf_counter()
     res, mv = compile_multiview(obs, poses, storeys=storeys, mv_cfg=MultiViewConfig(solver=solver))
+    _T2 = _t.perf_counter()
     gv = classify_reconstruction(res.entities, res.topology, res.constraints.junctions, optimization=mv)
     warnings: list[str] = []
     lengths = sorted(e.length for e in res.entities if e.kind is Kind.WALL and len(e.image_ids) >= 2)
@@ -122,7 +134,10 @@ def run_spatial_global(inputs: dict, *, store=None, parent: str | None = None, s
         warnings.append(f"{len(mv.outliers)} observation(s) rejected as multi-view outliers (kept in the record, see facts.outliers)")
     comp = res.compiled_entities()
     statuses = {d: dict(Counter(e.beliefs[d].status.value for e in comp)) for d in DIMENSIONS}
-    world = to_worldir(res, name="spatial-global")
+    id_map: dict[str, str] = {}
+    if store is not None and parent is not None:
+        id_map = stable_id_map(res, store.load_version(parent))
+    world = to_worldir(res, name="spatial-global", id_map=id_map, frame=inputs.get("frame") or "world", scale_state=scale)
     attach_optimization(world, mv)
     facts = {
         **base, "status": "degraded" if warnings else "succeeded", "scale_state": scale,
@@ -134,16 +149,56 @@ def run_spatial_global(inputs: dict, *, store=None, parent: str | None = None, s
         "validation": gv.to_dict(), "topology_status": res.topology.status(),
         "completeness": res.completeness.to_dict(),
         "entity_epistemic_status": statuses,
+        "identity_carried": len(id_map),
         "sigma_budget_entities": sum(1 for e in comp if e.sigma_parts),
         "tentative_excluded": [{"entity_id": e.entity_id, "evidence_ids": list(e.evidence_ids), "views": len(e.image_ids)}
                                for e in res.entities if e not in comp],
         "conflicts": [c.to_dict() for c in res.association.conflicts] + [c.to_dict() for c in res.constraints.contradictions],
         "warnings": warnings,
+        "quality": _quality(res, comp, gv, mv, len(obs)),
+        "association_cache": {**mv.assoc_cache} if getattr(mv, "assoc_cache", None) else None,
     }
+    _T3 = _t.perf_counter()
     world.metadata[HASH_KEY] = h
     world.metadata["spatial_facts"] = json.loads(json.dumps(facts, default=str))
     vid = None
     if store is not None:
         vid = store.save_version(world, parent=parent, source_session_ids=source_session_ids).version_id
         facts["version_id"] = vid
+    facts["timings_s"] = {"validate_inputs": _T1 - _T0, "optimize_and_compile": _T2 - _T1, "to_worldir_and_identity": _T3 - _T2,
+                          "persist": _t.perf_counter() - _T3, "optimizer_total": mv.seconds, "jacobian_assembly": mv.jac_seconds,
+                          "final_association": res.timings_s.get("association"),
+                          "constraints_topology_completeness": res.timings_s.get("constraints_topology_completeness"),
+                          "peak_memory": "not measured per job (see benchmarks/results/spatial_solver_benchmark*.json)"}
     return SpatialStageOutput(facts["status"], facts, world, vid)
+
+
+def _quality(res, comp, gv, mv, n_obs: int) -> dict:
+    """Quality as SEPARATE axes. No aggregate score. Accuracy against ground truth is not evaluable inside a job (no truth exists), which
+    is stated, not defaulted: only internally measurable quantities are reported here."""
+    import numpy as np
+
+    from .constraints import CKind
+    from .model import Kind as K
+    walls = [e for e in comp if e.kind is K.WALL]
+    sig = [e.beliefs["position"].sigma for e in walls if e.beliefs["position"].sigma is not None]
+    by = lambda kind: dict(Counter(c.status.value for c in res.constraints.constraints if c.kind is kind))  # noqa: E731
+    top = res.completeness.topological
+    direct = sum(1 for e in comp for b in e.beliefs.values() if b.status.value == "directly_observed")
+    inferred = sum(1 for e in comp for b in e.beliefs.values() if b.status.value in ("geometrically_inferred", "semantically_inferred"))
+    q = lambda v, p: float(np.quantile(v, p)) if v else None  # noqa: E731
+    return {
+        "geometric": {"accuracy_vs_ground_truth": "not evaluable in a job: no ground truth", "position_sigma_m": {"p50": q(sig, .5), "p90": q(sig, .9), "max": max(sig) if sig else None},
+                      "walls_with_lower_bound_extent": len(res.completeness.surface_completeness["walls_with_lower_bound_extent"])},
+        "structural": {"wall_continuity": by(CKind.GEOMETRIC_CONTINUITY), "opening_attachment": by(CKind.OPENING_ATTACHMENT),
+                       "opening_dimensions": by(CKind.OPENING_DIMENSIONS), "rooms_enclosed": top["rooms_enclosed"],
+                       "junction_fraction": top["junction_fraction"], "wall_components": len(gv.components)},
+        "evidence": {"observations": n_obs, "observation_use_fraction": res.completeness.evidence["observation_use_fraction"],
+                     "entities": len(comp), "min_views_per_entity": min((len(e.image_ids) for e in comp), default=None),
+                     "directly_observed_beliefs": direct, "inferred_beliefs": inferred,
+                     "entities_with_conflicting_beliefs": sum(1 for e in comp if any(b.status.value == "conflicting" for b in e.beliefs.values()))},
+        "topological": {"structural_errors": gv.checks["structural_errors"], "contradictions": gv.checks["contradictions"],
+                        "incomplete_issues": gv.checks["incomplete_issues"], "state": gv.state.value},
+        "processing": {"solver": mv.solver, "converged": mv.converged, "rounds": mv.rounds, "nfev": mv.nfev, "seconds": mv.seconds,
+                       "diagnostics": mv.diagnostics},
+    }

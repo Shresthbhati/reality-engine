@@ -32,11 +32,12 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 from scipy.optimize import least_squares
-from scipy.sparse import csr_matrix, identity
+from scipy.sparse import csr_matrix, diags, identity
 from scipy.sparse.linalg import splu
 
 from .association import AssociationConfig, associate_structure
 from .model import Kind, StructuralObservation
+from .sparse_lm import _rho_and_weight, solve_sparse_lm
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,8 @@ class MultiViewResult:
     n_params: int = 0
     n_residuals: int = 0
     jac_nnz: int = 0
+    assoc_cache: dict = field(default_factory=dict)   # summed association fit-cache hits/misses over the optimisation rounds
+    diagnostics: list = field(default_factory=list)   # one dict per round: solver, termination status/message, nfev/njev, optimality, cost
 
     def to_dict(self) -> dict:
         return {"poses": {k: {"theta": p.theta, "tx": p.tx, "ty": p.ty, "cov": None if p.cov is None else p.cov.tolist(),
@@ -161,11 +164,15 @@ def optimize_multiview(
     cost0 = cost1 = 0.0
     nfev_total, rounds_done, converged, in_clusters = 0, 0, True, set()
     jac_seconds, shape_info, solver_used = 0.0, (0, 0, 0), "dense"
+    diag: list = []
+    cache_sum: dict = {}
     nI = len(img_ids)
     n_clusters, z_obs = 0, {}
     for rnd in range(cfg.n_rounds):
         world = [apply_pose(o, *cur[o.image_id], sigma=_inflated_sigma(o, post_sigma[o.image_id])) for o in walls]
         assoc = associate_structure(world, cfg.association)
+        for k_ in ("hits", "misses"):
+            cache_sum[k_] = cache_sum.get(k_, 0) + assoc.cache_stats.get(k_, 0)
         clusters = [e for e in assoc.entities if e.kind is Kind.WALL and len(e.image_ids) >= cfg.min_views]
         if not clusters:
             break
@@ -285,27 +292,37 @@ def optimize_multiview(
             jt[0] += time.perf_counter() - t_
             return out
 
-        kw = {"tr_solver": "lsmr", "tr_options": {"atol": 1e-12, "btol": 1e-12}} if use_sparse else {}
-        sol = least_squares(resid, x0, jac=timed_jac, loss=cfg.loss, f_scale=cfg.f_scale, method="trf",
-                            max_nfev=cfg.max_nfev, x_scale="jac", **kw)
+        if use_sparse:   # exact sparse-LU Levenberg-Marquardt (see sparse_lm.py for why LSMR trust-region steps were replaced)
+            # LM counts every TRIAL step (accepted or rejected) as an evaluation, TRF only accepted iterations, so the budget is scaled
+            # 3x; measured on development seeds: converged runs need 12-47 evaluations, the cap only binds in flat 2-4 view valleys
+            sol = solve_sparse_lm(resid, timed_jac, x0, loss=cfg.loss, f_scale=cfg.f_scale, max_nfev=3 * cfg.max_nfev)
+        else:
+            sol = least_squares(resid, x0, jac=timed_jac, loss=cfg.loss, f_scale=cfg.f_scale, method="trf",
+                                max_nfev=cfg.max_nfev, x_scale="jac")
         jac_seconds += jt[0]
+        diag.append({"round": rnd, "solver": solver_used, "status": int(sol.status), "message": str(sol.message), "success": bool(sol.success),
+                     "nfev": int(sol.nfev), "njev": int(sol.njev if sol.njev is not None else -1), "optimality": float(sol.optimality),
+                     "cost": float(sol.cost), "n_params": int(len(x0)), "n_residuals": int(shape[0])})
         shape_info = (len(x0), shape[0], int(len(all_rows)))
         nfev_total += int(sol.nfev)
         converged = converged and bool(sol.success)
         th, tx, ty, al, rho = unpack(sol.x)
         for i in used_imgs:
             cur[img_ids[i]] = (float(th[i]), float(tx[i]), float(ty[i]))
+        # ONE covariance definition for both solvers: (J^T W J)^-1 with W the IRLS weights rho'(z) of the robust loss at the
+        # solution. (SciPy's `sol.jac` for robust losses carries second-order terms the sparse LM does not, so using it would make
+        # the two solvers report different covariances for the same solution.) First-order; ignores the weight derivative.
+        _, wts = _rho_and_weight(resid(sol.x), cfg.loss, cfg.f_scale)
+        Jfin = jac_sparse(sol.x) if use_sparse else csr_matrix(jac(sol.x))
+        Jw = diags(np.sqrt(wts)) @ Jfin
         if use_sparse:
-            # posterior blocks for the pose parameters only: solve (J^T J + eps I) X = E_pose with one sparse LU
-            Js = csr_matrix(sol.jac)
-            H = (Js.T @ Js).tocsc() + 1e-12 * identity(Js.shape[1], format="csc")
-            E = np.zeros((Js.shape[1], nP))
+            H = (Jw.T @ Jw).tocsc() + 1e-12 * identity(Jw.shape[1], format="csc")
+            E = np.zeros((Jw.shape[1], nP))
             E[np.arange(nP), np.arange(nP)] = 1.0
-            Cp = splu(H).solve(E)
-            C = Cp
+            C = splu(H).solve(E)
         else:
-            J = sol.jac.toarray() if hasattr(sol.jac, "toarray") else sol.jac
-            C = np.linalg.pinv(J.T @ J)
+            Jd = Jw.toarray()
+            C = np.linalg.pinv(Jd.T @ Jd)
         for i, k in fpos.items():
             cov[img_ids[i]] = C[3 * k:3 * k + 3, 3 * k:3 * k + 3].copy()
             post_sigma[img_ids[i]] = (math.sqrt(max(cov[img_ids[i]][0, 0], 0.0)),
@@ -338,7 +355,7 @@ def optimize_multiview(
         pres[k] = PoseResult(k, *cur[k], cov[k], pr, obs_dims)
     outliers = sorted(ev for ev, z in z_obs.items() if z > cfg.outlier_k)
     return MultiViewResult(pres, out_obs, raw, z_obs, outliers, n_clusters, cost0, cost1, nfev_total, rounds_done,
-                           time.perf_counter() - t0, converged, solver_used, jac_seconds, *shape_info)
+                           time.perf_counter() - t0, converged, solver_used, jac_seconds, *shape_info, cache_sum, diag)
 
 
 def attach_optimization(world, result: MultiViewResult) -> None:

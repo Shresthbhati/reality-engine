@@ -16,8 +16,9 @@ anything the evidence did not supply:
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -62,6 +63,7 @@ class SpatialCompileResult:
     refinement: RefinementReport | None
     entities: list[SpatialEntity]                  # refined; includes tentative ones
     storeys: dict[str, float]
+    timings_s: dict[str, float] = field(default_factory=dict)
 
     def compiled_entities(self, include_tentative: bool = False) -> list[SpatialEntity]:
         k = self.association.config.min_images_to_establish
@@ -75,7 +77,10 @@ def compile_spatial(
     assoc_cfg: AssociationConfig = AssociationConfig(), constraint_cfg: ConstraintConfig = ConstraintConfig(),
     reference_matches: tuple[int, int] | None = None, impose_junctions: bool = True,
 ) -> SpatialCompileResult:
+    import time as _t
+    _t0 = _t.perf_counter()
     assoc = associate_structure(observations, assoc_cfg, target_frame=target_frame, frame_transforms=frame_transforms)
+    _t1 = _t.perf_counter()
     ents = assoc.entities
     refinement = None
     extra = list(assoc.conflicts)
@@ -95,7 +100,9 @@ def compile_spatial(
     cons.constraints += evaluate_alignment(cons.entities, [list(r.wall_ids) for r in topo.rooms], constraint_cfg)
     comp = assess_completeness(assoc, refined, topo, n_observations=len(observations), points_xyz=points_xyz,
                                reference_matches=reference_matches)
-    return SpatialCompileResult(list(observations), assoc, cons, topo, comp, refinement, refined, dict(storeys or {}))
+    _t2 = _t.perf_counter()
+    return SpatialCompileResult(list(observations), assoc, cons, topo, comp, refinement, refined, dict(storeys or {}),
+                                {"association": _t1 - _t0, "constraints_topology_completeness": _t2 - _t1})
 
 
 # ----------------------------------------------------------------------------------------------------- WorldIR
@@ -106,7 +113,11 @@ def _prov_rel(kind: RelationshipKind, target: str, conf: float | None, note: str
 
 
 def to_worldir(result: SpatialCompileResult, world: WorldIR | None = None, *, name: str = "spatial-compiled",
-               include_tentative: bool = False) -> WorldIR:
+               include_tentative: bool = False, id_map: dict[str, str] | None = None,
+               frame: str = "world", scale_state: str | None = None) -> WorldIR:
+    """`id_map` (see `stable_id_map`) carries entity ids over from a previous version so identities survive reprocessing."""
+    if id_map and world is None:
+        return _rekey(to_worldir(result, None, name=name, include_tentative=include_tentative, frame=frame, scale_state=scale_state), id_map)
     w = world if world is not None else WorldIR(name=name)
     ents = result.compiled_entities(include_tentative)
     keep = {e.entity_id for e in ents}
@@ -130,6 +141,7 @@ def to_worldir(result: SpatialCompileResult, world: WorldIR | None = None, *, na
             "storey_id": f"storey-{e.storey}" if e.storey else None, "alternatives": e.alternatives,
             "partially_visible": e.partially_visible, "occluded": e.occluded,
             "host_alternatives": list(e.host_alternatives), "sigma_parts": e.sigma_parts,
+            "coordinate_frame": frame, "scale_state": scale_state or "unspecified",   # explicit interpretation; never assumed metric
         }
         if e.host_id:
             props["host_wall_id"] = e.host_id
@@ -184,6 +196,7 @@ def to_worldir(result: SpatialCompileResult, world: WorldIR | None = None, *, na
     for a, b, wall, ops in result.topology.room_adjacency:
         if a in w.entities and b in w.entities:
             w.entities[a].relationships.append(_prov_rel(RelationshipKind.ADJACENT_TO, b, None, f"shared_wall:{wall}"))
+    w.metadata["spatial_frame"] = {"frame": frame, "scale_state": scale_state or "unspecified"}
     w.metadata[SPATIAL_EVIDENCE_KEY] = [o.to_dict() for o in result.observations]
     w.metadata[SPATIAL_REPORT_KEY] = {
         "topology_status": result.topology.status(),
@@ -249,3 +262,54 @@ def compile_multiview(local_observations, poses, *, storeys=None, mv_cfg=None, w
         e.sigma_parts = {"measurement": meas, "optimization": opt, "model": floor,
                          "association_ambiguous_observations": float(len(ambiguous & set(e.evidence_ids)))}
     return res, mv
+
+
+def stable_id_map(result: SpatialCompileResult, previous: WorldIR, *, max_cost_m: float = 0.6) -> dict[str, str]:
+    """Carry identity across versions. Entity ids are a hash of the supporting evidence set, so ANY new evidence changes them
+    (measured: 71 of 85 established walls changed id when one image was added). This maps each compiled entity of `result` to the id
+    of the geometrically corresponding entity in `previous` (same type and storey, end points within `max_cost_m`, one-to-one via
+    Hungarian assignment, ambiguous or unmatched entities keep their own id). Rooms are carried when their wall set is unchanged.
+    Nothing is merged: only the label is reused, evidence stays separate."""
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+
+    def seg(e):
+        cp = e.custom_properties or {}
+        return cp.get("plan_segment"), e.type.value, cp.get("storey_id")
+
+    prev = [(eid, *seg(e)) for eid, e in previous.entities.items() if (e.custom_properties or {}).get("plan_segment")]
+    new = [(e.entity_id, [list(e.a), list(e.b)], _ETYPE[e.kind].value, f"storey-{e.storey}" if e.storey else None)
+           for e in result.compiled_entities()]
+    mapping: dict[str, str] = {}
+    big = 1e6
+    C = np.full((len(new), len(prev)), big)
+    for i, (nid, ns, nt, nst) in enumerate(new):
+        for j, (pid, ps, pt, pst) in enumerate(prev):
+            if nt != pt or nst != pst:
+                continue
+            a = math.dist(ns[0], ps[0]) + math.dist(ns[1], ps[1])
+            b = math.dist(ns[0], ps[1]) + math.dist(ns[1], ps[0])
+            C[i, j] = min(a, b)
+    if len(new) and len(prev):
+        for i, j in zip(*linear_sum_assignment(C)):
+            if C[i, j] <= max_cost_m:
+                mapping[new[i][0]] = prev[j][0]
+    new_to_stable = {n[0]: mapping.get(n[0], n[0]) for n in new}
+    prev_rooms = {frozenset(e.custom_properties.get("boundary_element_ids") or ()): eid
+                  for eid, e in previous.entities.items() if e.type is EntityType.ROOM}
+    for r in result.topology.rooms:
+        key = frozenset(new_to_stable.get(w, w) for w in r.wall_ids)
+        if key in prev_rooms:
+            mapping[r.room_id] = prev_rooms[key]
+    used = set(mapping.values())
+    return {k: v for k, v in mapping.items() if k != v and (v in used)}
+
+
+def _rekey(world: WorldIR, id_map: dict[str, str]) -> WorldIR:
+    """Rename entity / geometry ids everywhere (relationships, hosts, room boundaries, stored report). Ids are unique hash tokens, so a
+    token replacement on the serialised form is exact; the world is rebuilt through from_dict (the same path the store uses)."""
+    import json as _json
+    text = _json.dumps(world.to_dict(), sort_keys=True)
+    for old in sorted(id_map, key=len, reverse=True):
+        text = text.replace(old, id_map[old])
+    return WorldIR.from_dict(_json.loads(text))

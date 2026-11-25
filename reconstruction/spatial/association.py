@@ -60,6 +60,7 @@ class AssociationConfig:
     opening_min_iou: float = 0.30      # along-wall interval overlap to be the same opening
     max_wall_thickness_m: float = 0.60  # parallel neighbours closer than this are a conflict, not two walls
     max_reassign_iterations: int = 4
+    memoize_fits: bool = True          # cluster-fit cache (local to one call; keyed by the cluster's evidence ids); False = recompute always
 
 
 # --------------------------------------------------------------------------------------------- line fitting
@@ -203,6 +204,7 @@ class AssociationResult:
     conflicts: list[Conflict]
     unassociated: list[str] = field(default_factory=list)   # evidence ids that fed no entity
     config: AssociationConfig = field(default_factory=AssociationConfig)
+    cache_stats: dict = field(default_factory=dict)   # fit_hits / fit_misses / hit_rate / peak_entries
 
     def established(self) -> list[SpatialEntity]:
         return [e for e in self.entities if len(e.image_ids) >= self.config.min_images_to_establish]
@@ -255,13 +257,17 @@ def associate_structure(
 
     walls: list[SpatialEntity] = []
     stairs: list[SpatialEntity] = []
+    cache_tot = {"hits": 0, "misses": 0, "entries": 0}
     for kind, bucket in ((Kind.WALL, walls), (Kind.STAIR, stairs)):   # both are linear elements fitted the same way
         by_storey: dict[str | None, list[StructuralObservation]] = {}
         for o in obs:
             if o.kind is kind:
                 by_storey.setdefault(o.storey, []).append(o)
         for storey in sorted(by_storey, key=lambda s: s or ""):
-            ents, recs = _cluster_walls(by_storey[storey], storey, cfg, kind)
+            ents, recs, st = _cluster_walls(by_storey[storey], storey, cfg, kind)
+            cache_tot["hits"] += st["hits"]
+            cache_tot["misses"] += st["misses"]
+            cache_tot["entries"] += st["entries"]
             bucket += ents
             records += recs
     conflicts += _near_duplicate_conflicts(walls, cfg)
@@ -271,7 +277,9 @@ def associate_structure(
     records += orecs
     conflicts += oconf
     records.sort(key=lambda r: r.evidence_id)
-    return AssociationResult(walls + stairs + openings, records, conflicts, unassoc, cfg)
+    tot = cache_tot["hits"] + cache_tot["misses"]
+    cache_tot["hit_rate"] = (cache_tot["hits"] / tot) if tot else None
+    return AssociationResult(walls + stairs + openings, records, conflicts, unassoc, cfg, cache_tot)
 
 
 # --- walls
@@ -283,14 +291,20 @@ def _cluster_walls(wobs: Sequence[StructuralObservation], storey: str | None, cf
     ambiguous: dict[str, tuple[str, ...]] = {}
     gate_of: dict[str, _Gate] = {}
 
-    fit_cache: dict[tuple[str, ...], LineFit] = {}
+    fit_cache: dict[tuple[str, ...], LineFit] = {}   # local to this call: observations cannot change underneath it
+    stats = {"hits": 0, "misses": 0}
 
     def fit_of(ms):
         # a cluster's fit only changes when its membership does; memoised by the (sorted) evidence ids it contains
         key = tuple(sorted(m.evidence_id for m in ms))
-        f = fit_cache.get(key)
+        f = fit_cache.get(key) if cfg.memoize_fits else None
         if f is None:
-            f = fit_cache[key] = fit_line(ms)
+            stats["misses"] += 1
+            f = fit_line(ms)
+            if cfg.memoize_fits:
+                fit_cache[key] = f
+        else:
+            stats["hits"] += 1
         return f
 
     def candidates(o, excl=None):
@@ -355,7 +369,8 @@ def _cluster_walls(wobs: Sequence[StructuralObservation], storey: str | None, cf
             records.append(AssociationRecord(
                 m.evidence_id, ent.entity_id, st.value, why, candidates=ambiguous.get(m.evidence_id, ()),
                 normalized_offset=g.z_off if g else None, normalized_angle=g.z_ang if g else None))
-    return entities, records
+    stats["entries"] = len(fit_cache)
+    return entities, records, stats
 
 
 def _extreme(points: list[tuple[float, bool, float]], take_min: bool) -> tuple[float, bool, float]:

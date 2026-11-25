@@ -1501,15 +1501,18 @@ _ALIAS_MAP: dict[str, TaxonomyClass] = {}
 
 def _build_alias_map() -> None:
     _ALIAS_MAP.clear()
+    # 1. Register aliases first
+    for tax_cls in _TAXONOMY_REGISTRY.values():
+        for alias in tax_cls.aliases:
+            alias_lower = alias.lower().strip()
+            _ALIAS_MAP[alias_lower] = tax_cls
+            _ALIAS_MAP[alias_lower.replace("_", " ")] = tax_cls
+    # 2. Canonical taxonomy_id and primary name have strict precedence over aliases
     for tax_cls in _TAXONOMY_REGISTRY.values():
         name_lower = tax_cls.name.lower().strip()
         _ALIAS_MAP[name_lower] = tax_cls
         _ALIAS_MAP[name_lower.replace("_", " ")] = tax_cls
         _ALIAS_MAP[tax_cls.taxonomy_id.lower().strip()] = tax_cls
-        for alias in tax_cls.aliases:
-            alias_lower = alias.lower().strip()
-            _ALIAS_MAP[alias_lower] = tax_cls
-            _ALIAS_MAP[alias_lower.replace("_", " ")] = tax_cls
 
 
 _build_alias_map()
@@ -1529,13 +1532,17 @@ def resolve_taxonomy_class(raw_label: str) -> TaxonomyClass:
     return FALLBACK_UNKNOWN
 
 
-def are_semantically_compatible(class_a: str, class_b: str) -> bool:
+def are_semantically_compatible(
+    class_a: str,
+    class_b: str,
+    allow_parent_part: bool = True,
+) -> bool:
     """Evaluates whether two class names can physically denote the same real-world object.
 
     Handles:
     - Exact alias identity (e.g. 'electrical socket' == 'socket')
     - Same canonical taxonomy class
-    - Parent-part containment (e.g. 'door' and 'door_frame', 'sink' and 'faucet')
+    - Parent-part containment (e.g. 'door' and 'door_frame', 'sink' and 'faucet') -- ONLY when allow_parent_part is True
     - Plausible visual label overlap (e.g. 'desk' and 'table')
     """
     node_a = resolve_taxonomy_class(class_a)
@@ -1544,12 +1551,13 @@ def are_semantically_compatible(class_a: str, class_b: str) -> bool:
     if node_a.taxonomy_id == node_b.taxonomy_id:
         return True
 
-    # Check parent-part relationships
-    if node_a.parent_class == node_b.taxonomy_id or node_b.parent_class == node_a.taxonomy_id:
-        return True
+    # Check parent-part relationships (disabled for identity tracking and multi-view entity association)
+    if allow_parent_part:
+        if node_a.parent_class == node_b.taxonomy_id or node_b.parent_class == node_a.taxonomy_id:
+            return True
 
-    if node_b.name in node_a.potential_parts or node_a.name in node_b.potential_parts:
-        return True
+        if node_b.name in node_a.potential_parts or node_a.name in node_b.potential_parts:
+            return True
 
     # Known acceptable semantic confusions across viewpoints
     if node_b.name in node_a.common_confusion_classes or node_a.name in node_b.common_confusion_classes:

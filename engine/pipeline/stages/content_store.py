@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import uuid
 from pathlib import Path
 
 
@@ -26,11 +27,32 @@ def store_bytes(data: bytes) -> tuple[str, Path]:
     obj_dir = root / digest[:2] / digest[2:4]
     obj_dir.mkdir(parents=True, exist_ok=True)
     path = obj_dir / digest
-    if not path.exists():
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
+    # An existing blob is trusted only if it is the right size: a truncated/damaged one (crash, disk fault) is REWRITTEN
+    # instead of being silently kept as "already stored". The temp name is unique so concurrent writers cannot interleave,
+    # and the final path only ever appears through an atomic replace, so a crash mid-write leaves no partial blob.
+    if not path.exists() or path.stat().st_size != len(data):
+        tmp = obj_dir / f"{digest}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+        try:
+            tmp.write_bytes(data)
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
     return digest, path
+
+
+def verify_artifact(uri: str) -> bool:
+    """True only if the blob exists AND its bytes still hash to the digest in its address (a rotten blob is not an artifact)."""
+    path = resolve_artifact(uri)
+    if path is None:
+        return False
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return False
+    return h.hexdigest() == uri.removeprefix("sha256://")
 
 
 def resolve_artifact(uri: str) -> Path | None:

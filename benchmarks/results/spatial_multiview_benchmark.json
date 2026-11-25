@@ -1,0 +1,2105 @@
+{
+ "conditions": {
+  "single_view": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_angle_error_deg": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "observed_end_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "length_error_fully_bounded_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_recall": 0.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.0,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": null,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null,
+    "chamfer_total_m": null,
+    "chamfer_accuracy_m": null,
+    "chamfer_completeness_m": null,
+    "pose_translation_error_m": {
+     "mean": 0.14044973235727998,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9087932063603683,
+     "p90": 1.8731528672419528
+    },
+    "validation_states": {
+     "incomplete": 38,
+     "invalid": 4
+    },
+    "seconds_mean": 0.008024538095274434
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_angle_error_deg": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "observed_end_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "length_error_fully_bounded_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_recall": 0.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.0,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": null,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null,
+    "chamfer_total_m": null,
+    "chamfer_accuracy_m": null,
+    "chamfer_completeness_m": null,
+    "pose_translation_error_m": {
+     "mean": 0.14044973235727998,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9087932063603683,
+     "p90": 1.8731528672419528
+    },
+    "validation_states": {
+     "incomplete": 15,
+     "uncertain": 23,
+     "invalid": 4
+    },
+    "seconds_mean": 0.01273927142851573
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_angle_error_deg": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "observed_end_error_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "length_error_fully_bounded_m": {
+     "n": 0,
+     "mean": null,
+     "p90": null
+    },
+    "wall_recall": 0.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.0,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": null,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null,
+    "chamfer_total_m": null,
+    "chamfer_accuracy_m": null,
+    "chamfer_completeness_m": null,
+    "pose_translation_error_m": {
+     "mean": 0.14044973235727998,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9087932063603683,
+     "p90": 1.8731528672419528
+    },
+    "validation_states": {
+     "incomplete": 15,
+     "uncertain": 23,
+     "invalid": 4
+    },
+    "seconds_mean": 0.007184659523773007
+   }
+  },
+  "two_views": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 145,
+     "mean": 0.07459972100552764,
+     "p90": 0.14097930139022238
+    },
+    "wall_angle_error_deg": {
+     "n": 145,
+     "mean": 1.1601598900586054,
+     "p90": 2.2729506575962466
+    },
+    "observed_end_error_m": {
+     "n": 191,
+     "mean": 0.1868588866764223,
+     "p90": 0.33446020046018965
+    },
+    "length_error_fully_bounded_m": {
+     "n": 89,
+     "mean": 0.10729885557638445,
+     "p90": 0.24763050018276095
+    },
+    "wall_recall": 0.5370370370370371,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.5370370370370371,
+    "junction_precision": 1.0,
+    "junction_recall": 0.16993464052287582,
+    "room_precision": 0.5,
+    "room_recall": 0.011904761904761904,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.725,
+    "lower_bound_valid_fraction": 0.8035714285714286,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.2413793103448276,
+     0.496551724137931,
+     0.7103448275862069
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.031413612565445025,
+     0.193717277486911,
+     0.44502617801047123
+    ],
+    "chamfer_total_m": 1.2885509577815277,
+    "chamfer_accuracy_m": 0.08543631431386463,
+    "chamfer_completeness_m": 1.2031146434676632,
+    "pose_translation_error_m": {
+     "mean": 0.14687282572294355,
+     "p90": 0.2422590357660443
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.8326907055292834,
+     "p90": 1.717902982981359
+    },
+    "validation_states": {
+     "uncertain": 19,
+     "incomplete": 12,
+     "invalid": 10,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.027982050000056397
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 197,
+     "mean": 0.09011163426073088,
+     "p90": 0.1558841131774259
+    },
+    "wall_angle_error_deg": {
+     "n": 197,
+     "mean": 1.2971207551511337,
+     "p90": 2.323731771557283
+    },
+    "observed_end_error_m": {
+     "n": 277,
+     "mean": 0.2105812295313232,
+     "p90": 0.3152653770140243
+    },
+    "length_error_fully_bounded_m": {
+     "n": 137,
+     "mean": 0.09828020733839798,
+     "p90": 0.17984107086364337
+    },
+    "wall_recall": 0.7296296296296296,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.7296296296296296,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 0.9259259259259259,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9333333333333333,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6192893401015228,
+     0.9543147208121827,
+     0.9847715736040609
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.5415162454873647,
+     0.9494584837545126,
+     0.9891696750902527
+    ],
+    "chamfer_total_m": 0.5611467274838616,
+    "chamfer_accuracy_m": 0.10189029174911149,
+    "chamfer_completeness_m": 0.45925643573475017,
+    "pose_translation_error_m": {
+     "mean": 0.14207274444114074,
+     "p90": 0.22918168817755327
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.7422948775220382,
+     "p90": 1.2559686375756773
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7380952380952381,
+      1.0,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.2619047619047619,
+      0.8214285714285714,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "uncertain": 23,
+     "incomplete": 10,
+     "invalid": 9
+    },
+    "seconds_mean": 0.034815111904706667
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 197,
+     "mean": 0.09122272661454424,
+     "p90": 0.161712750992947
+    },
+    "wall_angle_error_deg": {
+     "n": 197,
+     "mean": 1.2011910283928144,
+     "p90": 2.2206259884596085
+    },
+    "observed_end_error_m": {
+     "n": 277,
+     "mean": 0.1898862544364974,
+     "p90": 0.2955971026855785
+    },
+    "length_error_fully_bounded_m": {
+     "n": 137,
+     "mean": 0.09285775753389192,
+     "p90": 0.15733324281810473
+    },
+    "wall_recall": 0.7296296296296296,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.7296296296296296,
+    "junction_precision": 0.9924242424242424,
+    "junction_recall": 0.42810457516339867,
+    "room_precision": 0.7333333333333333,
+    "room_recall": 0.13095238095238096,
+    "association_pair_precision": 0.9259259259259259,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9333333333333333,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6040609137055838,
+     0.949238578680203,
+     0.9898477157360406
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.30324909747292417,
+     0.779783393501805,
+     0.9675090252707581
+    ],
+    "chamfer_total_m": 0.5625443864406202,
+    "chamfer_accuracy_m": 0.10212114532790154,
+    "chamfer_completeness_m": 0.46042324111271865,
+    "pose_translation_error_m": {
+     "mean": 0.14207274444114074,
+     "p90": 0.22918168817755327
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.7422948775220382,
+     "p90": 1.2559686375756773
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7380952380952381,
+      1.0,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.2619047619047619,
+      0.8214285714285714,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "uncertain": 26,
+     "incomplete": 10,
+     "invalid": 5,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.03302295952382684
+   }
+  },
+  "three_views": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 238,
+     "mean": 0.09642782634104202,
+     "p90": 0.18261181712835273
+    },
+    "wall_angle_error_deg": {
+     "n": 238,
+     "mean": 1.167606760622979,
+     "p90": 2.2377374722744405
+    },
+    "observed_end_error_m": {
+     "n": 336,
+     "mean": 0.19411908658381047,
+     "p90": 0.3446367178009816
+    },
+    "length_error_fully_bounded_m": {
+     "n": 160,
+     "mean": 0.09797848238919596,
+     "p90": 0.24490189421908293
+    },
+    "wall_recall": 0.8814814814814815,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.8814814814814815,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5261437908496732,
+    "room_precision": 0.7894736842105263,
+    "room_recall": 0.17857142857142858,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.7384615384615385,
+    "lower_bound_valid_fraction": 0.8333333333333334,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.18907563025210083,
+     0.35294117647058826,
+     0.5378151260504201
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.02976190476190476,
+     0.10119047619047619,
+     0.22321428571428573
+    ],
+    "chamfer_total_m": 0.38577250484576436,
+    "chamfer_accuracy_m": 0.10413836816003728,
+    "chamfer_completeness_m": 0.281634136685727,
+    "pose_translation_error_m": {
+     "mean": 0.1512744957726083,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 1.0457535734052354,
+     "p90": 1.9913094729357983
+    },
+    "validation_states": {
+     "uncertain": 21,
+     "invalid": 18,
+     "incomplete": 2,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.06530729047612806
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 258,
+     "mean": 0.07554553346857526,
+     "p90": 0.1381354460090539
+    },
+    "wall_angle_error_deg": {
+     "n": 258,
+     "mean": 1.2034610162605601,
+     "p90": 2.2363377047522506
+    },
+    "observed_end_error_m": {
+     "n": 397,
+     "mean": 0.1690123649667386,
+     "p90": 0.28950056365141846
+    },
+    "length_error_fully_bounded_m": {
+     "n": 198,
+     "mean": 0.07257594647333893,
+     "p90": 0.15032102439490197
+    },
+    "wall_recall": 0.9555555555555556,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 0.9592592592592593,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 0.9717607973421927,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9666666666666667,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5775193798449613,
+     0.9302325581395349,
+     0.9883720930232558
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.4534005037783375,
+     0.9093198992443325,
+     0.9974811083123426
+    ],
+    "chamfer_total_m": 0.1987240573653062,
+    "chamfer_accuracy_m": 0.08275858049323657,
+    "chamfer_completeness_m": 0.1159654768720696,
+    "pose_translation_error_m": {
+     "mean": 0.14440067783962976,
+     "p90": 0.2422590352905094
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.8384976500459309,
+     "p90": 1.8731528369917991
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6428571428571429,
+      0.9682539682539683,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.21428571428571427,
+      0.7698412698412699,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "uncertain": 21,
+     "incomplete": 10,
+     "invalid": 11
+    },
+    "seconds_mean": 0.0500110690476114
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 258,
+     "mean": 0.07466234428155803,
+     "p90": 0.1397468322842619
+    },
+    "wall_angle_error_deg": {
+     "n": 258,
+     "mean": 1.1414480978723547,
+     "p90": 2.2173548490443307
+    },
+    "observed_end_error_m": {
+     "n": 397,
+     "mean": 0.14626740449441014,
+     "p90": 0.22734942563521637
+    },
+    "length_error_fully_bounded_m": {
+     "n": 198,
+     "mean": 0.06666657739181098,
+     "p90": 0.13968009205536672
+    },
+    "wall_recall": 0.9555555555555556,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 0.9592592592592593,
+    "junction_precision": 0.9957983193277311,
+    "junction_recall": 0.7745098039215687,
+    "room_precision": 0.84,
+    "room_recall": 0.5,
+    "association_pair_precision": 0.9717607973421927,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9666666666666667,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.562015503875969,
+     0.9457364341085271,
+     0.9883720930232558
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.17884130982367757,
+     0.6775818639798489,
+     0.9345088161209067
+    ],
+    "chamfer_total_m": 0.1979740271872941,
+    "chamfer_accuracy_m": 0.08209627246957471,
+    "chamfer_completeness_m": 0.11587775471771934,
+    "pose_translation_error_m": {
+     "mean": 0.14440067783962976,
+     "p90": 0.2422590352905094
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.8384976500459309,
+     "p90": 1.8731528369917991
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6428571428571429,
+      0.9682539682539683,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.21428571428571427,
+      0.7698412698412699,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "uncertain": 28,
+     "incomplete": 4,
+     "valid_complete": 5,
+     "valid_partial": 5
+    },
+    "seconds_mean": 0.059834823809524096
+   }
+  },
+  "six_views": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 268,
+     "mean": 0.06642934388352942,
+     "p90": 0.12685378645271564
+    },
+    "wall_angle_error_deg": {
+     "n": 268,
+     "mean": 0.9722442933289105,
+     "p90": 1.8757336689676978
+    },
+    "observed_end_error_m": {
+     "n": 444,
+     "mean": 0.13225537186907418,
+     "p90": 0.24629793282088971
+    },
+    "length_error_fully_bounded_m": {
+     "n": 215,
+     "mean": 0.1129215767283975,
+     "p90": 0.2949812580554675
+    },
+    "wall_recall": 0.9925925925925926,
+    "duplicate_rate": 0.4666666666666667,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 1.462962962962963,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7581699346405228,
+    "room_precision": 0.15730337078651685,
+    "room_recall": 0.16666666666666666,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.5875974246018298,
+    "lower_bound_valid_fraction": 0.8113207547169812,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.19776119402985073,
+     0.4141791044776119,
+     0.5970149253731343
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.0518018018018018,
+     0.16216216216216217,
+     0.36711711711711714
+    ],
+    "chamfer_total_m": 0.16554426859389207,
+    "chamfer_accuracy_m": 0.08734108252322123,
+    "chamfer_completeness_m": 0.07820318607067082,
+    "pose_translation_error_m": {
+     "mean": 0.14585308327882515,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9595859962397224,
+     "p90": 1.9913094729357983
+    },
+    "validation_states": {
+     "invalid": 35,
+     "uncertain": 7
+    },
+    "seconds_mean": 0.18076493095233154
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 269,
+     "mean": 0.05504949399262333,
+     "p90": 0.10678270085766478
+    },
+    "wall_angle_error_deg": {
+     "n": 269,
+     "mean": 0.7760919230298436,
+     "p90": 1.622970488827745
+    },
+    "observed_end_error_m": {
+     "n": 502,
+     "mean": 0.11111996997094437,
+     "p90": 0.18951219007707276
+    },
+    "length_error_fully_bounded_m": {
+     "n": 251,
+     "mean": 0.06513060249461718,
+     "p90": 0.11434293407861418
+    },
+    "wall_recall": 0.9962962962962963,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9962962962962963,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": 0.7777777777777778,
+    "room_recall": 0.08333333333333333,
+    "association_pair_precision": 0.9959500506243671,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5018587360594795,
+     0.8810408921933085,
+     0.9888475836431226
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.4641434262948207,
+     0.9163346613545816,
+     0.9900398406374502
+    ],
+    "chamfer_total_m": 0.11645125896261406,
+    "chamfer_accuracy_m": 0.057995493526363455,
+    "chamfer_completeness_m": 0.058455765436250605,
+    "pose_translation_error_m": {
+     "mean": 0.09525386756295967,
+     "p90": 0.16086736332747956
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.5473094961871452,
+     "p90": 1.0967619130509307
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7579365079365079,
+      0.9841269841269841,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.5,
+      0.9206349206349206,
+      0.996031746031746
+     ]
+    },
+    "validation_states": {
+     "valid_complete": 3,
+     "incomplete": 16,
+     "uncertain": 11,
+     "invalid": 8,
+     "valid_partial": 4
+    },
+    "seconds_mean": 0.06695785714288961
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 269,
+     "mean": 0.05420951830708345,
+     "p90": 0.10466669291546539
+    },
+    "wall_angle_error_deg": {
+     "n": 269,
+     "mean": 0.7061317659206894,
+     "p90": 1.4761861612838736
+    },
+    "observed_end_error_m": {
+     "n": 502,
+     "mean": 0.09679404829051817,
+     "p90": 0.15212978096410001
+    },
+    "length_error_fully_bounded_m": {
+     "n": 251,
+     "mean": 0.0465673821549701,
+     "p90": 0.07901462360986944
+    },
+    "wall_recall": 0.9962962962962963,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9962962962962963,
+    "junction_precision": 0.9965635738831615,
+    "junction_recall": 0.9477124183006536,
+    "room_precision": 0.9594594594594594,
+    "room_recall": 0.8452380952380952,
+    "association_pair_precision": 0.9959500506243671,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5204460966542751,
+     0.8921933085501859,
+     0.9851301115241635
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.18725099601593626,
+     0.5677290836653387,
+     0.8725099601593626
+    ],
+    "chamfer_total_m": 0.11450795347353522,
+    "chamfer_accuracy_m": 0.05664561044513324,
+    "chamfer_completeness_m": 0.05786234302840197,
+    "pose_translation_error_m": {
+     "mean": 0.09525386756295967,
+     "p90": 0.16086736332747956
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.5473094961871452,
+     "p90": 1.0967619130509307
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7579365079365079,
+      0.9841269841269841,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.5,
+      0.9206349206349206,
+      0.996031746031746
+     ]
+    },
+    "validation_states": {
+     "valid_complete": 20,
+     "incomplete": 3,
+     "uncertain": 16,
+     "valid_partial": 3
+    },
+    "seconds_mean": 0.054728783333194725
+   }
+  },
+  "twelve_views": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.050929060350079304,
+     "p90": 0.10467771421167257
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 0.8031170741387426,
+     "p90": 1.8756548490614797
+    },
+    "observed_end_error_m": {
+     "n": 486,
+     "mean": 0.1172944351226281,
+     "p90": 0.20318642216402594
+    },
+    "length_error_fully_bounded_m": {
+     "n": 236,
+     "mean": 0.12308151244313183,
+     "p90": 0.26354102764665877
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 1.1851851851851851,
+    "spurious_per_scene": 0.14285714285714285,
+    "entities_per_gt_wall": 2.2074074074074073,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7810457516339869,
+    "room_precision": 0.019736842105263157,
+    "room_recall": 0.03571428571428571,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.48157570151094664,
+    "lower_bound_valid_fraction": 0.7058823529411765,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.24814814814814815,
+     0.4740740740740741,
+     0.6444444444444445
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.053497942386831275,
+     0.18724279835390947,
+     0.33539094650205764
+    ],
+    "chamfer_total_m": 0.1411571364008427,
+    "chamfer_accuracy_m": 0.0886259045199101,
+    "chamfer_completeness_m": 0.052531231880932616,
+    "pose_translation_error_m": {
+     "mean": 0.13457875694079385,
+     "p90": 0.23925113250318247
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9841345512573506,
+     "p90": 2.004474650894927
+    },
+    "validation_states": {
+     "invalid": 42
+    },
+    "seconds_mean": 0.7112042595237567
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.03383210945916595,
+     "p90": 0.06587410316298833
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 0.4939454245751586,
+     "p90": 1.040769852052133
+    },
+    "observed_end_error_m": {
+     "n": 538,
+     "mean": 0.06476163718168282,
+     "p90": 0.11152919779681611
+    },
+    "length_error_fully_bounded_m": {
+     "n": 269,
+     "mean": 0.037683039203177636,
+     "p90": 0.08022480186993503
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": 0.8148148148148148,
+    "room_recall": 0.2619047619047619,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.48148148148148145,
+     0.825925925925926,
+     0.9888888888888889
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.43866171003717475,
+     0.8754646840148699,
+     0.9888475836431226
+    ],
+    "chamfer_total_m": 0.07876693537507007,
+    "chamfer_accuracy_m": 0.039483483220349655,
+    "chamfer_completeness_m": 0.039283452154720434,
+    "pose_translation_error_m": {
+     "mean": 0.07341429872704376,
+     "p90": 0.12499839909415614
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.42186109812953176,
+     "p90": 0.869447442640862
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7996031746031746,
+      0.9940476190476191,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.5396825396825397,
+      0.9464285714285714,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "valid_complete": 8,
+     "incomplete": 13,
+     "uncertain": 14,
+     "valid_partial": 7
+    },
+    "seconds_mean": 0.166444095238105
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.03277730834937086,
+     "p90": 0.0633662793957331
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 0.44199236798464975,
+     "p90": 1.0112930802201856
+    },
+    "observed_end_error_m": {
+     "n": 538,
+     "mean": 0.05871647082048424,
+     "p90": 0.09379745592871472
+    },
+    "length_error_fully_bounded_m": {
+     "n": 269,
+     "mean": 0.021555677635513804,
+     "p90": 0.04783975301655713
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0,
+    "junction_precision": 1.0,
+    "junction_recall": 1.0,
+    "room_precision": 1.0,
+    "room_recall": 1.0,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.4888888888888889,
+     0.8481481481481481,
+     0.9888888888888889
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.12267657992565056,
+     0.533457249070632,
+     0.8364312267657993
+    ],
+    "chamfer_total_m": 0.07664166984797618,
+    "chamfer_accuracy_m": 0.03830694291828984,
+    "chamfer_completeness_m": 0.038334726929686334,
+    "pose_translation_error_m": {
+     "mean": 0.07341429872704376,
+     "p90": 0.12499839909415614
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.42186109812953176,
+     "p90": 0.869447442640862
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7996031746031746,
+      0.9940476190476191,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.5396825396825397,
+      0.9464285714285714,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "valid_complete": 28,
+     "uncertain": 14
+    },
+    "seconds_mean": 0.07132586428573025
+   }
+  },
+  "poor_coverage": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 124,
+     "mean": 0.08010320489089316,
+     "p90": 0.16452206385872148
+    },
+    "wall_angle_error_deg": {
+     "n": 124,
+     "mean": 1.0921869775714004,
+     "p90": 2.2685210668798255
+    },
+    "observed_end_error_m": {
+     "n": 173,
+     "mean": 0.1892286199473046,
+     "p90": 0.35471883645151
+    },
+    "length_error_fully_bounded_m": {
+     "n": 85,
+     "mean": 0.13339719374895362,
+     "p90": 0.2659288310342227
+    },
+    "wall_recall": 0.45925925925925926,
+    "duplicate_rate": 0.022222222222222223,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.48148148148148145,
+    "junction_precision": 1.0,
+    "junction_recall": 0.0915032679738562,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.6642857142857143,
+    "lower_bound_valid_fraction": 0.9230769230769231,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.27419354838709675,
+     0.45161290322580644,
+     0.6290322580645161
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.06936416184971098,
+     0.21965317919075145,
+     0.4161849710982659
+    ],
+    "chamfer_total_m": 1.5229508191192653,
+    "chamfer_accuracy_m": 0.09139811222925404,
+    "chamfer_completeness_m": 1.4315527068900114,
+    "pose_translation_error_m": {
+     "mean": 0.14804190696660063,
+     "p90": 0.2422590357660443
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9276287452943515,
+     "p90": 1.8731528672419528
+    },
+    "validation_states": {
+     "invalid": 16,
+     "uncertain": 20,
+     "incomplete": 6
+    },
+    "seconds_mean": 0.017789952380986677
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 142,
+     "mean": 0.07649488004682359,
+     "p90": 0.15985694966589806
+    },
+    "wall_angle_error_deg": {
+     "n": 142,
+     "mean": 1.136323740328043,
+     "p90": 2.356286955704815
+    },
+    "observed_end_error_m": {
+     "n": 217,
+     "mean": 0.1600187991342028,
+     "p90": 0.29187302449116537
+    },
+    "length_error_fully_bounded_m": {
+     "n": 107,
+     "mean": 0.07141541146195607,
+     "p90": 0.14964639651271203
+    },
+    "wall_recall": 0.5259259259259259,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 0.5296296296296297,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 0.9722222222222222,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9142857142857143,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6338028169014085,
+     0.9436619718309859,
+     0.9929577464788732
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.5207373271889401,
+     0.9308755760368663,
+     1.0
+    ],
+    "chamfer_total_m": 1.130747001489701,
+    "chamfer_accuracy_m": 0.07942239077049544,
+    "chamfer_completeness_m": 1.0513246107192054,
+    "pose_translation_error_m": {
+     "mean": 0.13738664560984282,
+     "p90": 0.23433060114286808
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.8268256085172456,
+     "p90": 1.7905301970797016
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6932515337423313,
+      0.9631901840490797,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.32515337423312884,
+      0.8343558282208589,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "invalid": 12,
+     "uncertain": 23,
+     "incomplete": 7
+    },
+    "seconds_mean": 0.02560418333333863
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 143,
+     "mean": 0.07619139927163304,
+     "p90": 0.15825123199609506
+    },
+    "wall_angle_error_deg": {
+     "n": 143,
+     "mean": 1.258238584126615,
+     "p90": 2.3889119075216545
+    },
+    "observed_end_error_m": {
+     "n": 219,
+     "mean": 0.16494173123240174,
+     "p90": 0.29237919340460006
+    },
+    "length_error_fully_bounded_m": {
+     "n": 108,
+     "mean": 0.10514684541332248,
+     "p90": 0.17948086114140427
+    },
+    "wall_recall": 0.5296296296296297,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.5296296296296297,
+    "junction_precision": 0.9726027397260274,
+    "junction_recall": 0.23202614379084968,
+    "room_precision": 0.5,
+    "room_recall": 0.023809523809523808,
+    "association_pair_precision": 0.9722222222222222,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 0.9142857142857143,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6223776223776224,
+     0.9440559440559441,
+     0.993006993006993
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.3881278538812785,
+     0.8264840182648402,
+     0.9269406392694064
+    ],
+    "chamfer_total_m": 1.1326587461478845,
+    "chamfer_accuracy_m": 0.07807277209334688,
+    "chamfer_completeness_m": 1.0545859740545376,
+    "pose_translation_error_m": {
+     "mean": 0.13738664560984282,
+     "p90": 0.23433060114286808
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.8268256085172456,
+     "p90": 1.7905301970797016
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6932515337423313,
+      0.9631901840490797,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.32515337423312884,
+      0.8343558282208589,
+      1.0
+     ]
+    },
+    "validation_states": {
+     "invalid": 8,
+     "uncertain": 27,
+     "incomplete": 6,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.018180680952355033
+   }
+  },
+  "heavy_occlusion": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.0708913219271294,
+     "p90": 0.13574245128713647
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 1.2089139392095425,
+     "p90": 2.5028466269014733
+    },
+    "observed_end_error_m": {
+     "n": 111,
+     "mean": 0.14329342900777356,
+     "p90": 0.25930446520634554
+    },
+    "length_error_fully_bounded_m": {
+     "n": 51,
+     "mean": 0.1018928644029369,
+     "p90": 0.17166932614227992
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.3888888888888889,
+    "spurious_per_scene": 0.047619047619047616,
+    "entities_per_gt_wall": 1.3962962962962964,
+    "junction_precision": 1.0,
+    "junction_recall": 0.20588235294117646,
+    "room_precision": 0.2,
+    "room_recall": 0.011904761904761904,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.6620780072107506,
+    "lower_bound_valid_fraction": 0.8949771689497716,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.21481481481481482,
+     0.40370370370370373,
+     0.5592592592592592
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.02702702702702703,
+     0.14414414414414414,
+     0.3783783783783784
+    ],
+    "chamfer_total_m": 0.1848569876549657,
+    "chamfer_accuracy_m": 0.10101132499804667,
+    "chamfer_completeness_m": 0.08384566265691899,
+    "pose_translation_error_m": {
+     "mean": 0.14585308327882515,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9595859962397224,
+     "p90": 1.9913094729357983
+    },
+    "validation_states": {
+     "invalid": 20,
+     "uncertain": 21,
+     "incomplete": 1
+    },
+    "seconds_mean": 0.18481084047614008
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 268,
+     "mean": 0.06078908043556206,
+     "p90": 0.10992882265149453
+    },
+    "wall_angle_error_deg": {
+     "n": 268,
+     "mean": 0.9162861646156197,
+     "p90": 1.9290457753381558
+    },
+    "observed_end_error_m": {
+     "n": 156,
+     "mean": 0.13609991535844393,
+     "p90": 0.24856321652908608
+    },
+    "length_error_fully_bounded_m": {
+     "n": 77,
+     "mean": 0.07686068772016032,
+     "p90": 0.14888323946889148
+    },
+    "wall_recall": 0.9925925925925926,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9925925925925926,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 0.9838135318873422,
+    "association_pair_recall": 0.9960668633235005,
+    "lower_bound_valid_fraction": 0.9895287958115183,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.40671641791044777,
+     0.8283582089552238,
+     0.9776119402985075
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.6217948717948718,
+     0.9423076923076923,
+     0.9935897435897436
+    ],
+    "chamfer_total_m": 0.14390857886031116,
+    "chamfer_accuracy_m": 0.06669546004812428,
+    "chamfer_completeness_m": 0.07721311881218688,
+    "pose_translation_error_m": {
+     "mean": 0.10481085079579054,
+     "p90": 0.1795578516114713
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.6292024857843851,
+     "p90": 1.2394115735739197
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7341269841269841,
+      0.9722222222222222,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.45634920634920634,
+      0.8690476190476191,
+      0.9880952380952381
+     ]
+    },
+    "validation_states": {
+     "incomplete": 25,
+     "uncertain": 15,
+     "invalid": 2
+    },
+    "seconds_mean": 0.10220225952391393
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 268,
+     "mean": 0.06078348890310612,
+     "p90": 0.10944495893394456
+    },
+    "wall_angle_error_deg": {
+     "n": 268,
+     "mean": 0.9070711222794129,
+     "p90": 1.8298923566044831
+    },
+    "observed_end_error_m": {
+     "n": 156,
+     "mean": 0.11398356886081025,
+     "p90": 0.1838348139643957
+    },
+    "length_error_fully_bounded_m": {
+     "n": 77,
+     "mean": 0.05121271819118937,
+     "p90": 0.11840903649074183
+    },
+    "wall_recall": 0.9925925925925926,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9925925925925926,
+    "junction_precision": 0.9919354838709677,
+    "junction_recall": 0.4019607843137255,
+    "room_precision": 0.5,
+    "room_recall": 0.05952380952380952,
+    "association_pair_precision": 0.9838135318873422,
+    "association_pair_recall": 0.9960668633235005,
+    "lower_bound_valid_fraction": 0.9895287958115183,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.4141791044776119,
+     0.8395522388059702,
+     0.9776119402985075
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.17307692307692307,
+     0.5448717948717948,
+     0.9038461538461539
+    ],
+    "chamfer_total_m": 0.14354442712612278,
+    "chamfer_accuracy_m": 0.0664731731240206,
+    "chamfer_completeness_m": 0.07707125400210216,
+    "pose_translation_error_m": {
+     "mean": 0.10481085079579054,
+     "p90": 0.1795578516114713
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.6292024857843851,
+     "p90": 1.2394115735739197
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7341269841269841,
+      0.9722222222222222,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.45634920634920634,
+      0.8690476190476191,
+      0.9880952380952381
+     ]
+    },
+    "validation_states": {
+     "incomplete": 21,
+     "uncertain": 15,
+     "valid_complete": 1,
+     "invalid": 1,
+     "valid_partial": 4
+    },
+    "seconds_mean": 0.05920476904763442
+   }
+  },
+  "large_pose_noise": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 240,
+     "mean": 0.18776152878894367,
+     "p90": 0.31177913672044155
+    },
+    "wall_angle_error_deg": {
+     "n": 240,
+     "mean": 2.061053127372639,
+     "p90": 3.8166057441601695
+    },
+    "observed_end_error_m": {
+     "n": 324,
+     "mean": 0.39737841958795456,
+     "p90": 0.6405674162343272
+    },
+    "length_error_fully_bounded_m": {
+     "n": 144,
+     "mean": 0.26501291763995116,
+     "p90": 0.6572168742363598
+    },
+    "wall_recall": 0.8888888888888888,
+    "duplicate_rate": 0.4074074074074074,
+    "spurious_per_scene": 0.8333333333333334,
+    "entities_per_gt_wall": 1.4259259259259258,
+    "junction_precision": 1.0,
+    "junction_recall": 0.369281045751634,
+    "room_precision": 0.20833333333333334,
+    "room_recall": 0.05952380952380952,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.23009149440867502,
+    "lower_bound_valid_fraction": 0.5729166666666666,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.07083333333333333,
+     0.1125,
+     0.18333333333333332
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.0,
+     0.030864197530864196,
+     0.04938271604938271
+    ],
+    "chamfer_total_m": 0.603711596975069,
+    "chamfer_accuracy_m": 0.26069381834017047,
+    "chamfer_completeness_m": 0.3430177786348986,
+    "pose_translation_error_m": {
+     "mean": 0.43755924983647554,
+     "p90": 0.7323659658504579
+    },
+    "pose_rotation_error_deg": {
+     "mean": 2.3989649905993007,
+     "p90": 4.9782736823395215
+    },
+    "validation_states": {
+     "invalid": 41,
+     "uncertain": 1
+    },
+    "seconds_mean": 0.2564116023809436
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 247,
+     "mean": 0.13973138603735982,
+     "p90": 0.26163860534208705
+    },
+    "wall_angle_error_deg": {
+     "n": 247,
+     "mean": 1.6431952827681862,
+     "p90": 3.4568052437123065
+    },
+    "observed_end_error_m": {
+     "n": 452,
+     "mean": 0.31596996226338514,
+     "p90": 0.551884526705175
+    },
+    "length_error_fully_bounded_m": {
+     "n": 222,
+     "mean": 0.15128140876509558,
+     "p90": 0.30408679087538987
+    },
+    "wall_recall": 0.9148148148148149,
+    "duplicate_rate": 0.003703703703703704,
+    "spurious_per_scene": 0.38095238095238093,
+    "entities_per_gt_wall": 0.9777777777777777,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": 1.0,
+    "room_recall": 0.047619047619047616,
+    "association_pair_precision": 0.9212548015364916,
+    "association_pair_recall": 0.9752626228397153,
+    "lower_bound_valid_fraction": 0.64,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5465587044534413,
+     0.8582995951417004,
+     0.97165991902834
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.4314159292035398,
+     0.8672566371681416,
+     0.9756637168141593
+    ],
+    "chamfer_total_m": 0.3418228518484281,
+    "chamfer_accuracy_m": 0.17701187240402563,
+    "chamfer_completeness_m": 0.16481097944440246,
+    "pose_translation_error_m": {
+     "mean": 0.3753857525368616,
+     "p90": 0.7267770929190107
+    },
+    "pose_rotation_error_deg": {
+     "mean": 1.9532144815519563,
+     "p90": 4.661381019178843
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7103174603174603,
+      1.0,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.3412698412698413,
+      0.7976190476190477,
+      0.9880952380952381
+     ]
+    },
+    "validation_states": {
+     "uncertain": 17,
+     "invalid": 20,
+     "valid_complete": 1,
+     "incomplete": 3,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.12359695476184893
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 230,
+     "mean": 0.1418422018600354,
+     "p90": 0.2706010494900152
+    },
+    "wall_angle_error_deg": {
+     "n": 230,
+     "mean": 1.6894312256969697,
+     "p90": 3.432309360283109
+    },
+    "observed_end_error_m": {
+     "n": 422,
+     "mean": 0.31107859064735643,
+     "p90": 0.47202188565770925
+    },
+    "length_error_fully_bounded_m": {
+     "n": 207,
+     "mean": 0.25312211471444135,
+     "p90": 0.4423977760078836
+    },
+    "wall_recall": 0.8518518518518519,
+    "duplicate_rate": 0.018518518518518517,
+    "spurious_per_scene": 0.6904761904761905,
+    "entities_per_gt_wall": 0.9777777777777777,
+    "junction_precision": 0.9865470852017937,
+    "junction_recall": 0.7189542483660131,
+    "room_precision": 0.6285714285714286,
+    "room_recall": 0.5238095238095238,
+    "association_pair_precision": 0.9212548015364916,
+    "association_pair_recall": 0.9752626228397153,
+    "lower_bound_valid_fraction": 0.6956521739130435,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5260869565217391,
+     0.8478260869565217,
+     0.9739130434782609
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.1872037914691943,
+     0.5023696682464455,
+     0.7606635071090048
+    ],
+    "chamfer_total_m": 0.4264013899163289,
+    "chamfer_accuracy_m": 0.1868514046671776,
+    "chamfer_completeness_m": 0.23954998524915128,
+    "pose_translation_error_m": {
+     "mean": 0.3753857525368616,
+     "p90": 0.7267770929190107
+    },
+    "pose_rotation_error_deg": {
+     "mean": 1.9532144815519563,
+     "p90": 4.661381019178843
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.7103174603174603,
+      1.0,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.3412698412698413,
+      0.7976190476190477,
+      0.9880952380952381
+     ]
+    },
+    "validation_states": {
+     "uncertain": 28,
+     "valid_complete": 5,
+     "incomplete": 1,
+     "invalid": 7,
+     "valid_partial": 1
+    },
+    "seconds_mean": 0.20160277142860564
+   }
+  },
+  "one_bad_pose_0.6m": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 269,
+     "mean": 0.06878666776793109,
+     "p90": 0.13176819942654777
+    },
+    "wall_angle_error_deg": {
+     "n": 269,
+     "mean": 1.021363242920247,
+     "p90": 2.001779009915859
+    },
+    "observed_end_error_m": {
+     "n": 429,
+     "mean": 0.15384779877201374,
+     "p90": 0.2710614625985624
+    },
+    "length_error_fully_bounded_m": {
+     "n": 206,
+     "mean": 0.15243410681037806,
+     "p90": 0.35465990270972414
+    },
+    "wall_recall": 0.9962962962962963,
+    "duplicate_rate": 0.44074074074074077,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 1.4407407407407407,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7254901960784313,
+    "room_precision": 0.2,
+    "room_recall": 0.15476190476190477,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.44222297526262283,
+    "lower_bound_valid_fraction": 0.746031746031746,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.21933085501858737,
+     0.43866171003717475,
+     0.587360594795539
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.06526806526806526,
+     0.2191142191142191,
+     0.38461538461538464
+    ],
+    "chamfer_total_m": 0.18502444858826114,
+    "chamfer_accuracy_m": 0.10782284243410338,
+    "chamfer_completeness_m": 0.07720160615415775,
+    "pose_translation_error_m": {
+     "mean": 0.24268594125379717,
+     "p90": 0.7281535104352139
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9595859962397224,
+     "p90": 1.9913094729357983
+    },
+    "validation_states": {
+     "invalid": 37,
+     "uncertain": 5
+    },
+    "seconds_mean": 0.2045250309524601
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 269,
+     "mean": 0.07039717599399523,
+     "p90": 0.1614808209782588
+    },
+    "wall_angle_error_deg": {
+     "n": 269,
+     "mean": 0.8558578328369612,
+     "p90": 1.7268418125686822
+    },
+    "observed_end_error_m": {
+     "n": 502,
+     "mean": 0.15132353323451037,
+     "p90": 0.2765290597881913
+    },
+    "length_error_fully_bounded_m": {
+     "n": 250,
+     "mean": 0.09209003229753861,
+     "p90": 0.18703586471669678
+    },
+    "wall_recall": 0.9962962962962963,
+    "duplicate_rate": 0.014814814814814815,
+    "spurious_per_scene": 0.11904761904761904,
+    "entities_per_gt_wall": 1.0296296296296297,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": 1.0,
+    "room_recall": 0.03571428571428571,
+    "association_pair_precision": 0.9911785462244178,
+    "association_pair_recall": 0.9518807184005422,
+    "lower_bound_valid_fraction": 0.8947368421052632,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5055762081784386,
+     0.8327137546468402,
+     0.9107806691449815
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.4063745019920319,
+     0.8247011952191236,
+     0.950199203187251
+    ],
+    "chamfer_total_m": 0.1538248632183332,
+    "chamfer_accuracy_m": 0.08135072737961216,
+    "chamfer_completeness_m": 0.07247413583872102,
+    "pose_translation_error_m": {
+     "mean": 0.16794861100261477,
+     "p90": 0.27963481090665043
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.7342579351911015,
+     "p90": 1.7101531778044694
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6984126984126984,
+      0.9682539682539683,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.376984126984127,
+      0.7619047619047619,
+      0.9087301587301587
+     ]
+    },
+    "validation_states": {
+     "uncertain": 15,
+     "invalid": 15,
+     "incomplete": 10,
+     "valid_partial": 2
+    },
+    "seconds_mean": 0.09238179285713548
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 269,
+     "mean": 0.06742658179157365,
+     "p90": 0.14991784177619105
+    },
+    "wall_angle_error_deg": {
+     "n": 269,
+     "mean": 0.8002647864093793,
+     "p90": 1.666825508090245
+    },
+    "observed_end_error_m": {
+     "n": 500,
+     "mean": 0.12778453848330498,
+     "p90": 0.22107634292649003
+    },
+    "length_error_fully_bounded_m": {
+     "n": 249,
+     "mean": 0.06467854566674681,
+     "p90": 0.14085294583703425
+    },
+    "wall_recall": 0.9962962962962963,
+    "duplicate_rate": 0.018518518518518517,
+    "spurious_per_scene": 0.09523809523809523,
+    "entities_per_gt_wall": 1.0296296296296297,
+    "junction_precision": 0.9965635738831615,
+    "junction_recall": 0.9477124183006536,
+    "room_precision": 0.8481012658227848,
+    "room_recall": 0.7976190476190477,
+    "association_pair_precision": 0.9911785462244178,
+    "association_pair_recall": 0.9518807184005422,
+    "lower_bound_valid_fraction": 0.9,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5315985130111525,
+     0.8475836431226765,
+     0.9219330855018587
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.18,
+     0.494,
+     0.81
+    ],
+    "chamfer_total_m": 0.1464961889024553,
+    "chamfer_accuracy_m": 0.07520140385151947,
+    "chamfer_completeness_m": 0.07129478505093582,
+    "pose_translation_error_m": {
+     "mean": 0.16794861100261477,
+     "p90": 0.27963481090665043
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.7342579351911015,
+     "p90": 1.7101531778044694
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.6984126984126984,
+      0.9682539682539683,
+      1.0
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.376984126984127,
+      0.7619047619047619,
+      0.9087301587301587
+     ]
+    },
+    "validation_states": {
+     "uncertain": 21,
+     "valid_complete": 10,
+     "incomplete": 2,
+     "invalid": 6,
+     "valid_partial": 3
+    },
+    "seconds_mean": 0.07001901190477881
+   }
+  },
+  "overconfident_priors_x0.4": {
+   "existing": {
+    "wall_offset_error_m": {
+     "n": 268,
+     "mean": 0.06642934388352942,
+     "p90": 0.12685378645271564
+    },
+    "wall_angle_error_deg": {
+     "n": 268,
+     "mean": 0.9722442933289105,
+     "p90": 1.8757336689676978
+    },
+    "observed_end_error_m": {
+     "n": 444,
+     "mean": 0.13225537186907418,
+     "p90": 0.24629793282088971
+    },
+    "length_error_fully_bounded_m": {
+     "n": 215,
+     "mean": 0.1129215767283975,
+     "p90": 0.2949812580554675
+    },
+    "wall_recall": 0.9925925925925926,
+    "duplicate_rate": 0.4666666666666667,
+    "spurious_per_scene": 0.023809523809523808,
+    "entities_per_gt_wall": 1.462962962962963,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7581699346405228,
+    "room_precision": 0.15730337078651685,
+    "room_recall": 0.16666666666666666,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.5875974246018298,
+    "lower_bound_valid_fraction": 0.8113207547169812,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.19776119402985073,
+     0.4141791044776119,
+     0.5970149253731343
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.0518018018018018,
+     0.16216216216216217,
+     0.36711711711711714
+    ],
+    "chamfer_total_m": 0.16554426859389207,
+    "chamfer_accuracy_m": 0.08734108252322123,
+    "chamfer_completeness_m": 0.07820318607067082,
+    "pose_translation_error_m": {
+     "mean": 0.14585308327882515,
+     "p90": 0.24412198861681958
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.9595859962397224,
+     "p90": 1.9913094729357983
+    },
+    "validation_states": {
+     "invalid": 35,
+     "uncertain": 7
+    },
+    "seconds_mean": 0.26618252142859655
+   },
+   "optimized": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.06414755062978147,
+     "p90": 0.12094030099902177
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 0.7882872821083536,
+     "p90": 1.6330220198326646
+    },
+    "observed_end_error_m": {
+     "n": 498,
+     "mean": 0.1273676401330013,
+     "p90": 0.2340082724984522
+    },
+    "length_error_fully_bounded_m": {
+     "n": 247,
+     "mean": 0.08171306042423973,
+     "p90": 0.17802285233834836
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.040740740740740744,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0407407407407407,
+    "junction_precision": null,
+    "junction_recall": 0.0,
+    "room_precision": 0.6666666666666666,
+    "room_recall": 0.047619047619047616,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9650965774313792,
+    "lower_bound_valid_fraction": 0.8260869565217391,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.2740740740740741,
+     0.5592592592592592,
+     0.8111111111111111
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.19477911646586346,
+     0.5923694779116466,
+     0.8534136546184738
+    ],
+    "chamfer_total_m": 0.13775224147067705,
+    "chamfer_accuracy_m": 0.0710513668247265,
+    "chamfer_completeness_m": 0.06670087464595056,
+    "pose_translation_error_m": {
+     "mean": 0.11770412172194723,
+     "p90": 0.21335054915746138
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.6933158891977403,
+     "p90": 1.6134136915177497
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.4007936507936508,
+      0.6865079365079365,
+      0.8849206349206349
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.12301587301587301,
+      0.4126984126984127,
+      0.6547619047619048
+     ]
+    },
+    "validation_states": {
+     "uncertain": 15,
+     "valid_complete": 1,
+     "invalid": 12,
+     "incomplete": 11,
+     "valid_partial": 3
+    },
+    "seconds_mean": 0.1317240904762955
+   },
+   "opt+constraints": {
+    "wall_offset_error_m": {
+     "n": 270,
+     "mean": 0.06087781155156704,
+     "p90": 0.1128561541643489
+    },
+    "wall_angle_error_deg": {
+     "n": 270,
+     "mean": 0.7128442490850715,
+     "p90": 1.4158535520848923
+    },
+    "observed_end_error_m": {
+     "n": 498,
+     "mean": 0.10300671356846203,
+     "p90": 0.1684602497117288
+    },
+    "length_error_fully_bounded_m": {
+     "n": 247,
+     "mean": 0.0489692249369575,
+     "p90": 0.09415332595476285
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.040740740740740744,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0407407407407407,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9281045751633987,
+    "room_precision": 0.9041095890410958,
+    "room_recall": 0.7857142857142857,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9650965774313792,
+    "lower_bound_valid_fraction": 0.9130434782608695,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.3,
+     0.5888888888888889,
+     0.8333333333333334
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.08032128514056225,
+     0.3192771084337349,
+     0.5682730923694779
+    ],
+    "chamfer_total_m": 0.12870884385459114,
+    "chamfer_accuracy_m": 0.06482925783691992,
+    "chamfer_completeness_m": 0.06387958601767121,
+    "pose_translation_error_m": {
+     "mean": 0.11770412172194723,
+     "p90": 0.21335054915746138
+    },
+    "pose_rotation_error_deg": {
+     "mean": 0.6933158891977403,
+     "p90": 1.6134136915177497
+    },
+    "pose_sigma_calibration": {
+     "rotation_within_1_2_3_sigma": [
+      0.4007936507936508,
+      0.6865079365079365,
+      0.8849206349206349
+     ],
+     "translation_within_1_2_3_sigma(rayleigh 0.39/0.86/0.99)": [
+      0.12301587301587301,
+      0.4126984126984127,
+      0.6547619047619048
+     ]
+    },
+    "validation_states": {
+     "uncertain": 20,
+     "valid_complete": 10,
+     "invalid": 7,
+     "incomplete": 2,
+     "valid_partial": 3
+    },
+    "seconds_mean": 0.09532439047619673
+   }
+  }
+ },
+ "profile": [
+  {
+   "images": 2,
+   "observations": 25,
+   "seconds": 0.225,
+   "nfev": 36,
+   "peak_mem_mb": 0.1,
+   "converged": true,
+   "clusters": 7,
+   "warm_restart_seconds": 0.054,
+   "warm_restart_nfev": 36
+  },
+  {
+   "images": 4,
+   "observations": 46,
+   "seconds": 0.347,
+   "nfev": 38,
+   "peak_mem_mb": 0.2,
+   "converged": true,
+   "clusters": 9,
+   "warm_restart_seconds": 0.079,
+   "warm_restart_nfev": 38
+  },
+  {
+   "images": 8,
+   "observations": 98,
+   "seconds": 0.94,
+   "nfev": 41,
+   "peak_mem_mb": 0.6,
+   "converged": true,
+   "clusters": 9,
+   "warm_restart_seconds": 0.256,
+   "warm_restart_nfev": 18
+  },
+  {
+   "images": 16,
+   "observations": 195,
+   "seconds": 1.576,
+   "nfev": 32,
+   "peak_mem_mb": 1.5,
+   "converged": true,
+   "clusters": 9,
+   "warm_restart_seconds": 0.439,
+   "warm_restart_nfev": 14
+  },
+  {
+   "images": 32,
+   "observations": 385,
+   "seconds": 3.461,
+   "nfev": 32,
+   "peak_mem_mb": 4.6,
+   "converged": true,
+   "clusters": 9,
+   "warm_restart_seconds": 0.954,
+   "warm_restart_nfev": 14
+  },
+  {
+   "images": 64,
+   "observations": 765,
+   "seconds": 9.498,
+   "nfev": 44,
+   "peak_mem_mb": 15.8,
+   "converged": true,
+   "clusters": 9,
+   "warm_restart_seconds": 2.453,
+   "warm_restart_nfev": 16
+  }
+ ],
+ "seeds": 6,
+ "seed_split": "evaluation seeds 100..",
+ "limits": [
+  "simulated observations and simulated pose errors over known truth; no real image set with an independent 3D ground truth is available to this repo's benchmark harness, so no real-world claim is made",
+  "pose priors are plan-view (yaw + horizontal translation); scale and tilt are not optimised"
+ ],
+ "wall_clock_s": 171.6
+}

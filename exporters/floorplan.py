@@ -19,7 +19,7 @@ and the legend says so (it never claims metres).
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from exporters.report import ExportReport, content_hash
 from world_ir import EntityType
@@ -30,11 +30,30 @@ DIM_OFFSET_M = 0.45
 DOOR_ARC_DEG = 90.0
 
 
-def _scale_units(world) -> Tuple[str, float]:
+class _Unit(str):
+    """The unit name plus the world's scale kind (``engine.multiengine.world_scale.scale_kind``), so a dimension label can refuse to say
+    "measured" for lengths whose scale is only an estimate or was never independently validated."""
+
+    kind: str = "sfm_gauge"
+
+
+# measured-class dimension states, and what each reads as when the world's scale is not a validated physical calibration
+_MEASURED_STATES = {"MEASURED", "VERIFIED", "OBSERVED"}
+_CAPPED_STATE = {"estimated": "ESTIMATED", "anchored_unvalidated": "ANCHORED-UNVALIDATED"}
+
+
+def _scale_units(world) -> Tuple[_Unit, float]:
+    """(unit, 1.0). Metres only when the ONE shared scale reader (world_scale.scale_block) says the scale is a recorded measured calibration;
+    an accepted typical-size prior is an ESTIMATE and stays in model units. A legacy world that only carries a bare ``metric`` label (no
+    calibration record at all) keeps its historic metre label."""
+    from engine.multiengine.world_scale import scale_block
+
+    sb = scale_block(world)
     scale = (getattr(world, "metadata", None) or {}).get("scale") or {}
-    if scale.get("state") == "metric":
-        return "m", 1.0
-    return "model units", 1.0
+    bare_legacy = scale.get("state") == "metric" and sb["calibration_status"] is None and sb["scale_kind"] != "estimated"
+    unit = _Unit("m" if sb["metric_export_ready"] or bare_legacy else "model units")
+    unit.kind = sb["scale_kind"]
+    return unit, 1.0
 
 
 def _basis(room) -> Tuple[List[float], List[float]]:
@@ -49,7 +68,7 @@ def _project(point_xyz: Sequence[float], e1: Sequence[float], e2: Sequence[float
     return (sum(a * b for a, b in zip(p, e1)), sum(a * b for a, b in zip(p, e2)))
 
 
-def _rooms(world) -> List[object]:
+def _rooms(world) -> List[Any]:
     return [e for e in world.entities.values() if e.type == EntityType.ROOM
             and (e.custom_properties or {}).get("footprint_polygon_m")
             and not (e.custom_properties or {}).get("superseded_by")]
@@ -112,7 +131,15 @@ def _svg_text(x: float, y: float, text: str, size: float, *, anchor: str = "midd
 def _dim_label(dim: Optional[dict], unit: str) -> str:
     if not isinstance(dim, dict) or dim.get("value") is None:
         return "not measured"
-    return f"{float(dim['value']):.2f} {unit} · {dim.get('state', 'UNKNOWN')}"
+    state = str(dim.get("state", "UNKNOWN"))
+    if state.upper() in _MEASURED_STATES:
+        state = _CAPPED_STATE.get(getattr(unit, "kind", ""), state)
+    return f"{float(dim['value']):.2f} {unit} · {state}"
+
+
+def _plan_title(unit) -> str:
+    return {"physically_anchored": "Measured floor plan", "anchored_unvalidated": "Floor plan (scale NOT independently validated)",
+            "estimated": "Floor plan (ESTIMATED scale, not measured)"}.get(getattr(unit, "kind", ""), "Floor plan")
 
 
 def _wall_line_with_gaps(wall: dict, unit_scale: float) -> str:
@@ -177,7 +204,7 @@ def export_to_floorplan_svg_with_report(world, artifact_store=None) -> Tuple[str
     parts: List[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{_svg_num(vb[0])} {_svg_num(vb[1])} '
         f'{_svg_num(vb[2])} {_svg_num(vb[3])}" width="{_svg_num(vb[2] * SVG_MM_PER_M)}mm" '
-        f'height="{_svg_num(vb[3] * SVG_MM_PER_M)}mm" role="img" aria-label="Measured floor plan">',
+        f'height="{_svg_num(vb[3] * SVG_MM_PER_M)}mm" role="img" aria-label="{_plan_title(unit)}">',
         f'<rect x="{_svg_num(vb[0])}" y="{_svg_num(vb[1])}" width="{_svg_num(vb[2])}" height="{_svg_num(vb[3])}" '
         f'fill="#ffffff"/>',
     ]
@@ -231,7 +258,7 @@ def export_to_floorplan_svg_with_report(world, artifact_store=None) -> Tuple[str
                      f'y2="{_svg_num(yy)}" stroke="{colour}" stroke-width="0.04"/>')
         parts.append(_svg_text(lx + 0.42, yy + 0.04, label, 0.10, anchor="start"))
     parts.append(_svg_text(vb[0] + 0.1, vb[1] + vb[3] - 0.12,
-                           f"Measured floor plan · units: {unit} · 1:50 · every dimension states its evidence",
+                           f"{_plan_title(unit)} · units: {unit} · 1:50 · every dimension states its evidence",
                            0.11, anchor="start", fill="#475569"))
     parts.append("</svg>")
     svg = "\n".join(parts)
@@ -347,6 +374,8 @@ def export_to_floorplan_dxf_with_report(world, artifact_store=None) -> Tuple[str
     if not rooms:
         raise ValueError("floor plan export needs at least one room with a measured footprint")
     lines: List[str] = _dxf_header()
+    _pts = [p for r in rooms for p in r.custom_properties["footprint_polygon_m"]]
+    lines += _dxf_text(min(float(p[0]) for p in _pts), min(float(p[1]) for p in _pts) - 2 * DIM_OFFSET_M, f"{_plan_title(unit)} · units: {unit}", 0.11)
     for room in rooms:
         poly = room.custom_properties["footprint_polygon_m"]
         for i, p in enumerate(poly):
@@ -448,7 +477,7 @@ def build_room_report(world) -> dict:
         raise ValueError("room report needs at least one room with a measured footprint")
     out = {"schema": "room_report/1", "world_id": world.id, "world_version": world.version, "units": unit,
            "scale_state": (((world.metadata or {}).get("scale") or {}).get("state") or "relative"),
-           "rooms": []}
+           "scale_kind": unit.kind, "rooms": []}
     for room in rooms:
         cp = room.custom_properties
         walls = _room_walls(world, room)
@@ -461,7 +490,8 @@ def build_room_report(world) -> dict:
                 kind = str(o.get("kind", "opening")).lower()
                 counts[kind] = counts.get(kind, 0) + 1
         dims = cp.get("dimensions") or {}
-        states = sorted({d.get("state") for d in dims.values() if isinstance(d, dict) and d.get("state")})
+        states = sorted({(_CAPPED_STATE.get(unit.kind, d["state"]) if str(d["state"]).upper() in _MEASURED_STATES else d["state"])
+                         for d in dims.values() if isinstance(d, dict) and d.get("state")}, key=str)
         confs = [float(w["confidence"]) for w in walls if w.get("confidence") is not None]
 
         # Fixtures in this room (T-2.3)
@@ -523,7 +553,7 @@ def report_to_pdf(report: dict) -> bytes:
     unit = report.get("units", "m")
     lines: List[Tuple[str, int, bool]] = []        # (text, font size, bold-ish via Helvetica-Bold)
     lines.append((f"Room report — {report.get('world_id', 'world')}", 16, True))
-    lines.append((f"Scale: {report.get('scale_state', 'relative')} · units: {unit}", 9, False))
+    lines.append((f"Scale: {report.get('scale_state', 'relative')} ({report.get('scale_kind', 'unknown')}) · units: {unit}", 9, False))
     lines.append(("", 6, False))
     for r in report.get("rooms", []):
         lines.append((f"Room {r.get('name', r.get('id'))}", 13, True))
@@ -741,7 +771,7 @@ def _sheet1_cover_and_rooms(world, report: dict, unit: str) -> List[str]:
     # Cover Title Banner
     ops.append(_pdf_text_op(40.0, 530.0, "ARCHITECTURAL DRAWING PACKAGE", 20.0, bold=True))
     ops.append(_pdf_text_op(40.0, 510.0, f"World Reconstruction: {world.id}", 11.0, bold=False))
-    ops.append(_pdf_text_op(40.0, 495.0, f"Coordinate Unit: {unit}  |  Scale State: {report.get('scale_state', 'metric').upper()}", 9.0, bold=False))
+    ops.append(_pdf_text_op(40.0, 495.0, f"Coordinate Unit: {unit}  |  Scale State: {report.get('scale_state', 'metric').upper()}  |  Scale Kind: {str(report.get('scale_kind', 'unknown')).upper()}", 9.0, bold=False))
 
     # Room Schedule Section
     ops.append(_pdf_text_op(40.0, 460.0, "ROOM SCHEDULE & ARCHITECTURAL TAKEOFF", 12.0, bold=True))

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -45,10 +45,10 @@ class ImageAnalysis:
 class LayoutModels:
     def __init__(self, device: Optional[str] = None) -> None:
         self._device = device
-        self._depth = None
-        self._depth_proc = None
-        self._seg = None
-        self._seg_proc = None
+        self._depth: Any = None
+        self._depth_proc: Any = None
+        self._seg: Any = None
+        self._seg_proc: Any = None
 
     def _dev(self) -> str:
         if self._device:
@@ -65,9 +65,11 @@ class LayoutModels:
 
             dev = self._dev()
             self._depth_proc = AutoImageProcessor.from_pretrained(DEPTH_MODEL, local_files_only=True)
-            self._depth = AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL, local_files_only=True).to(dev).eval()
+            depth_model: Any = AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL, local_files_only=True)
+            self._depth = depth_model.to(dev).eval()
             self._seg_proc = AutoImageProcessor.from_pretrained(SEG_MODEL, local_files_only=True)
-            self._seg = UperNetForSemanticSegmentation.from_pretrained(SEG_MODEL, local_files_only=True).to(dev).eval()
+            seg_model: Any = UperNetForSemanticSegmentation.from_pretrained(SEG_MODEL, local_files_only=True)
+            self._seg = seg_model.to(dev).eval()
         except Exception as exc:  # noqa: BLE001
             self._depth = self._seg = None
             if "out of memory" in str(exc).lower() and self._device != "cpu":

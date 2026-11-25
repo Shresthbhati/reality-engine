@@ -57,6 +57,7 @@ from apps.api.routes_thermal_envelope import thermal_envelope_router
 from apps.api.routes_system import system
 from apps.api.routes_engines import engines_router
 from apps.api.routes_evidence_world import evidence_world_router
+from apps.api.routes_spatial_global import spatial_global_router
 from apps.api.routes_technologies import technologies_router
 from apps.api.routes_usage import router as usage_router
 from apps.api.routes_billing import router as billing_router

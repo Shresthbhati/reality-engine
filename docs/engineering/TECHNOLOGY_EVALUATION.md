@@ -104,3 +104,71 @@ what matters for use**, and they are licensed separately from the code.
 * **Usable on the licences read:** Grounding DINO, SAM 2, Florence-2, Depth Anything V2 Small, DINOv2, LightGlue, Open3D, COLMAP, Metric3D code.
 * **Unresolved, needs a read before adoption:** Depth Anything V2 Metric-Indoor Small (no declared licence), Mask2Former COCO weights ("other"),
   Metric3D weights, VGGT License v1 full text, the Inria Gaussian Splatting terms.
+
+## 6. Spatial reasoning compiler (`reconstruction/spatial`, 2026-11-25)
+
+What the compiler needs and what was chosen. Observed on this machine: numpy 2.5.3, scipy 1.18.1, shapely 2.1.2, networkx 3.6.1,
+trimesh 5.2.0, open3d 0.20.0, scikit-learn 1.9.1 (installed != declared: only numpy/scipy/open3d are core dependencies in `pyproject.toml`).
+
+| Need | Chosen | Why | Cost / notes |
+|---|---|---|---|
+| Constraint solving (junction + prior least squares, robust loss, posterior covariance) | `scipy.optimize.least_squares` (trf, soft-L1), numpy `pinv` for (JᵀJ)⁻¹ | scipy is already a core dependency, BSD-3 (licence text read from the installed distribution); no new dependency | dense Jacobian: O((4n)²) memory, fine to a few hundred walls per storey; sparse `jac_sparsity` is the upgrade path |
+| Spatial index / nearest neighbour | none added (O(n²) wall pairing per storey) | storeys have tens to low hundreds of walls | `scipy.spatial.cKDTree` is available when a storey exceeds ~500 walls |
+| Planar graph / room faces | own half-edge traversal (~60 lines) | needs evidence-gated junctions and spur pruning; `shapely.polygonize` would also close gaps that are not evidenced and pulls GEOS (LGPL) | networkx `cycle_basis` would find cycles but not faces |
+| Connected components / graph reasoning | `scipy.sparse.csgraph` available, not needed yet | | networkx is only in the optional `meshing` extra |
+| Robust line / plane fitting | own weighted TLS + Huber/MAD (reject_k=3) | closed form, deterministic, gives the sigma the compiler needs; RANSAC adds randomness and no covariance | |
+| Point cloud / mesh processing | `open3d` already used by `reconstruction/pointcloud_clean.py` (MIT per `.agent/LICENSES.yaml`) | consumed only through `ReconstructionResult` points | |
+| Frame alignment, ICP, loop closure, bundle adjustment | **not re-implemented**: `registration/` (`cross_session`, `landmarks`, `pose_graph`), `reconstruction/sfm`, COLMAP via the perception stack | owned by FreeBuff's side; `refinement.frame_transform_2d` adapts a `RigidTransform` to the plan view and refuses tilted frames | |
+
+Considered and not adopted: CGAL (GPL/commercial), python-igraph (GPL), Ceres/g2o/GTSAM (heavy native builds, nothing here needs a factor-graph solver yet),
+pyransac3d (licence not read). Licences of shapely/networkx/trimesh above come from upstream metadata only; read them before any adoption.
+
+## 7. Multi-view optimization layer (`reconstruction/spatial/multiview.py`, `frames.py`, 2026-11-25)
+
+Availability observed on this machine: OpenCV 5.0.0, pycolmap 4.2.1, Open3D 0.20.0, SciPy 1.18.1, PyTorch 2.14; **not installed:** GTSAM, PyPose, scikit-sparse, Ceres.
+
+| Candidate | Decision | Reason |
+|---|---|---|
+| COLMAP / pycolmap | consume, do not rewrite | already the SfM backend (`reconstruction/sfm`, `colmap_*`); poses enter as `ImagePose` priors with their sigmas |
+| OpenCV | not used here | feature matching / PnP / homography belong to the perception side; no plan-view need |
+| Bundle adjustment (full 3D) | not implemented | owned by COLMAP; this layer solves the *structural* problem: pose corrections + wall lines from perpendicular residuals |
+| Ceres / GTSAM | not adopted | not installed, heavy native builds; the problem is ~3 params/image + 2/wall, solved in <1 s up to ~30 images by `scipy.optimize.least_squares` with an analytic Jacobian (finite differences were 3x slower; an `lsmr` sparse solve failed to converge and was removed) |
+| PyPose | not adopted | not installed; would help only for GPU-batched SE(3) manifolds, unnecessary for a plan-view (SO(2) x R^2) problem |
+| Open3D | consumed via `ReconstructionResult` points only | point-to-plane evidence already enters through `refinement.refine_walls_with_points` |
+| Robust least squares | adopted: Cauchy (default) / Huber / soft-L1 via scipy | downweights a grossly wrong pose without hard rejection |
+
+Scaling measured (corridor scene, analytic Jacobian, cold / warm restart): 8 images 0.6 s, 32 images 2.2 s, 64 images 7.6 s (warm restart 3.3 s, 16 vs 44 function evaluations). Dense (JᵀJ)⁻¹ covariance is the remaining super-linear term.
+
+## 8. Sparse multi-view solve and pipeline stage (2026-11-25)
+
+Measured (`benchmarks/results/spatial_solver_benchmark.json`; 3 scenes x 4 evaluation seeds = 12 runs per row; this machine only):
+the analytic **sparse** Jacobian (5 nonzeros per observation row, index arrays reused across iterations) with SciPy `least_squares`
+`tr_solver="lsmr"`, plus a sparse-LU posterior covariance for the pose block, reproduces the dense solution (wall offset identical to 1e-4 m,
+pose error within 2e-3 m, one 16-view run with a 4e-2 cost difference) but is **slower below ~20 images** (more LSMR iterations) and faster above:
+24 views 0.83 -> 0.78 s, 48 views 2.0 -> 1.4 s, 96 views 11.8 -> 5.0 s, peak traced memory 27.8 -> 4.5 MB at 96 views. One sparse run at 96 views failed to converge
+(none dense). Decision: `solver="auto"` (dense up to 16 images, sparse above), both retained because neither dominates.
+The larger finding: association, not the solver, dominated wall time (90% at 48 images); memoising cluster fits cut 48 views from 3.3 s to 0.54 s.
+Ceres / GTSAM: not adopted (not installed; SciPy's sparse trust-region solves this problem structure); revisit only if a block Schur / marginalisation
+solver is needed beyond ~500 images.
+
+## 9. Exact sparse LM, per-technology decision table (2026-11-25)
+
+Correction to section 8: the first sparse path (SciPy TRF with `tr_solver="lsmr"` and an analytic sparse Jacobian) was not merely slower below 20 views; it
+failed to converge in 1/12 runs at 96 views (irregular room, seed 101: optimality 39 -> 27 over 400 evaluations, cost ~317 vs the dense 293.5). Cause:
+inexact LSMR trust-region steps on a badly scaled system (radians vs metres vs a 1e-4 gauge prior), not the iteration limit. Replaced by
+`sparse_lm.py` (sparse-LU Levenberg-Marquardt, IRLS weights, Nielsen damping, scipy-default tolerances). On 36 DEVELOPMENT-seed problems
+(seeds 0-2; 2/4/12/96 views x 3 scenes): 0 non-converged (6 with the first LM settings, 2 with default tolerances), sparse cost never above dense. In the 2-4 view
+problems dense TRF stops early (xtol) at a higher objective than the LM reaches, yet lower objective did not mean better geometry there (2 views: wall offset
+0.114 dense vs 0.119 sparse in the v2 table), which is why `auto` keeps dense for small problems.
+
+| Technology | Purpose | Licence (source) | Dependency / hardware | Measured benefit here | Decision |
+|---|---|---|---|---|---|
+| SciPy `least_squares` (TRF), `sparse.linalg.splu` | dense solve; sparse LU for LM + covariance | BSD-3 (read from the installed distribution) | core dependency, CPU | baseline solver; sparse-LU is the exact linear solve the LM needs | adopted |
+| Own sparse LM (`sparse_lm.py`, ~120 lines) | exact sparse robust solve | repo code | none | fixes LSMR stall; 96 views 2.5 s vs dense 13.7 s on the reproduced case | adopted (justified by the measured failure) |
+| Ceres Solver | large sparse NLLS, Schur complement | Apache-2.0 (upstream, not re-read) | native build, CPU | not measured; not installed | rejected for now: no measured need below ~500 images |
+| GTSAM | factor graphs, incremental iSAM2 | BSD (upstream, not re-read) | native build, CPU | not measured; not installed | rejected for now; revisit for true incremental SLAM-style updates |
+| PyPose | GPU-batched Lie-group optimization | Apache-2.0 (upstream, not re-read) | PyTorch (installed), GPU optional | not measured; not installed | rejected: problem is SO(2) x R^2, no manifold need |
+| COLMAP / pycolmap 4.2.1 | SfM poses and intrinsics | BSD (per repo registry; pycolmap installed) | CPU/GPU | consumed as pose priors, not re-implemented | adopted as the pose source |
+| OpenCV 5.0.0 | features, PnP | Apache-2.0 (upstream) | installed, CPU | not needed for plan-view structure | not used here |
+| Open3D 0.20.0 | point-cloud cleanup | MIT (`.agent/LICENSES.yaml`) | installed, CPU/GPU | wall-point refinement consumes `ReconstructionResult` points only | adopted (existing) |
+| Shapely 2.1.2 / NetworkX 3.6.1 | polygons, graphs | not re-read | installed; shapely bundles GEOS | would also close unevidenced gaps / is only an optional extra | not used: own half-edge faces keep junctions evidence-gated; `scipy.sparse.csgraph` covers components |

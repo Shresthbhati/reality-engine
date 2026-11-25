@@ -554,6 +554,7 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     from apps.api import worldstore_service
     from reconstruction.scene_identity import SceneRegistry, make_pair_verifier, group_images
 
+    verifier = None
     try:
         ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
         paths = {ei.item.id: ei.path for ei in eval_inputs}
@@ -574,6 +575,20 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 -- the gate is advisory infrastructure; its failure is recorded, not hidden
         log.warning("scene gate unavailable for world %s: %s", world_id, exc)
         return {"state": "unavailable", "error": f"{type(exc).__name__}: {exc}", "excluded": {}}
+    finally:
+        # The LightGlue/ALIKED verifier holds model weights + cached descriptors on the GPU; COLMAP starts next and
+        # needs that VRAM. Drop the reference and release the allocator cache on success AND failure.
+        verifier = None
+        _release_gpu_after_stage()
+
+
+def _release_gpu_after_stage() -> None:
+    """gc + empty the CUDA allocator cache (engine.core.device.release_vram); never raises."""
+    try:
+        from engine.core.device import release_vram
+        release_vram()
+    except Exception:  # noqa: BLE001 -- best-effort hygiene must not change a stage outcome
+        log.warning("release_vram failed", exc_info=True)
 
 
 def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, registered_ids, n_points: int,
@@ -1384,13 +1399,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     from apps.api.db import get_sessionmaker
     from apps.api.stage_checkpoints import DbCheckpointStore
     from engine.pipeline.stages.base import StageContext
+    from engine.hardware.admission import StageAdmission
     from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, SPATIAL_PROFILE_NAME, build_stages
     from engine.pipeline.stages.runner import StageCancelled, run_stages
+    from apps.api import spatial_global_stage as _sg
 
-    # P112: the spatial profile adds the optional global spatial optimization stage. Selected by the host via
-    # RE_SPATIAL_GLOBAL; the default profile and every existing job are unchanged.
+    # opt-in, default OFF: the default profile is untouched unless RE_SPATIAL_GLOBAL is set
     spatial_enabled = os.environ.get("RE_SPATIAL_GLOBAL", "").strip().lower() in ("1", "true", "yes", "on")
-    profile_name = SPATIAL_PROFILE_NAME if spatial_enabled else PROFILE_NAME
+    profile_name = SPATIAL_PROFILE_NAME if (spatial_enabled or _sg.enabled()) else PROFILE_NAME
     stages = build_stages(profile_name)
     specs = [stage.spec for stage in stages]
 
@@ -1489,6 +1505,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         }, "spatial_inputs_provider": _spatial_inputs_provider if spatial_enabled else None,
         "spatial_store_opener": _spatial_store_opener if spatial_enabled else None, "job_obj": job},
     )
+    if profile_name == SPATIAL_PROFILE_NAME:
+        ctx.params["spatial_solver"] = _sg.solver()
+        ctx.state["spatial_inputs"] = _sg.inputs_for_job(job)   # None until a perception producer registers spatial_inputs.v1
+        # opened lazily, when the stage runs: the world is only bound by then (segments load it)
+        ctx.state["spatial_store_opener"] = lambda: _sg.open_store(
+            os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"), world.team_id, world.id)
     ended = [0]
 
     cancel_before = {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate"}
@@ -1513,12 +1535,15 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
             pipeline_profile=profile_name, pipeline_version=PIPELINE_VERSION,
             stage_timeouts=_stage_timeouts(),
+            admission=StageAdmission.from_env(),  # memory-aware admission + per-stage RSS (RE_MEMORY_ADMISSION=off|record|enforce)
         )
 
     try:
         manifest = await asyncio.to_thread(drive)
     except StageCancelled:
         raise _JobCancelled(f"job {job.id} cancelled by operator") from None
+    if ctx.state.get("spatial_facts"):
+        holder["spatial_global"] = ctx.state["spatial_facts"]
     if any(r.status == "failed" for r in manifest.stages):
         # the ORIGINAL exception (type, message, failure_kind, retryable) drives process_next_job's grading
         raise ctx.state.get("stage_exc") or RuntimeError(next(r.error for r in manifest.stages if r.status == "failed"))
@@ -1601,6 +1626,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "scene_identity": scene_info,
         **({"evidence_world": holder["evidence_world"]} if holder.get("evidence_world") else {}),
         **({"spatial_global": ctx.state.get("spatial_facts")} if ctx.state.get("spatial_facts") else {}),
+        **_sg.facts_for_report(holder.get("spatial_global")),
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)
@@ -1805,6 +1831,14 @@ async def _run_with_lease(coro, lost: asyncio.Event, timeout: float):
         if lost.is_set():
             raise LeaseLost("lease lost while the handler was running")
         raise TimeoutError
+    except asyncio.CancelledError:
+        # The worker itself is being cancelled (shutdown): the handler must not live on as an orphan task still writing state.
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # noqa: BLE001 -- its unwinding is not the story; the cancellation is
+            pass
+        raise
     finally:
         waiter.cancel()
 
@@ -1834,6 +1868,36 @@ async def _verify_outcome(db: AsyncSession, job: Job, outcome) -> str:
         if failures:
             raise JobOutcomeError(f"version {version_id} failed WorldStore verification: {failures[0]['reason']}")
     return outcome
+
+
+def _withdrawn_payload(payload: dict | None, status: str) -> dict | None:
+    """``payload`` with any handler success claim replaced by the real outcome, or None when there was no such claim.
+
+    A handler writes ``payload["outcome"]`` (and ``validated``/``adopted``) when its own work completed; grading, a dead worker or
+    a shutdown can still turn the job into failed / cancelled / queued. The payload must never keep saying "succeeded" for a job
+    whose status is not success, so the claim is replaced by the real outcome and the handler's original claim kept under
+    ``outcome_claimed_by_handler`` for the audit trail."""
+    claimed = (payload or {}).get("outcome")
+    if status in (JOB_SUCCEEDED, JOB_PARTIAL) or claimed not in ("succeeded", "partial"):
+        return None
+    out = {**payload, "outcome_claimed_by_handler": claimed, "outcome": status if status in TERMINAL_STAGE else "retrying"}
+    if status != JOB_CANCELLED:  # a cancelled-after-adoption job keeps ``adopted``; anything else did not deliver a result
+        out["validated"] = False
+    return out
+
+
+def _withdraw_success_claim(job: Job) -> None:
+    fixed = _withdrawn_payload(job.payload, job.status)
+    if fixed is not None:
+        job.payload = fixed
+
+
+async def _release_interrupted(seen: tuple) -> None:
+    """Hand a job back after this worker was cancelled mid-handler (see ``process_next_job``)."""
+    from apps.api.db import get_sessionmaker
+
+    async with get_sessionmaker()() as fresh:
+        await _cas_recover(fresh, seen, "shutdown")
 
 
 async def _finalize_fenced(db: AsyncSession, job: Job, lease: tuple[str | None, int]) -> bool:
@@ -1918,12 +1982,17 @@ async def _cas_recover(db: AsyncSession, seen: tuple, why: str, *extra_where) ->
     seen_id, seen_worker, seen_attempts, max_attempts, job_type, entity_type, entity_id = seen  # as observed
     if seen_attempts >= max_attempts:
         values = {"status": JOB_FAILED, "stage": TERMINAL_STAGE[JOB_FAILED], "completed_at": utcnow(),
-                  "error": f"Worker died or job timed out after {seen_attempts} attempt(s)"}
+                  "error": (f"Worker shut down mid-job after {seen_attempts} attempt(s)" if why == "shutdown"
+                            else f"Worker died or job timed out after {seen_attempts} attempt(s)")}
         entry = ("failed", "ERROR", values["error"])
     else:
         values = {"status": JOB_QUEUED, "stage": None, "worker_id": None}
         entry = ("recovered", "WARNING",
-                 f"Recovered stale job from crashed worker (attempt {seen_attempts}/{max_attempts}); requeued")
+                 f"Worker shut down mid-job (attempt {seen_attempts}/{max_attempts}); requeued" if why == "shutdown"
+                 else f"Recovered stale job from crashed worker (attempt {seen_attempts}/{max_attempts}); requeued")
+    fixed = _withdrawn_payload((await db.execute(select(Job.payload).where(Job.id == seen_id))).scalar_one_or_none(), values["status"])
+    if fixed is not None:  # a dead worker's success claim must not outlive the requeue/failure that voids it
+        values["payload"] = fixed
     res = await db.execute(
         update(Job).where(Job.id == seen_id, Job.status == JOB_RUNNING, Job.worker_id == seen_worker,
                           Job.attempts == seen_attempts, *extra_where)
@@ -2021,6 +2090,7 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
     # Active heartbeat pulsing while handler runs. The pulse is fenced by the lease (worker + attempt): if this worker is
     # reaped and the job re-claimed, the pulse finds no matching row, trips ``lost`` and stops.
     job_id, lease, lease_lost, abandoned = job.id, _lease_of(job), asyncio.Event(), False
+    seen = (job.id, job.worker_id, job.attempts, job.max_attempts, job.type, job.entity_type, job.entity_id)
     heartbeat_task = asyncio.create_task(
         _run_job_heartbeat(job.id, interval_seconds=_heartbeat_interval_seconds(), lease=lease, lost=lease_lost)
     )
@@ -2075,6 +2145,21 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
                 )
             )
             await _emit_completion(db, job)
+    except asyncio.CancelledError:
+        # The worker itself is being shut down (API stop / restart) while the handler ran. The row is still ``running`` under
+        # this lease and nothing graded it, so it must neither stay ``running`` with a heartbeat that keeps it looking alive nor
+        # ever read as succeeded: stop the pulse, kill owned children, and hand the job back (requeued, or failed once its
+        # attempts are used up) in one fenced write on a fresh session; then let the cancellation propagate.
+        heartbeat_task.cancel()
+        terminate_job_procs(job_id)
+        try:
+            await asyncio.shield(_release_interrupted(seen))
+        except BaseException:  # noqa: BLE001 -- the reaper recovers it from the stale heartbeat if this write cannot land
+            log.warning("job %s: could not hand the job back on shutdown; the reaper will recover it", job_id, exc_info=True)
+        set_current_job(None)
+        unregister_worker(job_id)
+        discard_job(job_id)
+        raise
     except LeaseLost as exc:
         # Superseded: the job was requeued (and maybe re-claimed). Its state now belongs to the current lease holder, so
         # this worker writes nothing -- not a status, not a log -- and only cleans up what it owns locally.
@@ -2159,6 +2244,7 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
             )
     try:
         if not abandoned:
+            _withdraw_success_claim(job)
             if job.status in TERMINAL_STAGE:
                 job.stage = TERMINAL_STAGE[job.status]
                 if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):

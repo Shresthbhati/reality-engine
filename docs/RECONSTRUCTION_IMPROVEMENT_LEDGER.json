@@ -1,0 +1,683 @@
+{
+ "meta": {
+  "branch": "claude/reality-engine-spatial-compiler-367e36",
+  "note": "The 10,000-entry target was NOT approached: each entry is grounded in measured behaviour, failure-taxonomy counts or an explicit workstream gap. Padding the ledger with artificial entries was rejected.",
+  "counts": {
+   "total": 50,
+   "implemented": 19,
+   "proposed": 27,
+   "blocked": 4,
+   "in_progress": 0,
+   "rejected": 0
+  }
+ },
+ "entries": [
+  {
+   "id": "RIL-0001",
+   "subsystem": "solver",
+   "existing_limitation": "LSMR trust-region steps stalled at 96 views (optimality 39 to 27 over 400 evals; dense reached cost 293.5 in 38)",
+   "proposed_implementation": "exact sparse-LU Levenberg-Marquardt with IRLS weights and Nielsen damping",
+   "expected_product_impact": "large-view optimisation converges; 96 views 2.5 s vs dense 13.7 s on the reproduced case",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/sparse_lm.py",
+    "reconstruction/spatial/multiview.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_the_96_view_case_that_stalled_with_lsmr_now_converges_to_the_dense_optimum; benchmarks/results/spatial_solver_benchmark_v3.json (0 convergence failures in 108 pairs)"
+  },
+  {
+   "id": "RIL-0002",
+   "subsystem": "solver",
+   "existing_limitation": "dense and sparse reported different covariances (SciPy robust Jacobian vs IRLS)",
+   "proposed_implementation": "single covariance definition (J^T W J)^-1 for both solvers",
+   "expected_product_impact": "dense/sparse posterior parity",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/multiview.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_stage.py::test_dense_and_sparse_solvers_agree_on_geometry_and_cost"
+  },
+  {
+   "id": "RIL-0003",
+   "subsystem": "solver",
+   "existing_limitation": "no visibility into solver termination",
+   "proposed_implementation": "per-round diagnostics (status, message, nfev, optimality, cost) returned in the result and job facts",
+   "expected_product_impact": "failures are visible, never silently retried",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/multiview.py",
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_solver_choice_and_failures_stay_visible_in_the_result"
+  },
+  {
+   "id": "RIL-0004",
+   "subsystem": "solver",
+   "existing_limitation": "dense Jacobian built by finite differences",
+   "proposed_implementation": "analytic dense and sparse Jacobians",
+   "expected_product_impact": "64 images 24 s to 9.5 s (before the association cache)",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/multiview.py"
+   ],
+   "evidence_behaviour_changed": "benchmarks/results/spatial_multiview_benchmark.json profile"
+  },
+  {
+   "id": "RIL-0005",
+   "subsystem": "performance",
+   "existing_limitation": "association refit dominated 90% of runtime at 48 images",
+   "proposed_implementation": "memoise cluster fits by evidence-id key, local to one call",
+   "expected_product_impact": "48 views 3.3 s to 0.54 s; 87% hit rate; bitwise-identical to uncached",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/association.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py (parity, invalidation, order independence, stats)"
+  },
+  {
+   "id": "RIL-0006",
+   "subsystem": "solver",
+   "existing_limitation": "auto solver chose by view count only",
+   "proposed_implementation": "auto = dense up to 16 images, sparse above; chosen solver reported",
+   "expected_product_impact": "right solver per size",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/multiview.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_stage.py::test_auto_solver_selects_by_view_count"
+  },
+  {
+   "id": "RIL-0007",
+   "subsystem": "identity",
+   "existing_limitation": "71 of 85 established walls changed id when one image was added (ids hash the evidence set)",
+   "proposed_implementation": "geometric identity carry-over across versions (Hungarian assignment, same type and storey)",
+   "expected_product_impact": "stable references for UI and annotations across incremental ingestion",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/compiler.py",
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_entity_ids_survive_reprocessing_with_more_evidence; tests/test_spatial_global_api.py::test_a_second_run_shows_what_changed_and_keeps_entity_ids (real jobs)"
+  },
+  {
+   "id": "RIL-0008",
+   "subsystem": "identity",
+   "existing_limitation": "no record of why an id was or was not kept",
+   "proposed_implementation": "identity decisions carried / ambiguous / merge / split_inherits / split / new / lost with costs and runner-up; per-id history across versions",
+   "expected_product_impact": "reviewable, reversible identity decisions",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/compiler.py",
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_identity_split_merge_and_history_are_recorded_not_hidden"
+  },
+  {
+   "id": "RIL-0009",
+   "subsystem": "stage",
+   "existing_limitation": "producer and consumer states were not distinguished",
+   "proposed_implementation": "structured codes: BAD_SCHEMA, NON_FINITE, FRAME_MISMATCH, NO_POSE_FOR_FRAME, DUPLICATE_EVIDENCE_ID, SCALE_NOT_METRIC, NO_EVIDENCE, INSUFFICIENT_OBSERVATIONS, unchanged",
+   "expected_product_impact": "actionable errors instead of silent skips",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/stage.py",
+    "engine/pipeline/stages/s14_spatial_global.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_stage.py; tests/test_spatial_association_cache.py (insufficient outcomes)"
+  },
+  {
+   "id": "RIL-0010",
+   "subsystem": "pipeline",
+   "existing_limitation": "spatial optimisation not reachable from the job path",
+   "proposed_implementation": "optional stage spatial_global in non-default profile interior_survey_spatial behind RE_SPATIAL_GLOBAL; facts in job.payload",
+   "expected_product_impact": "job path executes the optimizer when a producer supplies inputs",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "engine/pipeline/stages/registry.py",
+    "engine/pipeline/stages/s14_spatial_global.py",
+    "apps/api/spatial_global_stage.py",
+    "apps/api/jobs.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_stage.py (real API jobs, flag on and off)"
+  },
+  {
+   "id": "RIL-0011",
+   "subsystem": "worldir",
+   "existing_limitation": "entities carried no explicit frame or scale",
+   "proposed_implementation": "every compiled entity has coordinate_frame and scale_state; an unstated scale is 'unspecified', never metric",
+   "expected_product_impact": "no silent metre assumption",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/compiler.py",
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_stage_facts_report_separate_quality_axes_timings_cache_and_frames"
+  },
+  {
+   "id": "RIL-0012",
+   "subsystem": "quality",
+   "existing_limitation": "one aggregate would hide weaknesses",
+   "proposed_implementation": "five separate axes (geometric, structural, evidence, topological, processing) and per-stage timings in job facts",
+   "expected_product_impact": "honest per-axis report",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py (no score key)"
+  },
+  {
+   "id": "RIL-0013",
+   "subsystem": "api",
+   "existing_limitation": "no way to inspect a spatial reconstruction",
+   "proposed_implementation": "read-only routes: versions, latest, version, entity (evidence resolved to raw image-frame measurements and poses), changes, export; tenant-scoped",
+   "expected_product_impact": "evidence, provenance and change inspection through the product API",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "apps/api/routes_spatial_global.py",
+    "apps/api/main.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_api.py (3 tests through real jobs)"
+  },
+  {
+   "id": "RIL-0014",
+   "subsystem": "failure-analysis",
+   "existing_limitation": "taxonomy covered splits, merges and opening errors only",
+   "proposed_implementation": "20-category taxonomy with per-failure ids, residuals, outlier score, root cause, severity, resolution, excluded/tentative flags; reprocessing identity probe",
+   "expected_product_impact": "causes, not counts",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "benchmarks/spatial/failure_analysis.py"
+   ],
+   "evidence_behaviour_changed": "benchmarks/results/spatial_failure_analysis.json (294 cases, 2185 records)"
+  },
+  {
+   "id": "RIL-0015",
+   "subsystem": "association",
+   "existing_limitation": "12 of 84 runs had association failures",
+   "proposed_implementation": "lever-arm offset gate, no angle gate for openings, 3.5-sigma gates: reduced to 1 of 84 (a tentative single-view fragment)",
+   "expected_product_impact": "fewer split walls and false openings",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/association.py"
+   ],
+   "evidence_behaviour_changed": "benchmarks/results/spatial_compiler_benchmark.json and the earlier failure analysis"
+  },
+  {
+   "id": "RIL-0016",
+   "subsystem": "frames",
+   "existing_limitation": "only a rigid frame graph, no scale",
+   "proposed_implementation": "Sim3 + FrameRegistry with provenance, loop and scale consistency, invalid-transform refusal",
+   "expected_product_impact": "explicit, validated transforms",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/frames.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_multiview.py (frames tests)"
+  },
+  {
+   "id": "RIL-0017",
+   "subsystem": "validation",
+   "existing_limitation": "no distinction between invalid, incomplete and uncertain",
+   "proposed_implementation": "five global states plus flags, wall components",
+   "expected_product_impact": "a missing wall is incomplete, not contradictory",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/validation.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_multiview.py::test_global_states"
+  },
+  {
+   "id": "RIL-0018",
+   "subsystem": "perception-integration",
+   "existing_limitation": "no producer of spatial_inputs.v1 exists on any branch (all agent branches scanned)",
+   "proposed_implementation": "Gemini producer plus an end-to-end consumer test with real perception output",
+   "expected_product_impact": "the stage runs on real images; today it is skipped without a producer",
+   "dependencies": [
+    "Gemini producer"
+   ],
+   "priority": "P0",
+   "status": "blocked",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0019",
+   "subsystem": "api",
+   "existing_limitation": "corrections were not persisted or applied to the spatial world",
+   "proposed_implementation": "POST/GET /corrections: dimension and reclassify reuse world_ir.corrections and are replayed by the stage onto the next run; exclusions drop evidence before optimisation, keep the originals in the record, and change the input hash",
+   "expected_product_impact": "user corrections survive reprocessing and identity carry-over; wrong evidence can be removed without losing it",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "apps/api/routes_spatial_global.py",
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_global_api.py::test_corrections_posted_through_the_api_survive_the_next_reconstruction (real jobs); tests/test_spatial_association_cache.py (3 stage-level tests)"
+  },
+  {
+   "id": "RIL-0020",
+   "subsystem": "ui",
+   "existing_limitation": "no frontend for spatial inspection",
+   "proposed_implementation": "Studio panel: evidence trail, uncertainty and conflict overlay, identity change review, frame and scale badge, completeness by region",
+   "expected_product_impact": "users can see and review the reconstruction",
+   "dependencies": [
+    "RIL-0013"
+   ],
+   "priority": "P0",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0021",
+   "subsystem": "incremental",
+   "existing_limitation": "every run re-associates and re-optimises the whole world",
+   "proposed_implementation": "dirty-region detection from changed evidence ids; re-optimise the affected subgraph; cached-vs-uncached parity gate",
+   "expected_product_impact": "incremental cost proportional to the change",
+   "dependencies": [
+    "RIL-0005",
+    "RIL-0007"
+   ],
+   "priority": "P0",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0022",
+   "subsystem": "incremental",
+   "existing_limitation": "no dependency graph image to observation to entity to geometry",
+   "proposed_implementation": "persist the dependency graph in the world; change-impact queries",
+   "expected_product_impact": "impact analysis for corrections",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0023",
+   "subsystem": "incremental",
+   "existing_limitation": "no undo for reconstruction changes",
+   "proposed_implementation": "version-diff revert as a new child version",
+   "expected_product_impact": "reversible changes",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0024",
+   "subsystem": "incremental",
+   "existing_limitation": "interrupted jobs restart from scratch",
+   "proposed_implementation": "checkpoint optimiser state per round in the job store",
+   "expected_product_impact": "recovery from interruption",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0025",
+   "subsystem": "solver",
+   "existing_limitation": "no Schur-complement elimination",
+   "proposed_implementation": "eliminate wall-line parameters analytically for more than 500 images",
+   "expected_product_impact": "memory for very large scenes",
+   "dependencies": [
+    "Ceres or GTSAM only if a measured need appears"
+   ],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0026",
+   "subsystem": "solver",
+   "existing_limitation": "no degeneracy detection beyond observed_dims",
+   "proposed_implementation": "rank and condition test on J^T W J with named degenerate directions",
+   "expected_product_impact": "safer low-view solves",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0027",
+   "subsystem": "solver",
+   "existing_limitation": "camera poses and scale are optimised in plan view only",
+   "proposed_implementation": "extend to SE(3) plus scale behind a metric-evidence gate",
+   "expected_product_impact": "tilted cameras and relative-scale worlds",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0028",
+   "subsystem": "solver",
+   "existing_limitation": "no loop closure or drift correction",
+   "proposed_implementation": "pose-graph closure from repeated structure with an ambiguity test",
+   "expected_product_impact": "long trajectories",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0029",
+   "subsystem": "solver",
+   "existing_limitation": "sparse LM budget is a fixed 3x TRF budget",
+   "proposed_implementation": "adaptive termination from residual decrease and conditioning",
+   "expected_product_impact": "fewer wasted iterations",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0030",
+   "subsystem": "topology",
+   "existing_limitation": "missing-boundary and repair proposals are not generated",
+   "proposed_implementation": "emit traceable repair proposals (never auto-applied) for open boundaries",
+   "expected_product_impact": "guided completion",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0031",
+   "subsystem": "topology",
+   "existing_limitation": "stairs and storey connectivity only by z extent",
+   "proposed_implementation": "explicit vertical-connectivity graph with landing evidence",
+   "expected_product_impact": "multi-level buildings",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0032",
+   "subsystem": "geometry",
+   "existing_limitation": "curved walls, sloped surfaces and uneven floors are not modelled",
+   "proposed_implementation": "parametric curved and sloped primitives with a model-selection gate",
+   "expected_product_impact": "non-planar architecture",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0033",
+   "subsystem": "geometry",
+   "existing_limitation": "wall thickness is only seen through conflicts",
+   "proposed_implementation": "thickness from opposing-face pairs with evidence",
+   "expected_product_impact": "structural thickness",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0034",
+   "subsystem": "geometry",
+   "existing_limitation": "floors and ceilings are not reconstructed as planes",
+   "proposed_implementation": "floor and ceiling plane estimation from points and per-storey height consistency",
+   "expected_product_impact": "vertical consistency",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0035",
+   "subsystem": "geometry",
+   "existing_limitation": "columns, beams and railings are not reconstructed",
+   "proposed_implementation": "new Kinds routed through the same association and constraint path",
+   "expected_product_impact": "complete structural coverage",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0036",
+   "subsystem": "geometry",
+   "existing_limitation": "heavy occlusion leaves lower-bound extents (357 occlusion records)",
+   "proposed_implementation": "use cross-view evidence to resolve ends; never extrapolate unobserved geometry",
+   "expected_product_impact": "fewer lower bounds",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0037",
+   "subsystem": "association",
+   "existing_limitation": "relative-depth inputs produce 543 topology and 161 association failures",
+   "proposed_implementation": "scale-aware gates (sigma about 25% of range) and refusal below a precision floor",
+   "expected_product_impact": "no fake precision from relative depth",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0038",
+   "subsystem": "association",
+   "existing_limitation": "outlier fragments cause 112 over-segmentations",
+   "proposed_implementation": "robust re-association pass attaching fragments to a wall when pose-explained",
+   "expected_product_impact": "fewer duplicates",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0039",
+   "subsystem": "association",
+   "existing_limitation": "a bad camera pose still leaves 0.168 m translation error",
+   "proposed_implementation": "per-image robust pose reweighting and pose-outlier flagging",
+   "expected_product_impact": "bad-pose tolerance",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0040",
+   "subsystem": "uncertainty",
+   "existing_limitation": "calibration verified only on simulated data",
+   "proposed_implementation": "calibration set from surveyed rooms with real images once a producer exists",
+   "expected_product_impact": "calibrated claims on real data",
+   "dependencies": [
+    "Gemini producer",
+    "real captures"
+   ],
+   "priority": "P0",
+   "status": "blocked",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0041",
+   "subsystem": "uncertainty",
+   "existing_limitation": "end-point sigma is overconfident in the tails (31/77/96 vs 39/86/99)",
+   "proposed_implementation": "inflation factor fitted on a development split and validated on evaluation seeds",
+   "expected_product_impact": "honest tails",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0042",
+   "subsystem": "worldir",
+   "existing_limitation": "competing hypotheses are stored as alternatives only for position conflicts",
+   "proposed_implementation": "first-class hypothesis sets with evidence masses for class and attachment",
+   "expected_product_impact": "retain unresolved hypotheses",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0043",
+   "subsystem": "worldir",
+   "existing_limitation": "user corrections have a model in world_ir.corrections but the spatial world did not use it",
+   "proposed_implementation": "stage declares metric scale in world.metadata.scale (needed for VERIFIED dimensions) and replays user_corrections and user_decisions from the parent version",
+   "expected_product_impact": "human corrections outrank automatic results in the spatial world",
+   "dependencies": [],
+   "priority": "P0",
+   "status": "implemented",
+   "changed_files": [
+    "reconstruction/spatial/stage.py"
+   ],
+   "evidence_behaviour_changed": "tests/test_spatial_association_cache.py::test_user_dimension_and_class_corrections_are_replayed_onto_the_next_run"
+  },
+  {
+   "id": "RIL-0044",
+   "subsystem": "worldir",
+   "existing_limitation": "split and merge decisions by the user are not offered through the spatial API",
+   "proposed_implementation": "route for split/merge using world_ir.corrections.split_entity/merge_entities",
+   "expected_product_impact": "reviewing identity splits and merges",
+   "dependencies": [
+    "RIL-0013"
+   ],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0045",
+   "subsystem": "worldir",
+   "existing_limitation": "no deterministic snapshot format beyond to_dict",
+   "proposed_implementation": "canonical sorted snapshot plus content hash exposed by the export route",
+   "expected_product_impact": "reproducible exports",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0046",
+   "subsystem": "pipeline",
+   "existing_limitation": "the default profile does not include the stage",
+   "proposed_implementation": "enable only after a real producer, regression benchmarks and a written safety assessment",
+   "expected_product_impact": "safe rollout",
+   "dependencies": [
+    "Gemini producer"
+   ],
+   "priority": "P0",
+   "status": "blocked",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0047",
+   "subsystem": "pipeline",
+   "existing_limitation": "progress and cancellation are not wired for the stage",
+   "proposed_implementation": "emit per-round progress and honour cancel between rounds",
+   "expected_product_impact": "long jobs controllable",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0048",
+   "subsystem": "performance",
+   "existing_limitation": "topology and constraints are O(n^2) over walls",
+   "proposed_implementation": "spatial index (cKDTree) for pair candidates above about 500 walls",
+   "expected_product_impact": "large buildings",
+   "dependencies": [],
+   "priority": "P1",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0049",
+   "subsystem": "performance",
+   "existing_limitation": "no parallel association across storeys",
+   "proposed_implementation": "process independent storeys in parallel",
+   "expected_product_impact": "multi-storey speed",
+   "dependencies": [],
+   "priority": "P2",
+   "status": "proposed",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  },
+  {
+   "id": "RIL-0050",
+   "subsystem": "tests",
+   "existing_limitation": "5 baseline failures (3 in stage_ladder, 2 in stage_layout) reproduced on 7aa752e7",
+   "proposed_implementation": "root cause: the scene gate classifies the fixture photos as outdoor so layout is skipped; fix the fixtures or pin the gate (perception-owned)",
+   "expected_product_impact": "clean regression signal",
+   "dependencies": [
+    "perception owner"
+   ],
+   "priority": "P1",
+   "status": "blocked",
+   "changed_files": [],
+   "evidence_behaviour_changed": null
+  }
+ ]
+}

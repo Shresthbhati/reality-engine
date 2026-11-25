@@ -13,7 +13,7 @@ from pathlib import Path
 
 # The blob store lives in the engine layer (stages persist artifacts without importing apps.api); re-exported here so every API
 # module keeps importing it from apps.api.storage.
-from engine.pipeline.stages.content_store import resolve_artifact, storage_root, store_bytes  # noqa: F401
+from engine.pipeline.stages.content_store import resolve_artifact, storage_root, store_bytes, verify_artifact  # noqa: F401
 
 
 def staging_root() -> Path:

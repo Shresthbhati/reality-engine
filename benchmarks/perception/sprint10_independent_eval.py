@@ -81,8 +81,14 @@ def evaluate_sprint10_independent(
         img_bgr = cv2.imread(str(img_p))
         if img_bgr is None:
             continue
-        h, w = img_bgr.shape[:2]
+        orig_h, orig_w = img_bgr.shape[:2]
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+        # Ensure image is in canonical evaluation resolution matching ground truth annotations
+        if img_p.name.startswith("IMG_") and (orig_w, orig_h) != (1280, 960):
+            img_rgb = cv2.resize(img_rgb, (1280, 960), interpolation=cv2.INTER_LINEAR)
+        elif img_p.name.startswith("P118") and (orig_w, orig_h) != (1024, 768):
+            img_rgb = cv2.resize(img_rgb, (1024, 768), interpolation=cv2.INTER_LINEAR)
 
         t0 = time.perf_counter()
         # 1. Native inference (no tiling)

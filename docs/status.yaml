@@ -204,3 +204,12 @@
   tests: ["tests/test_camera_pose_graph.py", "tests/test_two_view_geometry.py"]
   updated: "2026-11-26"
   next: "Bundle adjustment over 3D points (the measured 6.4 deg drift is the cost of skipping it); fix the translation solve (baseline at zero, direction residual 0.99 -- add cheirality/3D-point constraints instead of directions only); widen the pair strategy so the second sequence gets a verifiable cycle instead of one wrong bridge."
+
+- id: S5-26
+  capability: "Day-6 depth backend audit and checkpoint verification"
+  status: FOUNDATION
+  gate: G1
+  evidence: "docs/audits/DAY6_DEPTH_AUDIT.md. Five depth paths exist (DepthAnythingV2Backend relative, DepthAnythingV2MetricBackend, HeuristicDepthPriorBackend, engine depth_anything adapter, depth_midas_dpt). All three referenced HF checkpoints return 200 (Depth-Anything-V2-Small-hf, Depth-Anything-V2-Metric-Indoor-Small-hf, Depth-Anything-V2-Base-hf) and both used ones loaded in this environment. Measured on two real south_building photographs (1024x768): the relative Small model's raw output is inverse depth (0.0-6.44, median 1.74/2.15) and the Metric-Indoor-Small range is 4.37-19.55 m (median ~10 m) -- metres, but an in-domain estimate with no ground truth here. Five defects listed and NOT fixed: the heuristic prior labels a scene-statistics prior unit='meters' (fabricated metric scale); the relative wrapper min-max normalises per image so cross-view depth comparison is impossible; DepthMap has no invalid-pixel mask; backends swallow skip reasons; confidence values (0.92/0.65) are uncalibrated. No depth accuracy is claimed and no benchmark exists (no ground-truth depth in the repo)."
+  tests: []
+  updated: "2026-11-26"
+  next: "Fix the heuristic backend's unit claim first; keep the raw inverse depth and fit a per-image scale/shift instead of min-max normalising; add an invalid-pixel mask and skip reasons; build a scale-and-shift-invariant proxy benchmark from the verified SfM points (SILog/delta on log-depth, no metric truth needed)."

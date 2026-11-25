@@ -84,6 +84,9 @@ class VerticalSliceOptions:
 
     seed: int = 42
     up: Tuple[float, float, float] = (0.0, 1.0, 0.0)
+    #: Indoor/outdoor scene gate (perception.scene_type): room layout and indoor-furniture perception run only for a
+    #: confidently indoor scene. False = run the interior stages unguarded (explicit opt-out, recorded as such).
+    scene_gate: bool = True
     #: Operator-measured baselines, tried in order; the first whose pair
     #: both registered becomes the metric anchor. Empty -> RELATIVE.
     measured_baselines: Sequence[ScaleReference] = ()
@@ -639,25 +642,56 @@ class LayoutOutcome:
     compile_options: object
 
 
+def _scene_gate_decision(evidence_items, options):
+    """The indoor/outdoor gate for this capture (``perception.scene_type``); never raises."""
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+
+    from perception.scene_type import SceneTypeResult, classify_scene_type, decide_scene_gate
+
+    import os
+
+    if not getattr(options, "scene_gate", True) or os.environ.get("RE_SCENE_GATE", "").strip() == "0":
+        res = SceneTypeResult("unmeasured", 0.0, None, 0, 0, {"note": "scene gate disabled (options.scene_gate=False or RE_SCENE_GATE=0)"})
+        d = decide_scene_gate(res)
+        d.reason = "scene gate disabled (options.scene_gate=False or RE_SCENE_GATE=0); interior stages ran unguarded"
+        return d
+    paths = []
+    for item in evidence_items:
+        uri = getattr(item, "source_uri", "") or ""
+        if uri.startswith("file:"):
+            paths.append(Path(url2pathname(urlparse(uri).path)))
+        elif uri:
+            paths.append(Path(uri))
+    return decide_scene_gate(classify_scene_type([p for p in paths if p.exists()]))
+
+
 def run_layout(result, evidence_items, options, backend, lap=lambda name: None) -> LayoutOutcome:
     """Single-image layout evidence, then the structure compile (planes -> classification -> promotion -> rooms ->
     validation gate) and the backend's post-compile hook, extracted verbatim from ``vertical_slice``. Raises
     VerticalSliceError when the world cannot be compiled. ``lap`` is the caller's timing hook."""
     _lap = lap
+    # ---- stage 2.8: indoor/outdoor scene gate (blocks room layout + indoor-furniture perception for non-interiors) ----
+    gate = _scene_gate_decision(evidence_items, options)
     # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
-    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+    if gate.allow_indoor:
+        layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+    else:
+        layout_edges_ab, layout_facts = None, {"status": "skipped", "hypotheses": 0, "note": gate.reason}
+    layout_facts = {**(layout_facts or {}), "scene_gate": gate.to_dict()}
 
     lap("depth_and_layout")
     _lap("depth")
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
         seed=options.seed, up=options.up, artifact_store=options.artifact_store,
-        layout_edges_ab=layout_edges_ab,
+        layout_edges_ab=layout_edges_ab, structure_enabled=gate.allow_indoor,
     )
     try:
         world, diagnostics = compile_reconstruction_to_world(result, compile_options)
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
+    world.metadata["scene_gate"] = gate.to_dict()   # read by the perception stage (indoor vocabulary) and the report
 
     if hasattr(backend, "post_compile_hook"):
         try:
@@ -1415,6 +1449,10 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     skip = {"status": "skipped", "objects": 0}
     if options.perception_model is None:
         return {**skip, "note": "disabled (perception_model=None)"}
+    gate = (getattr(world, "metadata", None) or {}).get("scene_gate")
+    if gate and gate.get("allow_indoor") is False:
+        # the detector vocabulary is indoor furniture; promoting wardrobes / rugs / floor lamps from a facade is wrong
+        return {**skip, "note": gate["reason"], "scene_gate": gate}
     if options.intrinsics is None:
         return {**skip, "note": "no trusted intrinsics -- lifting needs a camera model"}
     if not metric_depth_maps:

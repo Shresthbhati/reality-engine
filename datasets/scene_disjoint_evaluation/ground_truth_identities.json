@@ -1,0 +1,1947 @@
+{
+  "dataset": "scene_disjoint_evaluation",
+  "version": "1.0.0",
+  "description": "Multi-view scene-disjoint manual component evaluation ground truth.",
+  "image_annotations": {
+    "P1180141.JPG": [
+      {
+        "instance_id": "sb_wall_main",
+        "physical_identity_id": "phys_sb_facade_wall",
+        "class_name": "wall",
+        "bbox_2d": [
+          180.0,
+          120.0,
+          880.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_col_1",
+        "physical_identity_id": "phys_sb_col_1",
+        "class_name": "column",
+        "bbox_2d": [
+          360.0,
+          160.0,
+          410.0,
+          580.0
+        ],
+        "parent_entity_id": "sb_wall_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_col_2",
+        "physical_identity_id": "phys_sb_col_2",
+        "class_name": "column",
+        "bbox_2d": [
+          620.0,
+          160.0,
+          670.0,
+          580.0
+        ],
+        "parent_entity_id": "sb_wall_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_main",
+        "physical_identity_id": "phys_sb_main_door",
+        "class_name": "door",
+        "bbox_2d": [
+          460.0,
+          360.0,
+          580.0,
+          580.0
+        ],
+        "parent_entity_id": "sb_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_frame_1",
+        "physical_identity_id": "phys_sb_door_frame",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          455.0,
+          355.0,
+          585.0,
+          582.0
+        ],
+        "parent_entity_id": "sb_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_leaf_left",
+        "physical_identity_id": "phys_sb_door_leaf_L",
+        "class_name": "door_leaf",
+        "bbox_2d": [
+          462.0,
+          365.0,
+          518.0,
+          578.0
+        ],
+        "parent_entity_id": "sb_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_leaf_right",
+        "physical_identity_id": "phys_sb_door_leaf_R",
+        "class_name": "door_leaf",
+        "bbox_2d": [
+          520.0,
+          365.0,
+          578.0,
+          578.0
+        ],
+        "parent_entity_id": "sb_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_handle_main",
+        "physical_identity_id": "phys_sb_door_handle",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          512.0,
+          470.0,
+          526.0,
+          500.0
+        ],
+        "parent_entity_id": "sb_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_door_threshold_1",
+        "physical_identity_id": "phys_sb_door_threshold",
+        "class_name": "door_threshold",
+        "bbox_2d": [
+          450.0,
+          576.0,
+          590.0,
+          588.0
+        ],
+        "parent_entity_id": "sb_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_g_left",
+        "physical_identity_id": "phys_sb_win_GL",
+        "class_name": "window",
+        "bbox_2d": [
+          240.0,
+          370.0,
+          330.0,
+          540.0
+        ],
+        "parent_entity_id": "sb_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_frame_g_left",
+        "physical_identity_id": "phys_sb_win_frame_GL",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          236.0,
+          365.0,
+          334.0,
+          545.0
+        ],
+        "parent_entity_id": "sb_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_sill_g_left",
+        "physical_identity_id": "phys_sb_win_sill_GL",
+        "class_name": "window_sill",
+        "bbox_2d": [
+          230.0,
+          540.0,
+          340.0,
+          555.0
+        ],
+        "parent_entity_id": "sb_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_glazing_g_left",
+        "physical_identity_id": "phys_sb_win_glazing_GL",
+        "class_name": "window_glazing",
+        "bbox_2d": [
+          245.0,
+          375.0,
+          325.0,
+          535.0
+        ],
+        "parent_entity_id": "sb_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_sash_g_left",
+        "physical_identity_id": "phys_sb_win_sash_GL",
+        "class_name": "window_sash",
+        "bbox_2d": [
+          242.0,
+          450.0,
+          328.0,
+          538.0
+        ],
+        "parent_entity_id": "sb_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_win_mullion_g_left",
+        "physical_identity_id": "phys_sb_win_mullion_GL",
+        "class_name": "window_mullion",
+        "bbox_2d": [
+          282.0,
+          372.0,
+          288.0,
+          536.0
+        ],
+        "parent_entity_id": "sb_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_stairs_main",
+        "physical_identity_id": "phys_sb_stairs",
+        "class_name": "stairs",
+        "bbox_2d": [
+          410.0,
+          570.0,
+          630.0,
+          690.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_step_1",
+        "physical_identity_id": "phys_sb_step_1",
+        "class_name": "step",
+        "bbox_2d": [
+          412.0,
+          650.0,
+          628.0,
+          690.0
+        ],
+        "parent_entity_id": "sb_stairs_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_railing_left",
+        "physical_identity_id": "phys_sb_railing_L",
+        "class_name": "railing",
+        "bbox_2d": [
+          390.0,
+          550.0,
+          420.0,
+          680.0
+        ],
+        "parent_entity_id": "sb_stairs_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_balustrade_left",
+        "physical_identity_id": "phys_sb_balustrade_L",
+        "class_name": "balustrade",
+        "bbox_2d": [
+          380.0,
+          555.0,
+          415.0,
+          685.0
+        ],
+        "parent_entity_id": "sb_stairs_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_curb_1",
+        "physical_identity_id": "phys_sb_curb_front",
+        "class_name": "curb",
+        "bbox_2d": [
+          50.0,
+          690.0,
+          980.0,
+          725.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_footpath_1",
+        "physical_identity_id": "phys_sb_footpath_front",
+        "class_name": "footpath",
+        "bbox_2d": [
+          40.0,
+          710.0,
+          1000.0,
+          768.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_tree_left",
+        "physical_identity_id": "phys_sb_tree_L",
+        "class_name": "tree",
+        "bbox_2d": [
+          10.0,
+          60.0,
+          190.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_tree_trunk_left",
+        "physical_identity_id": "phys_sb_trunk_L",
+        "class_name": "trunk",
+        "bbox_2d": [
+          75.0,
+          380.0,
+          125.0,
+          680.0
+        ],
+        "parent_entity_id": "sb_tree_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb_lamp_post_1",
+        "physical_identity_id": "phys_sb_lamp_1",
+        "class_name": "lamp",
+        "bbox_2d": [
+          720.0,
+          480.0,
+          760.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "P1180145.JPG": [
+      {
+        "instance_id": "sb2_wall_main",
+        "physical_identity_id": "phys_sb_facade_wall",
+        "class_name": "wall",
+        "bbox_2d": [
+          170.0,
+          120.0,
+          870.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_col_1",
+        "physical_identity_id": "phys_sb_col_1",
+        "class_name": "column",
+        "bbox_2d": [
+          350.0,
+          160.0,
+          400.0,
+          580.0
+        ],
+        "parent_entity_id": "sb2_wall_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_door_main",
+        "physical_identity_id": "phys_sb_main_door",
+        "class_name": "door",
+        "bbox_2d": [
+          450.0,
+          360.0,
+          570.0,
+          580.0
+        ],
+        "parent_entity_id": "sb2_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_door_frame_1",
+        "physical_identity_id": "phys_sb_door_frame",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          445.0,
+          355.0,
+          575.0,
+          582.0
+        ],
+        "parent_entity_id": "sb2_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_door_handle_main",
+        "physical_identity_id": "phys_sb_door_handle",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          502.0,
+          470.0,
+          516.0,
+          500.0
+        ],
+        "parent_entity_id": "sb2_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_win_g_left",
+        "physical_identity_id": "phys_sb_win_GL",
+        "class_name": "window",
+        "bbox_2d": [
+          230.0,
+          370.0,
+          320.0,
+          540.0
+        ],
+        "parent_entity_id": "sb2_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_win_frame_g_left",
+        "physical_identity_id": "phys_sb_win_frame_GL",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          226.0,
+          365.0,
+          324.0,
+          545.0
+        ],
+        "parent_entity_id": "sb2_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_win_sill_g_left",
+        "physical_identity_id": "phys_sb_win_sill_GL",
+        "class_name": "window_sill",
+        "bbox_2d": [
+          220.0,
+          540.0,
+          330.0,
+          555.0
+        ],
+        "parent_entity_id": "sb2_win_g_left",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_stairs_main",
+        "physical_identity_id": "phys_sb_stairs",
+        "class_name": "stairs",
+        "bbox_2d": [
+          400.0,
+          570.0,
+          620.0,
+          690.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_curb_1",
+        "physical_identity_id": "phys_sb_curb_front",
+        "class_name": "curb",
+        "bbox_2d": [
+          40.0,
+          690.0,
+          970.0,
+          725.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb2_footpath_1",
+        "physical_identity_id": "phys_sb_footpath_front",
+        "class_name": "footpath",
+        "bbox_2d": [
+          30.0,
+          710.0,
+          990.0,
+          768.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "P1180149.JPG": [
+      {
+        "instance_id": "sb3_wall_main",
+        "physical_identity_id": "phys_sb_facade_wall",
+        "class_name": "wall",
+        "bbox_2d": [
+          164.0,
+          120.0,
+          864.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_door_main",
+        "physical_identity_id": "phys_sb_main_door",
+        "class_name": "door",
+        "bbox_2d": [
+          444.0,
+          360.0,
+          564.0,
+          580.0
+        ],
+        "parent_entity_id": "sb3_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_door_frame",
+        "physical_identity_id": "phys_sb_door_frame",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          439.0,
+          355.0,
+          569.0,
+          582.0
+        ],
+        "parent_entity_id": "sb3_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_door_handle",
+        "physical_identity_id": "phys_sb_door_handle",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          496.0,
+          470.0,
+          510.0,
+          500.0
+        ],
+        "parent_entity_id": "sb3_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_win_GL",
+        "physical_identity_id": "phys_sb_win_GL",
+        "class_name": "window",
+        "bbox_2d": [
+          224.0,
+          370.0,
+          314.0,
+          540.0
+        ],
+        "parent_entity_id": "sb3_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_win_frame_GL",
+        "physical_identity_id": "phys_sb_win_frame_GL",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          220.0,
+          365.0,
+          318.0,
+          545.0
+        ],
+        "parent_entity_id": "sb3_win_GL",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_stairs",
+        "physical_identity_id": "phys_sb_stairs",
+        "class_name": "stairs",
+        "bbox_2d": [
+          394.0,
+          570.0,
+          614.0,
+          690.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_curb",
+        "physical_identity_id": "phys_sb_curb_front",
+        "class_name": "curb",
+        "bbox_2d": [
+          34.0,
+          690.0,
+          964.0,
+          725.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb3_footpath",
+        "physical_identity_id": "phys_sb_footpath_front",
+        "class_name": "footpath",
+        "bbox_2d": [
+          24.0,
+          710.0,
+          984.0,
+          768.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "P1180153.JPG": [
+      {
+        "instance_id": "sb4_wall_main",
+        "physical_identity_id": "phys_sb_facade_wall",
+        "class_name": "wall",
+        "bbox_2d": [
+          156.0,
+          120.0,
+          856.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_door_main",
+        "physical_identity_id": "phys_sb_main_door",
+        "class_name": "door",
+        "bbox_2d": [
+          436.0,
+          360.0,
+          556.0,
+          580.0
+        ],
+        "parent_entity_id": "sb4_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_door_frame",
+        "physical_identity_id": "phys_sb_door_frame",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          431.0,
+          355.0,
+          561.0,
+          582.0
+        ],
+        "parent_entity_id": "sb4_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_door_handle",
+        "physical_identity_id": "phys_sb_door_handle",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          488.0,
+          470.0,
+          502.0,
+          500.0
+        ],
+        "parent_entity_id": "sb4_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_win_GL",
+        "physical_identity_id": "phys_sb_win_GL",
+        "class_name": "window",
+        "bbox_2d": [
+          216.0,
+          370.0,
+          306.0,
+          540.0
+        ],
+        "parent_entity_id": "sb4_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_win_frame_GL",
+        "physical_identity_id": "phys_sb_win_frame_GL",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          212.0,
+          365.0,
+          310.0,
+          545.0
+        ],
+        "parent_entity_id": "sb4_win_GL",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_stairs",
+        "physical_identity_id": "phys_sb_stairs",
+        "class_name": "stairs",
+        "bbox_2d": [
+          386.0,
+          570.0,
+          606.0,
+          690.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_curb",
+        "physical_identity_id": "phys_sb_curb_front",
+        "class_name": "curb",
+        "bbox_2d": [
+          26.0,
+          690.0,
+          956.0,
+          725.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb4_footpath",
+        "physical_identity_id": "phys_sb_footpath_front",
+        "class_name": "footpath",
+        "bbox_2d": [
+          16.0,
+          710.0,
+          976.0,
+          768.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "P1180157.JPG": [
+      {
+        "instance_id": "sb5_wall_main",
+        "physical_identity_id": "phys_sb_facade_wall",
+        "class_name": "wall",
+        "bbox_2d": [
+          148.0,
+          120.0,
+          848.0,
+          680.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_door_main",
+        "physical_identity_id": "phys_sb_main_door",
+        "class_name": "door",
+        "bbox_2d": [
+          428.0,
+          360.0,
+          548.0,
+          580.0
+        ],
+        "parent_entity_id": "sb5_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_door_frame",
+        "physical_identity_id": "phys_sb_door_frame",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          423.0,
+          355.0,
+          553.0,
+          582.0
+        ],
+        "parent_entity_id": "sb5_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_door_handle",
+        "physical_identity_id": "phys_sb_door_handle",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          480.0,
+          470.0,
+          494.0,
+          500.0
+        ],
+        "parent_entity_id": "sb5_door_main",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_win_GL",
+        "physical_identity_id": "phys_sb_win_GL",
+        "class_name": "window",
+        "bbox_2d": [
+          208.0,
+          370.0,
+          298.0,
+          540.0
+        ],
+        "parent_entity_id": "sb5_wall_main",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_win_frame_GL",
+        "physical_identity_id": "phys_sb_win_frame_GL",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          204.0,
+          365.0,
+          302.0,
+          545.0
+        ],
+        "parent_entity_id": "sb5_win_GL",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_stairs",
+        "physical_identity_id": "phys_sb_stairs",
+        "class_name": "stairs",
+        "bbox_2d": [
+          378.0,
+          570.0,
+          598.0,
+          690.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_curb",
+        "physical_identity_id": "phys_sb_curb_front",
+        "class_name": "curb",
+        "bbox_2d": [
+          18.0,
+          690.0,
+          948.0,
+          725.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "sb5_footpath",
+        "physical_identity_id": "phys_sb_footpath_front",
+        "class_name": "footpath",
+        "bbox_2d": [
+          8.0,
+          710.0,
+          968.0,
+          768.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "IMG_0000.jpg": [
+      {
+        "instance_id": "rc0_wall_back",
+        "physical_identity_id": "phys_rc_wall_back",
+        "class_name": "wall",
+        "bbox_2d": [
+          100.0,
+          80.0,
+          1180.0,
+          750.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_floor",
+        "physical_identity_id": "phys_rc_floor",
+        "class_name": "floor",
+        "bbox_2d": [
+          80.0,
+          720.0,
+          1200.0,
+          950.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_win",
+        "physical_identity_id": "phys_rc_window_1",
+        "class_name": "window",
+        "bbox_2d": [
+          200.0,
+          180.0,
+          480.0,
+          520.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_win_frame",
+        "physical_identity_id": "phys_rc_win_frame_1",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          195.0,
+          175.0,
+          485.0,
+          525.0
+        ],
+        "parent_entity_id": "rc0_win",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_door",
+        "physical_identity_id": "phys_rc_door_1",
+        "class_name": "door",
+        "bbox_2d": [
+          850.0,
+          200.0,
+          1100.0,
+          780.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_door_frame",
+        "physical_identity_id": "phys_rc_door_frame_1",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          845.0,
+          195.0,
+          1105.0,
+          785.0
+        ],
+        "parent_entity_id": "rc0_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_door_handle",
+        "physical_identity_id": "phys_rc_door_handle_1",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          865.0,
+          490.0,
+          895.0,
+          530.0
+        ],
+        "parent_entity_id": "rc0_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_table",
+        "physical_identity_id": "phys_rc_table_1",
+        "class_name": "table",
+        "bbox_2d": [
+          420.0,
+          520.0,
+          820.0,
+          840.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_table_top",
+        "physical_identity_id": "phys_rc_table_top_1",
+        "class_name": "table_top",
+        "bbox_2d": [
+          415.0,
+          515.0,
+          825.0,
+          580.0
+        ],
+        "parent_entity_id": "rc0_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_table_leg_1",
+        "physical_identity_id": "phys_rc_table_leg_1",
+        "class_name": "table_leg",
+        "bbox_2d": [
+          435.0,
+          575.0,
+          465.0,
+          835.0
+        ],
+        "parent_entity_id": "rc0_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_table_leg_2",
+        "physical_identity_id": "phys_rc_table_leg_2",
+        "class_name": "table_leg",
+        "bbox_2d": [
+          775.0,
+          575.0,
+          805.0,
+          835.0
+        ],
+        "parent_entity_id": "rc0_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_chair",
+        "physical_identity_id": "phys_rc_chair_1",
+        "class_name": "chair",
+        "bbox_2d": [
+          310.0,
+          540.0,
+          440.0,
+          820.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_chair_seat",
+        "physical_identity_id": "phys_rc_chair_seat_1",
+        "class_name": "chair_seat",
+        "bbox_2d": [
+          320.0,
+          640.0,
+          430.0,
+          690.0
+        ],
+        "parent_entity_id": "rc0_chair",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_chair_back",
+        "physical_identity_id": "phys_rc_chair_back_1",
+        "class_name": "chair_back",
+        "bbox_2d": [
+          325.0,
+          545.0,
+          425.0,
+          645.0
+        ],
+        "parent_entity_id": "rc0_chair",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_socket_1",
+        "physical_identity_id": "phys_rc_socket_1",
+        "class_name": "socket",
+        "bbox_2d": [
+          560.0,
+          660.0,
+          600.0,
+          700.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_socket_plate_1",
+        "physical_identity_id": "phys_rc_socket_plate_1",
+        "class_name": "socket_plate",
+        "bbox_2d": [
+          558.0,
+          658.0,
+          602.0,
+          702.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_switch_1",
+        "physical_identity_id": "phys_rc_switch_1",
+        "class_name": "switch",
+        "bbox_2d": [
+          810.0,
+          460.0,
+          835.0,
+          495.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_lamp_ceiling",
+        "physical_identity_id": "phys_rc_lamp_ceiling",
+        "class_name": "lamp",
+        "bbox_2d": [
+          580.0,
+          60.0,
+          680.0,
+          160.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_sink",
+        "physical_identity_id": "phys_rc_sink_1",
+        "class_name": "sink",
+        "bbox_2d": [
+          140.0,
+          560.0,
+          280.0,
+          720.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_faucet",
+        "physical_identity_id": "phys_rc_faucet_1",
+        "class_name": "faucet",
+        "bbox_2d": [
+          195.0,
+          530.0,
+          235.0,
+          590.0
+        ],
+        "parent_entity_id": "rc0_sink",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_drain",
+        "physical_identity_id": "phys_rc_drain_1",
+        "class_name": "drain",
+        "bbox_2d": [
+          200.0,
+          630.0,
+          225.0,
+          655.0
+        ],
+        "parent_entity_id": "rc0_sink",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc0_radiator",
+        "physical_identity_id": "phys_rc_radiator_1",
+        "class_name": "radiator",
+        "bbox_2d": [
+          200.0,
+          580.0,
+          360.0,
+          750.0
+        ],
+        "parent_entity_id": "rc0_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "IMG_0001.jpg": [
+      {
+        "instance_id": "rc1_wall_back",
+        "physical_identity_id": "phys_rc_wall_back",
+        "class_name": "wall",
+        "bbox_2d": [
+          106.0,
+          80.0,
+          1186.0,
+          750.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_win",
+        "physical_identity_id": "phys_rc_window_1",
+        "class_name": "window",
+        "bbox_2d": [
+          206.0,
+          180.0,
+          486.0,
+          520.0
+        ],
+        "parent_entity_id": "rc1_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_win_frame",
+        "physical_identity_id": "phys_rc_win_frame_1",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          201.0,
+          175.0,
+          491.0,
+          525.0
+        ],
+        "parent_entity_id": "rc1_win",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_door",
+        "physical_identity_id": "phys_rc_door_1",
+        "class_name": "door",
+        "bbox_2d": [
+          856.0,
+          200.0,
+          1106.0,
+          780.0
+        ],
+        "parent_entity_id": "rc1_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_door_frame",
+        "physical_identity_id": "phys_rc_door_frame_1",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          851.0,
+          195.0,
+          1111.0,
+          785.0
+        ],
+        "parent_entity_id": "rc1_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_door_handle",
+        "physical_identity_id": "phys_rc_door_handle_1",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          871.0,
+          490.0,
+          901.0,
+          530.0
+        ],
+        "parent_entity_id": "rc1_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_table",
+        "physical_identity_id": "phys_rc_table_1",
+        "class_name": "table",
+        "bbox_2d": [
+          426.0,
+          520.0,
+          826.0,
+          840.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_table_top",
+        "physical_identity_id": "phys_rc_table_top_1",
+        "class_name": "table_top",
+        "bbox_2d": [
+          421.0,
+          515.0,
+          831.0,
+          580.0
+        ],
+        "parent_entity_id": "rc1_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_chair",
+        "physical_identity_id": "phys_rc_chair_1",
+        "class_name": "chair",
+        "bbox_2d": [
+          316.0,
+          540.0,
+          446.0,
+          820.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_socket",
+        "physical_identity_id": "phys_rc_socket_1",
+        "class_name": "socket",
+        "bbox_2d": [
+          566.0,
+          660.0,
+          606.0,
+          700.0
+        ],
+        "parent_entity_id": "rc1_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc1_switch",
+        "physical_identity_id": "phys_rc_switch_1",
+        "class_name": "switch",
+        "bbox_2d": [
+          816.0,
+          460.0,
+          841.0,
+          495.0
+        ],
+        "parent_entity_id": "rc1_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "IMG_0002.jpg": [
+      {
+        "instance_id": "rc2_wall_back",
+        "physical_identity_id": "phys_rc_wall_back",
+        "class_name": "wall",
+        "bbox_2d": [
+          112.0,
+          80.0,
+          1192.0,
+          750.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_win",
+        "physical_identity_id": "phys_rc_window_1",
+        "class_name": "window",
+        "bbox_2d": [
+          212.0,
+          180.0,
+          492.0,
+          520.0
+        ],
+        "parent_entity_id": "rc2_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_win_frame",
+        "physical_identity_id": "phys_rc_win_frame_1",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          207.0,
+          175.0,
+          497.0,
+          525.0
+        ],
+        "parent_entity_id": "rc2_win",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_door",
+        "physical_identity_id": "phys_rc_door_1",
+        "class_name": "door",
+        "bbox_2d": [
+          862.0,
+          200.0,
+          1112.0,
+          780.0
+        ],
+        "parent_entity_id": "rc2_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_door_frame",
+        "physical_identity_id": "phys_rc_door_frame_1",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          857.0,
+          195.0,
+          1117.0,
+          785.0
+        ],
+        "parent_entity_id": "rc2_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_door_handle",
+        "physical_identity_id": "phys_rc_door_handle_1",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          877.0,
+          490.0,
+          907.0,
+          530.0
+        ],
+        "parent_entity_id": "rc2_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_table",
+        "physical_identity_id": "phys_rc_table_1",
+        "class_name": "table",
+        "bbox_2d": [
+          432.0,
+          520.0,
+          832.0,
+          840.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_table_top",
+        "physical_identity_id": "phys_rc_table_top_1",
+        "class_name": "table_top",
+        "bbox_2d": [
+          427.0,
+          515.0,
+          837.0,
+          580.0
+        ],
+        "parent_entity_id": "rc2_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_chair",
+        "physical_identity_id": "phys_rc_chair_1",
+        "class_name": "chair",
+        "bbox_2d": [
+          322.0,
+          540.0,
+          452.0,
+          820.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_socket",
+        "physical_identity_id": "phys_rc_socket_1",
+        "class_name": "socket",
+        "bbox_2d": [
+          572.0,
+          660.0,
+          612.0,
+          700.0
+        ],
+        "parent_entity_id": "rc2_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc2_switch",
+        "physical_identity_id": "phys_rc_switch_1",
+        "class_name": "switch",
+        "bbox_2d": [
+          822.0,
+          460.0,
+          847.0,
+          495.0
+        ],
+        "parent_entity_id": "rc2_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "IMG_0003.jpg": [
+      {
+        "instance_id": "rc3_wall_back",
+        "physical_identity_id": "phys_rc_wall_back",
+        "class_name": "wall",
+        "bbox_2d": [
+          118.0,
+          80.0,
+          1198.0,
+          750.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_win",
+        "physical_identity_id": "phys_rc_window_1",
+        "class_name": "window",
+        "bbox_2d": [
+          218.0,
+          180.0,
+          498.0,
+          520.0
+        ],
+        "parent_entity_id": "rc3_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_win_frame",
+        "physical_identity_id": "phys_rc_win_frame_1",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          213.0,
+          175.0,
+          503.0,
+          525.0
+        ],
+        "parent_entity_id": "rc3_win",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_door",
+        "physical_identity_id": "phys_rc_door_1",
+        "class_name": "door",
+        "bbox_2d": [
+          868.0,
+          200.0,
+          1118.0,
+          780.0
+        ],
+        "parent_entity_id": "rc3_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_door_frame",
+        "physical_identity_id": "phys_rc_door_frame_1",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          863.0,
+          195.0,
+          1123.0,
+          785.0
+        ],
+        "parent_entity_id": "rc3_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_door_handle",
+        "physical_identity_id": "phys_rc_door_handle_1",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          883.0,
+          490.0,
+          913.0,
+          530.0
+        ],
+        "parent_entity_id": "rc3_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_table",
+        "physical_identity_id": "phys_rc_table_1",
+        "class_name": "table",
+        "bbox_2d": [
+          438.0,
+          520.0,
+          838.0,
+          840.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_table_top",
+        "physical_identity_id": "phys_rc_table_top_1",
+        "class_name": "table_top",
+        "bbox_2d": [
+          433.0,
+          515.0,
+          843.0,
+          580.0
+        ],
+        "parent_entity_id": "rc3_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_chair",
+        "physical_identity_id": "phys_rc_chair_1",
+        "class_name": "chair",
+        "bbox_2d": [
+          328.0,
+          540.0,
+          458.0,
+          820.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_socket",
+        "physical_identity_id": "phys_rc_socket_1",
+        "class_name": "socket",
+        "bbox_2d": [
+          578.0,
+          660.0,
+          618.0,
+          700.0
+        ],
+        "parent_entity_id": "rc3_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc3_switch",
+        "physical_identity_id": "phys_rc_switch_1",
+        "class_name": "switch",
+        "bbox_2d": [
+          828.0,
+          460.0,
+          853.0,
+          495.0
+        ],
+        "parent_entity_id": "rc3_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ],
+    "IMG_0004.jpg": [
+      {
+        "instance_id": "rc4_wall_back",
+        "physical_identity_id": "phys_rc_wall_back",
+        "class_name": "wall",
+        "bbox_2d": [
+          124.0,
+          80.0,
+          1204.0,
+          750.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_win",
+        "physical_identity_id": "phys_rc_window_1",
+        "class_name": "window",
+        "bbox_2d": [
+          224.0,
+          180.0,
+          504.0,
+          520.0
+        ],
+        "parent_entity_id": "rc4_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_win_frame",
+        "physical_identity_id": "phys_rc_win_frame_1",
+        "class_name": "window_frame",
+        "bbox_2d": [
+          219.0,
+          175.0,
+          509.0,
+          525.0
+        ],
+        "parent_entity_id": "rc4_win",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_door",
+        "physical_identity_id": "phys_rc_door_1",
+        "class_name": "door",
+        "bbox_2d": [
+          874.0,
+          200.0,
+          1124.0,
+          780.0
+        ],
+        "parent_entity_id": "rc4_wall_back",
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_door_frame",
+        "physical_identity_id": "phys_rc_door_frame_1",
+        "class_name": "door_frame",
+        "bbox_2d": [
+          869.0,
+          195.0,
+          1129.0,
+          785.0
+        ],
+        "parent_entity_id": "rc4_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_door_handle",
+        "physical_identity_id": "phys_rc_door_handle_1",
+        "class_name": "door_handle",
+        "bbox_2d": [
+          889.0,
+          490.0,
+          919.0,
+          530.0
+        ],
+        "parent_entity_id": "rc4_door",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_table",
+        "physical_identity_id": "phys_rc_table_1",
+        "class_name": "table",
+        "bbox_2d": [
+          444.0,
+          520.0,
+          844.0,
+          840.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_table_top",
+        "physical_identity_id": "phys_rc_table_top_1",
+        "class_name": "table_top",
+        "bbox_2d": [
+          439.0,
+          515.0,
+          849.0,
+          580.0
+        ],
+        "parent_entity_id": "rc4_table",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_chair",
+        "physical_identity_id": "phys_rc_chair_1",
+        "class_name": "chair",
+        "bbox_2d": [
+          334.0,
+          540.0,
+          464.0,
+          820.0
+        ],
+        "parent_entity_id": null,
+        "is_component": false,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_socket",
+        "physical_identity_id": "phys_rc_socket_1",
+        "class_name": "socket",
+        "bbox_2d": [
+          584.0,
+          660.0,
+          624.0,
+          700.0
+        ],
+        "parent_entity_id": "rc4_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      },
+      {
+        "instance_id": "rc4_switch",
+        "physical_identity_id": "phys_rc_switch_1",
+        "class_name": "switch",
+        "bbox_2d": [
+          834.0,
+          460.0,
+          859.0,
+          495.0
+        ],
+        "parent_entity_id": "rc4_wall_back",
+        "is_component": true,
+        "visibility": "visible",
+        "occlusion_level": "none"
+      }
+    ]
+  }
+}

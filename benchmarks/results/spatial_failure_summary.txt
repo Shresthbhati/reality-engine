@@ -1,0 +1,32 @@
+Failure analysis: 294 cases (6 seeds x 7 scenes x 7 conditions), 2185 records
+
+By category:
+  topology_inconsistency               619
+  occlusion_lower_bound                357
+  over_segmentation                    221
+  geometric_outlier                    183
+  opening_attachment_error             168
+  incorrect_association                164
+  under_segmentation                   107
+  incorrect_wall_correspondence         98
+  duplicate_structural_geometry         69
+  insufficient_evidence                 44
+  scale_ambiguity                       42
+  contradictory_hypotheses              32
+  camera_pose_inconsistency             27
+  incorrect_plane_estimation            26
+  incorrect_coordinate_transform        21
+  insufficient_viewpoint_coverage        7
+
+By resolution: excluded_tentative=376, mitigated=19, surfaced=1196, unresolved=594
+Unresolved high/medium severity: 550
+Identity stability on reprocessing: 71/85 established walls changed id (entity ids are a hash of the supporting evidence set, so adding any evidence changes the id)
+
+By condition (top categories):
+  nominal            occlusion_lower_bound=21, topology_inconsistency=4, duplicate_structural_geometry=1, over_segmentation=1
+  sparse_views       occlusion_lower_bound=61, insufficient_viewpoint_coverage=7, insufficient_evidence=2, over_segmentation=1
+  heavy_occlusion    occlusion_lower_bound=193, incorrect_plane_estimation=4, topology_inconsistency=2, over_segmentation=1
+  missing_wall       insufficient_evidence=42, occlusion_lower_bound=12, opening_attachment_error=6, geometric_outlier=2
+  outlier_fragments  geometric_outlier=134, over_segmentation=112, topology_inconsistency=33, occlusion_lower_bound=24
+  bad_pose           geometric_outlier=45, topology_inconsistency=35, over_segmentation=33, occlusion_lower_bound=27
+  relative_depth     topology_inconsistency=543, incorrect_association=161, opening_attachment_error=155, under_segmentation=104

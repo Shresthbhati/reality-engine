@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 599
+Total: 624
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -194,6 +194,9 @@ Total: 599
 - `tests/test_autonomous_quality_loop_rule9.py`
 - `tests/test_backend_selection_policy.py`
 - `tests/test_bad_evidence_real.py`
+- `tests/test_benchmark_dataset_adapters.py`
+- `tests/test_benchmark_dataset_runner.py`
+- `tests/test_benchmark_geometry_metrics.py`
 - `tests/test_benchmark_integrity.py`
 - `tests/test_benchmark_manifest.py`
 - `tests/test_benchmark_suite.py`
@@ -232,6 +235,7 @@ Total: 599
 - `tests/test_colmap_backend_dense.py`
 - `tests/test_colmap_coverage.py`
 - `tests/test_colmap_deterministic_b12.py`
+- `tests/test_colmap_gpu_and_stage_report.py`
 - `tests/test_colmap_matcher_flags.py`
 - `tests/test_colmap_observations.py`
 - `tests/test_colmap_session.py`
@@ -308,6 +312,7 @@ Total: 599
 - `tests/test_errors.py`
 - `tests/test_events.py`
 - `tests/test_evidence_coverage.py`
+- `tests/test_evidence_export_geometry.py`
 - `tests/test_evidence_firewall.py`
 - `tests/test_evidence_fusion.py`
 - `tests/test_evidence_quality.py`
@@ -381,6 +386,7 @@ Total: 599
 - `tests/test_interior_scene_e2e.py`
 - `tests/test_job_authorization.py`
 - `tests/test_job_dedupe.py`
+- `tests/test_job_failure_injection.py`
 - `tests/test_job_progress.py`
 - `tests/test_job_stage_runs_model.py`
 - `tests/test_job_stage_runs_pipeline.py`
@@ -434,6 +440,7 @@ Total: 599
 - `tests/test_metric_depth_task4_4.py`
 - `tests/test_metric_scale_fusion.py`
 - `tests/test_midas_backend.py`
+- `tests/test_midas_inverse_depth.py`
 - `tests/test_mobile_bridge.py`
 - `tests/test_model_catalogue_125.py`
 - `tests/test_model_pool.py`
@@ -498,6 +505,16 @@ Total: 599
 - `tests/test_partitioned_persistence.py`
 - `tests/test_pbr_material_classification.py`
 - `tests/test_pcl_core.py`
+- `tests/test_perception_sprint10_p0_counterexamples.py`
+- `tests/test_perception_sprint10_production_handoff.py`
+- `tests/test_perception_sprint5_completion.py`
+- `tests/test_perception_sprint6_scene_understanding.py`
+- `tests/test_perception_sprint7_scale_safety.py`
+- `tests/test_perception_sprint8_components.py`
+- `tests/test_perception_sprint8_worldir_integration.py`
+- `tests/test_perception_sprint9_benchmark_adversarial.py`
+- `tests/test_perception_sprint9_components.py`
+- `tests/test_perception_sprint9_worldir_integration.py`
 - `tests/test_perceptual_dedup.py`
 - `tests/test_performance_benchmarks.py`
 - `tests/test_physical_plausibility.py`
@@ -587,12 +604,14 @@ Total: 599
 - `tests/test_scale_anchors.py`
 - `tests/test_scale_drift_absorb.py`
 - `tests/test_scale_gate.py`
+- `tests/test_scale_lifecycle.py`
 - `tests/test_scale_route_parity.py`
 - `tests/test_scene_complete_bench.py`
 - `tests/test_scene_complete_scorer.py`
 - `tests/test_scene_graph.py`
 - `tests/test_scene_identity.py`
 - `tests/test_scene_scale.py`
+- `tests/test_scene_type_gate.py`
 - `tests/test_sdk_external_consumer.py`
 - `tests/test_security_audit.py`
 - `tests/test_sensor_identity.py`
@@ -610,12 +629,17 @@ Total: 599
 - `tests/test_small_object_benchmark.py`
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
+- `tests/test_spatial_association_cache.py`
+- `tests/test_spatial_compiler.py`
 - `tests/test_spatial_continuity.py`
+- `tests/test_spatial_global_api.py`
+- `tests/test_spatial_global_stage.py`
 - `tests/test_spatial_hierarchy.py`
 - `tests/test_spatial_index.py`
 - `tests/test_spatial_index_benchmark.py`
 - `tests/test_spatial_index_grid_correctness.py`
 - `tests/test_spatial_intelligence.py`
+- `tests/test_spatial_multiview.py`
 - `tests/test_spatial_reasoning.py`
 - `tests/test_spatial_reasoning_rule8.py`
 - `tests/test_spatial_relations.py`
@@ -626,6 +650,7 @@ Total: 599
 - `tests/test_spatial_tiling.py`
 - `tests/test_specialist_truth_labels.py`
 - `tests/test_stacked_storey_reconstruction.py`
+- `tests/test_stage_admission.py`
 - `tests/test_stage_contract.py`
 - `tests/test_stage_dense.py`
 - `tests/test_stage_depth.py`

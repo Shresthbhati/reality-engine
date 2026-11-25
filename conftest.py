@@ -23,6 +23,8 @@ import os
 
 # Test-only seams (e.g. REALITY_TEST_BACKEND) are honoured only under this env.
 os.environ.setdefault("REALITY_ENV", "test")
+# Measure stage memory but never refuse a stage because the dev machine is busy (tests that exercise refusal pass an explicit mode).
+os.environ.setdefault("RE_MEMORY_ADMISSION", "record")
 
 # ---------------------------------------------------------------------------
 # Physics / simulation test modules (downstream — not part of core CI)

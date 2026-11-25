@@ -101,36 +101,39 @@ class SamPromptedSegmenterAdapter(BaseEngineAdapter):
         else:
             raise InputValidationError(f"Unsupported image type: {type(raw_image)}")
 
-        h, w = img_rgb.shape[:2]
-        self._predictor.set_image(img_rgb)
+        import torch
 
+        h, w = img_rgb.shape[:2]
         segmented_regions = []
         raw_masks = []
 
-        for idx, box in enumerate(boxes):
-            box_arr = np.array(box, dtype=np.float32)
-            masks, scores, logits = self._predictor.predict(
-                box=box_arr[None, :],
-                multimask_output=False,
-            )
-            mask_bool = masks[0].astype(bool)
-            raw_masks.append(mask_bool)
+        with torch.inference_mode():
+            self._predictor.set_image(img_rgb)
 
-            # Extract full polygon topology with interior holes
-            _, _, topology = extract_mask_topology(mask_bool)
+            for idx, box in enumerate(boxes):
+                box_arr = np.array(box, dtype=np.float32)
+                masks, scores, logits = self._predictor.predict(
+                    box=box_arr[None, :],
+                    multimask_output=False,
+                )
+                mask_bool = masks[0].astype(bool)
+                raw_masks.append(mask_bool)
 
-            segmented_regions.append({
-                "region_index": idx,
-                "input_box_xyxy": [float(c) for c in box],
-                "score": float(scores[0]),
-                "mask_area_px": float(np.sum(mask_bool)),
-                "net_polygon_area_px": topology.total_area_px,
-                "num_exterior_polygons": topology.num_components,
-                "num_interior_holes": topology.num_holes,
-                "has_holes": topology.num_holes > 0,
-                "mask_shape": list(mask_bool.shape),
-                "is_empty": not topology.is_valid or topology.total_area_px == 0.0,
-            })
+                # Extract full polygon topology with interior holes
+                _, _, topology = extract_mask_topology(mask_bool)
+
+                segmented_regions.append({
+                    "region_index": idx,
+                    "input_box_xyxy": [float(c) for c in box],
+                    "score": float(scores[0]),
+                    "mask_area_px": float(np.sum(mask_bool)),
+                    "net_polygon_area_px": topology.total_area_px,
+                    "num_exterior_polygons": topology.num_components,
+                    "num_interior_holes": topology.num_holes,
+                    "has_holes": topology.num_holes > 0,
+                    "mask_shape": list(mask_bool.shape),
+                    "is_empty": not topology.is_valid or topology.total_area_px == 0.0,
+                })
 
         diagnostics = {
             "checkpoint": self.checkpoint,
@@ -139,7 +142,6 @@ class SamPromptedSegmenterAdapter(BaseEngineAdapter):
             "mean_confidence": float(np.mean([r["score"] for r in segmented_regions])) if segmented_regions else 0.0,
         }
 
-        import torch
         if hasattr(self._predictor, "reset_image"):
             self._predictor.reset_image()
         if torch.cuda.is_available():

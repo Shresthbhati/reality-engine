@@ -79,6 +79,25 @@ def colmap_info(binary: str = "colmap") -> dict:
     return {"version": _COLMAP_CACHE[binary], "seed": COLMAP_SEED}
 
 
+def _stage_record(r) -> dict:
+    """One stage as it actually ran: status and hashes, plus the timing, warnings, error and metrics the StageResult
+    carries. Dropping those left a run record that could not answer "how long did this take and why did it degrade".
+    Fields the runner did not record stay absent rather than being invented as zero."""
+    rec: dict = {"name": r.name, "status": r.status, "inputs_hash": r.inputs_hash, "outputs": dict(r.outputs)}
+    started, ended = getattr(r, "started_at", None), getattr(r, "ended_at", None)
+    if started is not None and ended is not None:
+        rec["duration_s"] = round((ended - started).total_seconds(), 2)
+    if getattr(r, "warnings", None):
+        rec["warnings"] = list(r.warnings)
+    if getattr(r, "error", None):
+        rec["error"] = r.error
+    if getattr(r, "metrics", None):
+        rec["metrics"] = dict(r.metrics)
+    if getattr(r, "peak_rss_mb", None) is not None:
+        rec["peak_rss_mb"] = r.peak_rss_mb
+    return rec
+
+
 def build_run_record(manifest: RunManifest, *, seeds: Mapping[str, int] | None = None, commit: str | None = None,
                      models: list[dict] | None = None, colmap: dict | None = None) -> dict:
     return {
@@ -87,8 +106,7 @@ def build_run_record(manifest: RunManifest, *, seeds: Mapping[str, int] | None =
         "seeds": dict(seeds or {}),
         "colmap": colmap if colmap is not None else colmap_info(),
         "pipeline_profile": manifest.pipeline_profile, "pipeline_version": manifest.pipeline_version,
-        "stages": [{"name": r.name, "status": r.status, "inputs_hash": r.inputs_hash, "outputs": dict(r.outputs)}
-                   for r in manifest.stages],
+        "stages": [_stage_record(r) for r in manifest.stages],
         "lineage": manifest.lineage.to_dict(),
         "models_available": models if models is not None else models_available(),
     }

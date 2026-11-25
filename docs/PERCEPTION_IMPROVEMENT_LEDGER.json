@@ -1,0 +1,250 @@
+{
+  "counts": {
+    "blocked": 2,
+    "implemented": 11,
+    "proposed": 1,
+    "total": 14
+  },
+  "entries": [
+    {
+      "changed_files": [
+        "perception/detection/normalized.py",
+        "perception/scene_intelligence.py"
+      ],
+      "current_limitation": "Scattered .box / .bbox / .box_xyxy / .score / .confidence access across backends",
+      "dependencies": [
+        "perception/detection/policy.py",
+        "provenance"
+      ],
+      "expected_impact": "Eliminates interface AttributeErrors and silent invalid-box leaks",
+      "id": "IMP-0001",
+      "priority": "P0",
+      "product_behavior_enabled": "All detector backends normalize into NormalizedDetectionBatch before segmentation, depth, or WorldIR bridging.",
+      "proposed_improvement": "Single normalization boundary with strict XYXY validation, None confidence preservation, and EMPTY vs FAILED separation",
+      "status": "implemented",
+      "subsystem": "detection_contracts"
+    },
+    {
+      "changed_files": [
+        "perception/detection/grounded_arch.py",
+        "perception/detection/backends.py",
+        "perception/detection/normalized.py"
+      ],
+      "current_limitation": "COCO Mask R-CNN alone returns 0 detections for walls, floors, ceilings, windows, doors, and built-ins",
+      "dependencies": [
+        "transformers",
+        "IDEA-Research/grounding-dino-tiny"
+      ],
+      "expected_impact": "Full architectural + furniture open-vocabulary coverage while suppressing same-class duplicates",
+      "id": "IMP-0002",
+      "priority": "P0",
+      "product_behavior_enabled": "Detects structural elements, openings, architectural details, and furniture on real COLMAP indoor photos.",
+      "proposed_improvement": "Integrate local-cache Grounding DINO + OWL-ViT + Florence-2 with same-model/same-label NMS",
+      "status": "implemented",
+      "subsystem": "object_and_arch_detection"
+    },
+    {
+      "changed_files": [
+        "perception/segmentation/arch_segmenter.py"
+      ],
+      "current_limitation": "SAM 2.1 unavailable via standalone sam2 package; raw masks unvalidated and unrefined",
+      "dependencies": [
+        "transformers",
+        "facebook/sam2.1-hiera-small",
+        "opencv-python"
+      ],
+      "expected_impact": "Usable architectural & object masks with explicit quality/uncertainty metadata",
+      "id": "IMP-0003",
+      "priority": "P0",
+      "product_behavior_enabled": "Produces 104/104 (balanced) and 181/182 (forensic) valid SAM2 masks on real indoor photos.",
+      "proposed_improvement": "Integrate HF transformers Sam2BoxPrompter with morphological refinement, boundary sharpness, box-fill rejection, and depth occlusion",
+      "status": "implemented",
+      "subsystem": "segmentation"
+    },
+    {
+      "changed_files": [
+        "perception/evidence_enrichment.py"
+      ],
+      "current_limitation": "Depth maps disconnected from masks; no surface orientation or discontinuity checks",
+      "dependencies": [
+        "perception/depth/depth_anything_backend.py"
+      ],
+      "expected_impact": "Separates foreground/background boundaries and preserves relative vs metric scale honesty",
+      "id": "IMP-0004",
+      "priority": "P0",
+      "product_behavior_enabled": "Observations carry depth_evidence and never fabricate metric coordinates from relative depth.",
+      "proposed_improvement": "Compute mask-scoped median depth, IQR dispersion, boundary discontinuity, and qualitative surface orientation",
+      "status": "implemented",
+      "subsystem": "depth_and_geometry"
+    },
+    {
+      "changed_files": [
+        "perception/evidence_enrichment.py"
+      ],
+      "current_limitation": "Appearance-only matching risks merging repeated doors/windows",
+      "dependencies": [
+        "facebook/dinov2-small",
+        "perception/instances/epipolar.py",
+        "perception/evaluation/failure_detector.py"
+      ],
+      "expected_impact": "Prevents false merges on repeated architectural elements and preserves contradictions",
+      "id": "IMP-0005",
+      "priority": "P0",
+      "product_behavior_enabled": "Cross-view candidates carry geometric support, ambiguity status, and precision/recall diagnostics.",
+      "proposed_improvement": "Fuse DINOv2 embeddings with epipolar_residual_px, disambiguate repeated structures, and map failures to FailureKind",
+      "status": "implemented",
+      "subsystem": "cross_view_association"
+    },
+    {
+      "changed_files": [
+        "perception/evidence_enrichment.py",
+        "apps/api/evidence_world_stage.py"
+      ],
+      "current_limitation": "Video frames not decoded into job pipeline or tracked across occlusions",
+      "dependencies": [
+        "opencv-python"
+      ],
+      "expected_impact": "First-class MP4/MOV/WEBM ingestion in API jobs with timestamp/frame provenance",
+      "id": "IMP-0006",
+      "priority": "P0",
+      "product_behavior_enabled": "Video files submitted to evidence_world_stage.run_for_job emit keyframes, motion metadata, and spatial_inputs_v1.json.",
+      "proposed_improvement": "Decode video keyframes with duplicate suppression, optical-flow camera motion, and occlusion-gap track recovery wired into evidence_world_stage",
+      "status": "implemented",
+      "subsystem": "video_intelligence"
+    },
+    {
+      "changed_files": [
+        "perception/orchestrator.py",
+        "perception/model_registry.py",
+        "perception/availability.py"
+      ],
+      "current_limitation": "7-model execution ran unconditionally without VRAM/content-aware plan selection",
+      "dependencies": [
+        "perception/availability.py",
+        "perception/scene_intelligence.py"
+      ],
+      "expected_impact": "Cuts 3-photo RTX 4050 runtime from 33.2s to 19.5s in balanced mode while retaining 100% valid SAM2 masks",
+      "id": "IMP-0007",
+      "priority": "P1",
+      "product_behavior_enabled": "Content- and VRAM-aware plan execution with explicit InferencePlanError on missing required models.",
+      "proposed_improvement": "Add FAST_STRUCTURAL_PLAN, BALANCED_INTERIOR_PLAN, FULL_FORENSIC_PLAN, and select_inference_plan_for_inputs",
+      "status": "implemented",
+      "subsystem": "orchestration_and_hardware"
+    },
+    {
+      "changed_files": [
+        "perception/spatial_inputs.py",
+        "apps/api/evidence_world_stage.py",
+        "apps/api/routes_evidence_world.py"
+      ],
+      "current_limitation": "No spatial_inputs.v1 producer or API endpoint for reconstruction consumers",
+      "dependencies": [
+        "apps/api/evidence_world_stage.py",
+        "apps/api/routes_evidence_world.py"
+      ],
+      "expected_impact": "Deterministic, validated spatial_inputs_v1.json emitted and inspectable per API run",
+      "id": "IMP-0008",
+      "priority": "P0",
+      "product_behavior_enabled": "Real API runs produce and serve spatial_inputs.v1 alongside scene_intelligence telemetry.",
+      "proposed_improvement": "Implement SpatialInputsV1, register_inputs_provider, evidence_world_stage emission, and GET .../spatial-inputs",
+      "status": "implemented",
+      "subsystem": "spatial_inputs_and_api"
+    },
+    {
+      "changed_files": [
+        "perception/world_bridge.py",
+        "perception/scene_intelligence.py"
+      ],
+      "current_limitation": "Image quality lacked motion-blur/noise metrics; materials used box crops",
+      "dependencies": [
+        "perception/materials/material_hypotheses.py"
+      ],
+      "expected_impact": "Cleaner appearance statistics and grounded capture recommendations tied to missing_evidence",
+      "id": "IMP-0009",
+      "priority": "P1",
+      "product_behavior_enabled": "Material hypotheses stay unverified (ESTIMATED) and avoid background wall color bleed.",
+      "proposed_improvement": "Add directional motion blur & MAD noise estimation; compute material hypotheses from valid segmentation mask crops",
+      "status": "implemented",
+      "subsystem": "image_quality_and_materials"
+    },
+    {
+      "changed_files": [
+        "benchmarks/annotation_manifest.py",
+        "benchmarks/dataset_adapters.py",
+        "perception/inventory.py"
+      ],
+      "current_limitation": "No human-reviewed annotation manifest or machine-readable engine inventory",
+      "dependencies": [
+        "benchmarks/dataset_adapters.py"
+      ],
+      "expected_impact": "Prevents self-evaluation leaks and exposes reproducible metric runners",
+      "id": "IMP-0010",
+      "priority": "P1",
+      "product_behavior_enabled": "Reproducible detection/segmentation/depth metric evaluation whenever GT manifests are supplied.",
+      "proposed_improvement": "Build AnnotationManifest (separating pseudo-labels from reviewed GT), dataset adapters, and ENGINE_INVENTORY.json",
+      "status": "implemented",
+      "subsystem": "evaluation_and_inventory"
+    },
+    {
+      "changed_files": [
+        "frontend/src/lib/api/evidence-world.ts",
+        "frontend/src/components/workspace/EvidenceRunPanel.tsx"
+      ],
+      "current_limitation": "Desktop EvidenceRunPanel did not surface spatial_inputs.v1 mask/association/scale summaries",
+      "dependencies": [
+        "apps/api/routes_evidence_world.py"
+      ],
+      "expected_impact": "Interactive UI inspection of observation counts, masked observations, cross-view matches, and scale basis",
+      "id": "IMP-0014",
+      "priority": "P2",
+      "product_behavior_enabled": "Reality Studio EvidenceRunPanel displays spatial_inputs.v1 observation, mask, match, and scale summaries.",
+      "proposed_improvement": "Wire GET /api/worlds/{world_id}/evidence-world/{run_id}/spatial-inputs into EvidenceRunPanel via getSpatialInputsV1",
+      "status": "implemented",
+      "subsystem": "frontend_evidence_inspector"
+    },
+    {
+      "changed_files": [],
+      "current_limitation": "ScanNet, Matterport3D, Structured3D, Hypersim, and Replica archives are not on disk",
+      "dependencies": [
+        "RE_SCANNET_DIR or RE_HYPERSIM_DIR"
+      ],
+      "expected_impact": "Calibrated precision, recall, mIoU, and AbsRel baselines",
+      "id": "IMP-0011",
+      "priority": "P0",
+      "product_behavior_enabled": "Blocked on external dataset download/license access.",
+      "proposed_improvement": "Run compare_detectors_on_manifest and depth/segmentation benchmarks on ScanNet & Hypersim splits",
+      "status": "blocked",
+      "subsystem": "ground_truth_benchmarking"
+    },
+    {
+      "changed_files": [],
+      "current_limitation": "Claude spatial_global consumer is not present on branch feat/reconstruction-sprint10",
+      "dependencies": [
+        "Claude spatial_global merge"
+      ],
+      "expected_impact": "Full closed-loop spatial reconstruction from perception evidence",
+      "id": "IMP-0012",
+      "priority": "P0",
+      "product_behavior_enabled": "Producer side ready; awaiting consumer module on integration branch.",
+      "proposed_improvement": "Execute end-to-end API job -> spatial_inputs.v1 -> spatial_global -> WorldIR persistence",
+      "status": "blocked",
+      "subsystem": "claude_spatial_global_integration"
+    },
+    {
+      "changed_files": [],
+      "current_limitation": "RE_EVIDENCE_WORLD remains opt-in (False by default)",
+      "dependencies": [
+        "IMP-0011",
+        "IMP-0012"
+      ],
+      "expected_impact": "Safe default-on enablement of evidence-to-world in production jobs",
+      "id": "IMP-0013",
+      "priority": "P1",
+      "product_behavior_enabled": "Pending labelled calibration dataset.",
+      "proposed_improvement": "Calibrate confidence thresholds and quality gates against ScanNet/Hypersim and satisfy ENABLEMENT_CRITERIA",
+      "status": "proposed",
+      "subsystem": "calibration_and_enablement"
+    }
+  ],
+  "schema_version": "perception_improvement_ledger.v1"
+}

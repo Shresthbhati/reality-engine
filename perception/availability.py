@@ -74,6 +74,36 @@ REAL_MODEL_SPECS: Dict[str, Dict[str, str]] = {
         "binary": None,
         "task": "object detection + instance segmentation",
     },
+    "grounding_dino": {
+        "adapter": "perception.detection.grounded_arch.GroundingDinoDetector",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "open-vocabulary architectural & object detection",
+    },
+    "florence2": {
+        "adapter": "perception.detection.florence2_detector.Florence2Detector",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "second-opinion open-vocabulary object detection",
+    },
+    "sam2_hf": {
+        "adapter": "perception.segmentation.sam2_box_prompter.Sam2BoxPrompter",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "box-prompted architectural & object instance segmentation (SAM 2.1)",
+    },
+    "dinov2": {
+        "adapter": "perception.instances.dinov2_hf.DINOv2HFEmbedder",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "visual embeddings for cross-view association",
+    },
+    "depth_anything_metric": {
+        "adapter": "perception.depth.depth_anything_backend.DepthAnythingV2MetricBackend",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "monocular metric indoor depth (Depth Anything V2 Metric Indoor Small)",
+    },
 }
 
 #: Official SAM checkpoint filenames (as cached by torch.hub), keyed by
@@ -318,13 +348,48 @@ def _report_colmap() -> ModelAvailability:
     )
 
 
+def _report_grounding_dino() -> ModelAvailability:
+    return _report_transformers_model(
+        "grounding_dino", "IDEA-Research/grounding-dino-tiny",
+        "huggingface-cli download IDEA-Research/grounding-dino-tiny")
+
+
+def _report_florence2() -> ModelAvailability:
+    return _report_transformers_model(
+        "florence2", "florence-community/Florence-2-base",
+        "huggingface-cli download florence-community/Florence-2-base")
+
+
+def _report_sam2_hf() -> ModelAvailability:
+    return _report_transformers_model(
+        "sam2_hf", "facebook/sam2.1-hiera-small",
+        "huggingface-cli download facebook/sam2.1-hiera-small")
+
+
+def _report_dinov2() -> ModelAvailability:
+    return _report_transformers_model(
+        "dinov2", "facebook/dinov2-small",
+        "huggingface-cli download facebook/dinov2-small")
+
+
+def _report_depth_anything_metric() -> ModelAvailability:
+    return _report_transformers_model(
+        "depth_anything_metric", "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
+        "huggingface-cli download depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf")
+
+
 _REPORTERS = {
     "colmap": _report_colmap,
     "midas": _report_midas,
     "depth_anything": _report_depth_anything,
+    "depth_anything_metric": _report_depth_anything_metric,
     "owlvit": _report_owlvit,
     "sam": _report_sam,
+    "sam2_hf": _report_sam2_hf,
     "mask_rcnn": _report_mask_rcnn,
+    "grounding_dino": _report_grounding_dino,
+    "florence2": _report_florence2,
+    "dinov2": _report_dinov2,
 }
 
 

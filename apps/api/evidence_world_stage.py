@@ -141,6 +141,7 @@ def run_for_job(
     observations: Mapping[str, Mapping[str, Any]] | None = None,
     detection: str | None = None,
     pipeline_options: Mapping[str, Any] | None = None,
+    scene_intelligence: bool | None = None,
 ) -> dict[str, Any]:
     """Run the flow on the job's evidence files and return the compact facts for the job report.
 
@@ -168,8 +169,42 @@ def run_for_job(
         except (OSError, ValueError, KeyError):
             return {"status": "failed", "run_id": job_id, "duplicate_execution": True,
                     "error": "this job already has evidence on disk but its snapshot is unreadable; it was not re-run"}
-    real = [str(s) for s in sources if not str(s).startswith("virtual:") and os.path.isfile(str(s))]
-    skipped = len(sources) - len(real)
+    raw_real = [str(s) for s in sources if not str(s).startswith("virtual:") and os.path.isfile(str(s))]
+    skipped = len(sources) - len(raw_real)
+    real: list[str] = []
+    video_ingestion_facts: list[dict[str, Any]] = []
+    _VIDEO_EXTS = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
+    for src_path in raw_real:
+        if Path(src_path).suffix.lower() in _VIDEO_EXTS:
+            try:
+                import cv2
+                from perception.evidence_enrichment import process_video_file
+
+                v_res = process_video_file(src_path, max_keyframes=8)
+                kf_dir = root / "video_keyframes"
+                kf_dir.mkdir(parents=True, exist_ok=True)
+                kf_records = []
+                for kf in v_res["keyframes"]:
+                    kf_path = kf_dir / f"{Path(src_path).stem}_f{kf['frame_index']:05d}.jpg"
+                    cv2.imwrite(str(kf_path), cv2.cvtColor(kf["rgb"], cv2.COLOR_RGB2BGR))
+                    real.append(str(kf_path))
+                    kf_records.append({
+                        "keyframe_path": str(kf_path),
+                        "frame_index": kf["frame_index"],
+                        "timestamp_s": kf["timestamp_s"],
+                        "camera_moving": kf["camera_moving"],
+                    })
+                video_ingestion_facts.append({
+                    "video_path": src_path,
+                    "fps": v_res["fps"],
+                    "decoded_frames": v_res["decoded_frames"],
+                    "dropped_duplicate_count": v_res["dropped_duplicate_count"],
+                    "keyframes": kf_records,
+                })
+            except Exception as exc:  # noqa: BLE001
+                video_ingestion_facts.append({"video_path": src_path, "status": "failed", "error": f"{type(exc).__name__}: {exc}"})
+        else:
+            real.append(src_path)
     if not real:
         return {"status": "skipped", "reason": "no readable evidence image files", "skipped_sources": skipped, "run_id": job_id}
     try:
@@ -279,6 +314,41 @@ def run_for_job(
         facts["lifting"] = {k: v for k, v in after.items() if k != "depth"}
     if res.snapshot.get("surfaces") is not None:
         facts["surfaces"] = res.snapshot["surfaces"]
+    if video_ingestion_facts:
+        facts["video_ingestion"] = video_ingestion_facts
+    use_si = scene_intelligence if scene_intelligence is not None else (
+        os.environ.get("RE_EVIDENCE_WORLD_SCENE_INTEL", "").strip().lower() in ("1", "true", "yes", "on")
+    )
+    try:
+        from perception.spatial_inputs import SPATIAL_INPUTS_FILE, get_inputs_provider
+
+        if use_si:
+            from perception.orchestrator import run_inference_plan, select_inference_plan_for_inputs
+            from perception.scene_intelligence import extract_structural_regions
+
+            plan = select_inference_plan_for_inputs(real, has_video=bool(video_ingestion_facts))
+            orch_res = run_inference_plan(real, run_id=job_id, plan=plan, cameras=usable)
+            si_v1 = orch_res.spatial_inputs
+            facts["scene_intelligence"] = {
+                "plan_name": plan.plan_name,
+                "structural_regions": extract_structural_regions(orch_res.scene_graph)["counts"],
+                "room_hypotheses": [h.to_dict() for h in orch_res.scene_graph.room_hypotheses],
+                "telemetry": orch_res.telemetry,
+            }
+        else:
+            provider = get_inputs_provider("evidence_matrix_snapshot")
+            si_v1 = provider(job_id, res.snapshot, cameras=usable, sources=real)
+        si_payload = si_v1.write_json(root / SPATIAL_INPUTS_FILE)
+        facts["spatial_inputs_v1"] = {
+            "schema_version": si_v1.schema_version,
+            "file": SPATIAL_INPUTS_FILE,
+            "observation_count": len(si_v1.observations),
+            "camera_count": len(si_v1.cameras),
+            "scale_basis": si_v1.scale_state.basis,
+            "content_sha256": si_payload["content_sha256"],
+        }
+    except Exception as exc:  # noqa: BLE001 -- explicit error reporting, never silent
+        facts["spatial_inputs_v1"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     try:  # reproducibility record: a failure to write it is reported, never fatal and never silent
         from engine.multiengine import run_manifest
 

@@ -17,6 +17,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
+import networkx as nx
+from shapely.geometry import LineString
+from shapely.ops import polygonize
+
 from world_ir import WorldIR
 from world_ir.schema_v1 import EntityType, RelationshipKind
 from world_ir.validation import _entity_aabb
@@ -79,6 +83,26 @@ def _stair_storeys(world: WorldIR, stair_id: str) -> Set[str]:
     return out
 
 
+def _wall_segment_2d(world: WorldIR, wall) -> Optional[LineString]:
+    cp = wall.custom_properties or {}
+    slab = cp.get("wall_slab") or {}
+    s, e = slab.get("start_xyz_m"), slab.get("end_xyz_m")
+    if isinstance(s, (list, tuple)) and isinstance(e, (list, tuple)) and len(s) >= 2 and len(e) >= 2:
+        p1, p2 = (float(s[0]), float(s[1])), (float(e[0]), float(e[1]))
+        if p1 != p2:
+            return LineString([p1, p2])
+    box = _entity_aabb(world, wall)
+    if box is None:
+        return None
+    lo, hi = box
+    dx, dy = hi[0] - lo[0], hi[1] - lo[1]
+    if dx >= dy:
+        ym = (lo[1] + hi[1]) / 2.0
+        return LineString([(lo[0], ym), (hi[0], ym)]) if hi[0] > lo[0] else None
+    xm = (lo[0] + hi[0]) / 2.0
+    return LineString([(xm, lo[1]), (xm, hi[1])]) if hi[1] > lo[1] else None
+
+
 def check_architectural_constraints(world: WorldIR, config: ConstraintConfig = ConstraintConfig()) -> List[ConstraintViolation]:
     out: List[ConstraintViolation] = []
     tol = config.extent_tolerance_m
@@ -120,6 +144,62 @@ def check_architectural_constraints(world: WorldIR, config: ConstraintConfig = C
                 "stair_not_connecting_two_storeys", (eid,),
                 f"stair {eid} is linked to {len(linked)} storey(s); a stair must connect two",
                 "error" if len(storeys) >= 2 else "warning"))
+
+    # Contradictory relationships & containment cycles (NetworkX)
+    contains_graph = nx.DiGraph()
+    for eid in sorted(world.entities):
+        e = world.entities[eid]
+        for rel in e.relationships:
+            if rel.target_id == eid:
+                out.append(ConstraintViolation(
+                    "contradictory_relationship", (eid,),
+                    f"entity {eid} has self-referential relationship {rel.kind.value}", "error"))
+            elif rel.target_id not in world.entities:
+                out.append(ConstraintViolation(
+                    "broken_entity_reference", (eid,),
+                    f"entity {eid} references missing target {rel.target_id}", "warning"))
+            elif rel.kind is RelationshipKind.CONTAINS:
+                contains_graph.add_edge(eid, rel.target_id)
+    for cycle in nx.simple_cycles(contains_graph):
+        out.append(ConstraintViolation(
+            "contradictory_relationship", tuple(sorted(cycle)),
+            f"containment cycle detected among {sorted(cycle)}", "error"))
+
+    # Non-Manhattan / irregular room enclosure check (Shapely)
+    for eid in sorted(i for i, x in world.entities.items() if x.type is EntityType.ROOM):
+        room = world.entities[eid]
+        b_ids = list((room.custom_properties or {}).get("boundary_element_ids") or ())
+        if len(b_ids) >= 2:
+            segs = []
+            for bid in b_ids:
+                w = world.entities.get(bid)
+                if w is not None:
+                    seg = _wall_segment_2d(world, w)
+                    if seg is not None:
+                        segs.append(seg)
+            if len(segs) >= 2:
+                polys = list(polygonize(segs))
+                if not polys:
+                    out.append(ConstraintViolation(
+                        "room_enclosure_incomplete", (eid,),
+                        f"room {eid} boundary walls ({len(segs)} segments) do not form a closed polygon",
+                        "warning"))
+
+    # Wall near-miss connectivity gaps
+    wall_segs: List[Tuple[str, LineString]] = []
+    for eid in sorted(i for i, x in world.entities.items() if x.type is EntityType.WALL):
+        seg = _wall_segment_2d(world, world.entities[eid])
+        if seg is not None:
+            wall_segs.append((eid, seg))
+    if len(wall_segs) >= 2:
+        for i, (wid, seg) in enumerate(wall_segs):
+            min_d = min(seg.distance(other) for j, (_, other) in enumerate(wall_segs) if j != i)
+            if tol < min_d <= 0.5:
+                out.append(ConstraintViolation(
+                    "wall_connectivity_gap", (wid,),
+                    f"wall {wid} has a {min_d:.2f}m gap to its nearest neighbor wall",
+                    "warning"))
+
     return out
 
 

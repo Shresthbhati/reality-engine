@@ -63,6 +63,8 @@ export interface ViewportLayers {
   shell: boolean;
   /** 3D Gaussian Splats photorealistic capture layer */
   splats?: boolean;
+  /** Wireframe entity bounding boxes (AABB) */
+  bounds?: boolean;
 }
 
 export type { HybridRenderMode };
@@ -211,6 +213,7 @@ export class WorldSceneController {
     temporalClusters: null as THREE.Group | null,
     clashMarkers: null as THREE.Group | null,
     surfaceHeatmap: null as THREE.Points | null,
+    bounds: null as THREE.Group | null,
   };
 
   private outdoor: OutdoorResult = emptyOutdoorResult();
@@ -267,6 +270,8 @@ export class WorldSceneController {
 
   private entityMeshes = new Map<string, THREE.Mesh>();
   private selectedEntityId: string | null = null;
+  private selectedEntityIds = new Set<string>();
+  private multiSelectionOutlines: THREE.LineSegments[] = [];
   private isolatedSpaceId: string | null = null;
   private activeLevelIndex: number | null = null;
   private previewCorrection: { entityId: string; type?: string; confidence?: number; originalPosition?: THREE.Vector3 } | null = null;
@@ -301,6 +306,7 @@ export class WorldSceneController {
     walls: true,
     topology: true,
     shell: true,
+    bounds: false,
   };
 
   private transformGizmo: TransformGizmoController | null = null;
@@ -309,6 +315,7 @@ export class WorldSceneController {
   private gizmoSnapConfig: SnapConfig = DEFAULT_SNAP_CONFIG;
 
   private onSelectCallback?: (id: string | null) => void;
+  private onMultiSelectCallback?: (ids: string[]) => void;
   private onHoverCallback?: (id: string | null) => void;
   private onMeasureCallback?: (res: MeasurementResult | null) => void;
   private onCameraChangeCallback?: (info: CameraInfo) => void;
@@ -407,12 +414,14 @@ export class WorldSceneController {
 
   public setCallbacks(callbacks: {
     onSelect?: (id: string | null) => void;
+    onMultiSelect?: (ids: string[]) => void;
     onHover?: (id: string | null) => void;
     onMeasure?: (res: MeasurementResult | null) => void;
     onCameraChange?: (info: CameraInfo) => void;
     onContextLossChange?: (isLost: boolean) => void;
   }) {
     this.onSelectCallback = callbacks.onSelect;
+    this.onMultiSelectCallback = callbacks.onMultiSelect;
     this.onHoverCallback = callbacks.onHover;
     this.onMeasureCallback = callbacks.onMeasure;
     this.onCameraChangeCallback = callbacks.onCameraChange;
@@ -704,9 +713,13 @@ export class WorldSceneController {
     this.structurePoints = opts.structurePoints ?? [];
     this.suppressLegacy = Boolean(opts.suppressLegacy);
     this.cameraAnimation = null;
-    if (this.selectedEntityId !== null) {
+    const sameWorld = this.world?.id === world.id;
+    const keepSelection = Boolean(this.selectedEntityId && world.entities && world.entities[this.selectedEntityId]);
+    if ((this.selectedEntityId !== null || this.selectedEntityIds.size > 0) && !sameWorld && !keepSelection) {
       this.selectedEntityId = null;
+      this.selectedEntityIds.clear();
       this.onSelectCallback?.(null);
+      this.onMultiSelectCallback?.([]);
     }
     this.isolatedSpaceId = null;
     this.world = world;
@@ -808,6 +821,9 @@ export class WorldSceneController {
   private clearSceneLayers() {
     this.disposePointLayer();
     this.disposeSplats();
+    if (this.layers.bounds) {
+      this.disposeBoundsLayer();
+    }
     if (this.layers.entities) {
       this.root.remove(this.layers.entities);
       for (const mesh of this.entityMeshes.values()) {
@@ -1006,6 +1022,7 @@ export class WorldSceneController {
 
       this.root.add(this.layers.entities);
       this.updateMeshVisibilities();
+      if (this.layerVisibility.bounds) this.rebuildBoundsLayer();
 
       // Procedural worlds have no cloud to seed the camera; frame once per world so a large scene is on-screen.
       const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
@@ -1528,6 +1545,7 @@ export class WorldSceneController {
     this.applyOutdoorVisibility();
     this.refreshShellVisibility();
     this.updateMeshVisibilities();
+    if (this.layerVisibility.bounds) this.rebuildBoundsLayer();
   }
 
   public setPointerTool(tool: PointerTool) {
@@ -1832,6 +1850,9 @@ export class WorldSceneController {
     if (this.layers.points) {
       this.layers.points.visible = this.layerVisibility.points;
     }
+    if (this.layers.bounds) {
+      this.disposeBoundsLayer();
+    }
     if (this.layers.entities) {
       this.layers.entities.visible = this.layerVisibility.entities;
     }
@@ -1849,6 +1870,14 @@ export class WorldSceneController {
     }
     if (layers.splats !== undefined) {
       this.setSplatVisibility(layers.splats);
+    }
+    if (layers.bounds !== undefined) {
+      if (this.layerVisibility.bounds) {
+        if (!this.layers.bounds) this.rebuildBoundsLayer();
+        if (this.layers.bounds) this.layers.bounds.visible = true;
+      } else if (this.layers.bounds) {
+        this.layers.bounds.visible = false;
+      }
     }
 
     if (layers.topology !== undefined) {
@@ -2761,29 +2790,116 @@ export class WorldSceneController {
     this.root.add(pointCloud);
   }
 
-  public selectEntity(id: string | null, updateCamera = false) {
-    this.selectedEntityId = id;
-    if (this.isContextLost) {
-      this.onSelectCallback?.(id);
-      return;
-    }
+  private disposeBoundsLayer() {
+    if (!this.layers.bounds) return;
+    this.root.remove(this.layers.bounds);
+    this.layers.bounds.traverse((obj) => {
+      if (obj instanceof THREE.LineSegments) {
+        obj.geometry.dispose();
+        (obj.material as THREE.Material).dispose();
+      }
+    });
+    this.layers.bounds = null;
+  }
 
-    // Reset outline
+  private rebuildBoundsLayer() {
+    this.disposeBoundsLayer();
+    if (!this.world?.entities || this.suppressLegacy) return;
+    const group = new THREE.Group();
+    const geometries = this.world.geometries || {};
+    for (const e of Object.values(this.world.entities)) {
+      const geomId = (e.geometry_ids || [])[0];
+      const g = geometries[geomId];
+      if (!g || !g.bounds_min || !g.bounds_max) continue;
+      if (this.hiddenEntityIds.has(e.id)) continue;
+      const sx = Math.max(0.02, g.bounds_max.x - g.bounds_min.x);
+      const sy = Math.max(0.02, g.bounds_max.y - g.bounds_min.y);
+      const sz = Math.max(0.02, g.bounds_max.z - g.bounds_min.z);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz)) continue;
+      const boxGeo = new THREE.BoxGeometry(sx, sy, sz);
+      const edges = new THREE.EdgesGeometry(boxGeo);
+      boxGeo.dispose();
+      const color = TYPE_COLORS[e.type.toLowerCase()] || TYPE_COLORS.default;
+      const seg = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75 }),
+      );
+      seg.position.set(
+        (g.bounds_min.x + g.bounds_max.x) / 2,
+        (g.bounds_min.y + g.bounds_max.y) / 2,
+        (g.bounds_min.z + g.bounds_max.z) / 2,
+      );
+      group.add(seg);
+    }
+    group.visible = Boolean(this.layerVisibility.bounds);
+    this.layers.bounds = group;
+    this.root.add(group);
+  }
+
+  private clearSelectionOutlines() {
     if (this.layers.selectionOutline) {
       this.root.remove(this.layers.selectionOutline);
       this.layers.selectionOutline.geometry.dispose();
       (this.layers.selectionOutline.material as THREE.Material).dispose();
       this.layers.selectionOutline = null;
     }
+    for (const outline of this.multiSelectionOutlines) {
+      this.root.remove(outline);
+      outline.geometry.dispose();
+      (outline.material as THREE.Material).dispose();
+    }
+    this.multiSelectionOutlines = [];
+  }
+
+  public setSelectedEntities(ids: string[]) {
+    this.selectedEntityIds = new Set(ids);
+    this.selectedEntityId = ids.length > 0 ? ids[ids.length - 1] : null;
+    this.applySelectionVisuals(false);
+  }
+
+  public selectEntity(id: string | null, updateCamera = false, additive = false, silent = false) {
+    if (additive && id !== null) {
+      if (this.selectedEntityIds.has(id)) {
+        this.selectedEntityIds.delete(id);
+      } else {
+        this.selectedEntityIds.add(id);
+      }
+      const remaining = Array.from(this.selectedEntityIds);
+      this.selectedEntityId = this.selectedEntityIds.has(id)
+        ? id
+        : (remaining.length > 0 ? remaining[remaining.length - 1] : null);
+    } else {
+      this.selectedEntityIds.clear();
+      if (id !== null) this.selectedEntityIds.add(id);
+      this.selectedEntityId = id;
+    }
+
+    if (this.isContextLost) {
+      if (!silent) {
+        this.onSelectCallback?.(this.selectedEntityId);
+        this.onMultiSelectCallback?.(Array.from(this.selectedEntityIds));
+      }
+      return;
+    }
+
+    this.applySelectionVisuals(updateCamera);
+    if (!silent) {
+      this.onSelectCallback?.(this.selectedEntityId);
+      this.onMultiSelectCallback?.(Array.from(this.selectedEntityIds));
+    }
+  }
+
+  private applySelectionVisuals(updateCamera: boolean) {
+    const id = this.selectedEntityId;
+    this.clearSelectionOutlines();
 
     for (const [eid, mesh] of this.entityMeshes.entries()) {
       const mat = mesh.material as THREE.MeshLambertMaterial;
-      const isSel = eid === id;
+      const isSel = this.selectedEntityIds.has(eid);
       mat.emissive = new THREE.Color(isSel ? hex(this.palette.accent) : 0x000000);
       mat.emissiveIntensity = isSel ? 0.6 : 0;
 
       if (isSel) {
-        // Create prominent bright selection outline
         const wireGeo = new THREE.EdgesGeometry(mesh.geometry);
         const wireMat = new THREE.LineBasicMaterial({
           color: hex(this.palette.accent),
@@ -2791,11 +2907,16 @@ export class WorldSceneController {
           transparent: true,
           opacity: 0.95,
         });
-        this.layers.selectionOutline = new THREE.LineSegments(wireGeo, wireMat);
-        this.layers.selectionOutline.position.copy(mesh.position);
-        this.root.add(this.layers.selectionOutline);
+        const outline = new THREE.LineSegments(wireGeo, wireMat);
+        outline.position.copy(mesh.position);
+        this.root.add(outline);
+        if (eid === id && !this.layers.selectionOutline) {
+          this.layers.selectionOutline = outline;
+        } else {
+          this.multiSelectionOutlines.push(outline);
+        }
 
-        if (updateCamera) {
+        if (updateCamera && eid === id) {
           this.flyToEntity(id);
         }
       }
@@ -2805,7 +2926,7 @@ export class WorldSceneController {
     if (updateCamera && id && !this.entityMeshes.has(id)) this.flyToEntity(id);
     this.renderSpatialTopology(id);
     if (this.transformGizmo && this.transformGizmoEnabled) {
-      if (id && this.entityMeshes.has(id) && this.selectionEnabled) {
+      if (id && this.selectedEntityIds.size === 1 && this.entityMeshes.has(id) && this.selectionEnabled) {
         const mesh = this.entityMeshes.get(id)!;
         this.transformGizmo.attach(id, mesh);
       } else {
@@ -2813,7 +2934,6 @@ export class WorldSceneController {
       }
     }
     this.refreshShellVisibility(); // a selected (cut-away) wall is revealed
-    this.onSelectCallback?.(id);
   }
 
   private animateCameraTo(endPos: THREE.Vector3, endTarget: THREE.Vector3, duration = 380, scale = true) {
@@ -3249,11 +3369,11 @@ export class WorldSceneController {
       const outdoorHit = this.pickOutdoor();
 
       if (outdoorHit && (hits.length === 0 || outdoorHit.distance < hits[0].distance)) {
-        this.selectEntity(outdoorHit.id);
+        this.selectEntity(outdoorHit.id, false, ev.shiftKey);
       } else if (hits.length > 0) {
         const entityId = hits[0].object.userData.entityId as string;
-        this.selectEntity(entityId);
-      } else {
+        this.selectEntity(entityId, false, ev.shiftKey);
+      } else if (!ev.shiftKey) {
         this.selectEntity(null);
       }
     }, { signal });

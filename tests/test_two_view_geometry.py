@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
@@ -56,6 +57,55 @@ def test_a_known_camera_pair_is_verified_and_its_pose_recovered():
     cos_angle = max(-1.0, min(1.0, (float(np.trace(R_rec @ R.T)) - 1.0) / 2.0))
     assert math.degrees(math.acos(cos_angle)) < 1.0
     assert "cannot recover scale" in pose["scale"]
+
+
+def test_distortion_coefficients_reach_the_essential_matrix():
+    """A real radial term must be undistorted before the pose is recovered.
+
+    The south_building capture's camera is SIMPLE_RADIAL with k1 = -0.0205; ignoring
+    it left a measurable rotation bias per pair (0.84 -> 0.65 deg median once
+    supplied), which compounded to ~19 deg per camera over the pose graph.
+    """
+    from perception.engine_adapters import _camera_distortion
+
+    rng = np.random.default_rng(5)
+    points = np.column_stack([rng.uniform(-2, 2, 400), rng.uniform(-2, 2, 400), rng.uniform(6, 9, 400)])
+    k1 = -0.25  # exaggerated so the undistorted model is clearly the right one
+    R = _rotation_y(8.0)
+    t = np.array([0.6, 0.05, 0.2])
+    rvec = cv2.Rodrigues(np.eye(3))[0]
+    p1 = cv2.projectPoints(points, rvec, np.zeros(3), K, np.array([k1, 0.0, 0.0, 0.0]))[0].reshape(-1, 2)
+    rvec2 = cv2.Rodrigues(R)[0]
+    p2 = cv2.projectPoints(points, rvec2, t, K, np.array([k1, 0.0, 0.0, 0.0]))[0].reshape(-1, 2)
+
+    with_dist = _geometric_verification(p1, p2, K, K, np.array([k1, 0.0, 0.0, 0.0]),
+                                        np.array([k1, 0.0, 0.0, 0.0]))
+    without = _geometric_verification(p1, p2, K, K)
+    err_with = math.degrees(math.acos(max(-1.0, min(1.0, (float(np.trace(
+        np.asarray(with_dist["relative_pose"]["R"]) @ R.T)) - 1.0) / 2.0))))
+    err_without = math.degrees(math.acos(max(-1.0, min(1.0, (float(np.trace(
+        np.asarray(without["relative_pose"]["R"]) @ R.T)) - 1.0) / 2.0))))
+    assert with_dist["relative_pose"]["calibration"] == "intrinsics + distortion coefficients"
+    assert without["relative_pose"]["calibration"].startswith("intrinsics only")
+    assert err_with < 1.0
+    assert err_with < err_without
+
+    ctx = {"intrinsics": {"img_a.jpg": {"fx": 900.0, "fy": 900.0, "cx": 512.0, "cy": 384.0,
+                                         "dist": [k1, 0.0, 0.0, 0.0]},
+                          "img_b.jpg": {"fx": 900.0, "fy": 900.0, "cx": 512.0, "cy": 384.0}}}
+    assert np.allclose(_camera_distortion("img_a.jpg", ctx), [k1, 0.0, 0.0, 0.0])
+    assert _camera_distortion("img_b.jpg", ctx) is None
+    assert _camera_distortion("unknown.jpg", ctx) is None
+
+
+def test_simple_radial_camera_row_is_parsed_with_its_distortion():
+    from scripts.run_multi_engine_real_capture import _camera_model
+
+    row = _camera_model(["1", "SIMPLE_RADIAL", "3072", "2304", "2559.68", "1536", "1152", "-0.0204997"])
+    assert row["fx"] == pytest.approx(2559.68)
+    assert row["cx"] == pytest.approx(1536.0)
+    assert row["dist"] == pytest.approx([-0.0204997, 0.0, 0.0, 0.0])
+    assert "dist" not in _camera_model(["1", "PINHOLE", "64", "48", "50", "50", "32", "24"])
 
 
 def test_random_correspondences_are_not_reported_as_verified():

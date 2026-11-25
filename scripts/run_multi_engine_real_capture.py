@@ -80,8 +80,14 @@ def _camera_model(parts: List[str]) -> Optional[Dict[str, float]]:
     row: Dict[str, float] = {"width": width, "height": height}
     if model in ("PINHOLE", "OPENCV") and len(params) >= 4:
         row.update(fx=params[0], fy=params[1], cx=params[2], cy=params[3])
+        if model == "OPENCV" and len(params) >= 8:
+            row["dist"] = [params[4], params[5], params[6], params[7]]  # type: ignore[assignment]
     elif model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL") and len(params) >= 3:
         row.update(fx=params[0], fy=params[0], cx=params[1], cy=params[2])
+        if model == "SIMPLE_RADIAL" and len(params) >= 4:
+            row["dist"] = [params[3], 0.0, 0.0, 0.0]  # type: ignore[assignment]
+        elif model == "RADIAL" and len(params) >= 5:
+            row["dist"] = [params[3], params[4], 0.0, 0.0]  # type: ignore[assignment]
     else:
         return None
     row["model"] = model  # type: ignore[assignment]
@@ -156,8 +162,48 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
     provenance["overlap_with_reference_model"] = overlap
     provenance["reference_model_images"] = len(model_names)
     if overlap:
-        provenance["intrinsics"] = "reference model per-image camera (names matched)"
-        return {k: v for k, v in intrinsics.items() if k in wanted}, covisibility, provenance
+        # A name match is NOT enough: the reference model calibrates the ORIGINAL
+        # frames (3072x2304 here) while the committed images are the resized
+        # derivatives (1024x768). Using the model's pixels unchanged put the
+        # principal point at (1536, 1152) -- outside a 1024x768 image -- which made
+        # every essential matrix (and therefore every recovered rotation) wrong
+        # while the pixel-space epipolar residual stayed small. Rescaling by the
+        # image-size ratio is exact for a pure resize.
+        rescaled: Dict[str, Dict[str, float]] = {}
+        n_rescaled = 0
+        model_sizes: List[str] = []
+        no_size: List[str] = []
+        for path in images:
+            name = Path(path).name
+            cam = intrinsics.get(name)
+            if not cam:
+                continue
+            size = _image_size(path)
+            if not size:
+                no_size.append(name)
+                rescaled[path] = cam
+                continue
+            w, h = size
+            if (w, h) != (int(cam["width"]), int(cam["height"])):
+                model_sizes.append(f"{int(cam['width'])}x{int(cam['height'])}")
+                sx, sy = w / float(cam["width"]), h / float(cam["height"])
+                # distortion coefficients are in normalised units: unchanged by a resize
+                dist = cam.get("dist")
+                cam = {"fx": cam["fx"] * sx, "fy": cam["fy"] * sy,
+                       "cx": cam["cx"] * sx, "cy": cam["cy"] * sy,
+                       "width": w, "height": h, "model": cam["model"]}
+                if dist is not None:
+                    cam["dist"] = dist
+                n_rescaled += 1
+            rescaled[path] = cam
+        sizes_note = (f"; rescaled from the model's {sorted(set(model_sizes))[0]} to each image's "
+                      f"actual size ({n_rescaled} images, pure-resize exactness; not a new measurement)"
+                      if n_rescaled else "")
+        provenance["intrinsics"] = ("reference model per-image camera (names matched)" + sizes_note)
+        provenance["images_rescaled_to_actual_size"] = n_rescaled
+        provenance["images_without_readable_size"] = no_size
+        provenance["covisibility"] = "reference model"
+        return rescaled, covisibility, provenance
 
     # Disjoint reference model: rescale the calibrated camera to each image's size.
     rescale: Dict[str, Dict[str, float]] = {}
@@ -209,20 +255,12 @@ class _UnionFind:
             self.parent[rb] = ra
 
 
-def _rotation_angle_deg(R: Any) -> float:
-    import numpy as np
-
-    R = np.asarray(R, dtype=np.float64)
-    cos = max(-1.0, min(1.0, (float(np.trace(R)) - 1.0) / 2.0))
-    import math
-
-    return math.degrees(math.acos(cos))
-
-
 def _camera_graph(nodes: Sequence[str], verified_pairs: List[Dict[str, Any]],
                   min_inliers: int) -> Dict[str, Any]:
     """Connectivity, weak cameras and triangle cycle consistency from VERIFIED pairs."""
     import numpy as np
+
+    from perception.camera_pose_graph import cycle_residuals
 
     uf = _UnionFind(nodes)
     edges: List[Tuple[str, str]] = []
@@ -239,31 +277,15 @@ def _camera_graph(nodes: Sequence[str], verified_pairs: List[Dict[str, Any]],
     for n in nodes:
         components.setdefault(uf.find(n), []).append(n)
 
-    # cycle consistency: R_ac should equal R_ab @ R_bc on every triangle with three
-    # verified pairs whose relative pose was actually estimated.
-    R: Dict[Tuple[str, str], Any] = {}
-    for row in verified_pairs:
-        pose = row.get("relative_pose")
-        if pose:
-            R[(row["a"], row["b"])] = np.asarray(pose["R"], dtype=np.float64)
-
-    def _R(a: str, b: str) -> Optional[Any]:
-        if (a, b) in R:
-            return R[(a, b)]
-        if (b, a) in R:
-            return R[(b, a)].T
-        return None
-
-    residuals: List[float] = []
-    for i in range(len(nodes)):
-        for j in range(i + 1, len(nodes)):
-            for k in range(j + 1, len(nodes)):
-                a, b, c = nodes[i], nodes[j], nodes[k]
-                Rab, Rbc, Rac = _R(a, b), _R(b, c), _R(a, c)
-                if Rab is None or Rbc is None or Rac is None:
-                    continue
-                residuals.append(_rotation_angle_deg(Rab @ Rbc @ Rac.T))
-    residuals.sort()
+    # Cycle consistency: on every triangle whose three pairs were verified, composing
+    # a->b then b->c must equal a->c, i.e. angle(R_bc @ R_ab @ R_ac.T).  The product
+    # order is NOT symmetric: the previous version multiplied R_ab @ R_bc, which is a
+    # similarity transform of the closure, not the closure, so it reported tens of
+    # degrees on perfectly consistent rotations (pinned by
+    # tests/test_camera_pose_graph.py::test_cycle_residual_is_zero_for_consistent_poses).
+    triangles = cycle_residuals(nodes, [(row["a"], row["b"], row["relative_pose"]["R"])
+                                        for row in verified_pairs if row.get("relative_pose")])
+    residuals = sorted(t["residual_deg"] for t in triangles)
     return {
         "nodes": len(nodes),
         "edges_min_inliers": len(edges),
@@ -272,12 +294,16 @@ def _camera_graph(nodes: Sequence[str], verified_pairs: List[Dict[str, Any]],
         "isolated_cameras": sorted(n for n in nodes if degree[n] == 0),
         "weakly_connected_cameras": sorted(n for n in nodes if degree[n] == 1),
         "triangles_checked": len(residuals),
+        "cycle_closure": "R_bc @ R_ab @ R_ac.T == I (a->b then b->c equals a->c)",
         "cycle_residual_deg": {
             "median": round(float(np.median(residuals)), 4) if residuals else None,
             "p90": round(float(np.percentile(residuals, 90)), 4) if residuals else None,
             "max": round(float(max(residuals)), 4) if residuals else None,
             "n_over_5_deg": int(sum(1 for r in residuals if r > 5.0)),
         },
+        "worst_triangles": [{"a": Path(t["a"]).name, "b": Path(t["b"]).name,
+                             "c": Path(t["c"]).name, "residual_deg": t["residual_deg"]}
+                            for t in triangles[:5]],
         "note": ("cycle residuals are rotation-only (two-view translation is scale-free); a large "
                  "residual means the pair poses disagree around the loop, not that a camera is wrong"),
     }
@@ -394,6 +420,20 @@ print(json.dumps({
 """
 
 
+def _reference_poses(dataset: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Per-image poses from the dataset's reference COLMAP text model, or ({}, reason)."""
+    from perception.camera_pose_graph import read_colmap_text_model
+
+    try:
+        poses = read_colmap_text_model(dataset / "sparse")
+    except (FileNotFoundError, ValueError) as exc:
+        return {}, {"status": "unavailable", "reason": str(exc)}
+    if not poses:
+        return {}, {"status": "unavailable", "reason": "reference model parsed but contains no images"}
+    return poses, {"status": "measured", "source": str(dataset / "sparse" / "images.txt"),
+                   "images": len(poses)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
@@ -471,6 +511,19 @@ def main() -> int:
             best[key] = r
     graph = _camera_graph(images, list(best.values()), args.min_inliers)
     gt = _gt_covisibility_score(images, [(r["a"], r["b"]) for r in best.values()], covisibility)
+
+    # Is the cycle disagreement a property of the pair poses or of the estimator? A
+    # relative rotation does not depend on the world gauge, so the reference model can
+    # score every pair directly.
+    from perception.camera_pose_graph import compare_pair_rotations, solve_pose_graph
+
+    ref_poses, ref_provenance = _reference_poses(dataset)
+    ref_compare = (compare_pair_rotations(list(best.values()), ref_poses) if ref_poses
+                   else {"status": "unavailable", "reason": ref_provenance.get("reason")})
+    pose_edges = [{"a": r["a"], "b": r["b"], "R": r["relative_pose"]["R"],
+                   "t_unit": r["relative_pose"].get("t_unit"), "inliers": r["inliers"]}
+                  for r in best.values() if r.get("relative_pose")]
+    pose_graph = solve_pose_graph(images, pose_edges, reference=ref_poses or None)
     report["stage1_registration"] = {
         "status": "measured",
         "wall_s": stage1["wall_s"],
@@ -489,8 +542,18 @@ def main() -> int:
         "verified_image_pairs": len(best),
         "camera_graph": graph,
         "gt_covisibility": gt,
+        "reference_model": ref_provenance,
+        "reference_pose_comparison": ref_compare,
+        "pose_graph": pose_graph,
     }
     print(f"[stage 1] verified {len(best)}/{len(pairs)} pairs; components={graph['n_components']}", flush=True)
+    if ref_compare.get("status") == "measured":
+        print(f"[stage 1] pair rotation vs reference: median "
+              f"{ref_compare['median_rotation_error_deg']} deg over {ref_compare['pairs_compared']} pairs", flush=True)
+    if pose_graph.get("status") == "optimised":
+        pc = pose_graph.get("reference_comparison") or {}
+        print(f"[stage 1] pose graph: {pose_graph['edges_accepted']}/{pose_graph['edges_given']} edges, "
+              f"camera rotation error median {(pc.get('rotation_error_deg') or {}).get('median')} deg", flush=True)
 
     if not args.skip_production:
         print("[stage 2] production evidence-world run (all engines + matrix + world)", flush=True)
@@ -555,6 +618,10 @@ def main() -> int:
         "verified_pair_graph": acc["verified_image_pairs"] > 0,
         "single_connected_camera_group": acc["camera_graph"]["n_components"] == 1,
         "cycle_consistency_measured": acc["camera_graph"]["triangles_checked"] > 0,
+        "pair_rotations_compared_to_reference": acc["reference_pose_comparison"].get("status") == "measured",
+        "pose_graph_solved": acc["pose_graph"].get("status") == "optimised",
+        "pose_graph_camera_error_measured": ((acc["pose_graph"].get("reference_comparison") or {})
+                                             .get("status") == "measured"),
         "world_lineage_reload": (report.get("stage3_reload") or {}).get("status") == "verified",
         "not_claimed": ["metric scale", "survey accuracy", "depth accuracy (no ground-truth depth)",
                         "architectural entity accuracy (no surveyed ground truth)"],

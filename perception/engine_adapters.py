@@ -74,6 +74,33 @@ def _camera_matrix(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]
     return None
 
 
+def _camera_distortion(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]:
+    """The camera's distortion coefficients from the run context, or None.
+
+    A missing distortion model is not treated as "no distortion": the pair records
+    which calibration it used, because ignoring a real radial term biases the
+    essential matrix (measured on the south_building capture: 0.84 deg median pair
+    rotation error without it, 0.65 deg with it, and a coherent rotation bias that
+    compounded to ~19 deg per camera in the pose graph).
+    """
+    cams = ctx.get("intrinsics") or {}
+    if not isinstance(cams, dict):
+        return None
+    base = os.path.basename(image_path)
+    for key in (image_path, str(image_path).replace("\\", "/"), base):
+        intr = cams.get(key)
+        if not intr:
+            continue
+        dist = intr.get("dist")
+        if dist is None:
+            return None
+        try:
+            return np.asarray([float(v) for v in dist], dtype=np.float64)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def _sampson_distances(F: np.ndarray, p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
     """Per-correspondence Sampson (first-order epipolar) distance in pixels."""
     F = np.asarray(F, dtype=np.float64).reshape(3, 3)
@@ -88,7 +115,9 @@ def _sampson_distances(F: np.ndarray, p1: np.ndarray, p2: np.ndarray) -> np.ndar
 
 
 def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
-                            K1: Optional[np.ndarray], K2: Optional[np.ndarray]) -> Dict[str, Any]:
+                            K1: Optional[np.ndarray], K2: Optional[np.ndarray],
+                            dist1: Optional[np.ndarray] = None,
+                            dist2: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """Measured two-view geometry for a putative correspondence set.
 
     Everything returned is measured from the matches: RANSAC inlier count and ratio, the
@@ -122,8 +151,8 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
     if out["verified"] and K1 is not None and K2 is not None:
         # Normalised coordinates, then a shared camera matrix of identity: the correct
         # essential-matrix form when the two cameras have different intrinsics.
-        n1 = cv2.undistortPoints(p1.reshape(-1, 1, 2), K1, None).reshape(-1, 2)
-        n2 = cv2.undistortPoints(p2.reshape(-1, 1, 2), K2, None).reshape(-1, 2)
+        n1 = cv2.undistortPoints(p1.reshape(-1, 1, 2), K1, dist1).reshape(-1, 2)
+        n2 = cv2.undistortPoints(p2.reshape(-1, 1, 2), K2, dist2).reshape(-1, 2)
         E, _mask_e = cv2.findEssentialMat(n1, n2, np.eye(3), method=cv2.RANSAC,
                                           prob=0.999, threshold=1e-3)
         if E is not None and np.asarray(E).shape == (3, 3):
@@ -136,6 +165,9 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
                     "cheirality_inlier_fraction": round(float(n_ok) / max(1, inliers), 4),
                     "scale": "none: the translation is a unit direction; two-view geometry cannot recover scale",
                     "convention": "x2 ~ R @ x1 + t (OpenCV recoverPose)",
+                    "calibration": ("intrinsics + distortion coefficients"
+                                    if (dist1 is not None or dist2 is not None)
+                                    else "intrinsics only (no distortion coefficients supplied)"),
                 }
     return out
 
@@ -197,7 +229,8 @@ def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
                 continue
             p1 = np.float32([kp1[m.queryIdx].pt for m in good])
             p2 = np.float32([kp2[m.trainIdx].pt for m in good])
-            stats = _geometric_verification(p1, p2, _camera_matrix(a_path, ctx), _camera_matrix(b_path, ctx))
+            stats = _geometric_verification(p1, p2, _camera_matrix(a_path, ctx), _camera_matrix(b_path, ctx),
+                                            _camera_distortion(a_path, ctx), _camera_distortion(b_path, ctx))
             if not stats.get("verified"):
                 unverified.append({"a_path": a_path, "b_path": b_path, "reason": "no epipolar geometry satisfied",
                                    **{k: v for k, v in stats.items() if k != "verified"}})
@@ -336,7 +369,8 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                     mean_score = float(scores_tensor.detach().float().mean().item())
                     if not (0.0 <= mean_score <= 1.0):
                         mean_score = None
-                stats = _geometric_verification(p1, p2, _camera_matrix(a_path, ctx), _camera_matrix(b_path, ctx))
+                stats = _geometric_verification(p1, p2, _camera_matrix(a_path, ctx), _camera_matrix(b_path, ctx),
+                                                _camera_distortion(a_path, ctx), _camera_distortion(b_path, ctx))
                 if not stats.get("verified"):
                     unverified.append({"a_path": a_path, "b_path": b_path,
                                        "reason": "no epipolar geometry satisfied",

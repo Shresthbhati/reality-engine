@@ -24,6 +24,9 @@ benchmarks/measured_rooms/*/photos/
 !datasets/south_building/MANIFEST.json
 !datasets/south_building/runs/
 !datasets/south_building/runs/*
+# Generated Evidence Matrix + WorldStore of a measurement run: large and regenerable
+# from the committed images (the run's report.json is committed).
+datasets/south_building/runs/multi_engine_*/evidence-world/
 !datasets/scene_disjoint_evaluation/
 datasets/scene_disjoint_evaluation/images/
 !datasets/scene_disjoint_evaluation/manifest.json

@@ -726,6 +726,23 @@ for _key, _path in (
     evidence_world_router.add_api_route(f"/{{run_id}}/{_path}", _section(_key), methods=["GET"])
 
 
+@evidence_world_router.get("/{run_id}/spatial-inputs")
+async def get_spatial_inputs_v1(
+    world_id: str, run_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    """Validated ``spatial_inputs.v1`` payload emitted by perception for this run (404 when absent)."""
+    from perception.spatial_inputs import SPATIAL_INPUTS_FILE
+
+    d = _run_dir(await _world_dir(db, world_id, auth), run_id)
+    si_path = d / SPATIAL_INPUTS_FILE
+    if not si_path.is_file():
+        raise HTTPException(404, "spatial_inputs.v1 not generated for this run")
+    try:
+        return json.loads(si_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, f"spatial_inputs.v1 is unreadable: {exc}") from None
+
+
 @evidence_world_router.get("/{run_id}/artifacts/{digest}")
 async def get_artifact(
     world_id: str, run_id: str, digest: str, db: AsyncSession = Depends(get_db),

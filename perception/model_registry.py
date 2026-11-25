@@ -57,20 +57,34 @@ class ModelSpec:
     status: str = "active"  # "active" | "candidate" | "deprecated"
     input_contract: str = ""
     output_contract: str = ""
+    version: str = ""
+    architecture: str = ""
+    device_compatibility: tuple[str, ...] = ("cpu", "cuda")
+    init_cost_s: Optional[float] = None
+    inference_cost_s: Optional[float] = None
+    integration_status: str = "implemented_and_tested"
+    known_limitations: str = ""
 
     def to_dict(self) -> dict:
         d = {
             "name": self.name,
+            "version": self.version,
             "task": self.task,
+            "architecture": self.architecture,
             "source": self.source,
             "checkpoint": str(self.checkpoint) if self.checkpoint is not None else None,
             "framework": self.framework,
             "license": self.license,
             "commercial_ok": self.commercial_ok,
+            "device_compatibility": list(self.device_compatibility),
             "measured_vram_mb": self.measured_vram_mb,
+            "init_cost_s": self.init_cost_s,
+            "inference_cost_s": self.inference_cost_s,
             "status": self.status,
+            "integration_status": self.integration_status,
             "input_contract": self.input_contract,
             "output_contract": self.output_contract,
+            "known_limitations": self.known_limitations,
             "present": self.checkpoint is not None and self.checkpoint.exists(),
         }
         if self.sha256:

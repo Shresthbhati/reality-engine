@@ -1,0 +1,207 @@
+[
+  {
+    "accuracy_evidence": "12/12 contract tests (pixel/norm XYXY, invalid/negative/OOB rejection)",
+    "api_integration": "Indirect via scene_intelligence & spatial_inputs.v1",
+    "callers": [
+      "perception/scene_intelligence.py",
+      "perception/detection/grounded_arch.py"
+    ],
+    "classification": "Production-integrated and validated",
+    "dependencies": [
+      "numpy"
+    ],
+    "hardware": "CPU",
+    "input": "Detection, ImageDetection, Florence-2 dict, Grounding DINO tensors",
+    "limitations": "Requires explicit image dimensions (width, height)",
+    "memory": "Minimal",
+    "model": "N/A",
+    "name": "NormalizedDetectionContract",
+    "output": "NormalizedDetectionBatch / NormalizedDetection",
+    "purpose": "Single normalization & validation boundary for all detector backends",
+    "runtime": "<1 ms/batch",
+    "technology": "Dataclasses + NumPy",
+    "tests": [
+      "tests/test_normalized_detection_contracts.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "Qualitative real COLMAP photos (15 detections on ev_040fbb2211b3.jpg)",
+    "api_integration": "Via InferencePlan & Evidence World stage",
+    "callers": [
+      "perception/scene_intelligence.py",
+      "perception/orchestrator.py"
+    ],
+    "classification": "Production-integrated but insufficiently validated",
+    "dependencies": [
+      "torch",
+      "transformers",
+      "Pillow"
+    ],
+    "hardware": "RTX 4050 CUDA (FP32) or CPU",
+    "input": "RGB image + chunked architectural prompt vocabulary",
+    "limitations": "Unscored on ScanNet/Matterport3D (datasets absent)",
+    "memory": "~1.96 GB peak PyTorch alloc",
+    "model": "IDEA-Research/grounding-dino-tiny (Apache-2.0)",
+    "name": "GroundingDinoDetector",
+    "output": "NormalizedDetectionBatch",
+    "purpose": "Open-vocabulary architectural & object detection",
+    "runtime": "5.4-6.4s per 3-photo batch @ 640px (incl. load)",
+    "technology": "Transformers GroundingDINO",
+    "tests": [
+      "tests/test_perception_mega_sprint.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "Real COLMAP photos (640px & 1024px)",
+    "api_integration": "Via run_sequential_perception_pipeline",
+    "callers": [
+      "perception/scene_intelligence.py"
+    ],
+    "classification": "Production-integrated but insufficiently validated",
+    "dependencies": [
+      "torch",
+      "transformers"
+    ],
+    "hardware": "RTX 4050 CUDA or CPU",
+    "input": "RGB image + queries",
+    "limitations": "Zero detections on minimal synthetic line-art",
+    "memory": "~630 MB peak PyTorch alloc",
+    "model": "google/owlvit-base-patch32 (Apache-2.0)",
+    "name": "OwlVitDetector",
+    "output": "List[ImageDetection] -> NormalizedDetectionBatch",
+    "purpose": "Open-vocabulary detection complement",
+    "runtime": "1.8-2.8s per 3-photo batch",
+    "technology": "Transformers OWL-ViT",
+    "tests": [
+      "tests/test_open_vocab_real_photo_benchmark.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "23 detections on ev_040fbb2211b3.jpg",
+    "api_integration": "Optional second opinion in InferencePlan",
+    "callers": [
+      "perception/scene_intelligence.py"
+    ],
+    "classification": "Implemented and tested",
+    "dependencies": [
+      "torch",
+      "transformers",
+      "Pillow"
+    ],
+    "hardware": "RTX 4050 CUDA or CPU",
+    "input": "PIL RGB image",
+    "limitations": "<OD> task emits no confidence scores",
+    "memory": "~1.5 GB alloc",
+    "model": "florence-community/Florence-2-base (MIT)",
+    "name": "Florence2Detector",
+    "output": "Boxes + labels (confidence=None preserved)",
+    "purpose": "Second-opinion open-vocabulary object detector",
+    "runtime": "4.1-6.1s per 3-photo batch",
+    "technology": "Transformers Florence-2",
+    "tests": [
+      "tests/test_perception_mega_sprint.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "181/182 valid masks @ 640px, 177/178 @ 1024px on COLMAP photos",
+    "api_integration": "Via InferencePlan",
+    "callers": [
+      "perception/scene_intelligence.py"
+    ],
+    "classification": "Production-integrated but insufficiently validated",
+    "dependencies": [
+      "torch",
+      "transformers",
+      "opencv-python"
+    ],
+    "hardware": "RTX 4050 CUDA (FP32 retained; FP16 IoU=0.8946)",
+    "input": "RGB image + NormalizedDetection boxes",
+    "limitations": "Standalone sam2 pip package not installed; uses HF transformers Sam2Model",
+    "memory": "~538 MB SAM2 isolated / ~3.1 GB pipeline peak",
+    "model": "facebook/sam2.1-hiera-small (Apache-2.0)",
+    "name": "Sam2BoxPrompter & ArchSegmenter",
+    "output": "ArchitecturalSegmentationOutput (EvaluatedMask, StructuralBoundaryCandidate)",
+    "purpose": "Box-prompted architectural & object instance masks + quality checks",
+    "runtime": "2.9-4.3s @ 640px, 8.6s @ 1024px (3 photos)",
+    "technology": "Transformers SAM 2.1 + OpenCV Sobel boundary checks",
+    "tests": [
+      "tests/test_perception_mega_sprint.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "Executed across all 3 COLMAP sessions",
+    "api_integration": "Via Evidence World stage & InferencePlan",
+    "callers": [
+      "perception/scene_intelligence.py",
+      "perception/orchestrator.py"
+    ],
+    "classification": "Production-integrated and validated",
+    "dependencies": [
+      "torch",
+      "transformers"
+    ],
+    "hardware": "RTX 4050 CUDA or CPU",
+    "input": "List[EvidenceItem]",
+    "limitations": "Relative scale only; never converted to metres without metric basis",
+    "memory": "~246-310 MB peak PyTorch alloc",
+    "model": "depth-anything/Depth-Anything-V2-Small-hf (Apache-2.0)",
+    "name": "DepthAnythingV2Backend",
+    "output": "DepthMap -> ObservationDepthEvidence",
+    "purpose": "Monocular relative depth estimation + mask-linked depth statistics",
+    "runtime": "0.9-1.4s warm (up to 7.3s cold)",
+    "technology": "Transformers Depth Anything V2",
+    "tests": [
+      "tests/test_evidence_world_bridge_golden.py",
+      "tests/test_perception_mega_sprint.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "271-317 cross-view candidates per 3-photo COLMAP session + adversarial unit tests",
+    "api_integration": "Via spatial_inputs.v1",
+    "callers": [
+      "perception/scene_intelligence.py"
+    ],
+    "classification": "Production-integrated and validated",
+    "dependencies": [
+      "torch",
+      "transformers"
+    ],
+    "hardware": "RTX 4050 CUDA or CPU",
+    "input": "NormalizedDetections + crops + optional PinholeCameras",
+    "limitations": "Without camera poses, repeated elements stay ambiguous_repeated_structure",
+    "memory": "~200 MB alloc",
+    "model": "facebook/dinov2-small (Apache-2.0)",
+    "name": "DINOv2CrossViewAssociation",
+    "output": "List[CrossViewAssociationCandidate] + AssociationQualityReport",
+    "purpose": "Cross-view appearance + epipolar association with repeated-structure disambiguation",
+    "runtime": "0.8-1.3s per 3-photo batch",
+    "technology": "Transformers DINOv2-small + epipolar geometry",
+    "tests": [
+      "tests/test_perception_mega_sprint.py"
+    ]
+  },
+  {
+    "accuracy_evidence": "Verified in real API job stage & WorldStore",
+    "api_integration": "GET /api/worlds/{world_id}/evidence-world/{run_id}/spatial-inputs",
+    "callers": [
+      "apps/api/evidence_world_stage.py",
+      "apps/api/routes_evidence_world.py",
+      "perception/orchestrator.py"
+    ],
+    "classification": "Production-integrated and validated",
+    "dependencies": [],
+    "hardware": "CPU",
+    "input": "VisualSceneGraph or Evidence Matrix snapshot",
+    "limitations": "Claude spatial_global consumer not yet present on feat/reconstruction-sprint10",
+    "memory": "Minimal",
+    "model": "N/A",
+    "name": "SpatialInputsV1Producer",
+    "output": "SpatialInputsV1 (spatial_inputs_v1.json)",
+    "purpose": "Produces validated spatial_inputs.v1 payloads for Claude spatial_global",
+    "runtime": "<5 ms",
+    "technology": "Pure Python + SHA-256 content addressing",
+    "tests": [
+      "tests/test_spatial_inputs_v1.py"
+    ]
+  }
+]

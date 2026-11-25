@@ -57,6 +57,13 @@ from reconstruction.proc import (
     unregister_worker,
     get_dead_worker_jobs,
 )
+from perception.spatial_adapter import adapt_spatial_inputs_v1
+from perception.spatial_inputs import (
+    CameraInput,
+    ScaleStateInput,
+    SpatialInputsV1,
+    StructuralInput,
+)
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -1377,18 +1384,110 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     from apps.api.db import get_sessionmaker
     from apps.api.stage_checkpoints import DbCheckpointStore
     from engine.pipeline.stages.base import StageContext
-    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, build_stages
+    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, SPATIAL_PROFILE_NAME, build_stages
     from engine.pipeline.stages.runner import StageCancelled, run_stages
 
-    stages = build_stages(PROFILE_NAME)
+    # P112: the spatial profile adds the optional global spatial optimization stage. Selected by the host via
+    # RE_SPATIAL_GLOBAL; the default profile and every existing job are unchanged.
+    spatial_enabled = os.environ.get("RE_SPATIAL_GLOBAL", "").strip().lower() in ("1", "true", "yes", "on")
+    profile_name = SPATIAL_PROFILE_NAME if spatial_enabled else PROFILE_NAME
+    stages = build_stages(profile_name)
     specs = [stage.spec for stage in stages]
+
+    # Per-job spatial inputs provider. Set up before run_stages so the spatial_global stage can call it
+    # lazily (after seg_reconstruct has populated ctx.state["ladder"] with poses and world). The closure
+    # captures job-scoped data; it is never module-global, so concurrent jobs never leak observations.
+    def _spatial_inputs_provider() -> dict | None:
+        """Build spatial_inputs.v1 from the job's reconstructed evidence and adapt it for the optimizer.
+
+        Reads ctx.state["ladder"] (set by seg_reconstruct) for camera poses and the WorldIR, plus the
+        scale baselines and intrinsics already resolved for this job. Returns None when there is nothing
+        usable -- the stage then skips honestly rather than fabricating geometry or poses.
+        """
+        ladder = ctx.state.get("ladder")
+        if ladder is None:
+            return None
+        prog = getattr(ladder, "prog", None)
+        if prog is None or not getattr(prog, "camera_poses", None):
+            return None
+
+        # Cameras: evidence_id -> (position, quaternion wxyz) from COLMAP registration.
+        cameras: dict[str, CameraInput] = {}
+        for eid, pos, rot in prog.camera_poses:
+            if not (len(pos) == 3 and len(rot) == 4):
+                continue
+            cameras[eid] = CameraInput(
+                camera_id=eid, image_id=eid, source_uri=str(eid),
+                position_m=(float(pos[0]), float(pos[1]), float(pos[2])),
+                orientation_wxyz=(float(rot[0]), float(rot[1]), float(rot[2]), float(rot[3])),
+                intrinsics=None, pose_source="registered",
+            )
+
+        # Structural observations: WorldIR entities whose custom_properties carry a wall_slab dict.
+        world = getattr(prog, "world", None)
+        structural: list[StructuralInput] = []
+        if world is not None:
+            for eid, ent in getattr(world, "entities", {}).items():
+                cp = getattr(ent, "custom_properties", None) or {}
+                slab = cp.get("wall_slab")
+                if not isinstance(slab, dict):
+                    continue
+                start = slab.get("start_xyz_m"); end = slab.get("end_xyz_m")
+                sigma = slab.get("measurement_uncertainty_m")
+                if not (isinstance(start, (list, tuple)) and len(start) == 3 and
+                        isinstance(end, (list, tuple)) and len(end) == 3 and
+                        isinstance(sigma, (int, float)) and sigma > 0):
+                    continue
+                structural.append(StructuralInput(
+                    observation_id=eid, kind="wall_slab", label=ent.type.value if hasattr(ent.type, "value") else str(ent.type),
+                    evidence_id=eid, payload=dict(slab),
+                ))
+
+        # Scale state: metric only when we have measured baselines (operator-measured distances).
+        # baselines is a nonlocal set during seg_reconstruct; relative/SFM-gauge is never promoted.
+        is_metric = bool(baselines)
+        si = SpatialInputsV1(
+            run_id=job.id,
+            scale_state=ScaleStateInput(
+                basis="metric_calibrated" if is_metric else "relative_uncalibrated",
+                unit="metres" if is_metric else "relative",
+                is_metric=is_metric,
+            ),
+            cameras=tuple(cameras.values()),
+            observations=(),
+            structural_observations=tuple(structural),
+            cross_view_associations=(), relationships=(), room_hypotheses=(),
+            storey_id=None,
+            provenance={"producer": "reconstruction.job.spatial_inputs_provider", "frame": "world"},
+        )
+        inputs, rejected = adapt_spatial_inputs_v1(si)
+        if rejected:
+            log.info("spatial provider: %d observation(s) rejected for job %s", len(rejected), job.id)
+        return inputs
+
+    def _spatial_store_opener():
+        """Open the spatial-global WorldStore for this job's (team, world). Called lazily by the
+        spatial_global stage so the DB session is available and the world id is known."""
+        from worldstore.store import WorldStore
+        root = os.environ.get("WORLDSTORE_ROOT", "./data/worldstore")
+        session_row = aw(db.get(Session, job.entity_id))
+        if session_row is None or not session_row.world_id:
+            return None
+        w = aw(db.get(World, session_row.world_id))
+        if w is None:
+            return None
+        store = WorldStore(Path(root) / "spatial-global" / w.team_id / w.id)
+        versions = store.list_versions()
+        return store, (versions[-1].version_id if versions else None)
+
     ctx = StageContext(
         job_id=job.id, workdir=Path(tempfile.gettempdir()), artifacts={}, params={"session_id": job.entity_id},
         state={"segments": {
             "evidence_resolve": seg_evidence_resolve, "evidence_quality": seg_evidence_quality,
             "reconstruct": seg_reconstruct, "compile_validate": seg_compile_validate,
             "changeset_commit": seg_changeset_commit,
-        }},
+        }, "spatial_inputs_provider": _spatial_inputs_provider if spatial_enabled else None,
+        "spatial_store_opener": _spatial_store_opener if spatial_enabled else None, "job_obj": job},
     )
     ended = [0]
 
@@ -1412,7 +1511,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                                   versions={s.name: s.version for s in specs}),
                 abandoned),
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
-            pipeline_profile=PROFILE_NAME, pipeline_version=PIPELINE_VERSION,
+            pipeline_profile=profile_name, pipeline_version=PIPELINE_VERSION,
             stage_timeouts=_stage_timeouts(),
         )
 
@@ -1501,6 +1600,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "skipped_evidence": skipped_evidence,
         "scene_identity": scene_info,
         **({"evidence_world": holder["evidence_world"]} if holder.get("evidence_world") else {}),
+        **({"spatial_global": ctx.state.get("spatial_facts")} if ctx.state.get("spatial_facts") else {}),
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)

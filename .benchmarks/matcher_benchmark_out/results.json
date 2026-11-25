@@ -1,0 +1,214 @@
+{
+  "sift": {
+    "available": true,
+    "name": "sift@opencv",
+    "license": "Apache-2.0",
+    "non_commercial": false,
+    "mean_inlier_ratio": 0.9288,
+    "min_inlier_ratio": 0.8929,
+    "mean_runtime_s": 0.0773,
+    "pairs": [
+      {
+        "pair": 0,
+        "matches": 84,
+        "inliers": 84,
+        "inlier_ratio": 1.0,
+        "runtime_s": 0.0956
+      },
+      {
+        "pair": 1,
+        "matches": 88,
+        "inliers": 79,
+        "inlier_ratio": 0.8977,
+        "runtime_s": 0.0759
+      },
+      {
+        "pair": 2,
+        "matches": 84,
+        "inliers": 75,
+        "inlier_ratio": 0.8929,
+        "runtime_s": 0.0759
+      },
+      {
+        "pair": 3,
+        "matches": 74,
+        "inliers": 69,
+        "inlier_ratio": 0.9324,
+        "runtime_s": 0.074
+      },
+      {
+        "pair": 4,
+        "matches": 111,
+        "inliers": 100,
+        "inlier_ratio": 0.9009,
+        "runtime_s": 0.0702
+      },
+      {
+        "pair": 5,
+        "matches": 98,
+        "inliers": 93,
+        "inlier_ratio": 0.949,
+        "runtime_s": 0.0725
+      }
+    ]
+  },
+  "orb": {
+    "available": true,
+    "name": "orb@opencv",
+    "license": "BSD-3-Clause",
+    "non_commercial": false,
+    "mean_inlier_ratio": 0.7104,
+    "min_inlier_ratio": 0.5958,
+    "mean_runtime_s": 0.1674,
+    "pairs": [
+      {
+        "pair": 0,
+        "matches": 313,
+        "inliers": 231,
+        "inlier_ratio": 0.738,
+        "runtime_s": 0.9383
+      },
+      {
+        "pair": 1,
+        "matches": 290,
+        "inliers": 208,
+        "inlier_ratio": 0.7172,
+        "runtime_s": 0.0128
+      },
+      {
+        "pair": 2,
+        "matches": 240,
+        "inliers": 143,
+        "inlier_ratio": 0.5958,
+        "runtime_s": 0.0153
+      },
+      {
+        "pair": 3,
+        "matches": 283,
+        "inliers": 200,
+        "inlier_ratio": 0.7067,
+        "runtime_s": 0.0128
+      },
+      {
+        "pair": 4,
+        "matches": 315,
+        "inliers": 244,
+        "inlier_ratio": 0.7746,
+        "runtime_s": 0.0124
+      },
+      {
+        "pair": 5,
+        "matches": 311,
+        "inliers": 227,
+        "inlier_ratio": 0.7299,
+        "runtime_s": 0.0126
+      }
+    ]
+  },
+  "lightglue@disk": {
+    "available": true,
+    "name": "lightglue@disk",
+    "license": "Apache-2.0",
+    "non_commercial": false,
+    "mean_inlier_ratio": 0.8181,
+    "min_inlier_ratio": 0.758,
+    "mean_runtime_s": 0.2745,
+    "pairs": [
+      {
+        "pair": 0,
+        "matches": 404,
+        "inliers": 361,
+        "inlier_ratio": 0.8936,
+        "runtime_s": 1.1233
+      },
+      {
+        "pair": 1,
+        "matches": 471,
+        "inliers": 357,
+        "inlier_ratio": 0.758,
+        "runtime_s": 0.1066
+      },
+      {
+        "pair": 2,
+        "matches": 283,
+        "inliers": 225,
+        "inlier_ratio": 0.7951,
+        "runtime_s": 0.1111
+      },
+      {
+        "pair": 3,
+        "matches": 493,
+        "inliers": 407,
+        "inlier_ratio": 0.8256,
+        "runtime_s": 0.0953
+      },
+      {
+        "pair": 4,
+        "matches": 453,
+        "inliers": 387,
+        "inlier_ratio": 0.8543,
+        "runtime_s": 0.1047
+      },
+      {
+        "pair": 5,
+        "matches": 390,
+        "inliers": 305,
+        "inlier_ratio": 0.7821,
+        "runtime_s": 0.1059
+      }
+    ]
+  },
+  "lightglue@aliked": {
+    "available": true,
+    "name": "lightglue@aliked",
+    "license": "Apache-2.0",
+    "non_commercial": false,
+    "mean_inlier_ratio": 0.9797,
+    "min_inlier_ratio": 0.9669,
+    "mean_runtime_s": 0.1376,
+    "pairs": [
+      {
+        "pair": 0,
+        "matches": 145,
+        "inliers": 144,
+        "inlier_ratio": 0.9931,
+        "runtime_s": 0.4617
+      },
+      {
+        "pair": 1,
+        "matches": 148,
+        "inliers": 144,
+        "inlier_ratio": 0.973,
+        "runtime_s": 0.077
+      },
+      {
+        "pair": 2,
+        "matches": 151,
+        "inliers": 146,
+        "inlier_ratio": 0.9669,
+        "runtime_s": 0.0652
+      },
+      {
+        "pair": 3,
+        "matches": 163,
+        "inliers": 159,
+        "inlier_ratio": 0.9755,
+        "runtime_s": 0.0653
+      },
+      {
+        "pair": 4,
+        "matches": 142,
+        "inliers": 140,
+        "inlier_ratio": 0.9859,
+        "runtime_s": 0.0784
+      },
+      {
+        "pair": 5,
+        "matches": 124,
+        "inliers": 122,
+        "inlier_ratio": 0.9839,
+        "runtime_s": 0.0781
+      }
+    ]
+  }
+}

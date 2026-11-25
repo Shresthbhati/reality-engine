@@ -13,6 +13,7 @@ from engine.pipeline.stages.base import Stage, StageContext, StageResult, StageS
 
 PIPELINE_VERSION = "p108-ladder"
 PROFILE_NAME = "interior_survey_standard"
+SPATIAL_PROFILE_NAME = "interior_survey_spatial"
 
 #: P108: the progressive ladder (``reconstruct``: multi-view, falling back to single-image) is kept; the fine stages run
 #: inside its multi-view rung and are reported right after it (``ladder.LadderReport``), ``skipped`` with a reason when
@@ -27,6 +28,14 @@ PIPELINE_PROFILES: dict[str, list[str]] = {
         "quality_report", "compile_validate", "changeset_commit",
     ],
 }
+#: P112: the spatial profile adds the optional global spatial optimization stage (``spatial_global``) ahead of
+#: ``compile_validate`` so spatial results feed the compile/validate gate. ``spatial_global`` is optional: when no
+#: producer supplies spatial_inputs.v1 it skips honestly and never degrades the job. Selected by the host when
+#: ``RE_SPATIAL_GLOBAL=1``.
+_cv = PIPELINE_PROFILES[PROFILE_NAME].index("compile_validate")
+PIPELINE_PROFILES[SPATIAL_PROFILE_NAME] = (
+    PIPELINE_PROFILES[PROFILE_NAME][:_cv] + ["spatial_global"] + PIPELINE_PROFILES[PROFILE_NAME][_cv:]
+)
 
 
 @dataclass
@@ -64,8 +73,10 @@ def build_stages(profile: str = PROFILE_NAME) -> list[Stage]:
     from engine.pipeline.stages.s11_compile_validate import CompileValidate
     from engine.pipeline.stages.s12_quality_report import QualityReport
     from engine.pipeline.stages.s13_changeset import ChangesetCommit
+    from engine.pipeline.stages.s14_spatial_global import SpatialGlobal
 
     by_name: dict[str, Stage] = {c.spec.name: c() for c in (
-        EvidenceResolve, EvidenceQuality, Reconstruct, QualityReport, CompileValidate, ChangesetCommit)}
+        EvidenceResolve, EvidenceQuality, Reconstruct, QualityReport, CompileValidate, ChangesetCommit,
+        SpatialGlobal)}
     by_name.update({c.spec.name: LadderReport(c.spec) for c in fine_chain()})
     return [by_name[n] for n in PIPELINE_PROFILES[profile]]

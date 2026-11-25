@@ -9,11 +9,10 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const IMAGE_EXT = /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i;
-
-function isImage(file: File): boolean {
-  return file.type.startsWith("image/") || IMAGE_EXT.test(file.name);
-}
+import {
+  isSupportedMediaFile,
+  summarizeMediaUpload,
+} from "@/lib/reconstruct/upload-files";
 
 /** Read dropped files, descending into dropped folders where the browser exposes them. */
 async function filesFromDrop(dt: DataTransfer): Promise<File[]> {
@@ -74,30 +73,31 @@ export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = f
 
   const submit = useCallback(
     async (picked: File[]) => {
-      const images = picked.filter(isImage);
-      const skipped = picked.length - images.length;
+      const media = picked.filter(isSupportedMediaFile);
+      const skipped = picked.length - media.length;
       setError(null);
       setNotes([]);
-      if (images.length === 0) {
+      if (media.length === 0) {
         setError(
           picked.length === 0
             ? "No files were selected."
-            : "None of those files look like images. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF).",
+            : "None of those files look like supported photos or videos. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF) or videos (MP4, MOV, WebM).",
         );
         return;
       }
       if (onFiles) {
-        onFiles(images);
+        onFiles(media);
         return;
       }
-      setBusy(`Uploading ${images.length} photo${images.length === 1 ? "" : "s"}…`);
+      const summary = summarizeMediaUpload(media);
+      setBusy(summary.busyLabel);
       try {
-        const result = await createReconstruction(images, {
+        const result = await createReconstruction(media, {
           worldId: worldId ?? null,
           evidenceClass: evidenceClass || null,
         });
         const problems = [
-          ...(skipped > 0 ? [`${skipped} non-image file${skipped === 1 ? "" : "s"} skipped`] : []),
+          ...(skipped > 0 ? [`${skipped} unsupported file${skipped === 1 ? "" : "s"} skipped`] : []),
           ...result.rejected.map((r) => `${r.name}: ${r.reason}`),
         ];
         if (problems.length > 0) setNotes(problems);
@@ -168,12 +168,12 @@ export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = f
           <>
             <UploadCloud className={cn("mx-auto text-[var(--accent)]", compact ? "h-6 w-6" : "h-10 w-10")} aria-hidden />
             <p className={cn("mt-3 font-semibold text-fg", compact ? "text-sm" : "text-lg")}>
-              {refining ? "Drop more photos to improve this model" : "Drop photos here to build a model"}
+              {refining ? "Drop more photos or video to improve this model" : "Drop photos or video here to build a model"}
             </p>
             {!compact && (
               <p className="mx-auto mt-1 max-w-md text-xs text-fg-muted">
-                One photograph gives a rough model. More views from different positions make it better.
-                You never need to set anything up first.
+                One photograph gives a rough model; videos automatically extract sharp keyframes.
+                More views from different positions make it better.
               </p>
             )}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -182,7 +182,7 @@ export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = f
                 onClick={() => photosRef.current?.click()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-on-primary hover:bg-[var(--primary-hover)]"
               >
-                <ImagePlus className="h-4 w-4" aria-hidden /> Select photos
+                <ImagePlus className="h-4 w-4" aria-hidden /> Select photos / video
               </button>
               <button
                 type="button"
@@ -227,7 +227,7 @@ export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = f
         )}
       </div>
 
-      <input ref={photosRef} type="file" accept="image/*" multiple hidden onChange={onPick} data-testid="photo-input" />
+      <input ref={photosRef} type="file" accept="image/*,video/*" multiple hidden onChange={onPick} data-testid="photo-input" />
       <input
         ref={folderRef}
         type="file"

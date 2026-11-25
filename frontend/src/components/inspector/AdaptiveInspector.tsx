@@ -5,9 +5,11 @@ import { getStudioHistory } from "@/lib/viewport/history-stack";
 import { buildTransformPayload, positionOf } from "@/lib/inspector/pose";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import { extractAsset, type ExtractedAssetDto } from "@/lib/api/worlds";
+import { mergeEntities, splitEntity } from "@/lib/api/corrections";
 import {
   Armchair,
   BrickWall,
+  Camera,
   Check,
   ChevronRight,
   Download,
@@ -21,7 +23,9 @@ import {
   Layers,
   Link2,
   Maximize2,
+  Merge,
   Plus,
+  Scissors,
   Sliders,
   Square,
   Workflow,
@@ -57,7 +61,9 @@ interface AdaptiveInspectorProps {
   worldId?: string;
   activeVersion?: string;
   selectedEntityId: string | null;
+  selectedEntityIds?: string[];
   onSelectEntity: (id: string | null) => void;
+  onSelectEntities?: (ids: string[]) => void;
   onFrameEntity: (id: string) => void;
   onTraceEvidence?: (evidenceId: string) => void;
   onCommitCorrection?: (
@@ -65,6 +71,8 @@ interface AdaptiveInspectorProps {
     changes: Record<string, unknown>,
     commitMessage: string
   ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  onVersionMutated?: () => void;
+  isHistoricalVersion?: boolean;
   onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
@@ -100,10 +108,14 @@ export default function AdaptiveInspector({
   worldId = "current-world",
   activeVersion,
   selectedEntityId,
+  selectedEntityIds,
   onSelectEntity,
+  onSelectEntities,
   onFrameEntity,
   onTraceEvidence,
   onCommitCorrection,
+  onVersionMutated,
+  isHistoricalVersion = false,
   onOpenDiff,
   onOpenRoomConstruction,
   onExport,
@@ -137,7 +149,18 @@ export default function AdaptiveInspector({
           onFrameEntity={onFrameEntity}
         />
       </div>
-      {entity ? (
+      {selectedEntityIds && selectedEntityIds.length > 1 && world ? (
+        <MultiSelectionPanel
+          world={world}
+          worldId={worldId}
+          activeVersion={activeVersion}
+          selectedEntityIds={selectedEntityIds}
+          isHistoricalVersion={isHistoricalVersion}
+          onSelectEntity={onSelectEntity}
+          onSelectEntities={onSelectEntities}
+          onVersionMutated={onVersionMutated}
+        />
+      ) : entity ? (
         <EntityDetails
           key={entity.id}
           world={world}
@@ -152,6 +175,8 @@ export default function AdaptiveInspector({
           onFrameEntity={onFrameEntity}
           onTraceEvidence={onTraceEvidence}
           onCommitCorrection={onCommitCorrection}
+          onVersionMutated={onVersionMutated}
+          isHistoricalVersion={isHistoricalVersion}
           onOpenDiff={onOpenDiff}
           isEditing={isEditing}
           setIsEditing={setIsEditing}
@@ -186,6 +211,8 @@ function EntityDetails({
   onFrameEntity,
   onTraceEvidence,
   onCommitCorrection,
+  onVersionMutated,
+  isHistoricalVersion = false,
   onOpenDiff,
   isEditing,
   setIsEditing,
@@ -208,6 +235,8 @@ function EntityDetails({
     changes: Record<string, unknown>,
     commitMessage: string
   ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  onVersionMutated?: () => void;
+  isHistoricalVersion?: boolean;
   onOpenDiff?: (base?: string, head?: string) => void;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
@@ -612,16 +641,48 @@ function EntityDetails({
             <KindIcon className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]" title={title}>{title}</h2>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h2 className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]" title={title}>{title}</h2>
+              {entity.provenance && (
+                <span
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider"
+                  style={{
+                    background:
+                      entity.provenance.toUpperCase() === "OBSERVED"
+                        ? "var(--success-subtle)"
+                        : entity.provenance.toUpperCase() === "INFERRED"
+                          ? "var(--warning-subtle)"
+                          : "var(--bg-elevated)",
+                    color:
+                      entity.provenance.toUpperCase() === "OBSERVED"
+                        ? "var(--success)"
+                        : entity.provenance.toUpperCase() === "INFERRED"
+                          ? "var(--warning)"
+                          : "var(--text-secondary)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                  title={PROVENANCE_WORDS[entity.provenance.toUpperCase()] ?? entity.provenance}
+                >
+                  {entity.provenance.toLowerCase()}
+                </span>
+              )}
+            </div>
             <p className="truncate text-[12px] text-[var(--text-secondary)]">{subtitle}</p>
           </div>
           <button
             type="button"
+            disabled={isHistoricalVersion}
             onClick={toggleEditing}
             aria-pressed={isEditing}
-            title={isEditing ? "Close the correction form" : "Correct this item"}
+            title={
+              isHistoricalVersion
+                ? "Read-only: return to the current version to edit"
+                : isEditing
+                  ? "Close the correction form"
+                  : "Correct this item"
+            }
             aria-label="Correct this item"
-            className={`${iconBtn} ${isEditing ? "bg-[var(--accent-subtle)] text-[var(--accent)]" : ""}`}
+            className={`${iconBtn} disabled:opacity-35 disabled:cursor-not-allowed ${isEditing ? "bg-[var(--accent-subtle)] text-[var(--accent)]" : ""}`}
           >
             <Edit3 className="h-4 w-4" />
           </button>
@@ -906,7 +967,7 @@ function EntityDetails({
                   );
                 })}
               </div>
-              <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1276,6 +1337,58 @@ function EntityDetails({
             />
           </div>
 
+          {isHistoricalVersion && (
+            <div className="rounded border border-[var(--warning)]/40 bg-[var(--warning-subtle)] px-2.5 py-1.5 text-[11px] text-[var(--warning)]">
+              Viewing a historical version (read-only). Return to the current version to save corrections.
+            </div>
+          )}
+
+          {/* Split entity action (real backend WorldStore operation) */}
+          <div className="flex items-center justify-between gap-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-1.5">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[var(--text-secondary)]">
+              <Scissors className="h-3 w-3 text-[var(--accent)]" />
+              Split entity along axis
+            </span>
+            <div className="flex items-center gap-1">
+              {(["x", "y", "z"] as const).map((axis) => (
+                <button
+                  key={axis}
+                  type="button"
+                  data-testid={`split-axis-${axis}`}
+                  aria-label={`Split along ${axis.toUpperCase()} axis`}
+                  disabled={submitting || isHistoricalVersion}
+                  onClick={async () => {
+                    setSubmitting(true);
+                    setCommitError(null);
+                    try {
+                      const res = await splitEntity({
+                        worldId,
+                        entityId: entity.id,
+                        splitAxis: axis,
+                        note: commitMessage || `Split ${entity.id} along ${axis.toUpperCase()}`,
+                        parentVersionId: activeVersion,
+                      });
+                      setCommittedVersionResult({
+                        version_id: res.version_id,
+                      });
+                      setCommittedSuccess(true);
+                      setIsEditing(false);
+                      onSelectEntity(null);
+                      onVersionMutated?.();
+                    } catch (err) {
+                      setCommitError(err instanceof Error ? err.message : "Split failed.");
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="h-6 rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2 font-mono text-[10px] uppercase text-[var(--text-primary)] hover:border-[var(--accent)] disabled:opacity-40 cursor-pointer"
+                >
+                  {axis}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
@@ -1483,11 +1596,22 @@ function EntityDetails({
                           </button>
                           <div className="flex items-center justify-between gap-2 text-[11px]">
                             <span className="truncate font-mono text-[var(--text-secondary)]" title={ev.evidence_name}>{ev.evidence_name}</span>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-2">
                               {ev.mask_uri && (
                                 <span className="rounded bg-[var(--accent)]/15 px-1 py-0.5 text-[9px] font-mono text-[var(--accent)]" title="Instance mask recorded">
                                   mask
                                 </span>
+                              )}
+                              {onTraceEvidence && (
+                                <button
+                                  type="button"
+                                  onClick={() => onTraceEvidence(ev.evidence_id)}
+                                  title="Frame this camera in 3D"
+                                  className="inline-flex items-center gap-1 text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer"
+                                >
+                                  <Camera className="h-3 w-3" />
+                                  <span>Frame</span>
+                                </button>
                               )}
                               <a
                                 href={`/evidence/${ev.evidence_id}`}
@@ -1525,13 +1649,17 @@ function EntityDetails({
                   Multi-view identity decisions linking 2D observations to this physical entity:
                 </p>
                 <div className="space-y-2">
-                  {provenance.association_decisions.map((dec, i) => (
+                  {provenance.association_decisions.map((dec, i) => {
+                    const hasConflict = Boolean(dec.candidates && dec.candidates.length > 1) || /conflict|ambig/i.test(dec.state);
+                    return (
                     <div
                       key={dec.observation_id || i}
-                      className="rounded border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2.5 text-[11px] space-y-1"
+                      className="rounded border bg-[var(--bg-canvas)] p-2.5 text-[11px] space-y-1"
+                      style={{ borderColor: hasConflict ? "var(--warning)" : "var(--border-subtle)" }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-[var(--accent)] font-medium">
+                        <span className="flex items-center gap-1.5 font-mono font-medium" style={{ color: hasConflict ? "var(--warning)" : "var(--accent)" }}>
+                          {hasConflict && <AlertTriangle className="h-3 w-3" />}
                           {dec.state}
                         </span>
                         <span className="text-[var(--text-secondary)]">
@@ -1539,6 +1667,12 @@ function EntityDetails({
                         </span>
                       </div>
                       <p className="text-[var(--text-primary)]">{dec.reason}</p>
+                      {dec.candidates && dec.candidates.length > 1 && (
+                        <div className="pt-1 text-[10px] text-[var(--text-secondary)]">
+                          Competing candidates:{" "}
+                          {dec.candidates.map(([cid, prob]) => `${cid} (${(prob * 100).toFixed(0)}%)`).join(", ")}
+                        </div>
+                      )}
                       {(dec.dist_m !== undefined && dec.dist_m !== null) && (
                         <div className="text-[10px] text-[var(--text-tertiary)] flex gap-3">
                           <span>Dist: {dec.dist_m.toFixed(3)}m</span>
@@ -1548,7 +1682,7 @@ function EntityDetails({
                         </div>
                       )}
                     </div>
-                  ))}
+                  );})}
                 </div>
               </section>
             )}
@@ -2172,5 +2306,162 @@ function WorldOverview({
         </Disclosure>
       </div>
     </>
+  );
+}
+
+function MultiSelectionPanel({
+  world,
+  worldId,
+  activeVersion,
+  selectedEntityIds,
+  isHistoricalVersion,
+  onSelectEntity,
+  onSelectEntities,
+  onVersionMutated,
+}: {
+  world: WorldIR;
+  worldId: string;
+  activeVersion?: string;
+  selectedEntityIds: string[];
+  isHistoricalVersion: boolean;
+  onSelectEntity: (id: string | null) => void;
+  onSelectEntities?: (ids: string[]) => void;
+  onVersionMutated?: () => void;
+}) {
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeSuccess, setMergeSuccess] = useState<string | null>(null);
+  const [reason, setReason] = useState("Merge multi-selected entities");
+
+  const selected = selectedEntityIds
+    .map((id) => world.entities[id])
+    .filter((e): e is Entity => Boolean(e));
+
+  const primary = selected[0] ?? null;
+  const secondaries = selected.slice(1);
+
+  const handleMerge = async () => {
+    if (!primary || secondaries.length === 0 || isHistoricalVersion) return;
+    setMerging(true);
+    setMergeError(null);
+    setMergeSuccess(null);
+    try {
+      const res = await mergeEntities({
+        worldId,
+        primaryEntityId: primary.id,
+        secondaryEntityIds: secondaries.map((s) => s.id),
+        note: reason || "Merge multi-selected entities",
+        parentVersionId: activeVersion,
+      });
+      setMergeSuccess(`Merged into ${primary.name || primary.id} (version ${res.version_id.slice(0, 8)}).`);
+      onSelectEntities?.([primary.id]);
+      onSelectEntity(primary.id);
+      onVersionMutated?.();
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : "Merge failed.");
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <header className="shrink-0 border-b border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">
+            {selected.length} entities selected
+          </h2>
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Shift+click in 3D to add or remove
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onSelectEntities?.([]);
+            onSelectEntity(null);
+          }}
+          className="rounded px-2 py-1 text-[11px] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
+        >
+          Clear
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-xs">
+        {mergeError && (
+          <div role="alert" className="rounded border border-[var(--error)]/40 bg-[var(--error-subtle)] p-2.5 text-[11px] text-[var(--error)]">
+            {mergeError}
+          </div>
+        )}
+        {mergeSuccess && (
+          <div role="status" className="rounded border border-[var(--success)]/40 bg-[var(--success-subtle)] p-2.5 text-[11px] text-[var(--success)]">
+            {mergeSuccess}
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <SectionTitle>Selected items</SectionTitle>
+          {selected.map((ent, idx) => (
+            <div
+              key={ent.id}
+              className="flex items-center justify-between gap-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1.5"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectEntities?.([ent.id]);
+                  onSelectEntity(ent.id);
+                }}
+                className="min-w-0 flex-1 text-left cursor-pointer hover:underline"
+              >
+                <span className="font-medium text-[var(--text-primary)] truncate block">
+                  {displayName(ent)}
+                </span>
+                <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                  {kindLabel(ent)} {idx === 0 ? "· primary" : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove ${displayName(ent)} from selection`}
+                onClick={() => {
+                  const next = selectedEntityIds.filter((x) => x !== ent.id);
+                  onSelectEntities?.(next);
+                  onSelectEntity(next.length > 0 ? next[next.length - 1] : null);
+                }}
+                className="p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+          <SectionTitle>Batch action</SectionTitle>
+          {isHistoricalVersion && (
+            <p className="text-[11px] text-[var(--warning)]">
+              Viewing a historical version (read-only). Return to the current version to merge.
+            </p>
+          )}
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason for merge"
+            className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] font-mono"
+          />
+          <button
+            type="button"
+            disabled={merging || isHistoricalVersion || secondaries.length === 0}
+            onClick={handleMerge}
+            className="w-full py-1.5 rounded bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-on-primary font-medium text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer"
+          >
+            <Merge className="h-3.5 w-3.5" />
+            <span>{merging ? "Merging…" : `Merge ${secondaries.length} into ${primary ? displayName(primary) : "primary"}`}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

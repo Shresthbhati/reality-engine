@@ -5,6 +5,13 @@ import { GitCompare, X } from "lucide-react";
 import { getWorldDiff } from "@/lib/api/worlds";
 import type { WorldDiffDto, EntityDiffDto } from "@/lib/api/types";
 
+interface VersionOption {
+  id: string;
+  label?: string;
+  commitMessage?: string;
+  parentVersionId?: string | null;
+}
+
 interface VersionDiffModalProps {
   worldId: string;
   isOpen: boolean;
@@ -14,6 +21,7 @@ interface VersionDiffModalProps {
    * literal string "latest", which is not a valid WorldStore version id
    * and always 404s. */
   headVersion?: string;
+  versions?: VersionOption[];
   onSelectEntity?: (id: string) => void;
 }
 
@@ -21,10 +29,22 @@ export default function VersionDiffModal({
   worldId,
   isOpen,
   onClose,
-  baseVersion = "",
-  headVersion = "",
+  baseVersion: baseProp = "",
+  headVersion: headProp = "",
+  versions = [],
   onSelectEntity,
 }: VersionDiffModalProps) {
+  const [selectedBase, setSelectedBase] = useState(baseProp);
+  const [selectedHead, setSelectedHead] = useState(headProp);
+  const [propSyncKey, setPropSyncKey] = useState(`${baseProp}::${headProp}::${isOpen}`);
+  const currentKey = `${baseProp}::${headProp}::${isOpen}`;
+  if (propSyncKey !== currentKey) {
+    setPropSyncKey(currentKey);
+    setSelectedBase(baseProp);
+    setSelectedHead(headProp);
+  }
+  const baseVersion = selectedBase;
+  const headVersion = selectedHead;
   const [diff, setDiff] = useState<WorldDiffDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +56,17 @@ export default function VersionDiffModal({
       Promise.resolve().then(() => {
         if (cancelled) return;
         setError("No base version specified. Create and commit world revisions to compare lineage differentials.");
+        setLoading(false);
+        setDiff(null);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (headVersion && baseVersion === headVersion) {
+      Promise.resolve().then(() => {
+        if (cancelled) return;
+        setError("Select two different versions to compare.");
         setLoading(false);
         setDiff(null);
       });
@@ -97,6 +128,43 @@ export default function VersionDiffModal({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Version picker bar when multiple versions exist */}
+        {versions.length > 1 && (
+          <div className="flex flex-wrap items-center gap-3 px-5 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] text-xs">
+            <label className="flex items-center gap-1.5">
+              <span className="text-[11px] text-fg-muted">Base:</span>
+              <select
+                aria-label="Base version"
+                value={baseVersion}
+                onChange={(e) => setSelectedBase(e.target.value)}
+                className="h-7 rounded border border-[var(--border)] bg-[var(--bg-surface)] px-2 font-mono text-[11px] text-fg"
+              >
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label || v.id.slice(0, 8)} {v.commitMessage ? `— ${v.commitMessage.slice(0, 28)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-fg-muted">→</span>
+            <label className="flex items-center gap-1.5">
+              <span className="text-[11px] text-fg-muted">Head:</span>
+              <select
+                aria-label="Head version"
+                value={headVersion}
+                onChange={(e) => setSelectedHead(e.target.value)}
+                className="h-7 rounded border border-[var(--border)] bg-[var(--bg-surface)] px-2 font-mono text-[11px] text-fg"
+              >
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label || v.id.slice(0, 8)} {v.commitMessage ? `— ${v.commitMessage.slice(0, 28)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">

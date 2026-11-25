@@ -46,6 +46,7 @@ import {
   Calculator,
   ShieldCheck,
   Flame,
+  RotateCcw,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -176,6 +177,8 @@ interface World3DViewportProps {
   captureQuality?: CaptureQuality | null;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
+  selectedEntityIds?: string[];
+  onSelectEntities?: (ids: string[]) => void;
   highlightedEvidenceId?: string | null;
   onSelectEvidence?: (id: string | null) => void;
   queryMatchingIds?: Set<string> | null;
@@ -237,6 +240,8 @@ export default function World3DViewport({
   captureQuality = null,
   selectedEntityId,
   onSelectEntity,
+  selectedEntityIds,
+  onSelectEntities,
   highlightedEvidenceId,
   queryMatchingIds = null,
   isLoading = false,
@@ -268,11 +273,13 @@ export default function World3DViewport({
   const getController = useCallback(() => controllerRef.current, []);
   // Latest callbacks, so the controller is created once and never torn down by an unstable parent callback.
   const onSelectRef = useRef(onSelectEntity);
+  const onSelectEntitiesRef = useRef(onSelectEntities);
   const onMeasureRef = useRef(onMeasurementChange);
   useEffect(() => {
     onSelectRef.current = onSelectEntity;
+    onSelectEntitiesRef.current = onSelectEntities;
     onMeasureRef.current = onMeasurementChange;
-  }, [onSelectEntity, onMeasurementChange]);
+  }, [onSelectEntity, onSelectEntities, onMeasurementChange]);
 
   const unplaced = isUnplaced(captureQuality);
   const [layers, setLayers] = useState<ViewportLayers>({
@@ -286,6 +293,7 @@ export default function World3DViewport({
     walls: true,
     topology: true,
     shell: true,
+    bounds: false,
     ...(initialLayers ?? {}),
   });
   const [modeState, setModeState] = useState<ViewMode>(() => (typeof window !== "undefined" ? loadStoredMode() : "realistic"));
@@ -728,6 +736,7 @@ export default function World3DViewport({
 
     controller.setCallbacks({
       onSelect: (id) => onSelectRef.current(id),
+      onMultiSelect: (ids) => onSelectEntitiesRef.current?.(ids),
       onMeasure: (res) => {
         onMeasureRef.current?.(res);
       },
@@ -804,19 +813,23 @@ export default function World3DViewport({
     controller.applyEntityFilter(queryMatchingIds ?? null);
   }, [queryMatchingIds]);
 
-  // Sync external selection (e.g. from nav panel or inspector)
+  // Sync external selection (e.g. from nav panel or inspector) without re-firing callbacks
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller) return;
-    controller.selectEntity(selectedEntityId, true);
-  }, [selectedEntityId]);
+    if (selectedEntityIds && selectedEntityIds.length > 1) {
+      controller.setSelectedEntities(selectedEntityIds);
+    } else {
+      controller.selectEntity(selectedEntityId, true, false, true);
+    }
+  }, [selectedEntityId, selectedEntityIds]);
 
-  // Sync external camera/evidence focus
+  // Sync external camera/evidence focus (re-run once cameras load so deep-links frame properly)
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller || !highlightedEvidenceId) return;
     controller.flyToCamera(highlightedEvidenceId);
-  }, [highlightedEvidenceId]);
+  }, [highlightedEvidenceId, cameras]);
 
   // Multi-Epoch 4D Temporal overlay: colour entities and display volumetric change clusters
   useEffect(() => {
@@ -952,21 +965,22 @@ export default function World3DViewport({
     };
   }, []);
 
+  // Sync layer & grid visibility to the Three.js controller outside state updaters
+  useEffect(() => {
+    controllerRef.current?.setLayerVisibility(layers);
+  }, [layers]);
+
+  useEffect(() => {
+    controllerRef.current?.setGridVisible(gridVisible);
+  }, [gridVisible]);
+
   // Toggle Layer Helper
   const toggleLayer = useCallback((key: keyof ViewportLayers) => {
-    setLayers((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      controllerRef.current?.setLayerVisibility(next);
-      return next;
-    });
+    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   const toggleGrid = useCallback(() => {
-    setGridVisible((prev) => {
-      const next = !prev;
-      controllerRef.current?.setGridVisible(next);
-      return next;
-    });
+    setGridVisible((prev) => !prev);
   }, []);
 
   const toggleMeasure = useCallback(() => {
@@ -985,6 +999,11 @@ export default function World3DViewport({
   }, []);
 
   const handleFit = useCallback(() => controllerRef.current?.frameAll(), []);
+
+  const handleResetCamera = useCallback(() => {
+    controllerRef.current?.setViewPreset("isometric");
+    controllerRef.current?.frameAll(true);
+  }, []);
 
   const handleFocus = useCallback(() => {
     if (selectedEntityId) controllerRef.current?.flyToEntity(selectedEntityId);
@@ -1292,6 +1311,11 @@ export default function World3DViewport({
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         handleFrameAll();
+      } else if (e.key === "0") {
+        e.preventDefault();
+        handleResetCamera();
+      } else if (e.key === "b" || e.key === "B") {
+        toggleLayer("bounds");
       } else if (e.key === "1") {
         toggleLayer("points");
       } else if (e.key === "2") {
@@ -1326,7 +1350,7 @@ export default function World3DViewport({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, changeCutaway, cutaway, isMeasuring, isolatedSpaceId, onSelectEntity]);
+  }, [handleFrameAll, handleResetCamera, toggleLayer, toggleGrid, toggleMeasure, changeCutaway, cutaway, isMeasuring, isolatedSpaceId, onSelectEntity]);
 
   // Scale bar + axis gizmo (derived from the camera the controller reports)
   const scale = useMemo(() => (camInfo && metersKnown ? niceScale(camInfo.metersPerPx, 110) : null), [camInfo, metersKnown]);
@@ -1457,6 +1481,23 @@ export default function World3DViewport({
           {queryMatchingIds !== null && (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono bg-[var(--accent-subtle)] border border-[var(--accent-border)] text-[var(--accent)]">
               <span>Query: {queryMatchingIds.size} matching</span>
+            </div>
+          )}
+
+          {selectedEntityIds && selectedEntityIds.length > 1 && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono bg-[var(--accent-subtle)] border border-[var(--accent-border)] text-[var(--accent)] pointer-events-auto">
+              <span>{selectedEntityIds.length} selected</span>
+              <span className="text-[10px] text-[var(--text-secondary)]">(Shift+click)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectEntities?.([]);
+                  onSelectEntity(null);
+                }}
+                className="ml-1 text-[var(--text-primary)] underline cursor-pointer text-[10px]"
+              >
+                Clear
+              </button>
             </div>
           )}
 
@@ -1999,6 +2040,7 @@ export default function World3DViewport({
                   ["entities", "Entities [2]", layers.entities, () => toggleLayer("entities"), Box],
                   ["walls", "Walls [W]", layers.walls, () => toggleLayer("walls"), Layers],
                   ["topology", "Topology [T]", layers.topology, () => toggleLayer("topology"), Workflow],
+                  ["bounds", "Bounds [B]", Boolean(layers.bounds), () => toggleLayer("bounds"), Box],
                   ["grid", "Grid [G]", gridVisible, toggleGrid, Grid],
                   ["oversized", "Noise [O]", layers.oversized, () => toggleLayer("oversized"), AlertTriangle],
                   ["uncertainty", "Uncertainty [U]", layers.uncertainty, () => toggleLayer("uncertainty"), Sparkles],
@@ -2024,6 +2066,9 @@ export default function World3DViewport({
             </IconButton>
             <IconButton label="Fit to scene [F]" onClick={handleFit}>
               <Maximize2 className="w-4 h-4" />
+            </IconButton>
+            <IconButton label="Reset camera [0]" onClick={handleResetCamera}>
+              <RotateCcw className="w-4 h-4" />
             </IconButton>
             <IconButton label={selectedEntityId ? "Focus selected [F]" : "Focus selected (select something first)"} disabled={!selectedEntityId} onClick={handleFocus}>
               <Crosshair className="w-4 h-4" />
@@ -2102,11 +2147,13 @@ export default function World3DViewport({
         <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2 pointer-events-none">
           {layers.uncertainty && (
             <div className="px-2.5 py-1.5 rounded-md text-[10px] font-mono flex items-center gap-2" style={{ ...PANEL, color: "var(--text-secondary)" }}>
-              <span>Confidence</span>
+              <span>Confidence:</span>
               <span className="h-2 w-2 rounded-full" style={{ background: "var(--conf-low)" }} />
-              <span>low</span>
+              <span>Low</span>
               <span className="h-2 w-2 rounded-full" style={{ background: "var(--conf-high)" }} />
-              <span>high</span>
+              <span>High</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: "var(--conf-unknown)" }} />
+              <span>Unknown</span>
             </div>
           )}
           {scale ? (

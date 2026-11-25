@@ -24,6 +24,10 @@ benchmarks/measured_rooms/*/photos/
 !datasets/south_building/MANIFEST.json
 !datasets/south_building/runs/
 !datasets/south_building/runs/*
+!datasets/scene_disjoint_evaluation/
+datasets/scene_disjoint_evaluation/images/
+!datasets/scene_disjoint_evaluation/manifest.json
+!datasets/scene_disjoint_evaluation/ground_truth_identities.json
 
 data/
 

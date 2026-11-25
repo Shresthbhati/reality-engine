@@ -787,8 +787,9 @@ def evaluate_cross_view_pair(
                 basis={"anchor_a": ray_a.physical_anchor_ref, "anchor_b": ray_b.physical_anchor_ref},
             )
 
-    # 5. Semantic compatibility
-    if not are_semantically_compatible(ray_a.class_name, ray_b.class_name):
+    # 5. Semantic compatibility: identity matching requires compatible object classes,
+    # NOT parent-part relationships (e.g. door and door_handle are NOT the same physical entity).
+    if not are_semantically_compatible(ray_a.class_name, ray_b.class_name, allow_parent_part=False):
         return PairScore(
             obs_a_id=ray_a.observation_id,
             obs_b_id=ray_b.observation_id,
@@ -1068,6 +1069,13 @@ class TemporalTrack:
         dt_clamped = max(0.0, min(1.0, dt_sec))
         return (cx + vx_clamped * dt_clamped, cy + vy_clamped * dt_clamped)
 
+    @property
+    def track_uncertainty(self) -> float:
+        """Calculates track uncertainty based on observation history and coasting status."""
+        base = max(0.10, 1.0 / math.sqrt(max(1, self.age_frames)))
+        coasting_penalty = 0.15 * self.missed_frames
+        return min(1.0, round(base + coasting_penalty, 4))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "track_id": self.track_id,
@@ -1079,6 +1087,7 @@ class TemporalTrack:
             "missed_frames": self.missed_frames,
             "termination_reason": self.termination_reason,
             "velocity_2d": [round(v, 2) for v in self.velocity_2d],
+            "track_uncertainty": self.track_uncertainty,
             "is_physical_identity": self.is_physical_identity,
             "provenance": self.provenance,
         }
@@ -1123,7 +1132,7 @@ class TemporalIdentityTracker:
             obs_app = tuple(getattr(obs, "appearance_features", ())) or tuple(getattr(obs, "attributes", {}).get("appearance_features", ()))
 
             for track in self.active_tracks.values():
-                if not are_semantically_compatible(obs_cls, track.class_name):
+                if not are_semantically_compatible(obs_cls, track.class_name, allow_parent_part=False):
                     continue
 
                 # Compute motion-compensated centroid distance with last-position fallback
@@ -1227,6 +1236,50 @@ class TemporalIdentityTracker:
             self.closed_tracks[tid] = self.active_tracks.pop(tid)
 
         return obs_to_track
+
+    def merge_duplicate_tracks(self, iou_threshold: float = 0.50, max_centroid_dist_px: float = 40.0) -> int:
+        """Merges duplicate active tracks tracking the same physical target."""
+        from engine.multiengine.spatial_intelligence.detection_pipeline import compute_box_iou
+
+        merged_count = 0
+        track_ids = list(self.active_tracks.keys())
+        merged_into: dict[str, str] = {}
+
+        for i in range(len(track_ids)):
+            tid_a = track_ids[i]
+            if tid_a in merged_into:
+                continue
+            track_a = self.active_tracks[tid_a]
+
+            for j in range(i + 1, len(track_ids)):
+                tid_b = track_ids[j]
+                if tid_b in merged_into:
+                    continue
+                track_b = self.active_tracks[tid_b]
+
+                if not are_semantically_compatible(track_a.class_name, track_b.class_name, allow_parent_part=False):
+                    continue
+
+                # Ensure tracks do not share overlapping frame indices
+                if set(track_a.frame_indices) & set(track_b.frame_indices):
+                    continue
+
+                iou = compute_box_iou(track_a.last_box_2d, track_b.last_box_2d)
+                c_dist = math.hypot(track_a.centroid[0] - track_b.centroid[0], track_a.centroid[1] - track_b.centroid[1])
+
+                if iou >= iou_threshold or c_dist <= max_centroid_dist_px:
+                    track_a.observation_ids.extend(track_b.observation_ids)
+                    track_a.frame_indices.extend(track_b.frame_indices)
+                    track_a.timestamps_sec.extend(track_b.timestamps_sec)
+                    track_a.age_frames += track_b.age_frames
+                    track_a.missed_frames = min(track_a.missed_frames, track_b.missed_frames)
+                    track_b.active = False
+                    track_b.termination_reason = f"merged_into_{tid_a}"
+                    self.closed_tracks[tid_b] = self.active_tracks.pop(tid_b)
+                    merged_into[tid_b] = tid_a
+                    merged_count += 1
+
+        return merged_count
 
 
 class MultiViewIntelligenceEngine:
@@ -1443,7 +1496,7 @@ class MultiViewIntelligenceEngine:
                 # Check semantic compatibility
                 cand_i = obs_by_id[root_i]
                 cand_j = obs_by_id[root_j]
-                if not are_semantically_compatible(cand_i.class_name, cand_j.class_name):
+                if not are_semantically_compatible(cand_i.class_name, cand_j.class_name, allow_parent_part=False):
                     continue
 
                 scale_common = next(iter(scales_i))
@@ -1595,6 +1648,21 @@ class MultiViewIntelligenceEngine:
             if mean_rep_res > 50.0:
                 calibrated_conf = max(0.2, calibrated_conf - 0.2)
 
+            # Multi-view appearance consistency
+            app_feats = [m.appearance_features for m in members if m.appearance_features]
+            appearance_consistency = 1.0
+            if len(app_feats) >= 2:
+                sims = []
+                for idx_a in range(len(app_feats)):
+                    for idx_b in range(idx_a + 1, len(app_feats)):
+                        fa = np.array(app_feats[idx_a], dtype=float)
+                        fb = np.array(app_feats[idx_b], dtype=float)
+                        na, nb = np.linalg.norm(fa), np.linalg.norm(fb)
+                        if na > 1e-6 and nb > 1e-6:
+                            sims.append(float(np.dot(fa, fb) / (na * nb)))
+                if sims:
+                    appearance_consistency = round(float(np.mean(sims)), 4)
+
             merged_entities.append(PhysicalMergedEntity(
                 canonical_entity_id=f"phys_{root_id}",
                 primary_class=primary_cls,
@@ -1621,6 +1689,7 @@ class MultiViewIntelligenceEngine:
                 details={
                     "view_count": len(sources),
                     "observation_count": len(member_ids),
+                    "appearance_consistency_score": appearance_consistency,
                     "triangulation_meta": triangulation_meta,
                 },
             ))

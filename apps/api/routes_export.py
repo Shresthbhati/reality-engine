@@ -63,8 +63,19 @@ _STATE_OF_PROVENANCE = {
 }
 
 
+#: what an element read "measured" is called when its lengths are NOT physically measured metres (see engine.multiengine.world_scale.scale_kind)
+_UNMEASURED_SCALE_STATE = {"estimated": "estimated", "anchored_unvalidated": "anchored_unvalidated", "sfm_gauge": "unscaled", "relative_depth": "unscaled"}
+
+
 def _element_report(world, ids) -> list:
-    """Per exported element: what it is, whether it was measured or inferred, and how sure the engine is (T-2.7)."""
+    """Per exported element: what it is, whether it was measured or inferred, and how sure the engine is (T-2.7).
+
+    "measured" is only ever reported for a world whose scale is a VALIDATED physical calibration: provenance says the entity was observed, but its
+    LENGTHS are metres only as far as the scale is (an unvalidated / estimated / unscaled world reports ``anchored_unvalidated`` / ``estimated`` /
+    ``unscaled`` instead, with the original in ``provenance_state``)."""
+    from engine.multiengine.world_scale import scale_kind
+
+    kind = scale_kind(world)
     rows = []
     for eid in ids:
         ent = world.entities.get(eid)
@@ -72,9 +83,11 @@ def _element_report(world, ids) -> list:
             continue
         prov = getattr(ent.provenance, "name", str(ent.provenance)).upper()
         unc = getattr(ent, "uncertainty", None)
+        state = _STATE_OF_PROVENANCE.get(prov, "unknown")
         rows.append({
             "id": eid, "name": ent.name, "type": ent.type.value,
-            "state": _STATE_OF_PROVENANCE.get(prov, "unknown"),
+            "state": _UNMEASURED_SCALE_STATE.get(kind, "unscaled") if state == "measured" and kind != "physically_anchored" else state,
+            "provenance_state": state, "scale_kind": kind,
             "confidence": None if ent.confidence is None else round(float(ent.confidence), 3),
             "note": (getattr(unc, "note", None) or None),
         })

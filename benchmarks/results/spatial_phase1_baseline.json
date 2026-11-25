@@ -1,0 +1,1940 @@
+{
+ "synthetic_scenes": {
+  "nominal": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 448,
+     "mean": 0.014614220877696298,
+     "p90": 0.028559789676020533
+    },
+    "wall_angle_error_deg": {
+     "n": 448,
+     "mean": 0.4164335278807424,
+     "p90": 0.9026588995415076
+    },
+    "observed_end_error_m": {
+     "n": 858,
+     "mean": 0.0316044741935775,
+     "p90": 0.057304244224423505
+    },
+    "length_error_fully_bounded_m": {
+     "n": 429,
+     "mean": 0.027813457381063382,
+     "p90": 0.06009562817822401
+    },
+    "wall_recall": 0.9955555555555555,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9955555555555555,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9509803921568627,
+    "room_precision": 0.9761904761904762,
+    "room_recall": 0.8785714285714286,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9989274989274989,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7433035714285714,
+     0.9799107142857143,
+     0.9977678571428571
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.3146853146853147,
+     0.7680652680652681,
+     0.9638694638694638
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.02084429840302695,
+     "p90": 0.041250789587820774
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.4709156638354965,
+     "p90": 1.0779721206866812
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.2838710435799192,
+     "p90": 0.7708504089096012
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.5257920999413865,
+     "p90": 1.5247583280394454
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.973333333333333,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 4.973333333333334,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5941176470588235,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.01962854519621973,
+     "p90": 0.04265441925737684
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.5615738574586495,
+     "p90": 1.3160363581132197
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.07962229391991921,
+     "p90": 0.14384888392249662
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.12302528115919394,
+     "p90": 0.23494379854627787
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.24444444444444444,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.2444444444444445,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9705882352941176,
+    "room_precision": 0.47058823529411764,
+    "room_recall": 0.6285714285714286,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9081939081939082,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 53,
+    "incomplete": 14,
+    "contradictory": 3
+   }
+  },
+  "sparse_views": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 411,
+     "mean": 0.019667242680894172,
+     "p90": 0.04072642302589635
+    },
+    "wall_angle_error_deg": {
+     "n": 411,
+     "mean": 0.6034700652932278,
+     "p90": 1.4358077438036247
+    },
+    "observed_end_error_m": {
+     "n": 683,
+     "mean": 0.04566787403027219,
+     "p90": 0.08091063976918597
+    },
+    "length_error_fully_bounded_m": {
+     "n": 341,
+     "mean": 0.04273194437074735,
+     "p90": 0.0918625166079039
+    },
+    "wall_recall": 0.9133333333333333,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9133333333333333,
+    "junction_precision": 1.0,
+    "junction_recall": 0.707843137254902,
+    "room_precision": 0.8484848484848485,
+    "room_recall": 0.4,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9978471474703983,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7664233576642335,
+     0.9878345498783455,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.32210834553440704,
+     0.7833089311859444,
+     0.9736456808199122
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 448,
+     "mean": 0.029158846402259925,
+     "p90": 0.05850019394563339
+    },
+    "wall_angle_error_deg": {
+     "n": 448,
+     "mean": 0.712011809113308,
+     "p90": 1.6220408391810948
+    },
+    "observed_end_error_m": {
+     "n": 896,
+     "mean": 0.309299045508349,
+     "p90": 0.837528435146391
+    },
+    "length_error_fully_bounded_m": {
+     "n": 448,
+     "mean": 0.5693952396433015,
+     "p90": 1.5132406243733305
+    },
+    "wall_recall": 0.9955555555555555,
+    "duplicate_rate": 1.488888888888889,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 2.4844444444444442,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5568627450980392,
+    "room_precision": 0.009836065573770493,
+    "room_recall": 0.02142857142857143,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 448,
+     "mean": 0.027982739285767038,
+     "p90": 0.05989497822011665
+    },
+    "wall_angle_error_deg": {
+     "n": 448,
+     "mean": 0.795472529212463,
+     "p90": 1.866736228171647
+    },
+    "observed_end_error_m": {
+     "n": 896,
+     "mean": 0.12963418559380172,
+     "p90": 0.22943015008616988
+    },
+    "length_error_fully_bounded_m": {
+     "n": 448,
+     "mean": 0.20681157781938866,
+     "p90": 0.44670211160954437
+    },
+    "wall_recall": 0.9955555555555555,
+    "duplicate_rate": 0.21777777777777776,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.2133333333333334,
+    "junction_precision": 1.0,
+    "junction_recall": 0.8450980392156863,
+    "room_precision": 0.5037593984962406,
+    "room_recall": 0.4785714285714286,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.8428417653390743,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "incomplete": 52,
+    "consistent": 14,
+    "invalid": 4
+   }
+  },
+  "heavy_occlusion": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.01704372033672954,
+     "p90": 0.037422113387814766
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.6081083785454234,
+     "p90": 1.4149089758510238
+    },
+    "observed_end_error_m": {
+     "n": 228,
+     "mean": 0.04028577447197108,
+     "p90": 0.07335398877979193
+    },
+    "length_error_fully_bounded_m": {
+     "n": 114,
+     "mean": 0.038428577967820884,
+     "p90": 0.08989759746237189
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0,
+    "junction_precision": 1.0,
+    "junction_recall": 0.33725490196078434,
+    "room_precision": 0.6666666666666666,
+    "room_recall": 0.02857142857142857,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9991482112436116,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7022222222222222,
+     0.9466666666666667,
+     0.9911111111111112
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.2894736842105263,
+     0.6885964912280702,
+     0.9429824561403509
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.020442550309908367,
+     "p90": 0.04021211202833521
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.6240507070740008,
+     "p90": 1.358252274584598
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.7331365573609027,
+     "p90": 1.7898938257599362
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 1.478947039851404,
+     "p90": 3.087508840368776
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 4.004444444444444,
+    "spurious_per_scene": 0.02857142857142857,
+    "entities_per_gt_wall": 5.0088888888888885,
+    "junction_precision": 1.0,
+    "junction_recall": 0.22549019607843138,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.02104630639499499,
+     "p90": 0.04513806880440006
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.705894930003237,
+     "p90": 1.7203227454725627
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.20432878622721648,
+     "p90": 0.47206413326492536
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.3704237035804098,
+     "p90": 0.8618593011380525
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.3977777777777778,
+    "spurious_per_scene": 0.02857142857142857,
+    "entities_per_gt_wall": 1.4022222222222223,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7019607843137254,
+    "room_precision": 0.5522388059701493,
+    "room_recall": 0.2642857142857143,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.8494463373083475,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 1,
+    "incomplete": 68,
+    "invalid": 1
+   }
+  },
+  "missing_wall": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 380,
+     "mean": 0.01465524999293959,
+     "p90": 0.028636896065899767
+    },
+    "wall_angle_error_deg": {
+     "n": 380,
+     "mean": 0.4311564157211354,
+     "p90": 0.9585601376295868
+    },
+    "observed_end_error_m": {
+     "n": 727,
+     "mean": 0.0336373881678181,
+     "p90": 0.05983855049223951
+    },
+    "length_error_fully_bounded_m": {
+     "n": 363,
+     "mean": 0.029723540867510324,
+     "p90": 0.06300962230134033
+    },
+    "wall_recall": 0.8444444444444444,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.8444444444444444,
+    "junction_precision": 1.0,
+    "junction_recall": 0.711764705882353,
+    "room_precision": 0.7714285714285715,
+    "room_recall": 0.38571428571428573,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9990032394717169,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7,
+     0.9842105263157894,
+     0.9973684210526316
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.30398899587345257,
+     0.7551581843191196,
+     0.953232462173315
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 380,
+     "mean": 0.019745032379313868,
+     "p90": 0.04063692892531564
+    },
+    "wall_angle_error_deg": {
+     "n": 380,
+     "mean": 0.4610323060324015,
+     "p90": 1.0730942930317897
+    },
+    "observed_end_error_m": {
+     "n": 760,
+     "mean": 0.3016228846220782,
+     "p90": 0.8028175099152087
+    },
+    "length_error_fully_bounded_m": {
+     "n": 380,
+     "mean": 0.5670114647592387,
+     "p90": 1.5799666936225252
+    },
+    "wall_recall": 0.8444444444444444,
+    "duplicate_rate": 3.402222222222222,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 4.246666666666667,
+    "junction_precision": 1.0,
+    "junction_recall": 0.43333333333333335,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 380,
+     "mean": 0.020363712219603012,
+     "p90": 0.0427072526561449
+    },
+    "wall_angle_error_deg": {
+     "n": 380,
+     "mean": 0.5595650857083726,
+     "p90": 1.3869013835471231
+    },
+    "observed_end_error_m": {
+     "n": 760,
+     "mean": 0.08122388581412271,
+     "p90": 0.13934492590960637
+    },
+    "length_error_fully_bounded_m": {
+     "n": 380,
+     "mean": 0.12705072028682163,
+     "p90": 0.22261569604307377
+    },
+    "wall_recall": 0.8444444444444444,
+    "duplicate_rate": 0.2311111111111111,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0755555555555556,
+    "junction_precision": 1.0,
+    "junction_recall": 0.711764705882353,
+    "room_precision": 0.2782608695652174,
+    "room_recall": 0.22857142857142856,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9040617991527535,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 51,
+    "incomplete": 17,
+    "contradictory": 2
+   }
+  },
+  "gross_outliers_10pct": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.014085908519899765,
+     "p90": 0.028554389636678966
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.45314635142352283,
+     "p90": 1.0379427964384043
+    },
+    "observed_end_error_m": {
+     "n": 859,
+     "mean": 0.032850306607469786,
+     "p90": 0.05806827507884914
+    },
+    "length_error_fully_bounded_m": {
+     "n": 429,
+     "mean": 0.030353175019389805,
+     "p90": 0.059946336282903086
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.11428571428571428,
+    "entities_per_gt_wall": 1.0177777777777777,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9686274509803922,
+    "room_precision": 0.9166666666666666,
+    "room_recall": 0.8642857142857143,
+    "association_pair_precision": 0.9997448979591836,
+    "association_pair_recall": 0.8341847594721158,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7533333333333333,
+     0.9755555555555555,
+     0.9977777777777778
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.32945285215366704,
+     0.7613504074505238,
+     0.9417927823050058
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.02247983040651928,
+     "p90": 0.04699667561951172
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.46740833541188725,
+     "p90": 1.1370299644020547
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.26027066392992404,
+     "p90": 0.7023134236716124
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.48051739990699355,
+     "p90": 1.3835926656293707
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.58,
+    "spurious_per_scene": 2.757142857142857,
+    "entities_per_gt_wall": 5.0088888888888885,
+    "junction_precision": 1.0,
+    "junction_recall": 0.6137254901960785,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.01965407188013803,
+     "p90": 0.04179737831776385
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.5927808549158097,
+     "p90": 1.3116265204785016
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.07948209218155175,
+     "p90": 0.1446006175659207
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.11985007710912214,
+     "p90": 0.2297176083789588
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.28444444444444444,
+    "spurious_per_scene": 2.7285714285714286,
+    "entities_per_gt_wall": 1.708888888888889,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9647058823529412,
+    "room_precision": 0.2413793103448276,
+    "room_recall": 0.4,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.7413793103448276,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "contradictory": 12,
+    "incomplete": 31,
+    "invalid": 23,
+    "consistent": 4
+   }
+  },
+  "one_biased_image_0.4m": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 446,
+     "mean": 0.024227086506620102,
+     "p90": 0.05239331632087232
+    },
+    "wall_angle_error_deg": {
+     "n": 446,
+     "mean": 0.4909132097030621,
+     "p90": 1.0881985692480196
+    },
+    "observed_end_error_m": {
+     "n": 821,
+     "mean": 0.06844504765761263,
+     "p90": 0.11628967345204361
+    },
+    "length_error_fully_bounded_m": {
+     "n": 400,
+     "mean": 0.08012461959777095,
+     "p90": 0.3291475870122748
+    },
+    "wall_recall": 0.9911111111111112,
+    "duplicate_rate": 0.03111111111111111,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0222222222222221,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9254901960784314,
+    "room_precision": 0.8225806451612904,
+    "room_recall": 0.7285714285714285,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.7794937794937795,
+    "lower_bound_valid_fraction": 0.6304347826086957,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5852017937219731,
+     0.8295964125560538,
+     0.9304932735426009
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.2046285018270402,
+     0.5542021924482339,
+     0.7880633373934226
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.024518990979901092,
+     "p90": 0.04587537687767411
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.5403491942708266,
+     "p90": 1.2565523898630626
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.29870417577914626,
+     "p90": 0.8160020828318885
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.5511959039875106,
+     "p90": 1.6086056990166577
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.937777777777778,
+    "spurious_per_scene": 0.22857142857142856,
+    "entities_per_gt_wall": 4.973333333333334,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5803921568627451,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.025059977714102306,
+     "p90": 0.05521628298181811
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.5855138002697645,
+     "p90": 1.322737765877454
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.09348126443551957,
+     "p90": 0.1658337417102938
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.13886770554576724,
+     "p90": 0.2741478113053096
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 1.0044444444444445,
+    "spurious_per_scene": 0.22857142857142856,
+    "entities_per_gt_wall": 2.04,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9431372549019608,
+    "room_precision": 0.12546125461254612,
+    "room_recall": 0.24285714285714285,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.611969111969112,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "contradictory": 21,
+    "invalid": 49
+   }
+  },
+  "monocular_relative_depth": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 245,
+     "mean": 0.1296757102401615,
+     "p90": 0.28862538432401535
+    },
+    "wall_angle_error_deg": {
+     "n": 245,
+     "mean": 2.8013858141844863,
+     "p90": 6.0870424339559905
+    },
+    "observed_end_error_m": {
+     "n": 442,
+     "mean": 0.4627103805225135,
+     "p90": 0.7670215073264173
+    },
+    "length_error_fully_bounded_m": {
+     "n": 212,
+     "mean": 0.9092855731658473,
+     "p90": 1.0814419868990972
+    },
+    "wall_recall": 0.5444444444444444,
+    "duplicate_rate": 0.19555555555555557,
+    "spurious_per_scene": 2.657142857142857,
+    "entities_per_gt_wall": 1.1533333333333333,
+    "junction_precision": 0.9896907216494846,
+    "junction_recall": 0.3764705882352941,
+    "room_precision": 0.18674698795180722,
+    "room_recall": 0.22142857142857142,
+    "association_pair_precision": 0.8489150817037235,
+    "association_pair_recall": 0.6797511797511797,
+    "lower_bound_valid_fraction": 0.6666666666666666,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7387755102040816,
+     0.9755102040816327,
+     0.9959183673469387
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.2669683257918552,
+     0.6900452488687783,
+     0.8936651583710408
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 394,
+     "mean": 0.16778853505803137,
+     "p90": 0.3559158169049185
+    },
+    "wall_angle_error_deg": {
+     "n": 394,
+     "mean": 3.85002859581676,
+     "p90": 9.330427391824621
+    },
+    "observed_end_error_m": {
+     "n": 788,
+     "mean": 0.6655704122706905,
+     "p90": 1.3264978653750006
+    },
+    "length_error_fully_bounded_m": {
+     "n": 394,
+     "mean": 0.8622119220756179,
+     "p90": 1.8528199273593333
+    },
+    "wall_recall": 0.8755555555555555,
+    "duplicate_rate": 1.4666666666666666,
+    "spurious_per_scene": 16.914285714285715,
+    "entities_per_gt_wall": 4.973333333333334,
+    "junction_precision": 1.0,
+    "junction_recall": 0.2019607843137255,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 393,
+     "mean": 0.16945321330280788,
+     "p90": 0.35557277687593986
+    },
+    "wall_angle_error_deg": {
+     "n": 393,
+     "mean": 3.8300467622507406,
+     "p90": 9.30353956194123
+    },
+    "observed_end_error_m": {
+     "n": 786,
+     "mean": 0.660608484129547,
+     "p90": 1.3271670788362524
+    },
+    "length_error_fully_bounded_m": {
+     "n": 393,
+     "mean": 0.861221048960961,
+     "p90": 1.9174569571296591
+    },
+    "wall_recall": 0.8733333333333333,
+    "duplicate_rate": 1.288888888888889,
+    "spurious_per_scene": 16.67142857142857,
+    "entities_per_gt_wall": 4.7555555555555555,
+    "junction_precision": 1.0,
+    "junction_recall": 0.21372549019607842,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": 0.9576271186440678,
+    "association_pair_recall": 0.02423852423852424,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "incomplete": 19,
+    "invalid": 46,
+    "contradictory": 5
+   }
+  },
+  "miscalibrated_sigma_x2": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 444,
+     "mean": 0.03577108079144037,
+     "p90": 0.07355425414727637
+    },
+    "wall_angle_error_deg": {
+     "n": 444,
+     "mean": 1.0142427753108045,
+     "p90": 2.2929131699874605
+    },
+    "observed_end_error_m": {
+     "n": 819,
+     "mean": 0.08817029038045957,
+     "p90": 0.15419524920170427
+    },
+    "length_error_fully_bounded_m": {
+     "n": 401,
+     "mean": 0.09180921367404932,
+     "p90": 0.1983661615132748
+    },
+    "wall_recall": 0.9866666666666667,
+    "duplicate_rate": 0.18444444444444444,
+    "spurious_per_scene": 0.02857142857142857,
+    "entities_per_gt_wall": 1.1755555555555555,
+    "junction_precision": 1.0,
+    "junction_recall": 0.8686274509803922,
+    "room_precision": 0.5241935483870968,
+    "room_recall": 0.4642857142857143,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.796010296010296,
+    "lower_bound_valid_fraction": 0.8837209302325582,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.36936936936936937,
+     0.6959459459459459,
+     0.8626126126126126
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.0989010989010989,
+     0.32722832722832723,
+     0.5372405372405372
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.04183104614502858,
+     "p90": 0.08250157917564155
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 0.9350576491220509,
+     "p90": 2.1179680150234925
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.32228743342248317,
+     "p90": 0.7976587037057175
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.555552576281569,
+     "p90": 1.5386721457054742
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.951111111111111,
+    "spurious_per_scene": 0.14285714285714285,
+    "entities_per_gt_wall": 4.973333333333334,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5647058823529412,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 450,
+     "mean": 0.04786930533736997,
+     "p90": 0.09887258613619757
+    },
+    "wall_angle_error_deg": {
+     "n": 450,
+     "mean": 1.1546360058225458,
+     "p90": 2.5112346926101288
+    },
+    "observed_end_error_m": {
+     "n": 900,
+     "mean": 0.18536931781471477,
+     "p90": 0.31520559829167594
+    },
+    "length_error_fully_bounded_m": {
+     "n": 450,
+     "mean": 0.28136623204386224,
+     "p90": 0.5055623511495722
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 1.4333333333333333,
+    "spurious_per_scene": 0.14285714285714285,
+    "entities_per_gt_wall": 2.4555555555555557,
+    "junction_precision": 1.0,
+    "junction_recall": 0.8274509803921568,
+    "room_precision": 0.02754237288135593,
+    "room_recall": 0.09285714285714286,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.5021450021450021,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "contradictory": 14,
+    "invalid": 52,
+    "incomplete": 3,
+    "consistent": 1
+   }
+  },
+  "_traceability": {
+   "entities_checked": 145,
+   "entities_with_all_evidence_resolvable": 145
+  }
+ },
+ "surveyed_ground_truth_rooms": {
+  "nominal": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.014607811462661996,
+     "p90": 0.029684491695127827
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.39523849285563634,
+     "p90": 0.8604199662963697
+    },
+    "observed_end_error_m": {
+     "n": 480,
+     "mean": 0.02873483755750051,
+     "p90": 0.0509724679228746
+    },
+    "length_error_fully_bounded_m": {
+     "n": 240,
+     "mean": 0.029019537980740157,
+     "p90": 0.061098689472632285
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9,
+    "room_precision": 1.0,
+    "room_recall": 0.7166666666666667,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6615384615384615,
+     1.0,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.26875,
+     0.7833333333333333,
+     0.9604166666666667
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.018533742032001848,
+     "p90": 0.03901924884796928
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.3915296971015914,
+     "p90": 0.9507845066549452
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.17555262680254727,
+     "p90": 0.5139578641672002
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.3135028326896692,
+     "p90": 1.088093095736343
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 4.007692307692308,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 5.007692307692308,
+    "junction_precision": 1.0,
+    "junction_recall": 0.676923076923077,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.016844231048073914,
+     "p90": 0.03514535462684306
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.4706388226955458,
+     "p90": 1.120157523964193
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.06839763133443416,
+     "p90": 0.11584948414499124
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.11348712460623504,
+     "p90": 0.17993369415908606
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.06538461538461539,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0653846153846154,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9423076923076923,
+    "room_precision": 0.7916666666666666,
+    "room_recall": 0.6333333333333333,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9802559414990859,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 43,
+    "incomplete": 17
+   }
+  },
+  "sparse_views": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 246,
+     "mean": 0.018010575805813802,
+     "p90": 0.03902238310790811
+    },
+    "wall_angle_error_deg": {
+     "n": 246,
+     "mean": 0.4743955325578682,
+     "p90": 1.0689198853757496
+    },
+    "observed_end_error_m": {
+     "n": 424,
+     "mean": 0.037513844365131284,
+     "p90": 0.06618113883143223
+    },
+    "length_error_fully_bounded_m": {
+     "n": 212,
+     "mean": 0.03458223665083031,
+     "p90": 0.07663522136750486
+    },
+    "wall_recall": 0.9461538461538461,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9461538461538461,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7692307692307693,
+    "room_precision": 1.0,
+    "room_recall": 0.5,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7764227642276422,
+     0.9715447154471545,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.3113207547169811,
+     0.7735849056603774,
+     0.9929245283018868
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.025651286990069418,
+     "p90": 0.05170843766475843
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.5926937631432533,
+     "p90": 1.4894131396961658
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.22412025961413815,
+     "p90": 0.6316206036551519
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.4084393383882916,
+     "p90": 1.3086957107233244
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 1.5076923076923077,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 2.5076923076923077,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5307692307692308,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.02443826857574347,
+     "p90": 0.0518931022810694
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.659599247291577,
+     "p90": 1.5289354210556478
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.11637548858245833,
+     "p90": 0.2749322692697943
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.19495690909715666,
+     "p90": 0.591185935293533
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.1423076923076923,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.1423076923076922,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7884615384615384,
+    "room_precision": 0.5957446808510638,
+    "room_recall": 0.4666666666666667,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9070631970260223,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "incomplete": 26,
+    "consistent": 30,
+    "invalid": 4
+   }
+  },
+  "heavy_occlusion": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 259,
+     "mean": 0.013818108111873883,
+     "p90": 0.02815859045679474
+    },
+    "wall_angle_error_deg": {
+     "n": 259,
+     "mean": 0.5131722952155259,
+     "p90": 1.1336889516402437
+    },
+    "observed_end_error_m": {
+     "n": 111,
+     "mean": 0.03368422242541406,
+     "p90": 0.06101176903390366
+    },
+    "length_error_fully_bounded_m": {
+     "n": 55,
+     "mean": 0.03466752001402766,
+     "p90": 0.05143479558045083
+    },
+    "wall_recall": 0.9961538461538462,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.9961538461538462,
+    "junction_precision": 1.0,
+    "junction_recall": 0.3192307692307692,
+    "room_precision": 1.0,
+    "room_recall": 0.13333333333333333,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.722007722007722,
+     0.9536679536679536,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.2882882882882883,
+     0.6936936936936937,
+     0.8828828828828829
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.017069880777624745,
+     "p90": 0.035385987857287346
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.5969099054469045,
+     "p90": 1.114779041132651
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.5040234317940648,
+     "p90": 1.4247032571789144
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.999109932051003,
+     "p90": 2.396208671193823
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.923076923076923,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 4.923076923076923,
+    "junction_precision": 1.0,
+    "junction_recall": 0.23846153846153847,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.015415942073085508,
+     "p90": 0.030158609769606104
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.512800622545477,
+     "p90": 1.0971497314141063
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.1325584714902993,
+     "p90": 0.2946677294418985
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.24207621871449614,
+     "p90": 0.6163570503282559
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.2230769230769231,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.2230769230769232,
+    "junction_precision": 1.0,
+    "junction_recall": 0.7423076923076923,
+    "room_precision": 0.782608695652174,
+    "room_recall": 0.3,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9118311981914092,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 8,
+    "incomplete": 52
+   }
+  },
+  "missing_wall": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 200,
+     "mean": 0.013585390274607643,
+     "p90": 0.02817558783217673
+    },
+    "wall_angle_error_deg": {
+     "n": 200,
+     "mean": 0.4200109934155404,
+     "p90": 0.9012794434863632
+    },
+    "observed_end_error_m": {
+     "n": 396,
+     "mean": 0.029183958386312103,
+     "p90": 0.05586126832533268
+    },
+    "length_error_fully_bounded_m": {
+     "n": 198,
+     "mean": 0.024891187094190734,
+     "p90": 0.062340356951210964
+    },
+    "wall_recall": 0.7692307692307693,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.7692307692307693,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5384615384615384,
+    "room_precision": null,
+    "room_recall": 0.0,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 1.0,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.7,
+     0.985,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.34595959595959597,
+     0.8358585858585859,
+     0.9393939393939394
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 200,
+     "mean": 0.016195076617973748,
+     "p90": 0.03274630329374852
+    },
+    "wall_angle_error_deg": {
+     "n": 200,
+     "mean": 0.4038445292921661,
+     "p90": 0.869869009268554
+    },
+    "observed_end_error_m": {
+     "n": 400,
+     "mean": 0.14881268762988767,
+     "p90": 0.4670142458270922
+    },
+    "length_error_fully_bounded_m": {
+     "n": 200,
+     "mean": 0.26651375585676024,
+     "p90": 0.9199229839763395
+    },
+    "wall_recall": 0.7692307692307693,
+    "duplicate_rate": 2.9461538461538463,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 3.7153846153846155,
+    "junction_precision": 1.0,
+    "junction_recall": 0.4153846153846154,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 200,
+     "mean": 0.014840625932694813,
+     "p90": 0.02942983754321164
+    },
+    "wall_angle_error_deg": {
+     "n": 200,
+     "mean": 0.47769853485764946,
+     "p90": 1.0480452816512034
+    },
+    "observed_end_error_m": {
+     "n": 400,
+     "mean": 0.053463602037275175,
+     "p90": 0.09489692505477491
+    },
+    "length_error_fully_bounded_m": {
+     "n": 200,
+     "mean": 0.08039746522254151,
+     "p90": 0.13692434595612352
+    },
+    "wall_recall": 0.7692307692307693,
+    "duplicate_rate": 0.026923076923076925,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 0.7961538461538461,
+    "junction_precision": 1.0,
+    "junction_recall": 0.5384615384615384,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.9841107124551512,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "consistent": 40,
+    "incomplete": 20
+   }
+  },
+  "gross_outliers_10pct": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.014660882703983002,
+     "p90": 0.026495934356993853
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.43847321572149206,
+     "p90": 0.878744841375295
+    },
+    "observed_end_error_m": {
+     "n": 504,
+     "mean": 0.03023985855460083,
+     "p90": 0.05798804669356806
+    },
+    "length_error_fully_bounded_m": {
+     "n": 252,
+     "mean": 0.029666937418174524,
+     "p90": 0.05576351121732133
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.0,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.0,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9615384615384616,
+    "room_precision": 1.0,
+    "room_recall": 0.9166666666666666,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.8344132469402448,
+    "lower_bound_valid_fraction": 1.0,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6615384615384615,
+     0.9692307692307692,
+     1.0
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.25595238095238093,
+     0.7023809523809523,
+     0.9206349206349206
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.01921503288072556,
+     "p90": 0.03838456987172922
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.4300814998808184,
+     "p90": 0.921676536796881
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.18800749981660653,
+     "p90": 0.6141926564044067
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.3462521952420475,
+     "p90": 1.2981430875840128
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 3.626923076923077,
+    "spurious_per_scene": 1.8833333333333333,
+    "entities_per_gt_wall": 5.061538461538461,
+    "junction_precision": 1.0,
+    "junction_recall": 0.6653846153846154,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.016725216152122403,
+     "p90": 0.028639922464511445
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.5145400494854169,
+     "p90": 1.1082198482960026
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.060685594573135306,
+     "p90": 0.10376974107232449
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.09219861664885962,
+     "p90": 0.16202988147318118
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.08846153846153847,
+    "spurious_per_scene": 1.8833333333333333,
+    "entities_per_gt_wall": 1.523076923076923,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9653846153846154,
+    "room_precision": 0.1134020618556701,
+    "room_recall": 0.18333333333333332,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.8074154067674586,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "contradictory": 11,
+    "incomplete": 29,
+    "invalid": 15,
+    "consistent": 5
+   }
+  },
+  "one_biased_image_0.4m": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.022651229633975787,
+     "p90": 0.04922638969901575
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.45515834645654996,
+     "p90": 1.0353440063699966
+    },
+    "observed_end_error_m": {
+     "n": 454,
+     "mean": 0.07692640079658392,
+     "p90": 0.29592776344591853
+    },
+    "length_error_fully_bounded_m": {
+     "n": 217,
+     "mean": 0.10924151122678713,
+     "p90": 0.3948043974319843
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.007692307692307693,
+    "spurious_per_scene": 0.016666666666666666,
+    "entities_per_gt_wall": 1.0115384615384615,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9,
+    "room_precision": 0.9333333333333333,
+    "room_recall": 0.7,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.7663619744058501,
+    "lower_bound_valid_fraction": 0.7441860465116279,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.5769230769230769,
+     0.7961538461538461,
+     0.9346153846153846
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.20484581497797358,
+     0.5198237885462555,
+     0.751101321585903
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.01913169357443771,
+     "p90": 0.038878100573376095
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.44423048180002644,
+     "p90": 1.055477452862656
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.19428107073239043,
+     "p90": 0.5979871924342702
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.35142075825177577,
+     "p90": 1.2983527729279873
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 4.007692307692308,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 5.007692307692308,
+    "junction_precision": 1.0,
+    "junction_recall": 0.6538461538461539,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.02232017787397702,
+     "p90": 0.05141562334483814
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.5181852499398293,
+     "p90": 1.1707233964793828
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.08645410628958305,
+     "p90": 0.16270252977623656
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.13879101466064603,
+     "p90": 0.3576246603663941
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.8615384615384616,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.8615384615384616,
+    "junction_precision": 1.0,
+    "junction_recall": 0.9384615384615385,
+    "room_precision": 0.2625,
+    "room_recall": 0.35,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.680073126142596,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "contradictory": 27,
+    "invalid": 33
+   }
+  },
+  "monocular_relative_depth": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 217,
+     "mean": 0.1319613088974065,
+     "p90": 0.28851276133194087
+    },
+    "wall_angle_error_deg": {
+     "n": 217,
+     "mean": 2.8381139011336542,
+     "p90": 6.110850941895033
+    },
+    "observed_end_error_m": {
+     "n": 386,
+     "mean": 0.27326933665615416,
+     "p90": 0.5126172795737127
+    },
+    "length_error_fully_bounded_m": {
+     "n": 187,
+     "mean": 0.3121559439774962,
+     "p90": 0.6218400019838232
+    },
+    "wall_recall": 0.8346153846153846,
+    "duplicate_rate": 0.06153846153846154,
+    "spurious_per_scene": 0.9,
+    "entities_per_gt_wall": 1.103846153846154,
+    "junction_precision": 1.0,
+    "junction_recall": 0.75,
+    "room_precision": 0.5064935064935064,
+    "room_recall": 0.65,
+    "association_pair_precision": 0.9594706368899917,
+    "association_pair_recall": 0.8482632541133455,
+    "lower_bound_valid_fraction": 0.6333333333333333,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.6682027649769585,
+     0.9631336405529954,
+     0.9953917050691244
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.30310880829015546,
+     0.7253886010362695,
+     0.927461139896373
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 247,
+     "mean": 0.1375180340961649,
+     "p90": 0.2598244438139628
+    },
+    "wall_angle_error_deg": {
+     "n": 247,
+     "mean": 3.645224969133325,
+     "p90": 8.468345887091724
+    },
+    "observed_end_error_m": {
+     "n": 494,
+     "mean": 0.471590136828291,
+     "p90": 0.9231677724550709
+    },
+    "length_error_fully_bounded_m": {
+     "n": 247,
+     "mean": 0.5646866811336373,
+     "p90": 1.1995718750808704
+    },
+    "wall_recall": 0.95,
+    "duplicate_rate": 2.1153846153846154,
+    "spurious_per_scene": 8.416666666666666,
+    "entities_per_gt_wall": 5.007692307692308,
+    "junction_precision": 1.0,
+    "junction_recall": 0.3038461538461538,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 247,
+     "mean": 0.13781115646686262,
+     "p90": 0.2598244438139628
+    },
+    "wall_angle_error_deg": {
+     "n": 247,
+     "mean": 3.6654904472622256,
+     "p90": 8.468345887091724
+    },
+    "observed_end_error_m": {
+     "n": 494,
+     "mean": 0.47059913110634605,
+     "p90": 0.9270736720305338
+    },
+    "length_error_fully_bounded_m": {
+     "n": 247,
+     "mean": 0.5601055390454758,
+     "p90": 1.1620114519811793
+    },
+    "wall_recall": 0.95,
+    "duplicate_rate": 1.8884615384615384,
+    "spurious_per_scene": 8.316666666666666,
+    "entities_per_gt_wall": 4.757692307692308,
+    "junction_precision": 1.0,
+    "junction_recall": 0.3230769230769231,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.027056672760511883,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "incomplete": 32,
+    "invalid": 22,
+    "contradictory": 2,
+    "consistent": 4
+   }
+  },
+  "miscalibrated_sigma_x2": {
+   "compiler": {
+    "wall_offset_error_m": {
+     "n": 257,
+     "mean": 0.032323483916970056,
+     "p90": 0.06664710151512088
+    },
+    "wall_angle_error_deg": {
+     "n": 257,
+     "mean": 0.91484991870355,
+     "p90": 2.1322753194130697
+    },
+    "observed_end_error_m": {
+     "n": 431,
+     "mean": 0.06953819373297493,
+     "p90": 0.13122583823460673
+    },
+    "length_error_fully_bounded_m": {
+     "n": 200,
+     "mean": 0.08712677776698176,
+     "p90": 0.20506121362058927
+    },
+    "wall_recall": 0.9884615384615385,
+    "duplicate_rate": 0.2,
+    "spurious_per_scene": 0.0,
+    "entities_per_gt_wall": 1.1884615384615385,
+    "junction_precision": 1.0,
+    "junction_recall": 0.8192307692307692,
+    "room_precision": 0.5098039215686274,
+    "room_recall": 0.43333333333333335,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.8058500914076783,
+    "lower_bound_valid_fraction": 0.9473684210526315,
+    "calibration_offset_within_1_2_3_sigma": [
+     0.3424124513618677,
+     0.6614785992217899,
+     0.8521400778210116
+    ],
+    "calibration_end_within_1_2_3_sigma": [
+     0.1345707656612529,
+     0.4037122969837587,
+     0.6148491879350348
+    ]
+   },
+   "baseline_raw": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.03721945555336799,
+     "p90": 0.07803849769593856
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 0.7820785854025601,
+     "p90": 1.8991922692446106
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.21882342096287072,
+     "p90": 0.5412212569317582
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.35859663736913,
+     "p90": 1.1509569761201746
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 4.003846153846154,
+    "spurious_per_scene": 0.016666666666666666,
+    "entities_per_gt_wall": 5.007692307692308,
+    "junction_precision": 1.0,
+    "junction_recall": 0.6538461538461539,
+    "room_precision": 0.0,
+    "room_recall": 0.0,
+    "association_pair_precision": null,
+    "association_pair_recall": 0.0,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "baseline_naive": {
+    "wall_offset_error_m": {
+     "n": 260,
+     "mean": 0.04364932739770186,
+     "p90": 0.08181019767902548
+    },
+    "wall_angle_error_deg": {
+     "n": 260,
+     "mean": 1.0607243408589244,
+     "p90": 2.4184352900201467
+    },
+    "observed_end_error_m": {
+     "n": 520,
+     "mean": 0.14184535779777527,
+     "p90": 0.26827544769177347
+    },
+    "length_error_fully_bounded_m": {
+     "n": 260,
+     "mean": 0.21150004920874013,
+     "p90": 0.3866626117484526
+    },
+    "wall_recall": 1.0,
+    "duplicate_rate": 0.95,
+    "spurious_per_scene": 0.016666666666666666,
+    "entities_per_gt_wall": 1.9538461538461538,
+    "junction_precision": 1.0,
+    "junction_recall": 0.8653846153846154,
+    "room_precision": 0.07103825136612021,
+    "room_recall": 0.21666666666666667,
+    "association_pair_precision": 1.0,
+    "association_pair_recall": 0.6559414990859233,
+    "lower_bound_valid_fraction": null,
+    "calibration_offset_within_1_2_3_sigma": null,
+    "calibration_end_within_1_2_3_sigma": null
+   },
+   "compiler_topology_status_counts": {
+    "invalid": 31,
+    "contradictory": 25,
+    "incomplete": 4
+   }
+  },
+  "_traceability": {
+   "entities_checked": 88,
+   "entities_with_all_evidence_resolvable": 88
+  }
+ },
+ "seeds": 10,
+ "wall_clock_s": 226.5,
+ "limits": [
+  "observations are simulated over known truth; this measures the compiler under the stated noise model, not perception accuracy on real photographs",
+  "surveyed rooms contribute real laser-measured ground-truth plans, with simulated observations",
+  "thresholds are starting points and were not tuned on these results"
+ ]
+}

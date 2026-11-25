@@ -47,6 +47,9 @@ def _capture_dataset(tmp_path, n=3):
 def test_cli_vertical_slice_end_to_end(tmp_path, monkeypatch, capsys):
     """ingest -> compile -> validate -> store -> inspect/query/export/viewer."""
     monkeypatch.setenv("REALITY_TEST_BACKEND", _BACKEND_SPEC)
+    # the placeholder photographs are flat colour fills (not a scene): the indoor/outdoor gate would rightly call a blue
+    # fill "sky". This test is about CLI plumbing with a fake backend, so it opts out explicitly.
+    monkeypatch.setenv("RE_SCENE_GATE", "0")
     dataset = _capture_dataset(tmp_path)
     out = tmp_path / "pipe"
 

@@ -1,0 +1,50 @@
+{
+  "dataset_name": "scene_disjoint_evaluation",
+  "version": "1.0.0",
+  "description": "Scene-disjoint, multi-view, manually annotated ground-truth dataset spanning indoor and outdoor environments.",
+  "splits": {
+    "all": [
+      "P1180141.JPG",
+      "P1180145.JPG",
+      "P1180149.JPG",
+      "P1180153.JPG",
+      "P1180157.JPG",
+      "IMG_0000.jpg",
+      "IMG_0001.jpg",
+      "IMG_0002.jpg",
+      "IMG_0003.jpg",
+      "IMG_0004.jpg"
+    ],
+    "exterior_disjoint": [
+      "P1180141.JPG",
+      "P1180145.JPG",
+      "P1180149.JPG",
+      "P1180153.JPG",
+      "P1180157.JPG"
+    ],
+    "interior_disjoint": [
+      "IMG_0000.jpg",
+      "IMG_0001.jpg",
+      "IMG_0002.jpg",
+      "IMG_0003.jpg",
+      "IMG_0004.jpg"
+    ]
+  },
+  "target_resolution": {
+    "width": 1280,
+    "height": 960
+  },
+  "taxonomy_families": [
+    "doors_and_windows",
+    "electrical",
+    "furniture",
+    "plumbing_and_hvac",
+    "building_and_exterior"
+  ],
+  "annotation_protocol": {
+    "coordinate_format": "[x1, y1, x2, y2] in pixels",
+    "strict_one_to_one_hierarchy": true,
+    "multi_view_physical_tracking": true,
+    "synthetic_labels_allowed": false
+  }
+}

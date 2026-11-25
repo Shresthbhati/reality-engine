@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from apps.api.models import JobStageRun, new_id
-from apps.api.storage import resolve_artifact
+from engine.pipeline.stages.content_store import verify_artifact
 from engine.pipeline.stages.base import StageResult
 
 
@@ -57,7 +57,7 @@ class DbCheckpointStore:
             )).scalars().all()
         for r in rows:
             outputs = dict(r.outputs or {})
-            if all(resolve_artifact(_uri(sha)) is not None for sha in outputs.values()):
+            if all(verify_artifact(_uri(sha)) for sha in outputs.values()):  # present AND still hashing to their address: a rotten checkpoint is a miss, the stage re-runs
                 return StageResult(
                     name=r.name, status=r.status, inputs_hash=r.inputs_hash, outputs=outputs,
                     metrics=dict(r.metrics or {}), warnings=list(r.warnings or []), error=r.error,

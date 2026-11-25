@@ -144,7 +144,7 @@ def _candidate_junctions(walls: list[SpatialEntity], cfg: ConstraintConfig):
 
 def solve_spatial_constraints(
     entities: Sequence[SpatialEntity], config: ConstraintConfig = ConstraintConfig(),
-    *, storeys: Mapping[str, float] | None = None, conflicts: Sequence[Conflict] = (),
+    *, storeys: Mapping[str, float] | None = None, conflicts: Sequence[Conflict] = (), impose_junctions: bool = True,
 ) -> ConstraintReport:
     cfg = config
     ents = [replace(e, beliefs=dict(e.beliefs), alternatives=list(e.alternatives), end_post=dict(e.end_post)) for e in entities]
@@ -152,7 +152,7 @@ def solve_spatial_constraints(
     constraints: list[Constraint] = []
     contradictions: list[Conflict] = []
 
-    cands = _candidate_junctions(walls, cfg)
+    cands = _candidate_junctions(walls, cfg) if impose_junctions else []
     n = len(walls)
     x0 = np.array([c for w in walls for c in (*w.a, *w.b)], float)
     prior = x0.copy()

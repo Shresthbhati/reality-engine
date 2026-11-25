@@ -14,6 +14,7 @@ photographs (see the benchmark report's "limits" section).
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -210,3 +211,48 @@ def simulate_observations(scene: GTScene, cfg: SimConfig) -> list[StructuralObse
 def all_scenes() -> list[GTScene]:
     return [rect_room(), l_shape(), irregular_non_manhattan(), two_rooms_shared_wall(),
             corridor_with_repeated_rooms(), open_plan(), two_storeys_with_stairs()]
+
+
+@dataclass
+class PoseSim:
+    sigma_theta: float = 0.02         # rad, true prior pose error AND the sigma declared for it
+    sigma_t: float = 0.10             # m
+    declared_scale: float = 1.0       # declared sigma = true sigma * this (<1 = overconfident producer)
+    bad_image: Optional[int] = None   # one image whose prior pose is grossly wrong (but declared with the usual sigma)
+    bad_t: float = 0.6
+    seed: int = 100
+
+
+def simulate_multiview(scene: GTScene, cfg: SimConfig, ps: PoseSim):
+    """Observations in each IMAGE frame plus prior and true poses.
+
+    Returns (local_observations, prior_poses, true_poses). True poses place each image frame in the world; the observations
+    are the world-frame simulation mapped through the INVERSE true pose, so applying the true pose recovers the usual
+    noisy plan-view observations, while applying the (erroneous) prior pose reproduces what a pose-agnostic pipeline sees.
+    """
+    from dataclasses import replace
+
+    from reconstruction.spatial.multiview import ImagePose
+    world_obs = simulate_observations(scene, cfg)
+    rng = np.random.default_rng(ps.seed + cfg.seed)
+    imgs = sorted({o.image_id for o in world_obs})
+    true, prior = {}, {}
+    for i, im in enumerate(imgs):
+        th, tx, ty = float(rng.uniform(-math.pi, math.pi)), float(rng.normal(0, 3)), float(rng.normal(0, 3))
+        true[im] = ImagePose(im, th, tx, ty)
+        e_th, e_t = rng.normal(0, ps.sigma_theta), rng.normal(0, ps.sigma_t, 2)
+        if ps.bad_image == i:
+            e_t = e_t + np.array([ps.bad_t, ps.bad_t * 0.5])
+        prior[im] = ImagePose(im, th + float(e_th), tx + float(e_t[0]), ty + float(e_t[1]),
+                              ps.sigma_theta * ps.declared_scale, ps.sigma_t * ps.declared_scale)
+    local = []
+    for o in world_obs:
+        T = true[o.image_id]
+        c, s = math.cos(T.theta), math.sin(T.theta)
+
+        def inv(p, c=c, s=s, T=T):
+            dx, dy = p[0] - T.tx, p[1] - T.ty
+            return (c * dx + s * dy, -s * dx + c * dy)
+
+        local.append(replace(o, p0=inv(o.p0), p1=inv(o.p1), frame_id=o.image_id))
+    return local, prior, true

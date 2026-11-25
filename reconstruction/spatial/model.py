@@ -149,6 +149,9 @@ class SpatialEntity:
     occluded: bool = False
     #: posterior isotropic (per-axis) sigma of an end after the joint constraint solve; absent = not constrained
     end_post: dict[str, float] = field(default_factory=dict)
+    #: separated position-uncertainty sources (m): measurement, optimization (pose/constraint), model (un-modelled floor);
+    #: association is a count of ambiguous observations, not a sigma. Absent keys = not computed.
+    sigma_parts: dict[str, float | None] = field(default_factory=dict)
 
     def end_sigma(self, which: str) -> float | None:
         """Per-axis (isotropic) 1-sigma of an end point, metres. After the constraint solve this is the posterior;

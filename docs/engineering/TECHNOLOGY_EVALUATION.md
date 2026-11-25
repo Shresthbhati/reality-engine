@@ -122,3 +122,19 @@ trimesh 5.2.0, open3d 0.20.0, scikit-learn 1.9.1 (installed != declared: only nu
 
 Considered and not adopted: CGAL (GPL/commercial), python-igraph (GPL), Ceres/g2o/GTSAM (heavy native builds, nothing here needs a factor-graph solver yet),
 pyransac3d (licence not read). Licences of shapely/networkx/trimesh above come from upstream metadata only; read them before any adoption.
+
+## 7. Multi-view optimization layer (`reconstruction/spatial/multiview.py`, `frames.py`, 2026-11-25)
+
+Availability observed on this machine: OpenCV 5.0.0, pycolmap 4.2.1, Open3D 0.20.0, SciPy 1.18.1, PyTorch 2.14; **not installed:** GTSAM, PyPose, scikit-sparse, Ceres.
+
+| Candidate | Decision | Reason |
+|---|---|---|
+| COLMAP / pycolmap | consume, do not rewrite | already the SfM backend (`reconstruction/sfm`, `colmap_*`); poses enter as `ImagePose` priors with their sigmas |
+| OpenCV | not used here | feature matching / PnP / homography belong to the perception side; no plan-view need |
+| Bundle adjustment (full 3D) | not implemented | owned by COLMAP; this layer solves the *structural* problem: pose corrections + wall lines from perpendicular residuals |
+| Ceres / GTSAM | not adopted | not installed, heavy native builds; the problem is ~3 params/image + 2/wall, solved in <1 s up to ~30 images by `scipy.optimize.least_squares` with an analytic Jacobian (finite differences were 3x slower; an `lsmr` sparse solve failed to converge and was removed) |
+| PyPose | not adopted | not installed; would help only for GPU-batched SE(3) manifolds, unnecessary for a plan-view (SO(2) x R^2) problem |
+| Open3D | consumed via `ReconstructionResult` points only | point-to-plane evidence already enters through `refinement.refine_walls_with_points` |
+| Robust least squares | adopted: Cauchy (default) / Huber / soft-L1 via scipy | downweights a grossly wrong pose without hard rejection |
+
+Scaling measured (corridor scene, analytic Jacobian, cold / warm restart): 8 images 0.6 s, 32 images 2.2 s, 64 images 7.6 s (warm restart 3.3 s, 16 vs 44 function evaluations). Dense (JᵀJ)⁻¹ covariance is the remaining super-linear term.

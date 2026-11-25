@@ -1,0 +1,38 @@
+{
+ "runs": 84,
+ "runs_with_association_failure": 1,
+ "totals": {
+  "over_split": 1,
+  "merged": 0,
+  "false_openings": 1,
+  "missed_walls": 0
+ },
+ "rows": [
+  {
+   "scene": "corridor_repeated_rooms",
+   "seed": 8,
+   "over_split": [
+    {
+     "true_wall": "p4",
+     "fragment_views": 1,
+     "reasons": [
+      "offset 0.494 m (4.1 sigma) (z_off 4.1, z_ang 2.9, sigma 0.108, len 2.27)"
+     ]
+    }
+   ],
+   "merged": [],
+   "false_openings": [
+    {
+     "entity": "door-dc99cf8be7",
+     "kind": "single_view_fragment",
+     "true": [
+      "door4"
+     ],
+     "host": "wall-bc0a218916"
+    }
+   ],
+   "missed_walls": [],
+   "failures": 2
+  }
+ ]
+}

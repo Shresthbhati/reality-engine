@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 620
+Total: 621
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -636,6 +636,7 @@ Total: 620
 - `tests/test_spatial_index_benchmark.py`
 - `tests/test_spatial_index_grid_correctness.py`
 - `tests/test_spatial_intelligence.py`
+- `tests/test_spatial_multiview.py`
 - `tests/test_spatial_reasoning.py`
 - `tests/test_spatial_reasoning_rule8.py`
 - `tests/test_spatial_relations.py`

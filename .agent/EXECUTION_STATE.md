@@ -2518,3 +2518,9 @@ external tools, a person with a laser measure).
 - `world.geometries` regression: still NOT reproduced; guarded by `test_world_geometries_survive_save_reload_and_incremental_save`.
 - Not wired: no producer yet emits `StructuralObservation` (FreeBuff contract needed); `apps/api` does not call `compile_spatial`.
 - Verification: see the final report of this sprint; results file `benchmarks/results/spatial_compiler_benchmark.json`.
+
+## 2026-11-25 Phase 2: global geometric reconstruction (uncommitted at time of writing)
+- Reproduced Phase 1: 91 neighbouring tests pass; Phase-1 benchmark JSON kept verbatim as `benchmarks/results/spatial_phase1_baseline.json`.
+- Association failures (same 84 runs, 7 scenes x seeds 0-11): initial 12 -> 1 now (a 4.1-sigma single-view fragment, excluded as tentative). Detail: `benchmarks/results/spatial_failure_analysis.json`.
+- Added `frames.py` (Sim3 + registry, provenance, loop/scale checks), `multiview.py` (joint pose + wall-line optimizer, Cauchy loss, posterior covariance, raw preserved), `validation.py` (invalid / uncertain / incomplete / valid_partial / valid_complete), `compile_multiview` (separated sigma parts), `benchmarks/spatial/run_multiview_benchmark.py`, `tests/test_spatial_multiview.py`.
+- Not done: no real image set with independent 3D ground truth; no scale/tilt optimization; Gemini's observation contract is not wired (nothing emits image-frame `StructuralObservation` yet).

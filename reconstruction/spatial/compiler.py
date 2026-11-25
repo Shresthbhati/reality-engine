@@ -73,7 +73,7 @@ def compile_spatial(
     points_xyz: np.ndarray | None = None, point_evidence: Sequence[Sequence[str]] | None = None,
     frame_transforms: Mapping[str, tuple[float, float, float]] | None = None, target_frame: str = "world",
     assoc_cfg: AssociationConfig = AssociationConfig(), constraint_cfg: ConstraintConfig = ConstraintConfig(),
-    reference_matches: tuple[int, int] | None = None,
+    reference_matches: tuple[int, int] | None = None, impose_junctions: bool = True,
 ) -> SpatialCompileResult:
     assoc = associate_structure(observations, assoc_cfg, target_frame=target_frame, frame_transforms=frame_transforms)
     ents = assoc.entities
@@ -87,7 +87,8 @@ def compile_spatial(
     k = assoc_cfg.min_images_to_establish
     est = [e for e in ents if len(e.image_ids) >= k]
     tent = [e for e in ents if len(e.image_ids) < k]
-    cons = solve_spatial_constraints(est, constraint_cfg, storeys=storeys, conflicts=assoc.conflicts)
+    cons = solve_spatial_constraints(est, constraint_cfg, storeys=storeys, conflicts=assoc.conflicts,
+                                   impose_junctions=impose_junctions)
     refined = cons.entities + tent
     topo = validate_topology(refined, cons, extra, known_evidence_ids={o.evidence_id for o in observations},
                              cfg=constraint_cfg)
@@ -128,7 +129,7 @@ def to_worldir(result: SpatialCompileResult, world: WorldIR | None = None, *, na
             "end_a_observed": e.end_a_observed, "end_b_observed": e.end_b_observed,
             "storey_id": f"storey-{e.storey}" if e.storey else None, "alternatives": e.alternatives,
             "partially_visible": e.partially_visible, "occluded": e.occluded,
-            "host_alternatives": list(e.host_alternatives),
+            "host_alternatives": list(e.host_alternatives), "sigma_parts": e.sigma_parts,
         }
         if e.host_id:
             props["host_wall_id"] = e.host_id
@@ -222,3 +223,29 @@ def inspect_spatial_world(world: WorldIR) -> dict:
     json.dumps(world.metadata.get(SPATIAL_REPORT_KEY, {}))
     out["topology_status"] = world.metadata.get(SPATIAL_REPORT_KEY, {}).get("topology_status")
     return out
+
+
+def compile_multiview(local_observations, poses, *, storeys=None, mv_cfg=None, warm_start=None, impose_junctions: bool = True,
+                      **kw):
+    """Image-frame observations + prior poses -> joint optimization -> compile. Returns (compile result, MultiViewResult).
+
+    Splits each wall's position uncertainty into its sources: `measurement` (raw observation sigmas only), `optimization`
+    (what the pose uncertainty, propagated through the transform, adds), `model` (the un-modelled floor) and records how
+    many of its observations were AMBIGUOUS in association. The parts describe one sigma budget, not a second estimate."""
+    import math
+
+    from .multiview import MultiViewConfig, optimize_multiview
+    mv = optimize_multiview(local_observations, poses, mv_cfg or MultiViewConfig(), warm_start=warm_start)
+    res = compile_spatial(mv.observations, storeys=storeys, impose_junctions=impose_junctions, **kw)
+    ambiguous = {r.evidence_id for r in res.association.records if r.state == "AMBIGUOUS"}
+    floor = res.association.config.offset_floor_m
+    for e in res.entities:
+        if e.kind is not Kind.WALL or e.beliefs["position"].sigma is None:
+            continue
+        raws = [mv.raw[x]["sigma_m"] for x in e.evidence_ids if x in mv.raw]
+        meas = 1.0 / math.sqrt(sum(1.0 / (2 * r * r) for r in raws)) if raws else None   # 2 end points per observation
+        total = e.beliefs["position"].sigma
+        opt = math.sqrt(max(total ** 2 - meas ** 2, 0.0)) if meas is not None else None
+        e.sigma_parts = {"measurement": meas, "optimization": opt, "model": floor,
+                         "association_ambiguous_observations": float(len(ambiguous & set(e.evidence_ids)))}
+    return res, mv

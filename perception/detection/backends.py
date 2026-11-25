@@ -43,6 +43,20 @@ class OwlVitDetector:
     def __init__(self, repo: str = _OWL_REPO, threshold: float = 0.15):
         self.repo, self.threshold = repo, threshold
         self._model = self._proc = None
+        self._device = None
+
+    def unload(self) -> None:
+        self._model = None
+        self._proc = None
+        self._device = None
+        try:
+            import gc
+            import torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def available(self) -> Tuple[bool, str]:
         try:
@@ -65,17 +79,20 @@ class OwlVitDetector:
         import torch
         from PIL import Image
         from transformers import OwlViTForObjectDetection, OwlViTProcessor
+        from engine.core.device import select_device
         if self._model is None:  # local_files_only: never triggers a download
+            self._device = select_device().device
             self._proc = OwlViTProcessor.from_pretrained(self.repo, local_files_only=True)
-            self._model = OwlViTForObjectDetection.from_pretrained(self.repo, local_files_only=True).eval()
+            self._model = OwlViTForObjectDetection.from_pretrained(self.repo, local_files_only=True).to(self._device).eval()
         qs = list(queries)
         h, w = image_rgb.shape[:2]
         inputs = self._proc(text=[qs], images=Image.fromarray(image_rgb), return_tensors="pt")
+        inputs = {k: v.to(self._device) if hasattr(v, "to") else v for k, v in inputs.items()}
         with torch.no_grad():
             out = self._model(**inputs)
         # transformers 5 renamed the processor method
         post = getattr(self._proc, "post_process_object_detection", None) or self._proc.post_process_grounded_object_detection
-        res = post(out, threshold=self.threshold, target_sizes=torch.tensor([[h, w]]))[0]
+        res = post(out, threshold=self.threshold, target_sizes=torch.tensor([[h, w]], device=self._device))[0]
         return [ImageDetection(qs[int(i)], float(s), tuple(float(v) for v in b.tolist()), source=self.name)
                 for s, i, b in zip(res["scores"], res["labels"], res["boxes"])]
 

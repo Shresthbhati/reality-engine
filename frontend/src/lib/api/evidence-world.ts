@@ -203,6 +203,35 @@ export async function listRejectedPredictions(worldId: string, runId: string): P
   return (await apiGet<{ rejected: RejectedPrediction[] }>(`${base(worldId)}/${encodeURIComponent(runId)}/rejected`)).rejected;
 }
 
+export interface SpatialInputsV1Payload {
+  schema_version: "spatial_inputs.v1";
+  run_id: string;
+  storey_id: string | null;
+  scale_state: { basis: string; unit: string; is_metric: boolean };
+  cameras: unknown[];
+  observations: {
+    observation_id: string;
+    evidence_id: string;
+    image_id: string;
+    label: string;
+    category: string;
+    bbox_px: number[] | null;
+    has_mask: boolean;
+    depth_source: string;
+    confidence: number | null;
+    failure_flags: string[];
+  }[];
+  structural_observations: unknown[];
+  cross_view_associations: unknown[];
+  relationships: unknown[];
+  room_hypotheses: unknown[];
+  content_sha256: string;
+}
+
+/** Fetch the validated ``spatial_inputs.v1`` payload emitted by perception for this run (404 when absent). */
+export const getSpatialInputsV1 = (worldId: string, runId: string) =>
+  apiGet<SpatialInputsV1Payload>(`${base(worldId)}/${encodeURIComponent(runId)}/spatial-inputs`);
+
 /** The one sentence a reader may be told about a run. A partial or empty world is never worded as a finished reconstruction. */
 export function evidenceHeadline(r: EvidenceReadiness): string {
   const w = r.world;

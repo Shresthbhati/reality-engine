@@ -10,6 +10,7 @@ import {
   getEvidenceEntity,
   getEvidenceReadiness,
   getEvidenceWorld,
+  getSpatialInputsV1,
   listEvidenceEntities,
   listEvidenceRuns,
   listRejectedPredictions,
@@ -23,6 +24,7 @@ import {
   type EvidenceReadiness,
   type EvidenceRunSummary,
   type RejectedPrediction,
+  type SpatialInputsV1Payload,
 } from "@/lib/api/evidence-world";
 
 const err = (e: unknown, fallback: string) => (isApiError(e) ? e.describe() : e instanceof Error ? e.message : fallback);
@@ -43,13 +45,14 @@ export default function EvidenceRunPanel({
   const [runId, setRunId] = useState<string | null>(null);
   // everything below is keyed by the run it was loaded for, so switching runs never shows the previous run's data and no effect
   // has to reset state synchronously
-  const [loaded, setLoaded] = useState<{ runId: string; readiness: EvidenceReadiness; entities: EvidenceEntityRow[]; rejected: RejectedPrediction[] } | null>(null);
+  const [loaded, setLoaded] = useState<{ runId: string; readiness: EvidenceReadiness; entities: EvidenceEntityRow[]; rejected: RejectedPrediction[]; spatialInputs: SpatialInputsV1Payload | null } | null>(null);
   const [detailFor, setDetailFor] = useState<{ runId: string; detail: EvidenceEntityDetail } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const current = loaded && loaded.runId === runId ? loaded : null;
   const readiness = current?.readiness ?? null;
   const entities = current?.entities ?? [];
   const rejected = current?.rejected ?? [];
+  const spatialInputs = current?.spatialInputs ?? null;
   const detail = detailFor && detailFor.runId === runId ? detailFor.detail : null;
   const busy = !!runId && !current && !error;
 
@@ -70,11 +73,16 @@ export default function EvidenceRunPanel({
   useEffect(() => {
     if (!runId) return;
     let off = false;
-    Promise.all([getEvidenceReadiness(worldId, runId), listEvidenceEntities(worldId, runId), listRejectedPredictions(worldId, runId)])
-      .then(([rd, en, rj]) => {
+    Promise.all([
+      getEvidenceReadiness(worldId, runId),
+      listEvidenceEntities(worldId, runId),
+      listRejectedPredictions(worldId, runId),
+      getSpatialInputsV1(worldId, runId).catch(() => null),
+    ])
+      .then(([rd, en, rj, si]) => {
         if (off) return;
         setError(null);
-        setLoaded({ runId, readiness: rd, entities: en, rejected: rj });
+        setLoaded({ runId, readiness: rd, entities: en, rejected: rj, spatialInputs: si });
       })
       .catch((e) => !off && setError(err(e, "Could not load this evidence run.")));
     return () => {
@@ -205,6 +213,14 @@ export default function EvidenceRunPanel({
             <dt>Physical accuracy</dt><dd>{readiness.physical_accuracy}</dd>
             <dt>Export</dt>
             <dd>{readiness.export_ready ? (readiness.metric_export_ready ? "ready (metric)" : "ready (NOT metres)") : "not ready"}</dd>
+            {spatialInputs && (
+              <>
+                <dt>Spatial inputs</dt>
+                <dd data-testid="evidence-spatial-inputs">
+                  {`${spatialInputs.observations.length} obs (${spatialInputs.observations.filter((o) => o.has_mask).length} masked), ${spatialInputs.cross_view_associations.length} matches, scale ${spatialInputs.scale_state.basis}`}
+                </dd>
+              </>
+            )}
           </dl>
           {onViewWorld && runId && w?.status === "persisted" && (
             <button

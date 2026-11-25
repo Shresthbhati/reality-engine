@@ -179,3 +179,63 @@ class DepthAnythingV2Backend(IDepthBackend):
                 continue
 
         return results
+
+
+class DepthAnythingV2MetricBackend(DepthAnythingV2Backend):
+    """Metric indoor Depth Anything V2 Small (preserves raw predicted metres, uncalibrated)."""
+
+    DEFAULT_CHECKPOINT = "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"
+    scale_state = "metric_estimated"
+
+    def __init__(
+        self,
+        checkpoint: str = DEFAULT_CHECKPOINT,
+        device: Optional[str] = None,
+    ):
+        super().__init__(checkpoint=checkpoint, device=device)
+
+    def estimate_depth(self, evidence: List[Any]) -> List[DepthMap]:
+        import numpy as np
+        import torch
+        from PIL import Image
+
+        self._ensure_model()
+        results: List[DepthMap] = []
+        for item in evidence:
+            try:
+                path_str = str(item.source_uri)
+                if path_str.startswith("file://"):
+                    path_str = url2pathname(urlparse(path_str).path)
+                img_path = Path(path_str)
+                if not img_path.is_file():
+                    continue
+                img = Image.open(img_path).convert("RGB")
+                orig_w, orig_h = img.size
+                inputs = self._processor(images=img, return_tensors="pt")
+                inputs = {k: v.to(self._device) if hasattr(v, "to") else v for k, v in inputs.items()}
+                with torch.no_grad():
+                    outputs = self._model(**inputs)
+                    predicted_depth = outputs.predicted_depth
+                prediction = torch.nn.functional.interpolate(
+                    predicted_depth.unsqueeze(1),
+                    size=(orig_h, orig_w),
+                    mode="bicubic",
+                    align_corners=False,
+                ).squeeze()
+                depth_m = np.ascontiguousarray(prediction.detach().cpu().numpy(), dtype=np.float32)
+                results.append(
+                    DepthMap(
+                        evidence_id=item.id,
+                        width=orig_w,
+                        height=orig_h,
+                        values=depth_m,
+                        unit="meters",
+                        uncertainty=Uncertainty(
+                            confidence=0.65,
+                            note="depth_anything_v2_metric_indoor_small_estimated",
+                        ),
+                    )
+                )
+            except Exception:
+                continue
+        return results

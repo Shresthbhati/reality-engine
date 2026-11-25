@@ -104,3 +104,21 @@ what matters for use**, and they are licensed separately from the code.
 * **Usable on the licences read:** Grounding DINO, SAM 2, Florence-2, Depth Anything V2 Small, DINOv2, LightGlue, Open3D, COLMAP, Metric3D code.
 * **Unresolved, needs a read before adoption:** Depth Anything V2 Metric-Indoor Small (no declared licence), Mask2Former COCO weights ("other"),
   Metric3D weights, VGGT License v1 full text, the Inria Gaussian Splatting terms.
+
+## 6. Spatial reasoning compiler (`reconstruction/spatial`, 2026-11-25)
+
+What the compiler needs and what was chosen. Observed on this machine: numpy 2.5.3, scipy 1.18.1, shapely 2.1.2, networkx 3.6.1,
+trimesh 5.2.0, open3d 0.20.0, scikit-learn 1.9.1 (installed != declared: only numpy/scipy/open3d are core dependencies in `pyproject.toml`).
+
+| Need | Chosen | Why | Cost / notes |
+|---|---|---|---|
+| Constraint solving (junction + prior least squares, robust loss, posterior covariance) | `scipy.optimize.least_squares` (trf, soft-L1), numpy `pinv` for (JᵀJ)⁻¹ | scipy is already a core dependency, BSD-3 (licence text read from the installed distribution); no new dependency | dense Jacobian: O((4n)²) memory, fine to a few hundred walls per storey; sparse `jac_sparsity` is the upgrade path |
+| Spatial index / nearest neighbour | none added (O(n²) wall pairing per storey) | storeys have tens to low hundreds of walls | `scipy.spatial.cKDTree` is available when a storey exceeds ~500 walls |
+| Planar graph / room faces | own half-edge traversal (~60 lines) | needs evidence-gated junctions and spur pruning; `shapely.polygonize` would also close gaps that are not evidenced and pulls GEOS (LGPL) | networkx `cycle_basis` would find cycles but not faces |
+| Connected components / graph reasoning | `scipy.sparse.csgraph` available, not needed yet | | networkx is only in the optional `meshing` extra |
+| Robust line / plane fitting | own weighted TLS + Huber/MAD (reject_k=3) | closed form, deterministic, gives the sigma the compiler needs; RANSAC adds randomness and no covariance | |
+| Point cloud / mesh processing | `open3d` already used by `reconstruction/pointcloud_clean.py` (MIT per `.agent/LICENSES.yaml`) | consumed only through `ReconstructionResult` points | |
+| Frame alignment, ICP, loop closure, bundle adjustment | **not re-implemented**: `registration/` (`cross_session`, `landmarks`, `pose_graph`), `reconstruction/sfm`, COLMAP via the perception stack | owned by FreeBuff's side; `refinement.frame_transform_2d` adapts a `RigidTransform` to the plan view and refuses tilted frames | |
+
+Considered and not adopted: CGAL (GPL/commercial), python-igraph (GPL), Ceres/g2o/GTSAM (heavy native builds, nothing here needs a factor-graph solver yet),
+pyransac3d (licence not read). Licences of shapely/networkx/trimesh above come from upstream metadata only; read them before any adoption.

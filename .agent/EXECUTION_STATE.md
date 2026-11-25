@@ -2509,3 +2509,12 @@ Already true on this branch before this work: B01 stage resume (`DbCheckpointSto
 Not started: B03 (one ontology + attributes in YAML), B06 SAM2-on-live-path wiring (SAM 2 already default perception masks here),
 B07 wiring, B12 deterministic COLMAP, B16 refinement loop, B18 Studio UI, B19 exporter parts/attributes, B20 release run (needs real photos twice,
 external tools, a person with a laser measure).
+
+## 2026-11-25 Spatial reasoning & reconstruction compiler sprint (branch claude/reality-engine-spatial-compiler-367e36)
+- Added `reconstruction/spatial/` (model, association, constraints, uncertainty, refinement, topology, completeness, compiler),
+  `benchmarks/spatial/` (synth, run_spatial_benchmark) and `tests/test_spatial_compiler.py`; regenerated `docs/CI_TEST_REGISTRY.md`.
+- Pipeline: StructuralObservation -> associate_structure -> solve_spatial_constraints -> validate_topology (rooms as planar faces,
+  STRUCTURAL_ERROR / CONTRADICTION / INCOMPLETE / INFO) -> assess_completeness (separate axes, no score) -> to_worldir -> WorldStore.
+- `world.geometries` regression: still NOT reproduced; guarded by `test_world_geometries_survive_save_reload_and_incremental_save`.
+- Not wired: no producer yet emits `StructuralObservation` (FreeBuff contract needed); `apps/api` does not call `compile_spatial`.
+- Verification: see the final report of this sprint; results file `benchmarks/results/spatial_compiler_benchmark.json`.

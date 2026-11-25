@@ -46,6 +46,7 @@ class TestDepthAnythingV2BackendLogic:
             )
         ]
         assert backend.estimate_depth(non_image) == []
+        assert backend.skipped == []          # a different evidence kind is not a failure
 
     def test_skips_missing_files_honestly(self, tmp_path):
         backend = DepthAnythingV2Backend()
@@ -57,6 +58,19 @@ class TestDepthAnythingV2BackendLogic:
             )
         ]
         assert backend.estimate_depth(missing) == []
+        assert len(backend.skipped) == 1
+        assert backend.skipped[0]["evidence_id"] == "missing_img"
+        assert "does not exist" in backend.skipped[0]["reason"]
+
+    def test_an_undecodable_file_is_recorded_not_swallowed(self, tmp_path):
+        backend = DepthAnythingV2Backend()
+        bad = tmp_path / "not_an_image.jpg"
+        bad.write_bytes(b"not a jpeg")
+        item = EvidenceItem(id="bad_img", kind=EvidenceKind.PHOTO, source_uri=str(bad))
+        assert backend.estimate_depth([item]) == []
+        assert len(backend.skipped) == 1
+        assert "bad_img" == backend.skipped[0]["evidence_id"]
+        assert backend.skipped[0]["reason"]
 
 
 @requires_ml
@@ -86,13 +100,48 @@ class TestDepthAnythingV2BackendIntegration:
         assert len(dm.values) == 120
         assert len(dm.values[0]) == 160
         assert dm.unit == "relative"
+        assert dm.quantity == "inverse_depth"    # larger = nearer, stated explicitly
 
-        # Check normalization bounds
-        val_arr = np.array(dm.values)
-        assert val_arr.min() >= 0.0
-        assert val_arr.max() <= 1.0 + 1e-5
-        assert dm.uncertainty.note == "depth_anything_v2_small"
+        # No [0, 1] normalisation: the model's own inverse-depth scale is kept, which is what
+        # makes two views comparable at all.
+        val_arr = np.array(dm.values, dtype=np.float64)
+        finite = np.isfinite(val_arr)
+        assert finite.mean() > 0.99
+        assert np.all(val_arr[finite] > 0.0)
+        assert dm.valid_mask is not None
+        assert np.array_equal(np.asarray(dm.valid_mask), finite)
+        assert dm.invalid_pixels == int((~finite).sum())
+        assert "inverse depth" in (dm.uncertainty.note or "")
         assert dm.uncertainty.confidence > 0.8
+
+    def test_the_raw_model_scale_is_not_rescaled_per_image(self, sample_photo, monkeypatch):
+        """The regression for the min-max normalisation: a known raw prediction must come
+        back unchanged (a per-image [0, 1] normalisation would turn 2/4/8 into 0/0.33/1)."""
+        backend = DepthAnythingV2Backend()
+        raw = np.full((120, 160), 1.0, dtype=np.float32)
+        raw[0, 0], raw[0, 1], raw[1, 0], raw[1, 1] = 2.0, 4.0, 8.0, -1.0
+        monkeypatch.setattr(backend, "_ensure_model", lambda: None)
+        monkeypatch.setattr(backend, "_predict", lambda image, w, h: raw)
+        results = backend.estimate_depth([sample_photo])
+
+        assert len(results) == 1
+        dm = results[0]
+        vals = np.asarray(dm.values, dtype=np.float64)
+        assert (dm.width, dm.height) == (160, 120)
+        assert vals[0, 0] == pytest.approx(2.0)
+        assert vals[0, 1] == pytest.approx(4.0)
+        assert vals[1, 0] == pytest.approx(8.0)     # > 1: proves no normalisation
+        assert np.isnan(vals[1, 1])                 # a non-positive prediction is a hole
+        assert dm.valid_mask[1, 1] == False and dm.invalid_pixels == 1
+        assert dm.quantity == "inverse_depth"
+
+    def test_masked_arrays_marks_non_positive_and_non_finite_pixels(self):
+        from perception.depth.depth_anything_backend import _masked_arrays
+
+        values, valid = _masked_arrays(np.array([[0.5, 0.0], [np.inf, np.nan]], dtype=np.float32))
+        assert valid.tolist() == [[True, False], [False, False]]
+        assert np.isfinite(values[0, 0]) and np.isnan(values[0, 1])
+        assert np.isnan(values[1, 0]) and np.isnan(values[1, 1])
 
     def test_pipeline_depth_stage_dispatches_depth_anything(self, sample_photo):
         from engine.pipeline.vertical_slice import VerticalSliceOptions, _depth_stage

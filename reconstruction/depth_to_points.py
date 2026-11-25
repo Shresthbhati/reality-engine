@@ -220,6 +220,15 @@ def metricize_relative_depth(
         raise DepthToPointsError(
             f"metricize_relative_depth expects unit='relative', got {depth.unit!r}"
         )
+    if depth.quantity != "inverse_depth":
+        # A relative map that is monotone-increasing-with-distance would be inverted by
+        # z = scale / rel. Refusing is the only honest option: nothing here can tell an
+        # arbitrary relative scale from the inverse one by looking at the numbers.
+        raise DepthToPointsError(
+            f"depth map for {depth.evidence_id} is relative with quantity={depth.quantity!r}; "
+            "metricization fits z = scale / rel, so it needs inverse depth (larger = nearer). "
+            "Inverting a depth-like relative map would mirror the room."
+        )
 
     rel = np.asarray(depth.values, dtype=float)
     R = np.asarray(quat_to_matrix(camera.extrinsics.rotation), dtype=float)
@@ -283,12 +292,13 @@ def metricize_relative_depth(
     inlier_fraction = float(np.mean(residuals <= max(2.0 * residual_median, 1e-9)))
 
     shift, model = 0.0, "scale"
-    metric_values = scale / np.maximum(rel, 1e-9)
+    defined = np.isfinite(rel) & (rel > 1e-9)      # holes stay holes: NaN in, NaN out
+    metric_values = np.where(defined, scale / np.maximum(rel, 1e-9), np.nan)
     if use_shift and int(valid.sum()) >= 2 * min_points:
         fit = _robust_scale_shift(1.0 / rel_at[valid], z_sfm[valid])
         if fit is not None:
             s2, t2, res2 = fit
-            candidate = s2 / np.maximum(rel, 1e-9) + t2
+            candidate = np.where(defined, s2 / np.maximum(rel, 1e-9) + t2, np.nan)
             if consistent_shift and s2 > 0:
                 # every view on the SAME model (the guarded mix measurably split views apart): clamp instead of refusing
                 candidate = np.maximum(candidate, 0.05)
@@ -307,6 +317,8 @@ def metricize_relative_depth(
         height=depth.height,
         values=np.ascontiguousarray(metric_values, dtype=np.float32),
         unit="meters",
+        quantity="depth",
+        valid_mask=np.ascontiguousarray(np.isfinite(metric_values)),
         uncertainty=depth.uncertainty,
     )
     alignment = DepthAlignment(

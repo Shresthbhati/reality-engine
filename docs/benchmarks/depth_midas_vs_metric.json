@@ -13,16 +13,16 @@
   },
   "heuristic_prior": {
     "model": "heuristic_depth_prior",
-    "unit": "meters",
-    "scale_state": "estimated",
-    "depth_range_meters": [
+    "unit": "relative",
+    "scale_state": "relative",
+    "depth_range_relative": [
       2.230774402618408,
       4.599999904632568
     ],
-    "mean_depth_meters": 3.4251046180725098,
-    "requires_scale_anchor": false,
+    "mean_relative_value": 3.4251046180725098,
+    "requires_scale_anchor": true,
     "confidence": 0.5,
-    "note": "scene-statistics prior, not learned model inference"
+    "note": "scene-statistics prior in an arbitrary relative scale, not metres, not learned model inference"
   },
-  "metric_scale_fidelity": "heuristic_estimate"
+  "metric_scale_fidelity": "none_relabelled_relative"
 }

@@ -32,7 +32,30 @@ def test_depth_map_validates_row_width():
 def test_depth_map_accepts_well_formed_grid():
     depth = DepthMap(evidence_id="p1", width=2, height=2, values=[[1.0, 2.0], [3.0, 4.0]])
     assert depth.unit == "relative"
+    assert depth.quantity == "depth"          # default: larger = farther
+    assert depth.valid_mask is None           # no mask claimed unless the producer supplies one
+    assert depth.invalid_pixels is None
     assert depth.values[1][1] == 4.0
+
+
+def test_depth_map_rejects_an_unknown_quantity():
+    with pytest.raises(ValueError, match="quantity must be"):
+        DepthMap(evidence_id="p1", width=1, height=1, values=[[1.0]], quantity="disparity")
+
+
+def test_depth_map_validates_the_mask_shape():
+    with pytest.raises(ValueError, match="valid_mask"):
+        DepthMap(evidence_id="p1", width=2, height=2, values=[[1.0, 2.0], [3.0, 4.0]],
+                 valid_mask=[[True, True]])
+
+
+def test_depth_map_counts_pixels_the_producer_could_not_measure():
+    depth = DepthMap(evidence_id="p1", width=2, height=2,
+                     values=[[1.0, float("nan")], [3.0, 4.0]],
+                     valid_mask=[[True, False], [True, True]])
+    assert depth.invalid_pixels == 1
+    assert DepthMap(evidence_id="p1", width=1, height=1, values=[[float("nan")]],
+                    valid_mask=[[False]]).invalid_pixels == 1
 
 
 # ---- IDepthBackend ----

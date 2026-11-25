@@ -29,7 +29,8 @@ def _scene(s, t, extra_far_rel=None):
         for u in range(10, W - 4, 3):
             p = cam.unproject(u + 0.5, v + 0.5, float(z[v, u]))
             pts.append((p.x, p.y, p.z))
-    dm = DepthMap(evidence_id="e", width=W, height=H, values=rel.tolist(), unit="relative")
+    dm = DepthMap(evidence_id="e", width=W, height=H, values=rel.tolist(), unit="relative",
+                  quantity="inverse_depth")
     return dm, cam, np.array(pts), z
 
 

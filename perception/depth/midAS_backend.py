@@ -240,10 +240,10 @@ class MiDaSDepthBackend(IDepthBackend):
                 # Convert to numpy list of lists (row-major)
                 depth_np = prediction.cpu().numpy()
 
-                # MiDaS outputs relative depth (inverse depth for DPT models).
-                # Normalize to [0, 1] range for consistency.
-                # Note: This is RELATIVE depth, not metric. The 'unit' field
-                # reflects this honestly.
+                # MiDaS outputs relative INVERSE depth (larger = nearer for DPT models).
+                # It is normalised to [0, 1] per image here; that makes two views of the same
+                # surface incomparable and is a known limitation (Depth Anything V2 stopped
+                # doing it). The quantity field is the part a consumer must not get wrong.
                 depth_min, depth_max = depth_np.min(), depth_np.max()
                 if depth_max > depth_min:
                     depth_normalized = (depth_np - depth_min) / (depth_max - depth_min)
@@ -264,6 +264,7 @@ class MiDaSDepthBackend(IDepthBackend):
                     height=orig_h,
                     values=values,
                     unit="relative",
+                    quantity="inverse_depth",
                     uncertainty=Uncertainty(confidence=confidence),
                 ))
 

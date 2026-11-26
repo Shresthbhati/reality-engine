@@ -336,8 +336,10 @@ async def resumable_finalize(
 ) -> dict:
     """Finish a staged resumable upload: hash the staged bytes, store them
     content-addressed, complete the Upload row, and create Evidence + job."""
-    # Authorize before touching the filesystem or DB: a caller must own the
-    # upload. Previously this endpoint had no visibility check at all.
+    # Explicit visibility check for the path id. The uploads router already
+    # installs upload_scope as a router-level dependency (which calls
+    # assert_visible for this same path param), so this is defense in depth,
+    # not a new authorization boundary -- verified by independent review.
     await assert_visible(db, Upload, upload_id, auth)
     try:
         validate_staging_id(upload_id)

@@ -16,6 +16,7 @@ import pytest
 from engine.multiengine.evidence_matrix import EvidenceMatrix, EvidenceContext, RunRecord
 from engine.multiengine.evidence_fusion import (
     FusionConflict,
+    FusionError,
     FusedPrediction,
     Provenance,
     Unit,
@@ -101,7 +102,7 @@ class TestScalarFusion:
         assert fused.value == pytest.approx(2.5)
         assert fused.source_frame == "cam:img1"
         # Non-meter units are treated as UNITLESS in the fusion.
-        assert fused.source_units == "unitless"
+        assert fused.source_units == "dimensionless"
         assert fused.provenance == Provenance.RECONSTRUCTED
         assert fused.method == "passthrough"
         assert len(fused.conflicts) == 0
@@ -135,9 +136,9 @@ class TestScalarFusion:
         # Just check it's between the two values and closer to the more precise one.
         assert 2.5 < fused.value < 2.55
         assert fused.provenance == Provenance.ESTIMATED
-        assert fused.method == "inverse_variance_weighted"
+        assert fused.method == "inverse_variance_weighted_mean"
         assert len(fused.conflicts) == 0
-        assert fused.source_units == "unitless"
+        assert fused.source_units == "dimensionless"
 
     def test_conflicting_depth_values_produce_conflict(self):
         a = _obs(
@@ -169,8 +170,8 @@ class TestScalarFusion:
         assert "delta" in c.detail
         # Fused value is still the weighted mean of both (2.05).
         assert 2.0 < fused.value < 2.1
-        assert fused.method == "inverse_variance_weighted"
-        assert fused.source_units == "unitless"
+        assert fused.method == "inverse_variance_weighted_mean"
+        assert fused.source_units == "dimensionless"
 
     def test_no_confidence_defaults_to_weakest(self):
         a = _obs(
@@ -194,7 +195,7 @@ class TestScalarFusion:
         fused = fuse_observations([a, b], task="depth", quantity="depth_value")
         # When one has no confidence, the other's confidence is used.
         assert fused.confidence == 0.95
-        assert fused.source_units == "unitless"
+        assert fused.source_units == "dimensionless"
 
     def test_empty_observations_raise(self):
         with pytest.raises(FusionError, match="no observations"):
@@ -414,7 +415,7 @@ class TestBboxFusion:
         fused = fuse_observations([a, b], task="detection", quantity="bbox")
         assert fused.value is None
         assert fused.source_units == "incompatible"
-        assert "no common source" in fused.conflicts[0].detail
+        assert "span multiple image sources" in fused.conflicts[0].detail
 
 
 # ------------------------------------------------------------------ write_fused_back

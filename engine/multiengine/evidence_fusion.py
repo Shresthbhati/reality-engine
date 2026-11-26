@@ -59,58 +59,9 @@ from reconstruction.fusion import (
     FusedEstimate,
     fuse_quantity,
 )
-
-# Lightweight replacements to avoid the heavy engine.core / provenance import chains.
-
-class _ProvenanceValue:
-    __slots__ = ("value",)
-    def __init__(self, value):
-        self.value = value
-    def __eq__(self, other):
-        return isinstance(other, _ProvenanceValue) and self.value == other.value
-    def __hash__(self):
-        return hash(self.value)
-    def __repr__(self):
-        return f"Provenance({self.value!r})"
-
-class Provenance:
-    OBSERVED = _ProvenanceValue("OBSERVED")
-    RECONSTRUCTED = _ProvenanceValue("RECONSTRUCTED")
-    ESTIMATED = _ProvenanceValue("ESTIMATED")
-    CONFLICT = _ProvenanceValue("CONFLICT")
-    UNKNOWN = _ProvenanceValue("UNKNOWN")
-
-
-class _UnitValue:
-    __slots__ = ("value",)
-    def __init__(self, value):
-        self.value = value
-    def __eq__(self, other):
-        return isinstance(other, _UnitValue) and self.value == other.value
-    def __hash__(self):
-        return hash(self.value)
-    def __repr__(self):
-        return f"Unit({self.value!r})"
-
-class Unit:
-    METER = _UnitValue("meter")
-    KILOGRAM = _UnitValue("kilogram")
-    SECOND = _UnitValue("second")
-    DIMENSIONLESS = _UnitValue("dimensionless")
-    UNITLESS = _UnitValue("unitless")
-
-
-class Provenance:
-    OBSERVED = type("Observed", (), {"value": "OBSERVED"})()
-    RECONSTRUCTED = type("Reconstructed", (), {"value": "RECONSTRUCTED"})()
-    ESTIMATED = type("Estimated", (), {"value": "ESTIMATED"})()
-    CONFLICT = type("Conflict", (), {"value": "CONFLICT"})()
-    UNKNOWN = type("Unknown", (), {"value": "UNKNOWN"})()
-
-    @classmethod
-    def from_existing(cls, p):
-        """Wrap an existing Provenance enum for compatibility."""
-        return p
+from engine.core.units import Unit
+from engine.multiengine.evidence_matrix import EvidenceContext
+from provenance import Provenance
 
 
 # ------------------------------------------------------------------ task-specific fusion API
@@ -292,14 +243,16 @@ def _fuse_scalar_quantity(
         if units in ("meter", "metres", "m", "metre"):
             unit = Unit.METER
         else:
-            unit = Unit.UNITLESS
+            unit = Unit.DIMENSIONLESS
         fos.append(
             FusableObservation(
                 value=value,
                 unit=unit,
                 source=o.engine_id,
                 provenance=Provenance.RECONSTRUCTED,
-                confidence=o.confidence,
+                # A missing confidence carries no information, so it must not
+                # artificially lower the fused confidence (min of reported ones).
+                confidence=o.confidence if o.confidence is not None else 1.0,
                 precision=float(sigma),
                 evidence_ids=(o.observation_id,),
             )
@@ -528,11 +481,19 @@ def _fuse_bboxes(
     candidates = by_label.get(label, [])
     if not candidates:
         candidates = observations
-    # Must be same image frame (same source_id).
-    source = candidates[0].source_id
-    same_source = [o for o in candidates if o.source_id == source]
+    # Must be same image frame (same source_id): bboxes from different images
+    # cannot be meaningfully averaged, so they are recorded as incompatible.
+    sources = {o.source_id for o in candidates}
+    if len(sources) != 1:
+        return _incompatible(
+            observations,
+            "bbox",
+            f"bboxes span multiple image sources {sorted(sources)}; cannot fuse across frames",
+        )
+    source = next(iter(sources))
+    same_source = list(candidates)
     if not same_source:
-        return _incompatible(observations, "bbox", f"no common source (majority label '{label}' not in source '{source}')")
+        return _incompatible(observations, "bbox", f"no common source (majority label '{label}')")
     boxes = []
     for o in same_source:
         b = _bbox_from_predicted(o.predicted)
@@ -542,20 +503,17 @@ def _fuse_bboxes(
         raise FusionError("no valid bboxes among same-source observations")
     if len(boxes) == 1:
         b, o = boxes[0]
-        conflicts = []
-        # Any other observation in the same source with a different label is a conflict.
-        for other in same_source:
-            if other is o:
-                continue
-            other_label = _label_of(other) or "unlabeled"
-            if other_label != label:
-                conflicts.append(
-                    FusionConflict(
-                        sources=(o.engine_id, other.engine_id),
-                        quantity="bbox",
-                        detail=f"label '{other_label}' vs majority '{label}'",
-                    )
-                )
+        # Every contributor whose label disagrees with the fused box's label is
+        # a preserved conflict, regardless of source frame.
+        conflicts = tuple(
+            FusionConflict(
+                sources=(o.engine_id, other.engine_id),
+                quantity="bbox",
+                detail=f"label '{_label_of(other) or 'unlabeled'}' vs majority '{label}'",
+            )
+            for other in observations
+            if (_label_of(other) or "unlabeled") != label
+        )
         return FusedPrediction(
             quantity="bbox",
             source_frame=_frame_of(o),
@@ -565,7 +523,7 @@ def _fuse_bboxes(
             provenance=Provenance.RECONSTRUCTED,
             method="passthrough",
             contributing=(o,),
-            conflicts=tuple(conflicts),
+            conflicts=conflicts,
         )
     # Consistency-weighted average of corners.
     # weight = 1 / (1 + spread), where spread is the std of the corner across contributors.
@@ -605,7 +563,6 @@ def _fuse_bboxes(
         for lbl, grp in by_label.items()
         if lbl != label
         for o in grp
-        if o.source_id == source
     )
     return FusedPrediction(
         quantity="bbox",
@@ -771,19 +728,16 @@ def write_fused_back(
             "uncertainty_basis": fused.uncertainty_basis,
         },
     )
-    # Link back to contributors via the store's link method.
-    class _Ctx:
-        observation_id: str
-        run_id: str
-        architecture_id: str | None
-
-    ctx = _Ctx()
-    ctx.observation_id = obs.observation_id
-    ctx.run_id = run_id
-    ctx.architecture_id = engine_id
+    # Store the fused observation first so it exists in the store before we
+    # link it to its contributors (link requires both ends to be present).
+    ctx = EvidenceContext(
+        observation_id=obs.observation_id,
+        run_id=run_id,
+        architecture_id=engine_id,
+    )
+    matrix.add(obs, ctx)
     for o in fused.contributing:
         matrix.store.link(obs.observation_id, o.observation_id, "derived_from")
-    matrix.add(obs, ctx)
     return obs
 
 

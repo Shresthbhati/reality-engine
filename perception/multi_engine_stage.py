@@ -103,6 +103,58 @@ def run_multi_engine_for_job(
             "cross_engine_summary": report.cross_engine_summary,
         }
 
+        # Multi-engine detection fusion & cross-view identity over detection observations
+        det_by_img_eng: dict[str, dict[str, list[Any]]] = {}
+        try:
+            from engine.multiengine.spatial_intelligence.detection_pipeline import DetectionBox
+            from perception.detection.multi_engine_fusion import (
+                associate_cross_view_detections,
+                fuse_multi_engine_detections,
+            )
+
+            for obs in report.observations:
+                if obs.bbox_px is None or obs.model_id.engine_id != "detection":
+                    continue
+                eng_id = obs.model_id.architecture_id or obs.model_id.engine_id
+                det_by_img_eng.setdefault(obs.source_image_id, {}).setdefault(eng_id, []).append(
+                    DetectionBox(
+                        box_id=obs.evidence_id,
+                        class_name=obs.label,
+                        box_2d=tuple(float(v) for v in obs.bbox_px),
+                        confidence=float(obs.confidence) if obs.confidence is not None else 0.5,
+                        source_engine=eng_id,
+                        source_image_id=obs.source_image_id,
+                        raw_score=obs.confidence,
+                        attributes={"confidence_emitted": obs.confidence is not None},
+                    )
+                )
+            fused_total = 0
+            corroborated = 0
+            competing = 0
+            for img_id, eng_map in det_by_img_eng.items():
+                fused = fuse_multi_engine_detections(eng_map)
+                fused_total += len(fused)
+                corroborated += sum(1 for f in fused if f.independent_family_count >= 2)
+                competing += sum(1 for f in fused if f.competing_hypotheses)
+            facts["multi_engine_fusion"] = {
+                "images_fused": len(det_by_img_eng),
+                "fused_hypotheses": fused_total,
+                "multi_family_corroborated": corroborated,
+                "competing_label_clusters": competing,
+            }
+            src_list = [str(s) for s in sources]
+            if len(src_list) >= 2:
+                cv_counts = {"matched": 0, "ambiguous": 0, "unmatched": 0}
+                for idx in range(len(src_list) - 1):
+                    a_all = [b for lst in det_by_img_eng.get(src_list[idx], {}).values() for b in lst]
+                    b_all = [b for lst in det_by_img_eng.get(src_list[idx + 1], {}).values() for b in lst]
+                    if a_all and b_all:
+                        for dec in associate_cross_view_detections(a_all, b_all):
+                            cv_counts[dec.status] = cv_counts.get(dec.status, 0) + 1
+                facts["cross_view_identity"] = cv_counts
+        except Exception as exc:  # noqa: BLE001
+            facts["multi_engine_fusion"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
         if matrix_root is not None:
             try:
                 from perception.engine_matrix_bridge import import_multi_engine_report

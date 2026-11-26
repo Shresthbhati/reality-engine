@@ -55,10 +55,16 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
             wall_time_s=time.perf_counter() - t0,
         )
 
+    skipped_blank: list[str] = []
     for img_path in image_paths:
         try:
+            import numpy as np
             import PIL.Image as PILImage
             img = PILImage.open(img_path).convert("RGB")
+            arr = np.asarray(img)
+            if arr.size == 0 or float(np.std(arr, axis=(0, 1)).max()) < 2.0:
+                skipped_blank.append(img_path)
+                continue
             inputs = processor(images=img, return_tensors="pt")
             inputs = {k: v.to(device) for k, v in inputs.items()}
             with torch.no_grad():

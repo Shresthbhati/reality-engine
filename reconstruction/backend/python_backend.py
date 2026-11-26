@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import math
 import time
-from typing import List, Optional, Tuple
+
 import numpy as np
 
-from provenance import Provenance, Uncertainty
+from provenance import Uncertainty
 from reconstruction.backend.interface import (
     EvidenceItem,
     EvidenceKind,
@@ -28,16 +28,16 @@ from reconstruction.backend.interface import (
     ReconstructedPoint,
     ReconstructionResult,
 )
+from reconstruction.matching import MatcherUnavailableError, get_matcher
+from reconstruction.matching.interface import IMatcher
 from reconstruction.sfm.core_pipeline import (
-    BundleAdjustmentOptimizer,
     CameraModel,
     EssentialMatrixEstimator,
     TriangulationEngine,
 )
-from reconstruction.matching import get_matcher, MatcherUnavailableError
 
 
-def _quat_from_R(R: np.ndarray) -> Tuple[float, float, float, float]:
+def _quat_from_R(R: np.ndarray) -> tuple[float, float, float, float]:
     """Rotation matrix -> unit quaternion (w, x, y, z)."""
     t = float(np.trace(R))
     if t > 0:
@@ -54,7 +54,7 @@ def _quat_from_R(R: np.ndarray) -> Tuple[float, float, float, float]:
     return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
 
 
-def _R_from_quat(q: Tuple[float, float, float, float]) -> np.ndarray:
+def _R_from_quat(q: tuple[float, float, float, float]) -> np.ndarray:
     w, x, y, z = (float(v) for v in q)
     n = math.sqrt(w * w + x * x + y * y + z * z) or 1.0
     w, x, y, z = w / n, x / n, y / n, z / n
@@ -65,7 +65,28 @@ def _R_from_quat(q: Tuple[float, float, float, float]) -> np.ndarray:
     ])
 
 
-def _load_matcher(paths: dict) -> Optional[object]:
+def _compose_camera_to_world(
+    R_world: np.ndarray,
+    t_world: np.ndarray,
+    R_rel: np.ndarray,
+    t_rel: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compose the next camera-to-world pose from a world-to-camera relative pose."""
+    R_next = R_world @ R_rel.T
+    t_next = t_world - R_next @ np.asarray(t_rel).reshape(3)
+    return R_next, t_next
+
+
+def _projection_matrix(camera_model: CameraModel, pose: ReconstructedCameraPose) -> np.ndarray:
+    """Build a pixel-space projection matrix from a camera-to-world pose."""
+    R_camera_to_world = _R_from_quat(pose.rotation)
+    R_world_to_camera = R_camera_to_world.T
+    camera_center = np.asarray(pose.position, dtype=np.float64).reshape(3)
+    t_world_to_camera = -R_world_to_camera @ camera_center
+    return camera_model.K @ np.column_stack((R_world_to_camera, t_world_to_camera))
+
+
+def _load_matcher(paths: dict) -> IMatcher | None:
     """Try LightGlue-ALIKED first (best inlier ratio), fall back to SIFT."""
     for matcher_name in ("lightglue@aliked", "sift"):
         try:
@@ -75,7 +96,7 @@ def _load_matcher(paths: dict) -> Optional[object]:
     return None
 
 
-def _match_pair(matcher, paths: dict, a_id: str, b_id: str) -> Optional[Tuple[np.ndarray, np.ndarray, object]]:
+def _match_pair(matcher, paths: dict, a_id: str, b_id: str) -> tuple[np.ndarray, np.ndarray, object] | None:
     """Match one image pair. Returns (pts_a, pts_b, match_result) or None."""
     try:
         mr = matcher.match(a_id, b_id)
@@ -98,12 +119,12 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
     "unconstrained" pose rather than a guessed position.
     """
 
-    def __init__(self, camera_model: Optional[CameraModel] = None):
+    def __init__(self, camera_model: CameraModel | None = None):
         self.camera_model = camera_model or CameraModel(
             fx=800.0, fy=800.0, cx=960.0, cy=540.0, width=1920, height=1080
         )
 
-    def reconstruct(self, evidence: List[EvidenceItem]) -> ReconstructionResult:
+    def reconstruct(self, evidence: list[EvidenceItem]) -> ReconstructionResult:
         image_evidence = [e for e in evidence if e.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)]
         if len(image_evidence) < 2:
             return ReconstructionResult(points=[], camera_poses=[], registration_status="failed")
@@ -115,8 +136,8 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
         # Relative poses between consecutive pairs (chain registration).
         # Camera 0 is the anchor at origin; each subsequent camera is placed
         # relative to the previous one using the measured essential matrix.
-        poses: List[ReconstructedCameraPose] = []
-        pair_stats: List[dict] = []
+        poses: list[ReconstructedCameraPose] = []
+        pair_stats: list[dict] = []
 
         # Anchor camera at origin.
         poses.append(
@@ -155,7 +176,7 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
                         img_a = cv2.imread(paths[a.id], cv2.IMREAD_GRAYSCALE)
                         img_b = cv2.imread(paths[b.id], cv2.IMREAD_GRAYSCALE)
                         if img_a is not None and img_b is not None:
-                            sift = cv2.SIFT_create(nfeatures=4000)
+                            sift = getattr(cv2, "SIFT_create")(nfeatures=4000)
                             kp1, des1 = sift.detectAndCompute(img_a, None)
                             kp2, des2 = sift.detectAndCompute(img_b, None)
                             if des1 is not None and des2 is not None and len(des1) >= 8 and len(des2) >= 8:
@@ -167,8 +188,8 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
                                     if len(m) == 2 and m[0].distance < 0.75 * m[1].distance
                                 ]
                                 if len(good) >= 8:
-                                    pts1 = np.float32([kp1[m.queryIdx].pt for m in good])
-                                    pts2 = np.float32([kp2[m.trainIdx].pt for m in good])
+                                    pts1 = np.asarray([kp1[m.queryIdx].pt for m in good], dtype=np.float32)
+                                    pts2 = np.asarray([kp2[m.trainIdx].pt for m in good], dtype=np.float32)
                                     R_rel, t_rel, mask = EssentialMatrixEstimator.estimate_relative_pose(
                                         pts1, pts2, self.camera_model, self.camera_model
                                     )
@@ -179,9 +200,7 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
 
             if R_rel is not None and t_rel is not None and inlier_count >= 8:
                 # Chain: camera i world pose = previous world pose * relative pose.
-                t_rel_vec = np.asarray(t_rel).reshape(3)
-                t_world = (R_world @ t_rel_vec) + t_world  # translation uses OLD R_world
-                R_world = R_world @ R_rel.T  # then update rotation
+                R_world, t_world = _compose_camera_to_world(R_world, t_world, R_rel, t_rel)
                 confidence = min(0.95, 0.5 + 0.05 * inlier_count)
             else:
                 # No usable matches: propagate previous pose with degraded confidence.
@@ -206,11 +225,11 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
             )
 
         # Triangulate tie points for pairs with sufficient matches.
-        points: List[ReconstructedPoint] = []
+        points: list[ReconstructedPoint] = []
         if matcher is not None:
             import cv2
 
-            sift = cv2.SIFT_create(nfeatures=4000)
+            sift = getattr(cv2, "SIFT_create")(nfeatures=4000)
             point_idx = 0
             for i in range(1, len(image_evidence)):
                 a = image_evidence[i - 1]
@@ -229,8 +248,8 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
                     good = [m[0] for m in matches if len(m) == 2 and m[0].distance < 0.75 * m[1].distance]
                     if len(good) < 8:
                         continue
-                    pts1 = np.float32([kp1[m.queryIdx].pt for m in good])
-                    pts2 = np.float32([kp2[m.trainIdx].pt for m in good])
+                    pts1 = np.asarray([kp1[m.queryIdx].pt for m in good], dtype=np.float32)
+                    pts2 = np.asarray([kp2[m.trainIdx].pt for m in good], dtype=np.float32)
                     R_rel, t_rel, mask = EssentialMatrixEstimator.estimate_relative_pose(
                         pts1, pts2, self.camera_model, self.camera_model
                     )
@@ -238,12 +257,10 @@ class PythonSfMReconstructionBackend(IReconstructionBackend):
                         continue
                     inliers1 = pts1[mask.ravel().astype(bool)]
                     inliers2 = pts2[mask.ravel().astype(bool)]
-                    P1 = self.camera_model.K @ np.hstack((np.eye(3), np.zeros((3, 1))))
-                    R2 = _R_from_quat(poses[i].rotation)
-                    t2 = np.array(poses[i].position).reshape(3, 1)
-                    P2 = self.camera_model.K @ np.hstack((R2, t2))
+                    P1 = _projection_matrix(self.camera_model, poses[i - 1])
+                    P2 = _projection_matrix(self.camera_model, poses[i])
                     for idx, (p1, p2) in enumerate(zip(inliers1, inliers2)):
-                        X = TriangulationEngine.triangulate_dlt(p1, p2, P1, P2)
+                        X = TriangulationEngine.triangulate_dlt_point(P1, P2, p1, p2)
                         if X is not None and len(X) == 3:
                             points.append(
                                 ReconstructedPoint(

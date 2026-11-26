@@ -178,7 +178,8 @@ def run_for_job(
         if Path(src_path).suffix.lower() in _VIDEO_EXTS:
             try:
                 import cv2
-                from perception.evidence_enrichment import process_video_file
+
+                from engine.pipeline.perception_services import process_video_file
 
                 v_res = process_video_file(src_path, max_keyframes=8)
                 kf_dir = root / "video_keyframes"
@@ -253,7 +254,10 @@ def run_for_job(
         relations_fn = None
         surfaces_fn = None
         if use_spatial:  # the spatial_intelligence package decides identity across views and supplies relationships
-            from engine.multiengine.spatial_stage import make_scene_pair_scorer, make_scene_relations_fn
+            from engine.multiengine.spatial_stage import (
+                make_scene_pair_scorer,
+                make_scene_relations_fn,
+            )
 
             scorer = make_scene_pair_scorer(scene_state, scorer)
             relations_fn = make_scene_relations_fn(scene_state)
@@ -314,7 +318,7 @@ def run_for_job(
             # A cancelled run starts no new engine work: the multi-engine pass is not
             # started, and that is recorded rather than reported as an empty success.
             raise _CancelledBeforeMultiEngine()
-        from perception.multi_engine_stage import run_multi_engine_for_job
+        from engine.pipeline.perception_services import run_multi_engine_for_job
 
         pairs = [(real[i], real[i + 1]) for i in range(len(real) - 1)] if len(real) >= 2 else None
         me_facts = run_multi_engine_for_job(sources=real, run_id=job_id, cameras=cameras, pairs=pairs,
@@ -322,7 +326,7 @@ def run_for_job(
         facts["multi_engine"] = me_facts
         matrix_import = me_facts.get("matrix_import") if isinstance(me_facts, dict) else None
         if isinstance(matrix_import, dict) and matrix_import.get("status") == "imported":
-            from perception.engine_matrix_bridge import world_lineage_block
+            from engine.pipeline.perception_services import world_lineage_block
 
             multi_engine_lineage = world_lineage_block(matrix_import)
         elif isinstance(matrix_import, dict):
@@ -366,12 +370,15 @@ def run_for_job(
         os.environ.get("RE_EVIDENCE_WORLD_SCENE_INTEL", "").strip().lower() in ("1", "true", "yes", "on")
     )
     try:
-        from perception.spatial_inputs import SPATIAL_INPUTS_FILE, get_inputs_provider
+        from engine.pipeline.perception_services import (
+            SPATIAL_INPUTS_FILE,
+            extract_structural_regions,
+            get_inputs_provider,
+            run_inference_plan,
+            select_inference_plan_for_inputs,
+        )
 
         if use_si:
-            from perception.orchestrator import run_inference_plan, select_inference_plan_for_inputs
-            from perception.scene_intelligence import extract_structural_regions
-
             plan = select_inference_plan_for_inputs(real, has_video=bool(video_ingestion_facts))
             orch_res = run_inference_plan(real, run_id=job_id, plan=plan, cameras=usable)
             si_v1 = orch_res.spatial_inputs

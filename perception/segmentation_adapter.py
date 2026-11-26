@@ -7,15 +7,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
-import cv2
 import numpy as np
 import torch
 
 from perception.engine_evidence import (
-    CoordinateFrame,
-    ModelIdentity,
     ObservationRecord,
     UnifiedEngineOutput,
 )
@@ -24,11 +22,15 @@ from perception.engine_orchestrator import EngineSpec, register_engine
 log = logging.getLogger("reality.segmentation_adapter")
 
 
-def _sam2_available() -> Optional[str]:
+def _sam2_available() -> str | None:
     try:
-        from transformers import Sam2Model, Sam2Processor
+        from importlib import import_module
+
+        transformers = import_module("transformers")
+        getattr(transformers, "Sam2Model")
+        getattr(transformers, "Sam2Processor")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
@@ -37,7 +39,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "segmentation_run")
-    obs: List[ObservationRecord] = []
+    obs: list[ObservationRecord] = []
     model_name = "facebook/sam2.1-hiera-small"
     bboxes = ctx.get("bboxes", {})  # {image_path: [(x1,y1,x2,y2), ...]}
 
@@ -112,7 +114,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         if torch.cuda.is_available():
             return torch.cuda.max_memory_allocated(0) / (1024.0 * 1024.0)

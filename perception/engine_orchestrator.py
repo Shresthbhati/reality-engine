@@ -37,10 +37,14 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 from perception.engine_evidence import (
     CoordinateFrame,
@@ -68,8 +72,8 @@ class EngineSpec:
     required_for_production: bool = False
     license: str = "unknown"
     non_commercial: bool = False
-    dependencies: Tuple[str, ...] = ()  # engine_ids this depends on
-    run_condition: Optional[Callable[[], str]] = None  # returns error or None
+    dependencies: tuple[str, ...] = ()  # engine_ids this depends on
+    run_condition: Callable[[], str] | None = None  # returns error or None
     #: False for engines that cannot run without CUDA (their adapter only has a GPU path).
     cpu_capable: bool = True
     #: 0 = no timeout. A timed-out engine is abandoned (see EngineExecution note).
@@ -103,15 +107,15 @@ class EngineExecution:
     device: str = "unknown"        # "cuda" | "cpu" | "unknown"
     attempts: int = 0
     wall_time_s: float = 0.0
-    peak_vram_mb: Optional[float] = None
+    peak_vram_mb: float | None = None
     n_observations: int = 0
-    frame_ids: Tuple[str, ...] = ()
-    scale_states: Tuple[str, ...] = ()
-    units: Tuple[str, ...] = ()
-    provenance: Dict[str, Any] = field(default_factory=dict)
+    frame_ids: tuple[str, ...] = ()
+    scale_states: tuple[str, ...] = ()
+    units: tuple[str, ...] = ()
+    provenance: dict[str, Any] = field(default_factory=dict)
     reason: str = ""               # why it did not run, when status is unavailable/skipped/cancelled
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "engine_id": self.engine_id,
             "architecture_id": self.architecture_id,
@@ -140,18 +144,18 @@ class MultiEngineReport:
     run_id: str
     image_count: int
     total_wall_s: float
-    engines_run: Dict[str, str]      # engine_id -> status
-    observations: List[ObservationRecord]
-    contradictions: List[Dict[str, Any]]
-    unavailable: List[Dict[str, Any]]  # engine_id, reason
-    vram_peak_mb: Optional[float]
-    cross_engine_summary: Dict[str, Any]
+    engines_run: dict[str, str]      # engine_id -> status
+    observations: list[ObservationRecord]
+    contradictions: list[dict[str, Any]]
+    unavailable: list[dict[str, Any]]  # engine_id, reason
+    vram_peak_mb: float | None
+    cross_engine_summary: dict[str, Any]
     #: Full per-engine execution contract (every engine, including failures).
-    engine_executions: List[EngineExecution] = field(default_factory=list)
+    engine_executions: list[EngineExecution] = field(default_factory=list)
     #: Observations dropped as content-identical repeats (not counted as extra evidence).
     duplicate_observations: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "image_count": self.image_count,
@@ -172,8 +176,8 @@ class MultiEngineReport:
 # Engine Registry
 # ---------------------------------------------------------------------------
 
-_ENGINES: Dict[str, EngineSpec] = {}
-_ENGINE_FNS: Dict[str, Callable[..., UnifiedEngineOutput]] = {}
+_ENGINES: dict[str, EngineSpec] = {}
+_ENGINE_FNS: dict[str, Callable[..., UnifiedEngineOutput]] = {}
 _REGISTRY_LOCK = threading.RLock()
 
 
@@ -191,7 +195,7 @@ def unregister_engine(engine_id: str) -> None:
         _ENGINE_FNS.pop(engine_id, None)
 
 
-def list_engines() -> List[EngineSpec]:
+def list_engines() -> list[EngineSpec]:
     """All registered engines, sorted by priority (highest first)."""
     with _REGISTRY_LOCK:
         specs = list(_ENGINES.values())
@@ -199,6 +203,8 @@ def list_engines() -> List[EngineSpec]:
 
 
 def _cuda_available() -> bool:
+    if torch is None:
+        return False
     try:
         return bool(torch.cuda.is_available())
     except Exception:
@@ -209,7 +215,7 @@ def _active_device() -> str:
     return "cuda" if _cuda_available() else "cpu"
 
 
-def _availability_reason(spec: EngineSpec) -> Optional[str]:
+def _availability_reason(spec: EngineSpec) -> str | None:
     """Why this engine cannot run here, or None when it can. Never raises."""
     try:
         reason = spec.run_condition() if spec.run_condition else None
@@ -222,12 +228,12 @@ def _availability_reason(spec: EngineSpec) -> Optional[str]:
     return None
 
 
-def list_available_engines() -> List[EngineSpec]:
+def list_available_engines() -> list[EngineSpec]:
     """Engines that are runnable on the current system (probe passes, device available)."""
     return [spec for spec in list_engines() if _availability_reason(spec) is None]
 
 
-def get_unavailable_engines() -> List[Dict[str, Any]]:
+def get_unavailable_engines() -> list[dict[str, Any]]:
     """Engines that are registered but not runnable, with the reason from their own probe."""
     out = []
     for spec in list_engines():
@@ -240,7 +246,7 @@ def get_unavailable_engines() -> List[Dict[str, Any]]:
 def _get_free_vram_mb() -> float:
     """Free VRAM in MB (0 if no CUDA)."""
     try:
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             free, _total = torch.cuda.mem_get_info()
             return free / (1024.0 * 1024.0)
     except Exception:
@@ -248,9 +254,9 @@ def _get_free_vram_mb() -> float:
     return 0.0
 
 
-def _get_vram_peak_mb() -> Optional[float]:
+def _get_vram_peak_mb() -> float | None:
     try:
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             return torch.cuda.max_memory_allocated(0) / (1024.0 * 1024.0)
     except Exception:
         pass
@@ -259,7 +265,7 @@ def _get_vram_peak_mb() -> Optional[float]:
 
 def _torch_empty_cache() -> None:
     try:
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats(0)
     except Exception:
@@ -285,8 +291,8 @@ def _is_transient(exc: BaseException) -> bool:
     return "timed out" in text or "temporarily unavailable" in text
 
 
-def _call_with_timeout(fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: Dict[str, Any],
-                       timeout_s: float) -> Tuple[Any, Optional[BaseException], bool, Optional[threading.Thread]]:
+def _call_with_timeout(fn: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any],
+                       timeout_s: float) -> tuple[Any, BaseException | None, bool, threading.Thread | None]:
     """Run ``fn`` in a daemon thread, waiting at most ``timeout_s``.
 
     Returns ``(result, error, timed_out, thread)``. ``thread`` is the live call's
@@ -302,7 +308,7 @@ def _call_with_timeout(fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: Di
         except BaseException as exc:  # noqa: BLE001 -- reported, never swallowed
             return None, exc, False, None
 
-    box: "queue.Queue[Tuple[Any, Optional[BaseException]]]" = queue.Queue(maxsize=1)
+    box: queue.Queue[tuple[Any, BaseException | None]] = queue.Queue(maxsize=1)
 
     def _target() -> None:
         try:
@@ -319,7 +325,7 @@ def _call_with_timeout(fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: Di
     return result, error, False, thread
 
 
-def _drain_abandoned(thread: Optional[threading.Thread], timeout_s: float) -> Tuple[bool, float]:
+def _drain_abandoned(thread: threading.Thread | None, timeout_s: float) -> tuple[bool, float]:
     """Wait for an abandoned engine call to return. Returns ``(returned, waited_s)``.
 
     This is the device hand-over: the orchestrator will not start the next engine
@@ -334,7 +340,7 @@ def _drain_abandoned(thread: Optional[threading.Thread], timeout_s: float) -> Tu
     return (not thread.is_alive()), time.perf_counter() - t0
 
 
-def _validate_output(out: Any) -> Optional[str]:
+def _validate_output(out: Any) -> str | None:
     """Reason the engine output is not usable as evidence, or None when it is.
 
     "No engine is marked successful without a valid output": a success status
@@ -360,7 +366,7 @@ def _validate_output(out: Any) -> Optional[str]:
     return None
 
 
-def _frames_of(observations: Sequence[ObservationRecord]) -> Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[str, ...]]:
+def _frames_of(observations: Sequence[ObservationRecord]) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     frame_ids = tuple(sorted({o.coordinate_frame.frame_id for o in observations}))
     scale_states = tuple(sorted({o.coordinate_frame.scale_state for o in observations}))
     units = tuple(sorted({o.coordinate_frame.units for o in observations}))
@@ -377,10 +383,10 @@ def _frames_of(observations: Sequence[ObservationRecord]) -> Tuple[Tuple[str, ..
 SAME_TARGET_MIN_IOU = 0.5
 
 
-def _deduplicate(observations: Sequence[ObservationRecord]) -> Tuple[List[ObservationRecord], int]:
+def _deduplicate(observations: Sequence[ObservationRecord]) -> tuple[list[ObservationRecord], int]:
     """Drop content-identical repeats. The first-seen record is kept (stable for reproducibility)."""
-    seen: Dict[str, int] = {}
-    kept: List[ObservationRecord] = []
+    seen: dict[str, int] = {}
+    kept: list[ObservationRecord] = []
     for obs in observations:
         h = compute_observation_hash(obs)
         if h in seen:
@@ -401,11 +407,11 @@ def merge_engine_outputs(outputs: Sequence[UnifiedEngineOutput]) -> MultiEngineR
     counted = [o for out in outputs for o in out.observations if out.status in ("succeeded", "partial")]
     all_obs, n_duplicates = _deduplicate(counted)
 
-    all_contradictions: List[Dict[str, Any]] = []
-    comparability_notes: List[Dict[str, Any]] = []
-    agreements: List[Dict[str, Any]] = []
+    all_contradictions: list[dict[str, Any]] = []
+    comparability_notes: list[dict[str, Any]] = []
+    agreements: list[dict[str, Any]] = []
 
-    by_image: Dict[str, List[ObservationRecord]] = {}
+    by_image: dict[str, list[ObservationRecord]] = {}
     for obs in all_obs:
         by_image.setdefault(obs.source_image_id, []).append(obs)
 
@@ -440,7 +446,7 @@ def merge_engine_outputs(outputs: Sequence[UnifiedEngineOutput]) -> MultiEngineR
                     }
                     (comparability_notes if issue.startswith("scale_state_mismatch") else all_contradictions).append(row)
 
-    engine_stats: Dict[str, Dict[str, Any]] = {}
+    engine_stats: dict[str, dict[str, Any]] = {}
     for out in outputs:
         engine_stats[out.engine_id] = {
             "status": out.status,
@@ -478,7 +484,7 @@ def merge_engine_outputs(outputs: Sequence[UnifiedEngineOutput]) -> MultiEngineR
     )
 
 
-def _top_contradiction_types(contradictions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _top_contradiction_types(contradictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Top contradiction types by frequency."""
     from collections import Counter
 
@@ -503,18 +509,18 @@ class MultiEngineOrchestrator:
 
     def __init__(self, vram_headroom_mb: int = 512):
         self._vram_headroom = vram_headroom_mb
-        self._wave_results: List[UnifiedEngineOutput] = []
-        self._deferred: List[EngineSpec] = []
-        self._executions: List[EngineExecution] = []
-        self._unavailable: List[Dict[str, Any]] = []
+        self._wave_results: list[UnifiedEngineOutput] = []
+        self._deferred: list[EngineSpec] = []
+        self._executions: list[EngineExecution] = []
+        self._unavailable: list[dict[str, Any]] = []
         #: engine_id -> the still-running thread of a timed-out call that has NOT
         #: returned. While this is non-empty, no further GPU engine is started.
-        self._gpu_holders: Dict[str, threading.Thread] = {}
+        self._gpu_holders: dict[str, threading.Thread] = {}
         self._lock = threading.RLock()
 
-    def _prune_released_devices(self) -> List[str]:
+    def _prune_released_devices(self) -> list[str]:
         """Drop holders whose abandoned call has since returned (the device is free again)."""
-        released: List[str] = []
+        released: list[str] = []
         with self._lock:
             for engine_id, thread in list(self._gpu_holders.items()):
                 if not thread.is_alive():
@@ -524,7 +530,7 @@ class MultiEngineOrchestrator:
             log.info("abandoned engine(s) %s returned; the device is free again", ", ".join(released))
         return released
 
-    def _gpu_blocked_reason(self, spec: EngineSpec) -> Optional[str]:
+    def _gpu_blocked_reason(self, spec: EngineSpec) -> str | None:
         """Why this engine may not start on the GPU now, or None.
 
         An engine deferred here is NOT reported as if it ran: it is ``unavailable``
@@ -541,7 +547,7 @@ class MultiEngineOrchestrator:
                 f"drain wait; starting this engine would share the device with it")
 
     # -- scheduling
-    def _compute_vram_budget(self) -> Optional[float]:
+    def _compute_vram_budget(self) -> float | None:
         """VRAM available for the next engine, or None when there is no GPU to gate on."""
         if not _cuda_available():
             return None
@@ -549,7 +555,7 @@ class MultiEngineOrchestrator:
         return total - self._vram_headroom if total > self._vram_headroom else 0.0
 
     @staticmethod
-    def _order(specs: Sequence[EngineSpec]) -> Tuple[List[EngineSpec], List[Tuple[str, str]]]:
+    def _order(specs: Sequence[EngineSpec]) -> tuple[list[EngineSpec], list[tuple[str, str]]]:
         """Kahn topological order, priority tie-break. Returns (order, unmet_edges).
 
         An unmet edge means a dependency that is not in this run's set; the
@@ -558,7 +564,7 @@ class MultiEngineOrchestrator:
         """
         by_id = {s.engine_id: s for s in specs}
         indegree = {s.engine_id: 0 for s in specs}
-        unmet: List[Tuple[str, str]] = []
+        unmet: list[tuple[str, str]] = []
         for s in specs:
             for dep in s.dependencies:
                 if dep in by_id:
@@ -566,7 +572,7 @@ class MultiEngineOrchestrator:
                 else:
                     unmet.append((s.engine_id, dep))
         ready = [s for s in specs if indegree[s.engine_id] == 0]
-        out: List[EngineSpec] = []
+        out: list[EngineSpec] = []
         while ready:
             ready.sort(key=lambda s: -s.priority)
             current = ready.pop(0)
@@ -584,7 +590,7 @@ class MultiEngineOrchestrator:
         return out, unmet
 
     @staticmethod
-    def _should_cancel(context: Dict[str, Any]) -> bool:
+    def _should_cancel(context: dict[str, Any]) -> bool:
         fn = context.get("should_cancel")
         if not callable(fn):
             return False
@@ -594,7 +600,7 @@ class MultiEngineOrchestrator:
             return False
 
     def _execute_one(self, spec: EngineSpec, image_paths: Sequence[str],
-                     context: Dict[str, Any]) -> Tuple[UnifiedEngineOutput, EngineExecution]:
+                     context: dict[str, Any]) -> tuple[UnifiedEngineOutput, EngineExecution]:
         fn = _ENGINE_FNS[spec.engine_id]
         device = _active_device()
         attempts = 0
@@ -681,8 +687,8 @@ class MultiEngineOrchestrator:
                                 device=device, attempts=attempts, wall_time_s=elapsed,
                                 reason="exception"))
 
-    def run_wave(self, image_paths: Sequence[str] = (), context: Optional[Dict[str, Any]] = None,
-                 engine_ids: Optional[Sequence[str]] = None) -> List[UnifiedEngineOutput]:
+    def run_wave(self, image_paths: Sequence[str] = (), context: dict[str, Any] | None = None,
+                 engine_ids: Sequence[str] | None = None) -> list[UnifiedEngineOutput]:
         """Run the registered engines: dependency order, priority order, VRAM-aware, cancellable."""
         with self._lock:
             caller_context = dict(context or {})  # never mutate the caller's dict (per-job isolation)
@@ -692,11 +698,11 @@ class MultiEngineOrchestrator:
                 wanted = set(engine_ids)
                 specs = [s for s in specs if s.engine_id in wanted]
 
-            results: List[UnifiedEngineOutput] = []
-            executions: List[EngineExecution] = []
-            unavailable: List[Dict[str, Any]] = []
+            results: list[UnifiedEngineOutput] = []
+            executions: list[EngineExecution] = []
+            unavailable: list[dict[str, Any]] = []
 
-            runnable: List[EngineSpec] = []
+            runnable: list[EngineSpec] = []
             for spec in specs:
                 reason = _availability_reason(spec)
                 if reason is None:
@@ -712,12 +718,12 @@ class MultiEngineOrchestrator:
                         device=_active_device(), reason="unavailable"))
 
             ordered, unmet_edges = self._order(runnable)
-            unmet_by_engine: Dict[str, List[str]] = {}
+            unmet_by_engine: dict[str, list[str]] = {}
             for engine_id, dep in unmet_edges:
                 unmet_by_engine.setdefault(engine_id, []).append(dep)
 
-            statuses: Dict[str, str] = {s.engine_id: s.status for s in executions}
-            deferred: List[EngineSpec] = []
+            statuses: dict[str, str] = {s.engine_id: s.status for s in executions}
+            deferred: list[EngineSpec] = []
             cancelled = False
             _torch_empty_cache()
 
@@ -811,7 +817,7 @@ class MultiEngineOrchestrator:
             self._unavailable.extend(unavailable)
             return results
 
-    def run_all(self, image_paths: Sequence[str], context: Optional[Dict[str, Any]] = None) -> MultiEngineReport:
+    def run_all(self, image_paths: Sequence[str], context: dict[str, Any] | None = None) -> MultiEngineReport:
         """Run ALL registered engines, merge results into a MultiEngineReport."""
         with self._lock:
             self._deferred = []
@@ -828,14 +834,14 @@ class MultiEngineOrchestrator:
         return report
 
 
-def _downstream_context(out: UnifiedEngineOutput, context: Dict[str, Any]) -> Dict[str, Any]:
+def _downstream_context(out: UnifiedEngineOutput, context: dict[str, Any]) -> dict[str, Any]:
     """Facts a downstream engine legitimately needs from an upstream one.
 
     Keyed off the observation CATEGORY, not a hard-coded engine id, so a detector
     registered under any name still feeds the segmenter.
     """
-    update: Dict[str, Any] = {}
-    boxes: Dict[str, List[Tuple[float, float, float, float]]] = {}
+    update: dict[str, Any] = {}
+    boxes: dict[str, list[tuple[float, float, float, float]]] = {}
     for obs in out.observations:
         if obs.category in ("object", "architecture", "opening") and obs.bbox_px:
             boxes.setdefault(obs.source_image_id, []).append(tuple(obs.bbox_px))

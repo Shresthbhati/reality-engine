@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
-from PIL import Image
 import torch
+from PIL import Image
 
 from perception.engine_evidence import (
     CoordinateFrame,
@@ -23,20 +24,24 @@ from perception.engine_orchestrator import EngineSpec, register_engine
 log = logging.getLogger("reality.detection_adapter")
 
 
-def _grounding_dino_available() -> Optional[str]:
+def _grounding_dino_available() -> str | None:
     try:
-        from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+        from importlib import import_module
+
+        transformers = import_module("transformers")
+        getattr(transformers, "AutoProcessor")
+        getattr(transformers, "AutoModelForZeroShotObjectDetection")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
 def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
-    from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+    from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "detection_run")
-    obs: List[ObservationRecord] = []
+    obs: list[ObservationRecord] = []
     model_name = "IDEA-Research/grounding-dino-tiny"
     queries = ctx.get("queries", ["wall", "door", "window", "floor", "ceiling", "furniture"])
 
@@ -107,7 +112,7 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         if torch.cuda.is_available():
             return torch.cuda.max_memory_allocated(0) / (1024.0 * 1024.0)

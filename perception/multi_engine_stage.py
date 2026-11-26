@@ -18,8 +18,9 @@ run in which any engine did not succeed is reported ``partial``, never
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
 from perception.engine_adapters import register_all_engines
 from perception.engine_orchestrator import MultiEngineOrchestrator
@@ -30,7 +31,7 @@ log = logging.getLogger("reality.multi_engine_stage")
 _OK_STATUSES = frozenset({"succeeded", "partial"})
 
 
-def _overall_status(engines_run: Dict[str, str]) -> str:
+def _overall_status(engines_run: dict[str, str]) -> str:
     """``succeeded`` only when every engine succeeded; otherwise ``partial``/``failed``.
 
     ``partial`` also covers unavailable/skipped engines: a run that could not
@@ -50,10 +51,10 @@ def run_multi_engine_for_job(
     *,
     sources: Sequence[str],
     run_id: str,
-    cameras: Optional[dict] = None,
-    pairs: Optional[Sequence[tuple]] = None,
-    matrix_root: Optional[Path | str] = None,
-) -> Dict[str, Any]:
+    cameras: dict | None = None,
+    pairs: Sequence[tuple] | None = None,
+    matrix_root: Path | str | None = None,
+) -> dict[str, Any]:
     """Run all registered engines on the job's evidence and return facts.
 
     Returns a dict suitable for the job report under ``stages.multi_engine``.
@@ -80,14 +81,14 @@ def run_multi_engine_for_job(
 
     try:
         orch = MultiEngineOrchestrator()
-        context: Dict[str, Any] = {"run_id": run_id}
+        context: dict[str, Any] = {"run_id": run_id}
         if pairs:
             context["pairs"] = list(pairs)
         if cameras:
             context["cameras"] = cameras
         report = orch.run_all(list(sources), context=context)
 
-        facts: Dict[str, Any] = {
+        facts: dict[str, Any] = {
             "status": _overall_status(dict(report.engines_run)),
             "available": available,
             "engines_run": report.engines_run,

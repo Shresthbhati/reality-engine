@@ -132,7 +132,7 @@ class TestDepthAnythingV2BackendIntegration:
         assert vals[0, 1] == pytest.approx(4.0)
         assert vals[1, 0] == pytest.approx(8.0)     # > 1: proves no normalisation
         assert np.isnan(vals[1, 1])                 # a non-positive prediction is a hole
-        assert dm.valid_mask[1, 1] == False and dm.invalid_pixels == 1
+        assert not dm.valid_mask[1, 1] and dm.invalid_pixels == 1
         assert dm.quantity == "inverse_depth"
 
     def test_masked_arrays_marks_non_positive_and_non_finite_pixels(self):
@@ -167,4 +167,3 @@ class TestDepthAnythingV2BackendIntegration:
         assert facts["status"] == "ran"
         assert facts["model"] == "depth_anything_v2_small"
         assert facts["maps"] == 1
-

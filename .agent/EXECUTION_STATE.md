@@ -83,9 +83,32 @@
 - Gaussian splatting / NeRF integration (P2 per priority order)
 
 ## Next action (exact)
-- Select the next implementation work package from the governing task `P-52W-00`'s programme mapping and the mandate's priority order (broken production functionality → missing producer-consumer integrations → core reconstruction accuracy blockers → missing generalized evidence-fusion → missing camera/depth/geometry → ...).
-- Concrete first candidate: Quarter 1 Week 2 — extend pose graph to integrate bundle adjustment refinement and pass BA-refined poses/points as cheirality constraints back into solve_pose_graph.
-- Before editing production code: re-read `docs/status.yaml` S5-23 / S5-26 `next` fields, `RELEASE.md`, and the current `.agent/TASKS.yaml` tail so the next edit continues rather than restarts.
+- Re-read `.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` `P-52W-00` (current state + governing task), then re-read `docs/status.yaml` S5-23/S5-26 `next` fields, `RELEASE.md`, and the `TASKS.yaml` tail before any production edit.
+- Choose the next implementation work package from mandate §13 priority order applied to reconciled state. Next candidate: Quarter 1 Week 2 — extend pose graph to integrate bundle adjustment refinement (S5-25 `next`: "Bundle adjustment over 3D points"); OR continue evidence fusion with confidence calibration (S5-26 `next`: "Make confidence a measured quantity or drop it").
+- Commit only when appropriate; never rewrite history; keep PRs focused; do not merge without authorization.
+
+## Programme governance
+### Quarter 1 generalized evidence normalization + task-specific fusion (mandate §2, Weeks 1–12)
+1. Created `engine/multiengine/evidence_fusion.py` — task-specific fusion layer that:
+   - Normalizes `EngineObservation` records per task type (depth_value, position, dimensions, bbox)
+   - Fuses with reliability/uncertainty/consistency weighting (never blind averaging)
+   - Uses existing `fuse_quantity` engine for scalar quantities with conflict detection
+   - Component-wise inverse-variance fusion for vectors (position/dimensions) with per-axis conflict detection
+   - Consistency-weighted bbox fusion with label disagreements preserved as `FusionConflict` records
+   - Incompatible frames/units/sources recorded as conflicts, never averaged
+   - Fused results written back to EvidenceMatrix linked to contributors via `derived_from`
+   - Uses lightweight stub `Unit`/`Provenance` classes to avoid heavy import chain
+2. Created `tests/test_evidence_normalization_fusion.py` — 19-test focused suite covering:
+   - Scalar fusion (single passthrough, two consistent, conflicting, empty raises)
+   - Position fusion (single passthrough, two in same frame, different frames filtered)
+   - Dimensions fusion (single passthrough, two fuse)
+   - Bbox fusion (single passthrough, two same label, different labels preserve conflict, different sources incompatible)
+   - write_fused_back (written observation linked to contributors, predicted dict carries fused value)
+   - normalize_and_fuse (returns one per quantity, grouped by label)
+   - Cross-check with existing fuse_quantity (same results for scalar quantities)
+3. Advanced `docs/status.yaml` S5-23: added task-specific fusion evidence, added test to the tests list, updated `updated` to 2026-11-26.
+
+Verification: manual test of core fusion paths (single passthrough, two consistent, write_fused_back with link verification) PASS.
 
 ## Programme governance
 - Governing task: `.agent/TASKS.yaml` entry `P-52W-00` (the 52-week master programme as the authoritative queue).

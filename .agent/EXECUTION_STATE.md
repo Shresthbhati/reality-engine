@@ -2,9 +2,9 @@
 
 ## Branch / Commit
 - Branch: `feat/day4-real-geometry-measurements` (from `main`, PR #395 open)
-- Commit: `156f3e36` — "fix(perception): honest depth units, cross-view-comparable relative depth, invalid-pixel masks"
+- Commit: `290ab106` — "docs(state): record Quarter 1 evidence normalization + task-specific fusion completion" (tip); prior commits `4dc8d258` (feat: evidence_fusion.py + test + status advance), `c10f9a2c`, `156f3e36`
 - Working tree: has changes (PR #395 merge in progress)
-- Push state: branch pushed; PR #395 open, not merged
+  - Push state: branch pushed to `4dc8d258` and `290ab106`; PR #395 open, not merged
 
 ## Reconciliation note (this session)
 - Inspected the mandate's "first inspect" list: `engine_orchestrator.py`, `engine_adapters.py`, `engine_matrix_bridge.py`, `engine/multiengine/evidence_matrix.py`, `perception/depth/`, `reconstruction/depth_to_points.py`, camera registration/pose-graph, `apps/api/evidence_world_stage.py`, WorldIR, WorldStore, Reality Studio, status ledger.
@@ -37,14 +37,14 @@
 1. Reconciled current source state against the mandate: confirmed all named modules exist and are wired; confirmed the depth fixes are committed/pushed; confirmed no `docs/engineering` ledger/backlog/state files exist.
 2. Updated this file (current branch/commit, completed work, exact next action).
 3. Added one governing task entry to `.agent/TASKS.yaml` (`P-52W-00`) so the 52-week master programme is represented as the authoritative work queue without recreating deleted backlogs.
-4. Implemented `perception/bundle_adjustment.py` — bundle adjustment over 3D points using exact sparse LM solver; camera 0 pinned as gauge; per-camera/per-point covariances; verified with synthetic data.
+4. Implemented `perception/bundle_adjustment.py` (UNTRACKED — not committed): bundle adjustment over 3D points using exact sparse LM solver; camera 0 pinned as gauge; per-camera/per-point covariances; verified with synthetic data. Status: recovered work product; not yet wired into committed pipeline (a separate `BundleAdjustmentOptimizer` exists in `reconstruction/sfm/core_pipeline.py`, tested). Needs evaluation before integration.
 5. Extended `perception/camera_pose_graph.py` with optional `points3d` cheirality constraints — `(R_c @ P + t_c).z > 0` residuals pin handedness and scale; all 30 existing tests pass.
 6. Widened pair strategy in `scripts/run_multi_engine_real_capture.py` — added `sequential_skip23`, `sequential_skip234`, `all`; default = `sequential_skip23`.
-7. Created 9 engineering ledger files in `docs/engineering/`: `24_7_EXECUTION_STATE.md`, `IMPLEMENTATION_LEDGER.md`, `52_WEEK_MASTER_PROGRAMME.md`, `ENGINE_INTEGRATION_MATRIX.md`, `TECHNOLOGY_ECOSYSTEM.md`, `RECONSTRUCTION_ARCHITECTURE.md`, `KNOWN_LIMITATIONS.md`, `DECISION_LOG.md`, `IMPLEMENTATION_BACKLOG.md`.
+7. Created 9 engineering ledger files in `docs/engineering/` during a prior session; these were removed in the current recovery session per AGENTS.md §51 (4 were plan/roadmap/backlog/state documents prohibited from recreation; 5 were duplicates of canonical committed `docs/engineering/` records). Their unique content (bundle adjustment decision D-011, cheirality decision D-012, South Building 32-photo multi-engine execution results) is captured in the recovery report `docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md`.
 
 ## Verification performed (this session)
 - `python scripts/render_status.py --check`: passed (docs/status.yaml still source of truth; STATUS.md in sync).
-- Git working tree: clean at `156f3e36` on `feat/day4-real-geometry-measurements`.
+  - Git working tree: `290ab106` on `feat/day4-real-geometry-measurements`; untracked: `perception/bundle_adjustment.py` (recovered, not committed).
 - All 75 existing tests pass (test_unified_engine_orchestration.py, test_engine_matrix_bridge.py, test_camera_pose_graph.py, test_depth_to_points.py).
 - Bundle adjustment verified with synthetic data: converges, gauge camera stays fixed, other cameras refined toward ground truth.
 

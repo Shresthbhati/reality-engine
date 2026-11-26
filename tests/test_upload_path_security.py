@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.api.storage import staging_path, validate_staging_id
+from apps.api.storage import validate_staging_id
 
 
 @pytest.mark.parametrize(

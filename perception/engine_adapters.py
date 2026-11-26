@@ -483,6 +483,27 @@ def register_all_engines() -> list[str]:
     except Exception as exc:
         log.warning("Depth engine not registered: %s", exc)
 
+    # Depth (MiDaS DPT_Hybrid) -- a second, implemented depth backend that was not
+    # wired. Register it so the production job runs it as a first-class depth engine.
+    # Depth is relative inverse depth (MiDaS convention), not metric.
+    try:
+        from perception.midas_adapter import register_midas_engine
+        register_midas_engine()
+        registered.append("midas")
+    except Exception as exc:
+        log.warning("MiDaS depth engine not registered: %s", exc)
+
+    # Detection + instance segmentation (Mask R-CNN, torchvision COCO-pretrained) --
+    # a second detection engine (boxes + instance masks) that was implemented but not
+    # wired. Register it so the production job runs it; its observations feed the
+    # orchestrator -> matrix/evidence consumer.
+    try:
+        from perception.maskrcnn_adapter import register_maskrcnn_engine
+        register_maskrcnn_engine()
+        registered.append("maskrcnn")
+    except Exception as exc:
+        log.warning("Mask R-CNN engine not registered: %s", exc)
+
     log.info("registered %d engines: %s", len(registered), registered)
     return registered
 

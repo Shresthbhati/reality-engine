@@ -278,7 +278,7 @@ _DEFAULT_MODELS = [
         measured_vram_mb=0.0,  # CPU-only numpy heuristic: no model weights, no GPU use
         status="candidate",
         input_contract="RGB image + optional camera intrinsics",
-        output_contract="Heuristic depth map in meters (H, W), scale_state='estimated'",
+        output_contract="Heuristic depth-like prior in an arbitrary relative scale (H, W), not metres; scale_state='relative'",
     ),
     ModelSpec(
         name="depth_anything_v2",

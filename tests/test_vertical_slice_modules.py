@@ -245,6 +245,7 @@ def _relative_depthmap(w=64, h=48, value=0.02):
         evidence_id="A", width=w, height=h,
         values=[[value] * w for _ in range(h)],
         unit="relative",
+        quantity="inverse_depth",
     )
 
 
@@ -283,7 +284,7 @@ def test_metricize_and_unproject_roundtrip():
     from perception.depth.interface import DepthMap
 
     dm = DepthMap(evidence_id="A", width=w, height=h, values=rel,
-                  unit="relative")
+                  unit="relative", quantity="inverse_depth")
 
     metric, alignment = metricize_relative_depth(dm, camera, sparse)
     assert alignment.scale == pytest.approx(0.25 * 4.0)  # z * rel

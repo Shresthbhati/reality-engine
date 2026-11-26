@@ -2,8 +2,10 @@
 
 Verifies:
 - HeuristicDepthPriorBackend implements IDepthBackend.
-- Output DepthMap has unit='meters' and scale_state='estimated'.
-- Valid pixel dimensions and realistic indoor physical metric depth estimates.
+- Output DepthMap is labelled honestly: unit='relative', quantity='depth' (larger = farther),
+  scale_state='relative'. The values live in an arbitrary 0.3-20 range and are NOT metres
+  (they used to be labelled 'meters', which let a fabricated metric scale downstream).
+- Valid pixel dimensions, monotone-with-distance values.
 - Confidence is low (0.50) -- this is a heuristic prior, not model inference.
 - Benchmark comparison against relative MiDaS monocular depth recorded in docs/benchmarks/depth_midas_vs_metric.json.
 """
@@ -56,8 +58,9 @@ def test_heuristic_depth_prior_backend_contract():
     assert isinstance(backend, IDepthBackend)
     assert backend.name == "heuristic_depth_prior"
     assert backend.license == "Apache-2.0"
-    assert backend.unit == "meters"
-    assert backend.scale_state == "estimated"
+    assert backend.unit == "relative"        # not metres: nothing anchors the scale
+    assert backend.quantity == "depth"       # larger = farther
+    assert backend.scale_state == "relative"
 
 
 def test_heuristic_depth_prior_output(test_image_evidence):
@@ -70,18 +73,23 @@ def test_heuristic_depth_prior_output(test_image_evidence):
     assert dm.evidence_id == test_image_evidence.id
     assert dm.width == 640
     assert dm.height == 480
-    assert dm.unit == "meters"
+    assert dm.unit == "relative"
+    assert dm.quantity == "depth"
     assert len(dm.values) == 480
     assert len(dm.values[0]) == 640
 
     arr = np.array(dm.values, dtype=np.float32)
-    # Depths must be positive physical metric values in meters
+    # Shaped into a plausible indoor span, but that span is arbitrary -- not metres
     assert np.all(arr >= 0.3)
     assert np.all(arr <= 20.0)
+    assert dm.valid_mask is not None and bool(np.asarray(dm.valid_mask).all())
+    assert dm.invalid_pixels == 0
 
     # Uncertainty must be LOW (0.50) -- this is a heuristic prior, not inference
     assert dm.uncertainty.confidence == 0.50
-    assert "heuristic depth prior" in (dm.uncertainty.note or "")
+    note = dm.uncertainty.note or ""
+    assert "heuristic depth prior" in note
+    assert "not metres" in note
 
 
 def test_benchmark_diff_midas_vs_heuristic(test_image_evidence):
@@ -109,13 +117,13 @@ def test_benchmark_diff_midas_vs_heuristic(test_image_evidence):
             "model": heuristic_backend.name,
             "unit": heuristic_backend.unit,
             "scale_state": heuristic_backend.scale_state,
-            "depth_range_meters": [float(np.min(h_arr)), float(np.max(h_arr))],
-            "mean_depth_meters": float(np.mean(h_arr)),
-            "requires_scale_anchor": False,
+            "depth_range_relative": [float(np.min(h_arr)), float(np.max(h_arr))],
+            "mean_relative_value": float(np.mean(h_arr)),
+            "requires_scale_anchor": True,
             "confidence": 0.50,
-            "note": "scene-statistics prior, not learned model inference",
+            "note": "scene-statistics prior in an arbitrary relative scale, not metres, not learned model inference",
         },
-        "metric_scale_fidelity": "heuristic_estimate",
+        "metric_scale_fidelity": "none_relabelled_relative",
     }
 
     out_dir = Path("docs/benchmarks")
@@ -124,6 +132,7 @@ def test_benchmark_diff_midas_vs_heuristic(test_image_evidence):
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(bench_diff, f, indent=2)
 
-    assert bench_diff["heuristic_prior"]["unit"] == "meters"
-    assert bench_diff["heuristic_prior"]["scale_state"] == "estimated"
+    assert bench_diff["heuristic_prior"]["unit"] == "relative"
+    assert bench_diff["heuristic_prior"]["scale_state"] == "relative"
+    assert bench_diff["heuristic_prior"]["requires_scale_anchor"] is True
     assert bench_diff["heuristic_prior"]["confidence"] == 0.50

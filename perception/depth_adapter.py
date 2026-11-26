@@ -7,11 +7,8 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence
-
-import cv2
-import numpy as np
+from collections.abc import Sequence
+from typing import Any
 
 from perception.engine_evidence import (
     CoordinateFrame,
@@ -24,12 +21,16 @@ from perception.engine_orchestrator import EngineSpec, register_engine
 log = logging.getLogger("reality.depth_adapter")
 
 
-def _depth_available() -> Optional[str]:
+def _depth_available() -> str | None:
     try:
-        import torch
-        from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+        from importlib import import_module
+
+        import_module("torch")
+        transformers = import_module("transformers")
+        getattr(transformers, "AutoImageProcessor")
+        getattr(transformers, "AutoModelForDepthEstimation")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
@@ -39,7 +40,7 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "depth_run")
-    obs: List[ObservationRecord] = []
+    obs: list[ObservationRecord] = []
     model_name = ctx.get("depth_model", "depth-anything/Depth-Anything-V2-Small-hf")
 
     try:
@@ -64,12 +65,7 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
                 outputs = model(**inputs)
                 predicted_depth = outputs.predicted_depth
             depth = predicted_depth.squeeze().cpu().numpy()
-            # Normalize to [0,1] for relative depth
             d_min, d_max = depth.min(), depth.max()
-            if d_max - d_min > 1e-6:
-                depth_norm = (depth - d_min) / (d_max - d_min)
-            else:
-                depth_norm = depth
 
             obs.append(ObservationRecord(
                 evidence_id=f"depth:{img_path}",
@@ -109,7 +105,7 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         import torch
         if torch.cuda.is_available():

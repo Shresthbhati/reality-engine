@@ -178,7 +178,8 @@ def run_for_job(
         if Path(src_path).suffix.lower() in _VIDEO_EXTS:
             try:
                 import cv2
-                from perception.evidence_enrichment import process_video_file
+
+                from engine.pipeline.perception_services import process_video_file
 
                 v_res = process_video_file(src_path, max_keyframes=8)
                 kf_dir = root / "video_keyframes"
@@ -253,7 +254,10 @@ def run_for_job(
         relations_fn = None
         surfaces_fn = None
         if use_spatial:  # the spatial_intelligence package decides identity across views and supplies relationships
-            from engine.multiengine.spatial_stage import make_scene_pair_scorer, make_scene_relations_fn
+            from engine.multiengine.spatial_stage import (
+                make_scene_pair_scorer,
+                make_scene_relations_fn,
+            )
 
             scorer = make_scene_pair_scorer(scene_state, scorer)
             relations_fn = make_scene_relations_fn(scene_state)
@@ -304,6 +308,38 @@ def run_for_job(
     facts["detection_pipeline"] = _detection_facts(mode, det_stage, det_note, adapters, res.snapshot)
     if facts["detection_pipeline"].get("problems") and facts["status"] == "complete":
         facts["status"] = "partial"  # a missing pipeline / missing masks is never reported as a finished detection stage
+    # Multi-engine evidence pass: run every available registered perception engine on this job's evidence, import its
+    # observations into the SAME append-only Evidence Matrix the flow used, and carry the resulting lineage into the
+    # world that is persisted below. An engine that failed, timed out, was cancelled or is unavailable is recorded as a
+    # run with that status and its reason -- it is never replaced by an invented result.
+    multi_engine_lineage: dict[str, Any] | None = None
+    try:
+        if should_cancel is not None and should_cancel():
+            # A cancelled run starts no new engine work: the multi-engine pass is not
+            # started, and that is recorded rather than reported as an empty success.
+            raise _CancelledBeforeMultiEngine()
+        from engine.pipeline.perception_services import run_multi_engine_for_job
+
+        pairs = [(real[i], real[i + 1]) for i in range(len(real) - 1)] if len(real) >= 2 else None
+        me_facts = run_multi_engine_for_job(sources=real, run_id=job_id, cameras=cameras, pairs=pairs,
+                                            matrix_root=root)
+        facts["multi_engine"] = me_facts
+        matrix_import = me_facts.get("matrix_import") if isinstance(me_facts, dict) else None
+        if isinstance(matrix_import, dict) and matrix_import.get("status") == "imported":
+            from engine.pipeline.perception_services import world_lineage_block
+
+            multi_engine_lineage = world_lineage_block(matrix_import)
+        elif isinstance(matrix_import, dict):
+            # A refused or incomplete import is reported as such; it never becomes a success.
+            multi_engine_lineage = {"status": matrix_import.get("status"), "reason": matrix_import.get("reason"),
+                                    "n_observations_imported": matrix_import.get("n_observations_imported", 0)}
+        if multi_engine_lineage is not None:
+            facts["multi_engine_evidence"] = multi_engine_lineage
+            write_multi_engine_evidence(root, multi_engine_lineage)
+    except _CancelledBeforeMultiEngine:
+        facts["multi_engine"] = {"status": "cancelled", "reason": "the run was cancelled before the multi-engine pass started"}
+    except Exception as exc:  # noqa: BLE001 -- multi-engine is additive; never sinks the job
+        facts["multi_engine"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
     facts["world_ir"] = persist_world(root, job_id, res.bridge)
     if facts["status"] == "complete" and facts["world_ir"]["status"] != "persisted":
         facts["status"] = "partial"  # a flow that finished but whose canonical world was not persisted and verified is not a success
@@ -334,12 +370,15 @@ def run_for_job(
         os.environ.get("RE_EVIDENCE_WORLD_SCENE_INTEL", "").strip().lower() in ("1", "true", "yes", "on")
     )
     try:
-        from perception.spatial_inputs import SPATIAL_INPUTS_FILE, get_inputs_provider
+        from engine.pipeline.perception_services import (
+            SPATIAL_INPUTS_FILE,
+            extract_structural_regions,
+            get_inputs_provider,
+            run_inference_plan,
+            select_inference_plan_for_inputs,
+        )
 
         if use_si:
-            from perception.orchestrator import run_inference_plan, select_inference_plan_for_inputs
-            from perception.scene_intelligence import extract_structural_regions
-
             plan = select_inference_plan_for_inputs(real, has_video=bool(video_ingestion_facts))
             orch_res = run_inference_plan(real, run_id=job_id, plan=plan, cameras=usable)
             si_v1 = orch_res.spatial_inputs
@@ -457,6 +496,13 @@ def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
                     "entities": 0, "geometries": 0}
         world = WorldIR(id=f"evw-{job_id}", name=f"evidence world {job_id}")
         bridge.apply_to(world)
+        lineage = read_multi_engine_evidence(root)
+        if lineage:
+            # Lineage of the evidence behind this world (which engines contributed which
+            # observations, and what did not run). Not geometry: it never invents an entity.
+            # Read from the run directory, so persisting the same run again (a retry) sees
+            # the same lineage and reproduces the same content-addressed version.
+            world.metadata["multi_engine_evidence"] = lineage
         withheld = _withhold_unresolved_duplicates(world)
         counts = {"entities": len(world.entities), "geometries": len(world.geometries), "withheld_entities": len(withheld)}
         errors = [str(i) for i in validate_world_ir(world).errors]
@@ -485,6 +531,40 @@ def persist_world(root: Path, job_id: str, bridge: Any) -> dict[str, Any]:
                 "reload_verified": True, "validation": "valid", **counts}
     except Exception as exc:  # noqa: BLE001 -- recorded, never a silent success and never a failed job
         return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+
+
+class _CancelledBeforeMultiEngine(Exception):
+    """Internal signal: the operator cancelled before the multi-engine pass began."""
+
+
+MULTI_ENGINE_EVIDENCE_FILE = "multi_engine_evidence.json"
+
+
+def write_multi_engine_evidence(root: Path, block: Mapping[str, Any]) -> bool:
+    """Record the multi-engine evidence lineage of this run beside its evidence.
+
+    It lives in the run directory (not only in the job report) so the world that is
+    persisted carries traceable engine lineage, and so persisting the same run again
+    reproduces the same world version instead of a new one per run.
+    """
+    try:
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        tmp = root / (MULTI_ENGINE_EVIDENCE_FILE + ".tmp")
+        tmp.write_text(json.dumps(dict(block), sort_keys=True), encoding="utf-8")
+        os.replace(tmp, root / MULTI_ENGINE_EVIDENCE_FILE)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def read_multi_engine_evidence(root: Path) -> dict[str, Any] | None:
+    """The recorded lineage, or None when the run has none (never an empty invention)."""
+    try:
+        data = json.loads((Path(root) / MULTI_ENGINE_EVIDENCE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data else None
 
 
 COMMITTED_VERSION_FILE = "committed_version.json"

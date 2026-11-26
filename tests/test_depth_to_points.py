@@ -101,3 +101,17 @@ def test_output_composes_with_real_ransac_plane_detection():
     # All points are at z=3 (camera space == world space here) -> the
     # detected plane's normal should be along Z.
     assert abs(abs(plane.normal[2]) - 1.0) < 1e-6
+
+
+def test_metricize_refuses_a_depth_like_relative_map():
+    """z = scale / rel inverts whatever it is given: a relative map whose numbers grow with
+    distance (the heuristic prior) would come back mirrored, so it is refused."""
+    camera = _camera()
+    sparse = [(0.0, 0.0, 4.0)] * 60
+    wrong_way = DepthMap(evidence_id="ev-1", width=_WIDTH, height=_HEIGHT,
+                         values=[[4.0 for _ in range(_WIDTH)] for _ in range(_HEIGHT)],
+                         unit="relative", quantity="depth")
+    from reconstruction.depth_to_points import metricize_relative_depth
+
+    with pytest.raises(DepthToPointsError, match="quantity='depth'"):
+        metricize_relative_depth(wrong_way, camera, sparse)

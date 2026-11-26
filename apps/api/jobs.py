@@ -57,8 +57,8 @@ from reconstruction.proc import (
     unregister_worker,
     get_dead_worker_jobs,
 )
-from perception.spatial_adapter import adapt_spatial_inputs_v1
-from perception.spatial_inputs import (
+from engine.pipeline.perception_services import (
+    adapt_spatial_inputs_v1,
     CameraInput,
     ScaleStateInput,
     SpatialInputsV1,
@@ -1448,7 +1448,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 slab = cp.get("wall_slab")
                 if not isinstance(slab, dict):
                     continue
-                start = slab.get("start_xyz_m"); end = slab.get("end_xyz_m")
+                start = slab.get("start_xyz_m")
+                end = slab.get("end_xyz_m")
                 sigma = slab.get("measurement_uncertainty_m")
                 if not (isinstance(start, (list, tuple)) and len(start) == 3 and
                         isinstance(end, (list, tuple)) and len(end) == 3 and

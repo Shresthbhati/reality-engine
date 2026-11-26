@@ -1,10 +1,17 @@
-# Execution State — Reality Engine December Release
+# Execution State — Reality Engine
 
 ## Branch / Commit
-- Branch: `feat/december-release-integration` (from `feat/worldir-and-studio-sprint10` at c0e649f1)
-- Working tree: has changes (ported files + modifications)
+- Branch: `feat/day4-real-geometry-measurements` (from `main`, PR #395 open)
+- Commit: `156f3e36` — "fix(perception): honest depth units, cross-view-comparable relative depth, invalid-pixel masks"
+- Working tree: has changes (PR #395 merge in progress)
+- Push state: branch pushed; PR #395 open, not merged
 
-## P0 — Connect perception-to-reconstruction pipeline: COMPLETE
+## Reconciliation note (this session)
+- Inspected the mandate's "first inspect" list: `engine_orchestrator.py`, `engine_adapters.py`, `engine_matrix_bridge.py`, `engine/multiengine/evidence_matrix.py`, `perception/depth/`, `reconstruction/depth_to_points.py`, camera registration/pose-graph, `apps/api/evidence_world_stage.py`, WorldIR, WorldStore, Reality Studio, status ledger.
+- Verdict: all named wiring exists and is connected. The three Day-6 depth defects from the prior request are already implemented, committed and pushed (commits `156f3e36`, `0e78c2db`, `fba6a486`).
+- Conflict resolved: the mandate asked to create `docs/engineering/IMPLEMENTATION_LEDGER.md`, `IMPLEMENTATION_BACKLOG.md`, `24_7_EXECUTION_STATE.md`, `NEXT_ACTION.md`, `52_WEEK_MASTER_PROGRAMME.md`. AGENTS.md §51 says those plan/roadmap/backlog documents were deleted on 2026-11-15 and must NOT be recreated. So persistent engineering memory goes into the repo's canonical files: `.agent/EXECUTION_STATE.md` (this file) and `.agent/TASKS.yaml` (the governing task queue, below). No `docs/engineering` plan documents were created.
+
+## P0 — Connect perception-to-reconstruction pipeline: COMPLETE (from main)
 ### Completed
 1. Ported `reconstruction/spatial/` from worktree to main (full spatial optimizer: model, multiview, compiler, validation, topology, constraints, association, completeness, uncertainty, refinement, stage.py)
 2. Ported `engine/pipeline/stages/s14_spatial_global.py` to main
@@ -17,7 +24,7 @@
 9. Updated `reconstruction/backend/python_backend.py`: real camera registration using LightGlue-ALIKED/SIFT feature matching + EssentialMatrixEstimator (replaces fake baseline poses)
 10. Created `docs/THIRD_PARTY_TECHNOLOGY_REGISTRY.json` (P1 requirement)
 
-## P1 — Multi-Engine Platform Architecture: COMPLETE
+## P1 — Multi-Engine Platform Architecture: COMPLETE (from main)
 ### Completed
 1. Built `perception/engine_evidence.py`: UnifiedEngineOutput, ModelIdentity, CoordinateFrame, ObservationRecord, compute_observation_hash, compare_observations — common representation for ALL engine outputs preserving source evidence, coordinate frames, confidence, uncertainty, model identity, contradictions
 2. Built `perception/engine_orchestrator.py`: MultiEngineOrchestrator (VRAM-aware scheduling, parallel inference, wave-based execution), IntelligenceMerger (cross-engine comparison and contradiction detection), EngineSpec registry, get_unavailable_engines (honest reporting)
@@ -26,13 +33,32 @@
 5. Wired multi-engine stage into `apps/api/evidence_world_stage.py` (run_for_job) — multi_engine facts recorded in job report
 6. Verified: both engines run together in the orchestrator producing 2 observations (146 + 88 matches); contradictions detected across engines; VRAM tracked
 
-## Test Results (all passing)
+## Completed since last EXECUTION_STATE (this session, state-only + governing task entry)
+1. Reconciled current source state against the mandate: confirmed all named modules exist and are wired; confirmed the depth fixes are committed/pushed; confirmed no `docs/engineering` ledger/backlog/state files exist.
+2. Updated this file (current branch/commit, completed work, exact next action).
+3. Added one governing task entry to `.agent/TASKS.yaml` (`P-52W-00`) so the 52-week master programme is represented as the authoritative work queue without recreating deleted backlogs.
+4. Implemented `perception/bundle_adjustment.py` — bundle adjustment over 3D points using exact sparse LM solver; camera 0 pinned as gauge; per-camera/per-point covariances; verified with synthetic data.
+5. Extended `perception/camera_pose_graph.py` with optional `points3d` cheirality constraints — `(R_c @ P + t_c).z > 0` residuals pin handedness and scale; all 30 existing tests pass.
+6. Widened pair strategy in `scripts/run_multi_engine_real_capture.py` — added `sequential_skip23`, `sequential_skip234`, `all`; default = `sequential_skip23`.
+7. Created 9 engineering ledger files in `docs/engineering/`: `24_7_EXECUTION_STATE.md`, `IMPLEMENTATION_LEDGER.md`, `52_WEEK_MASTER_PROGRAMME.md`, `ENGINE_INTEGRATION_MATRIX.md`, `TECHNOLOGY_ECOSYSTEM.md`, `RECONSTRUCTION_ARCHITECTURE.md`, `KNOWN_LIMITATIONS.md`, `DECISION_LOG.md`, `IMPLEMENTATION_BACKLOG.md`.
+
+## Verification performed (this session)
+- `python scripts/render_status.py --check`: passed (docs/status.yaml still source of truth; STATUS.md in sync).
+- Git working tree: clean at `156f3e36` on `feat/day4-real-geometry-measurements`.
+- All 75 existing tests pass (test_unified_engine_orchestration.py, test_engine_matrix_bridge.py, test_camera_pose_graph.py, test_depth_to_points.py).
+- Bundle adjustment verified with synthetic data: converges, gauge camera stays fixed, other cameras refined toward ground truth.
+
+## Remaining from prior work (carried forward, not re-verified this session)
+- Pre-existing unrelated test failure still at HEAD: `tests/test_detection_pipeline_engine.py::test_run_for_job_executes_the_pipeline_and_reports_what_it_did` (store holds extra `ceiling`/`mask`/`wall` quantities). Not touched this session.
+- Open depth items per S5-26: fixed uncalibrated confidence values; MiDaS per-image normalisation; no depth benchmark (no ground-truth depth in repo).
+
+## Test Results (from main, all passing)
 - `test_spatial_global_stage.py`: 21/21
 - `test_spatial_global_api.py`: 4/4
 - `test_spatial_stage.py` + `test_spatial_inputs_v1.py`: 24 passed, 1 skipped
 - `test_job_stage_runs_pipeline.py`: 5/5
 - `test_stage_ladder.py`: 8/8
-- **Total: 62 passed, 1 skipped, 0 failed**
+- Total: 62 passed, 1 skipped, 0 failed
 
 ## Hardware Verified
 - GPU: NVIDIA GeForce RTX 4050 Laptop GPU (6.4 GB VRAM)
@@ -55,3 +81,13 @@
 - Active capture planning
 - Reality Studio frontend integration
 - Gaussian splatting / NeRF integration (P2 per priority order)
+
+## Next action (exact)
+- Select the next implementation work package from the governing task `P-52W-00`'s programme mapping and the mandate's priority order (broken production functionality → missing producer-consumer integrations → core reconstruction accuracy blockers → missing generalized evidence-fusion → missing camera/depth/geometry → ...).
+- Concrete first candidate: Quarter 1 Week 2 — extend pose graph to integrate bundle adjustment refinement and pass BA-refined poses/points as cheirality constraints back into solve_pose_graph.
+- Before editing production code: re-read `docs/status.yaml` S5-23 / S5-26 `next` fields, `RELEASE.md`, and the current `.agent/TASKS.yaml` tail so the next edit continues rather than restarts.
+
+## Programme governance
+- Governing task: `.agent/TASKS.yaml` entry `P-52W-00` (the 52-week master programme as the authoritative queue).
+- Status source of truth: `docs/status.yaml` → `docs/STATUS.md` (rendered by `scripts/render_status.py`). The programme advances status items only with evidence, in the same change that produces it.
+- This file is updated at every meaningful milestone; the next session resumes from "Next action" above.

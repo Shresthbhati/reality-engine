@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -38,7 +39,7 @@ class ModelIdentity:
     non_commercial: bool = False
     hardware_class: str = "gpu"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "engine_id": self.engine_id,
             "architecture_id": self.architecture_id,
@@ -63,7 +64,7 @@ class CoordinateFrame:
     scale_state: str = "relative"  # "metric" | "sfm_gauge" | "relative" | "image"
     units: str = "relative"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"frame_id": self.frame_id, "scale_state": self.scale_state, "units": self.units}
 
 
@@ -77,24 +78,24 @@ class ObservationRecord:
     label: str
     category: str
     # Geometry (various projections, all from the SAME source image)
-    bbox_px: Optional[Tuple[float, float, float, float]] = None
-    world_pos: Optional[Tuple[float, float, float]] = None
-    depth_map_ref: Optional[str] = None
-    point_samples: Optional[Tuple[Tuple[float, float, float], ...]] = None
+    bbox_px: tuple[float, float, float, float] | None = None
+    world_pos: tuple[float, float, float] | None = None
+    depth_map_ref: str | None = None
+    point_samples: tuple[tuple[float, float, float], ...] | None = None
     # Attributes
-    material_hypothesis: Optional[str] = None
-    color_rgb: Optional[Tuple[int, int, int]] = None
-    surface_normal: Optional[Tuple[float, float, float]] = None
+    material_hypothesis: str | None = None
+    color_rgb: tuple[int, int, int] | None = None
+    surface_normal: tuple[float, float, float] | None = None
     # Uncertainty
-    confidence: Optional[float] = None
-    sigma_m: Optional[float] = None
+    confidence: float | None = None
+    sigma_m: float | None = None
     calibration_quality: str = "unverified"
     # Provenance
-    timestamp_s: Optional[float] = None
-    raw_output_ref: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp_s: float | None = None
+    raw_output_ref: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "evidence_id": self.evidence_id,
             "source_image_id": self.source_image_id,
@@ -127,21 +128,21 @@ class UnifiedEngineOutput:
     """
     engine_id: str
     run_id: str
-    observations: Tuple[ObservationRecord, ...]
+    observations: tuple[ObservationRecord, ...]
     status: str               # "succeeded" | "partial" | "failed" | "unavailable"
     error_message: str = ""
     wall_time_s: float = 0.0
-    peak_vram_mb: Optional[float] = None
-    summary: Dict[str, Any] = field(default_factory=dict)
+    peak_vram_mb: float | None = None
+    summary: dict[str, Any] = field(default_factory=dict)
     # Cross-engine contradiction slots: populated by the orchestrator's
     # IntelligenceMerger (engine_intelligence.py)
-    contradictions: Tuple[Dict[str, Any], ...] = ()
+    contradictions: tuple[dict[str, Any], ...] = ()
 
     @property
     def n_observations(self) -> int:
         return len(self.observations)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "engine_id": self.engine_id,
             "run_id": self.run_id,
@@ -164,15 +165,60 @@ def compute_observation_hash(obs: ObservationRecord) -> str:
     return hashlib.sha256(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-def compare_observations(obs_a: ObservationRecord, obs_b: ObservationRecord) -> List[str]:
-    """List of contradictions between two observations of the same target."""
-    issues: List[str] = []
-    if obs_a.label != obs_b.label and obs_a.label != "unknown":
+#: Scale states whose positions are comparable with each other inside one frame id.
+_COMPARABLE_SCALE_STATES = frozenset({"metric", "sfm_gauge"})
+#: Position tolerance per scale state. A gauge unit is not a metre, so the two are
+#: compared on their own terms and the message names the unit that was used.
+_POSITION_TOLERANCE = {"metric": 0.1, "sfm_gauge": 0.1}
+_UNIT_LABEL = {"metric": "m", "sfm_gauge": "gauge units"}
+
+
+def bbox_iou(a: Sequence[float] | None, b: Sequence[float] | None) -> float:
+    """Intersection-over-union of two ``(x0, y0, x1, y1)`` boxes; 0.0 when either is absent or degenerate."""
+    if a is None or b is None or len(a) != 4 or len(b) != 4:
+        return 0.0
+    ax0, ay0, ax1, ay1 = float(a[0]), float(a[1]), float(a[2]), float(a[3])
+    bx0, by0, bx1, by1 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
+    iw = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+    ih = max(0.0, min(ay1, by1) - max(ay0, by0))
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    area_b = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    union = area_a + area_b - inter
+    return 0.0 if union <= 0.0 else float(inter / union)
+
+
+def compare_observations(obs_a: ObservationRecord, obs_b: ObservationRecord) -> list[str]:
+    """List of disagreements between two observations that may be the same target.
+
+    Geometry is only compared when it is comparable: the same coordinate frame id
+    and the same scale state, and that state must itself carry a length. Two
+    observations in different frames or scales get a ``scale_state_mismatch`` note
+    instead of a position contradiction -- calling a difference of relative-depth
+    values a distance in metres would be an invented measurement.
+    """
+    issues: list[str] = []
+    if obs_a.label != obs_b.label and obs_a.label != "unknown" and obs_b.label != "unknown":
         issues.append(f"label_mismatch: {obs_a.label!r} vs {obs_b.label!r}")
+
+    fa, fb = obs_a.coordinate_frame, obs_b.coordinate_frame
     if obs_a.world_pos and obs_b.world_pos:
-        dist = np.linalg.norm(np.array(obs_a.world_pos) - np.array(obs_b.world_pos))
-        if dist > 0.1:  # 10cm tolerance
-            issues.append(f"position_mismatch: {dist:.3f} m")
+        same_frame = fa.frame_id == fb.frame_id
+        same_scale = fa.scale_state == fb.scale_state
+        comparable = same_frame and same_scale and fa.scale_state in _COMPARABLE_SCALE_STATES
+        if not comparable:
+            issues.append(
+                "scale_state_mismatch: positions are not comparable "
+                f"({fa.frame_id}/{fa.scale_state} {fa.units} vs {fb.frame_id}/{fb.scale_state} {fb.units})"
+            )
+        else:
+            dist = float(np.linalg.norm(np.array(obs_a.world_pos) - np.array(obs_b.world_pos)))
+            tolerance = _POSITION_TOLERANCE[fa.scale_state]
+            if dist > tolerance:
+                issues.append(f"position_mismatch: {dist:.3f} {_UNIT_LABEL[fa.scale_state]}")
+
     if obs_a.material_hypothesis and obs_b.material_hypothesis:
         if obs_a.material_hypothesis != obs_b.material_hypothesis:
             issues.append(f"material_mismatch: {obs_a.material_hypothesis!r} vs {obs_b.material_hypothesis!r}")
@@ -186,4 +232,5 @@ __all__ = [
     "UnifiedEngineOutput",
     "compute_observation_hash",
     "compare_observations",
+    "bbox_iou",
 ]

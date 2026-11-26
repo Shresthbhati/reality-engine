@@ -868,6 +868,7 @@ classes:
   - light switch
   - wall switch
   geometry: proxy_box
+  small: true
   mobility: fixed
   min_pixels: 100
   typical_dims_m:
@@ -916,6 +917,7 @@ classes:
   - power outlet
   - wall socket
   geometry: proxy_box
+  small: true
   mobility: fixed
   min_pixels: 100
   typical_dims_m:

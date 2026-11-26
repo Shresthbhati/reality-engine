@@ -30,6 +30,7 @@ from reconstruction.backend.interface import (
 )
 from reconstruction.matching import MatcherUnavailableError, get_matcher
 from reconstruction.matching.interface import IMatcher
+from reconstruction.matching.policy import select_and_load_matcher
 from reconstruction.sfm.core_pipeline import (
     CameraModel,
     EssentialMatrixEstimator,
@@ -87,13 +88,16 @@ def _projection_matrix(camera_model: CameraModel, pose: ReconstructedCameraPose)
 
 
 def _load_matcher(paths: dict) -> IMatcher | None:
-    """Try LightGlue-ALIKED first (best inlier ratio), fall back to SIFT."""
-    for matcher_name in ("lightglue@aliked", "sift"):
-        try:
-            return get_matcher(matcher_name, paths)
-        except MatcherUnavailableError:
-            continue
-    return None
+    """Return a real feature matcher for the given image paths.
+
+    Selected by the matcher selection policy (policy.select_and_load_matcher),
+    whose default reproduces the previous LightGlue-ALIKED-preferred, SIFT-fallback
+    behaviour so existing tests and benchmark results do not regress. When the
+    policy selects a different available matcher (XFeat, MASt3R, DedoDe, classical)
+    and it can be instantiated, that matcher becomes a real downstream consumer
+    of the SfM registration -- with its name, per-pair inliers and runtime recorded
+    in ``ReconstructionResult.registration_stats``."""
+    return select_and_load_matcher(paths)
 
 
 def _match_pair(matcher, paths: dict, a_id: str, b_id: str) -> tuple[np.ndarray, np.ndarray, object] | None:

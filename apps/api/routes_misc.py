@@ -209,7 +209,51 @@ async def create_upload(
             raise HTTPException(
                 413, f"session already holds {stored} uploads (limit {limit}); raise UPLOAD_MAX_FILES_PER_SESSION"
             )
-    digest, _path = store_bytes(data)
+    digest, stored_path = store_bytes(data)
+
+    # Idempotency: an upload of byte-identical content reuses the existing
+    # evidence + artifact instead of storing a second copy and creating a second
+    # evidence row. The artifact is content-addressed (sha256://), so re-uploading
+    # the same bytes is a no-op at the store level; the dedup avoids a duplicate
+    # application record and a duplicate processing job.
+    existing = await db.execute(
+        select(Evidence).where(Evidence.checksum == digest)
+    )
+    existing_ev = existing.scalars().first()
+    if existing_ev:
+        up = Upload(
+            id=new_id("upl"),
+            team_id=team_id,
+            session_id=session_id,
+            status="completed",
+            filename=_safe_filename(file.filename),
+            mime_type=file.content_type,
+            size=len(data),
+            checksum=digest,
+            artifact_uri=existing_ev.artifact_uri,
+            completed_at=utcnow(),
+        )
+        db.add(up)
+        await db.flush()
+        if session_id:
+            s = await db.get(Session, session_id)
+            if s is not None:
+                s.uploaded_at = utcnow()
+                if s.status == "created":
+                    s.status = "uploaded"
+        await db.commit()
+        job = jobrunner.enqueue_job(
+            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=existing_ev.team_id
+        )
+        await db.commit()
+        return {
+            "upload_id": up.id,
+            "evidence_id": existing_ev.id,
+            "job_id": job.id,
+            "checksum": digest,
+            "deduplicated": True,
+        }
+
     up = Upload(
         id=new_id("upl"),
         team_id=team_id,
@@ -256,7 +300,13 @@ async def create_upload(
     await db.commit()
     job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=ev.team_id)
     await db.commit()
-    return {"upload_id": up.id, "evidence_id": ev.id, "job_id": job.id, "checksum": digest}
+    return {
+        "upload_id": up.id,
+        "evidence_id": ev.id,
+        "job_id": job.id,
+        "checksum": digest,
+        "deduplicated": False,
+    }
 
 
 @uploads.post("/resumable/start", status_code=201)

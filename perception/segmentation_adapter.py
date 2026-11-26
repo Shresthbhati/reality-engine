@@ -14,8 +14,6 @@ import numpy as np
 import torch
 
 from perception.engine_evidence import (
-    CoordinateFrame,
-    ModelIdentity,
     ObservationRecord,
     UnifiedEngineOutput,
 )

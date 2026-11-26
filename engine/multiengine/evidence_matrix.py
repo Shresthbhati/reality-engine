@@ -444,12 +444,16 @@ class EvidenceMatrixEntry:
     run_id: str
     source_ids: list[str]
     input_parameters: dict[str, Any]
-    prediction_type: str  # e.g., "point_cloud", "depth_map", "bounding_box_3d", "room_layout"
+    prediction_type: str  # e.g., "point_cloud", "depth_map", "bounding_box_3d", "room_layout", "segmentation_mask"
     raw_output_reference: str  # file path / URI to offloaded artifact
     coordinate_frame: str  # "camera_local", "world_canonical", "enu", etc.
     camera_reference: dict[str, Any] | None = None
     world_transform: list[list[float]] | None = None  # 4x4 matrix
     entity_association: str | None = None
+    #: Inline mask metadata, present when prediction_type is a mask/segmentation.
+    #: For non-mask predictions these stay None and the artifact carries the full data.
+    mask_width: int | None = None
+    mask_height: int | None = None
     confidence: float = 1.0
     uncertainty: dict[str, Any] = field(default_factory=dict)
     calibration_info: dict[str, Any] = field(default_factory=dict)
@@ -481,6 +485,8 @@ class EvidenceMatrixEntry:
             "camera_reference": self.camera_reference,
             "world_transform": self.world_transform,
             "entity_association": self.entity_association,
+            "mask_width": self.mask_width,
+            "mask_height": self.mask_height,
             "confidence": round(float(self.confidence), 6),
             "uncertainty": self.uncertainty,
             "execution_status": self.execution_status,
@@ -493,7 +499,31 @@ class EvidenceMatrixEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EvidenceMatrixEntry:
-        return cls(**data)
+        return cls(
+            evidence_id=data["evidence_id"],
+            model_id=data["model_id"],
+            architecture_id=data["architecture_id"],
+            checkpoint_id=data["checkpoint_id"],
+            run_id=data["run_id"],
+            source_ids=data["source_ids"],
+            input_parameters=data["input_parameters"],
+            prediction_type=data["prediction_type"],
+            raw_output_reference=data["raw_output_reference"],
+            coordinate_frame=data["coordinate_frame"],
+            camera_reference=data.get("camera_reference"),
+            world_transform=data.get("world_transform"),
+            entity_association=data.get("entity_association"),
+            mask_width=data.get("mask_width"),
+            mask_height=data.get("mask_height"),
+            confidence=data.get("confidence", 1.0),
+            uncertainty=data.get("uncertainty", {}),
+            calibration_info=data.get("calibration_info", {}),
+            provenance=data.get("provenance", {}),
+            validation_results=data.get("validation_results", {}),
+            execution_status=data.get("execution_status", "completed"),
+            timestamps=data.get("timestamps", {}),
+            content_hash=data.get("content_hash", ""),
+        )
 
 
 class EvidenceMatrixStore:

@@ -117,3 +117,44 @@ def test_available_probes_for_real_cached_models():
     assert probe_grounding_dino().ok
     assert probe_florence2().ok
     assert probe_sam2().ok
+
+
+def test_blank_uniform_image_produces_zero_detections_and_blur_telemetry():
+    from engine.multiengine.spatial_intelligence.detection_pipeline import preprocess_image_for_detection
+
+    blank = np.full((128, 128, 3), (90, 100, 110), dtype=np.uint8)
+    _, meta = preprocess_image_for_detection(blank)
+    assert meta["is_low_contrast"] is True
+    assert meta["spatial_std_intensity"] == 0.0
+    assert meta["laplacian_var"] == 0.0
+
+
+def test_indoor_dataset_adapter_and_evaluator(tmp_path):
+    import json
+    from benchmarks.perception.indoor_dataset_adapter import (
+        evaluate_detections_against_ground_truth,
+        load_coco_indoor_annotations,
+    )
+
+    coco = {
+        "images": [{"id": 1, "file_name": "room_01.jpg", "width": 800, "height": 600}],
+        "categories": [{"id": 1, "name": "chair"}, {"id": 2, "name": "dining table"}],
+        "annotations": [
+            {"id": 10, "image_id": 1, "category_id": 1, "bbox": [100, 200, 120, 150]},
+            {"id": 11, "image_id": 1, "category_id": 2, "bbox": [300, 250, 200, 180]},
+        ],
+    }
+    p = tmp_path / "coco.json"
+    p.write_text(json.dumps(coco), encoding="utf-8")
+    manifest, gt = load_coco_indoor_annotations(p, dataset_name="synthetic_unit", is_physically_surveyed=False)
+    assert manifest.is_physically_surveyed is False
+    preds = {
+        "room_01.jpg": [
+            DetectionBox("p1", "chair", (102, 202, 218, 348), 0.85, source_engine="grounding_dino"),
+        ]
+    }
+    metrics = evaluate_detections_against_ground_truth(preds, gt)
+    assert metrics["total_tp"] == 1
+    assert metrics["total_fn"] == 1
+    assert metrics["per_class"]["chair"]["precision"] == 1.0
+    assert metrics["per_class"]["table"]["recall"] == 0.0

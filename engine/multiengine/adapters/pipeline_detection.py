@@ -177,18 +177,23 @@ def _checkpoints(det: EngineAdapter, seg: EngineAdapter | None) -> tuple[Checkpo
 
 class PipelineDetectionEngineAdapter(EngineAdapter):
     def __init__(self, detector: EngineAdapter, segmenter: EngineAdapter | None = None, *, tile_size: int | None = None,
-                 tile_overlap: float = 0.25, threshold: float = DEFAULT_THRESHOLD, domain: Any = None, pin_checkpoints: bool = True) -> None:
+                 tile_overlap: float = 0.25, threshold: float = DEFAULT_THRESHOLD, domain: Any = None, pin_checkpoints: bool = True,
+                 secondary_detectors: Sequence[EngineAdapter] = ()) -> None:
         assert_production_adapter(detector, "detector")
         if segmenter is not None:
             assert_production_adapter(segmenter, "segmenter")
+        for sd in secondary_detectors:
+            assert_production_adapter(sd, "secondary_detector")
         from engine.multiengine.spatial_intelligence.taxonomy import Domain
 
         self.detector, self.segmenter = detector, segmenter
+        self.secondary_detectors = tuple(secondary_detectors)
         self.tile_size = int(tile_size or os.environ.get(ENV_TILE_SIZE) or DEFAULT_TILE_SIZE)
         self.tile_overlap, self.threshold = float(tile_overlap), float(threshold)
         self.domain = domain or Domain.INTERIOR
         self._seg_ok = False
         self._seg_reason = "no segmentation engine was supplied"
+        self._device = Device("cpu")
         self.last_facts: dict[str, Any] = {}
         d = detector.spec
         self.spec = EngineSpec(
@@ -221,6 +226,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
             raise EngineError(EngineErrorKind.INVALID_INPUT, f"not real image files (virtual or missing): {bad[:3]}")
 
     def load(self, device: Device) -> None:
+        self._device = device
         self.detector.load(device)
         self._seg_ok, self._seg_reason = False, "no segmentation engine was supplied"
         if self.segmenter is not None:
@@ -328,11 +334,104 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
             det.close()
         n_boxes = sum(i["refined_box_count"] for i in images)
         n_masks = sum(i["masks"] for i in images)
+        # Run routed secondary detectors sequentially (VRAM-safe), fuse across families, and associate cross-view
+        from engine.multiengine.spatial_intelligence.detection_pipeline import DetectionBox
+        from perception.detection.multi_engine_fusion import (
+            associate_cross_view_detections,
+            fuse_multi_engine_detections,
+        )
+
+        boxes_by_image: dict[str, list[DetectionBox]] = {}
+        for d in drafts:
+            if d.quantity == "bbox" and d.image_region is not None:
+                boxes_by_image.setdefault(d.source_id, []).append(DetectionBox(
+                    box_id=str(d.predicted.get("pipeline_box_id") or f"prim:{len(boxes_by_image.get(d.source_id, []))}"),
+                    class_name=str(d.predicted.get("label") or "object"),
+                    box_2d=tuple(float(v) for v in d.image_region),
+                    confidence=float(d.confidence) if d.confidence is not None else 0.5,
+                    source_engine=str(d.predicted.get("inner_engine") or self.detector.spec.engine_id),
+                    source_image_id=d.source_id,
+                    is_truncated=bool(d.predicted.get("is_truncated", False)),
+                    occlusion_level=str(d.predicted.get("occlusion_level", "none")),
+                    raw_score=d.predicted.get("raw_score"),
+                    attributes={"confidence_emitted": bool(d.predicted.get("confidence_emitted", True))},
+                ))
+
+        secondary_by_image: dict[str, dict[str, list[DetectionBox]]] = {}
+        secondary_ran: list[str] = []
+        for sec in self.secondary_detectors:
+            try:
+                if not sec.check_available().ok:
+                    continue
+                sec.load(self._device)
+                secondary_ran.append(sec.spec.engine_id)
+                sec_drafts = sec.infer(EngineRequest(sources=request.sources, payload={}, seed=request.seed))
+                for sd in sec_drafts:
+                    if sd.quantity != "bbox" or sd.image_region is None:
+                        continue
+                    if sd.predicted.get("is_test_double"):
+                        continue
+                    drafts.append(sd)
+                    s_em = sd.confidence is not None or sd.predicted.get("score") is not None
+                    s_sc = float(sd.confidence if sd.confidence is not None else (sd.predicted.get("score") or 0.5))
+                    secondary_by_image.setdefault(sd.source_id, {}).setdefault(sec.spec.engine_id, []).append(
+                        DetectionBox(
+                            box_id=f"{sec.spec.engine_id}:{sd.source_id}:{len(secondary_by_image.get(sd.source_id, {}).get(sec.spec.engine_id, []))}",
+                            class_name=str(sd.predicted.get("label") or "object"),
+                            box_2d=tuple(float(v) for v in sd.image_region),
+                            confidence=s_sc,
+                            source_engine=sec.spec.engine_id,
+                            source_image_id=sd.source_id,
+                            raw_score=s_sc if s_em else None,
+                            attributes={"confidence_emitted": s_em},
+                        )
+                    )
+            except Exception:  # noqa: BLE001 -- secondary detector failure must not sink primary pipeline
+                pass
+            finally:
+                try:
+                    sec.unload()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        fusion_facts: list[dict[str, Any]] = []
+        for img_stat in images:
+            src = str(img_stat["source"])
+            low_c = bool((img_stat.get("preprocessing") or {}).get("is_low_contrast", False))
+            eng_map: dict[str, list[DetectionBox]] = {self.detector.spec.engine_id: boxes_by_image.get(src, [])}
+            for sec_id, sec_list in secondary_by_image.get(src, {}).items():
+                eng_map[sec_id] = sec_list
+            fused = fuse_multi_engine_detections(eng_map, is_low_contrast=low_c)
+            fusion_facts.append({
+                "source": src,
+                "fused_count": len(fused),
+                "multi_family_corroborated": sum(1 for f in fused if f.independent_family_count >= 2),
+                "competing_label_count": sum(1 for f in fused if f.competing_hypotheses),
+            })
+
+        cv_decisions: list[dict[str, Any]] = []
+        src_list = [str(s) for s in request.sources]
+        if len(src_list) >= 2:
+            for idx in range(len(src_list) - 1):
+                a_boxes = boxes_by_image.get(src_list[idx], [])
+                b_boxes = boxes_by_image.get(src_list[idx + 1], [])
+                if a_boxes and b_boxes:
+                    for dec in associate_cross_view_detections(a_boxes, b_boxes):
+                        cv_decisions.append(dec.to_dict())
+
         self.last_facts = {
             "engine": ENGINE_ID, "images": images, "tile_size": self.tile_size, "detector": self.detector.spec.engine_id,
+            "secondary_detectors": secondary_ran,
             "detector_forward_passes": det.calls, "detector_queries": det.queries, "prompts": {"macro": n_macro, "standard": n_std, "micro": n_micro},
             "tiles_processed": sum(i["tiles_processed"] for i in images), "subparts_detected": sum(i["subparts_detected"] for i in images),
             "raw_detections": sum(i["raw_detection_count"] for i in images), "refined_boxes": n_boxes,
+            "multi_engine_fusion": fusion_facts,
+            "cross_view_association": {
+                "pairs_evaluated": max(0, len(src_list) - 1),
+                "matched": sum(1 for d in cv_decisions if d["status"] == "matched"),
+                "ambiguous": sum(1 for d in cv_decisions if d["status"] == "ambiguous"),
+                "unmatched": sum(1 for d in cv_decisions if d["status"] == "unmatched"),
+            },
             "segmentation": {"requested": self.segmenter is not None, "status": "ran" if self._seg_ok else "unavailable", "reason": self._seg_reason,
                              "engine": self.segmenter.spec.engine_id if self.segmenter else None, "masks": n_masks,
                              "coverage": round(n_masks / n_boxes, 4) if n_boxes else None,
@@ -350,7 +449,14 @@ def install(registry: Any, adapters: dict[str, Any], *, detector_id: str = "grou
     seg_adapter = adapters.get(segmenter_id)
     if seg_adapter is None and segmenter_id == "sam" and "sam2" in adapters:
         seg_adapter = adapters["sam2"]
-    eng = PipelineDetectionEngineAdapter(adapters[detector_id], seg_adapter, **kwargs)
+    secondary = kwargs.pop("secondary_detectors", None)
+    if secondary is None:
+        from perception.detection.multi_engine_fusion import select_detection_engines
+
+        budget = kwargs.pop("routing_budget", "balanced")
+        routed = select_detection_engines(list(adapters.keys()), budget=budget)
+        secondary = [adapters[eid] for eid in routed if eid != detector_id and eid in adapters]
+    eng = PipelineDetectionEngineAdapter(adapters[detector_id], seg_adapter, secondary_detectors=secondary, **kwargs)
     registry.register(eng.spec)
     adapters[ENGINE_ID] = eng
     return ENGINE_ID

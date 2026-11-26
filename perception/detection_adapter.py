@@ -84,9 +84,16 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
         )
 
     chunk_size = 10
+    skipped_blank: list[str] = []
     for img_path in image_paths:
         try:
             image = Image.open(img_path).convert("RGB")
+            import numpy as np
+
+            arr = np.asarray(image)
+            if arr.size == 0 or float(np.std(arr, axis=(0, 1)).max()) < 2.0:
+                skipped_blank.append(img_path)
+                continue
             for i in range(0, len(queries), chunk_size):
                 chunk = queries[i:i + chunk_size]
                 text = " . ".join(str(q).strip().rstrip(".") + "." for q in chunk)
@@ -145,10 +152,10 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
 
     return UnifiedEngineOutput(
         engine_id="grounding_dino", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if obs else "partial",
+        status="succeeded" if (obs or skipped_blank) else "partial",
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=_get_vram_peak(),
-        summary={"n_images": len(image_paths), "n_detections": len(obs)},
+        summary={"n_images": len(image_paths), "n_detections": len(obs), "skipped_blank_images": skipped_blank},
     )
 
 

@@ -250,7 +250,28 @@ def preprocess_image_for_detection(
     h, w, c = image_rgb.shape
     mean_intensity = float(np.mean(image_rgb))
     std_intensity = float(np.std(image_rgb))
-    is_low_contrast = std_intensity < 15.0
+    spatial_std = float(np.std(image_rgb, axis=(0, 1)).max()) if image_rgb.size > 0 else 0.0
+    is_low_contrast = spatial_std < 15.0
+    is_underexposed = mean_intensity < 35.0
+    is_overexposed = mean_intensity > 225.0
+
+    # Lightweight Laplacian variance on downsampled luma for blur telemetry
+    laplacian_var = 0.0
+    if h >= 8 and w >= 8:
+        stride_y = max(1, h // 256)
+        stride_x = max(1, w // 256)
+        sub = image_rgb[::stride_y, ::stride_x].astype(np.float32)
+        gray = sub[..., 0] * 0.299 + sub[..., 1] * 0.587 + sub[..., 2] * 0.114
+        if gray.shape[0] >= 4 and gray.shape[1] >= 4:
+            lap = (
+                -4.0 * gray[1:-1, 1:-1]
+                + gray[:-2, 1:-1]
+                + gray[2:, 1:-1]
+                + gray[1:-1, :-2]
+                + gray[1:-1, 2:]
+            )
+            laplacian_var = float(np.var(lap)) if lap.size > 0 else 0.0
+    is_blurry = laplacian_var < 25.0 and spatial_std >= 2.0
 
     meta: dict[str, Any] = {
         "original_shape": (h, w, c),
@@ -259,7 +280,12 @@ def preprocess_image_for_detection(
         "aspect_ratio": round(w / max(1, h), 4),
         "mean_intensity": round(mean_intensity, 2),
         "std_intensity": round(std_intensity, 2),
+        "spatial_std_intensity": round(spatial_std, 2),
+        "laplacian_var": round(laplacian_var, 2),
         "is_low_contrast": is_low_contrast,
+        "is_blurry": is_blurry,
+        "is_underexposed": is_underexposed,
+        "is_overexposed": is_overexposed,
     }
 
     if max_dimension is not None and max(h, w) > max_dimension:

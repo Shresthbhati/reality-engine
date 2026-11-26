@@ -105,6 +105,18 @@ def clean_and_split_detection_label(
 
 
 
+def _is_blank_image(img: Any) -> bool:
+    """True when an image has negligible spatial variance (blank/solid frame)."""
+    import numpy as np
+
+    arr = np.asarray(img)
+    if arr.size == 0:
+        return True
+    if arr.ndim == 2:
+        return float(np.std(arr)) < 2.0
+    return float(np.std(arr, axis=(0, 1)).max()) < 2.0
+
+
 def _hf_hub_cache() -> Path:
     import os
 
@@ -290,6 +302,8 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
                 img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
             else:
                 img = Image.open(s).convert("RGB")
+            if _is_blank_image(img):
+                continue
             w, h = img.size
             inputs = self._processor(images=img, text=prompt_text, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}
@@ -431,6 +445,8 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                 img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
             else:
                 img = Image.open(s).convert("RGB")
+            if _is_blank_image(img):
+                continue
             w, h = img.size
             inputs = self._processor(text=task_prompt, images=img, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}
@@ -538,6 +554,8 @@ class MaskRCNNEngineAdapter(BaseModelEngineAdapter):
                 img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
             else:
                 img = Image.open(s).convert("RGB")
+            if _is_blank_image(img):
+                continue
             w, h = img.size
             arr = np.asarray(img, dtype=np.float32) / 255.0
             tensor = torch.from_numpy(arr).permute(2, 0, 1).to(dev_str)
@@ -658,6 +676,8 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
                 img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
             else:
                 img = Image.open(s).convert("RGB")
+            if _is_blank_image(img):
+                continue
             w, h = img.size
             inputs = self._processor(text=[prompts], images=img, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}

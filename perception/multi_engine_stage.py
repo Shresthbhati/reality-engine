@@ -55,6 +55,7 @@ def run_multi_engine_for_job(
     cameras: dict | None = None,
     pairs: Sequence[tuple] | None = None,
     matrix_root: Path | str | None = None,
+    detection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run all registered engines on the job's evidence and return facts.
 
@@ -87,6 +88,16 @@ def run_multi_engine_for_job(
             context["pairs"] = list(pairs)
         if cameras:
             context["cameras"] = cameras
+        # Detection tuning (domain, query budget, tiling, threshold) is threaded
+        # through the shared engine context. Engines never read a key they own
+        # no meaning for, so this stays additive and cannot change another
+        # engine's behaviour. Accepted keys mirror
+        # ``perception.detection_adapter._grounding_dino_run``.
+        if detection:
+            for key in ("domain", "threshold", "query_budget", "small_share",
+                        "tile_scale", "tile_overlap", "queries", "model_name"):
+                if key in detection and detection[key] is not None:
+                    context[key] = detection[key]
         report = orch.run_all(list(sources), context=context)
 
         # Persist segmentation masks (SAM 2 and any mask-emitting engine) into

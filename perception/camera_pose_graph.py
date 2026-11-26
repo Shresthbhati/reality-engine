@@ -439,7 +439,8 @@ def solve_pose_graph(nodes: Sequence[str],
                      edges: Sequence[Mapping[str, Any]],
                      *, iterations: int = 40, huber_deg: float = 1.0,
                      reject_deg: float = 5.0,
-                     reference: Mapping[str, ReferencePose] | None = None) -> dict[str, Any]:
+                     reference: Mapping[str, ReferencePose] | None = None,
+                     points3d: Mapping[str, Sequence[tuple[str, np.ndarray]]] | None = None) -> dict[str, Any]:
     """Robust rotation averaging, translation averaging, and error measurement.
 
     ``edges`` entries are ``{a, b, R, t_unit, inliers}`` with ``x_b ~ R @ x_a + t``.
@@ -449,6 +450,12 @@ def solve_pose_graph(nodes: Sequence[str],
     centre pinned, because two-view geometry carries no scale at all. The result
     is a reconstruction whose scale is that fixed baseline's -- it is reported as
     a gauge, never as metres.
+
+    When ``points3d`` is provided (camera_id -> list of (point_id, world_position)),
+    cheirality constraints are added to the translation solve: each observed
+    3D point must lie in front of its observing camera
+    (``(R_c @ P + t_c).z > 0``). This pins the layout's handedness and scale
+    instead of leaving them ambiguous under direction-only constraints.
     """
     nodes = list(dict.fromkeys(nodes))
     usable: list[dict[str, Any]] = []
@@ -586,7 +593,8 @@ def solve_pose_graph(nodes: Sequence[str],
     per_component: list[dict[str, Any]] = []
     for ci, comp in enumerate(components):
         comp_edges = [e for e in accepted if e["a"] in comp and e["b"] in comp]
-        c, info = _translation_average(comp, comp_edges, R, comp[0])
+        comp_points = {n: points3d.get(n, ()) for n in comp} if points3d else None
+        c, info = _translation_average(comp, comp_edges, R, comp[0], points3d=comp_points)
         per_component.append({"component": ci, "cameras": len(comp), **(info or {})})
         if c:
             centres.update(c)
@@ -609,8 +617,15 @@ def solve_pose_graph(nodes: Sequence[str],
 
 
 def _translation_average(nodes: Sequence[str], accepted: Sequence[Mapping[str, Any]],
-                         R: Mapping[str, np.ndarray], root: str):
-    """Camera centres + one scale per edge from the unit direction constraints."""
+                         R: Mapping[str, np.ndarray], root: str,
+                         points3d: Mapping[str, Sequence[tuple[str, np.ndarray]]] | None = None):
+    """Camera centres + one scale per edge from the unit direction constraints.
+
+    When ``points3d`` is provided (camera_id -> list of (point_id, world_position)),
+    cheirality residuals are added: each observed 3D point must lie in front of its
+    observing camera (``(R_c @ P + t_c).z > 0``). This pins the layout's handedness
+    and scale instead of leaving them ambiguous under direction-only constraints.
+    """
     if not accepted:
         return None, {"status": "unavailable", "reason": "no accepted edges"}
     with_dir = [e for e in accepted if e.get("t_unit") is not None]
@@ -635,15 +650,28 @@ def _translation_average(nodes: Sequence[str], accepted: Sequence[Mapping[str, A
             if j is not None:
                 M[3 * k:3 * k + 3, j:j + 3] += sign * np.eye(3)
         P[3 * k:3 * k + 3, k] = d
-    # Baselines are lengths: they cannot be negative. An unconstrained solve does NOT
-    # find the physical layout -- with EXACT directions it returned 5 of 59 negative
-    # baselines and a 0.54 median centre error, because mixed mirrored configurations
-    # also satisfy c_b - c_a = s_e d_e with zero residual. One strong edge's baseline is
-    # fixed to 1 as the gauge and every other baseline is bounded below by zero.
+
+    # Cheirality observations: (camera free-col index, world point, optical axis row, weight)
+    cheirality: list[tuple[int, np.ndarray, np.ndarray, float]] = []
+    if points3d:
+        for cam_id, obs_list in points3d.items():
+            if cam_id == root or cam_id not in col:
+                continue  # root centre is pinned; no cheirality variable for it
+            R_c = np.asarray(R[cam_id], dtype=float)
+            r_c = R_c[2, :]  # third row of R: optical axis expressed in world frame
+            for _point_id, P in obs_list:
+                P_w = np.asarray(P, dtype=float)
+                if P_w.shape != (3,) or not np.all(np.isfinite(P_w)):
+                    continue
+                cheirality.append((col[cam_id], P_w, r_c, 1.0))
+    n_cheirality = len(cheirality)
+
     from scipy.optimize import least_squares
 
     strongest = max(range(n_e), key=lambda i: float(with_dir[i].get("weight") or 1.0))
     keep = [i for i in range(n_e) if i != strongest]
+    # Map edge index -> scale variable position (strongest edge is fixed to 1, no variable)
+    scale_pos = {k: j for j, k in enumerate(keep)}
     L, *_ = np.linalg.lstsq(M, P, rcond=None)  # centres as a linear function of the scales
     Q = P - M @ L
     _w, vecs = np.linalg.eigh(Q.T @ Q)
@@ -654,45 +682,94 @@ def _translation_average(nodes: Sequence[str], accepted: Sequence[Mapping[str, A
     s0 = np.abs(s0) / max(float(np.abs(s0[strongest])), 1e-12)
     x0 = np.concatenate([L @ s0, s0[keep]])
 
-    def _residual(x: np.ndarray) -> np.ndarray:
-        c = x[: M.shape[1]]
-        s = np.ones(n_e)
-        s[keep] = x[M.shape[1]:]
-        return (M @ c - P @ s).ravel()
+    n_cam_vars = M.shape[1]
+    n_scale_vars = len(keep)
 
-    bounds = (np.concatenate([np.full(M.shape[1], -np.inf), np.zeros(len(keep))]),
-              np.full(M.shape[1] + len(keep), np.inf))
-    sol = least_squares(_residual, x0, bounds=bounds, method="trf", max_nfev=2000)
-    c = sol.x[: M.shape[1]]
+    def _residual(x: np.ndarray) -> np.ndarray:
+        c = x[:n_cam_vars]
+        s = np.ones(n_e)
+        s[keep] = x[n_cam_vars:n_cam_vars + n_scale_vars]
+        direction_res = (M @ c - P @ s).ravel()
+        if n_cheirality == 0:
+            return direction_res
+        cheirality_res = np.zeros(n_cheirality)
+        for i, (cam_col, P_w, r_c, weight) in enumerate(cheirality):
+            cam_center = c[cam_col:cam_col + 3]
+            z = float(r_c @ (P_w - cam_center))
+            cheirality_res[i] = weight * min(0.0, z)
+        return np.concatenate([direction_res, cheirality_res])
+
+    def _jac(x: np.ndarray) -> np.ndarray:
+        # Direction Jacobian: sparse pattern, dense values
+        n_dir_rows = 3 * n_e
+        n_vars = n_cam_vars + n_scale_vars
+        J_dir = np.zeros((n_dir_rows, n_vars))
+        for k, e in enumerate(with_dir):
+            d = -R[e["b"]].T @ e["t_unit"]
+            for node, sign in ((e["a"], -1.0), (e["b"], 1.0)):
+                j = col.get(node)
+                if j is not None:
+                    J_dir[3 * k:3 * k + 3, j:j + 3] += sign * np.eye(3)
+            sp = scale_pos.get(k)
+            if sp is not None:
+                J_dir[3 * k:3 * k + 3, n_cam_vars + sp] = -d  # d/ds_e of (M c - P s): -d
+        # Cheirality Jacobian
+        if n_cheirality == 0:
+            return J_dir
+        J_cheirality = np.zeros((n_cheirality, n_vars))
+        # Need current x to evaluate z sign; recompute from x
+        c = x[:n_cam_vars]
+        for i, (cam_col, P_w, r_c, weight) in enumerate(cheirality):
+            cam_center = c[cam_col:cam_col + 3]
+            z = float(r_c @ (P_w - cam_center))
+            if z < 0.0:
+                J_cheirality[i, cam_col:cam_col + 3] = -weight * r_c
+        return np.vstack([J_dir, J_cheirality])
+
+    bounds = (np.concatenate([np.full(n_cam_vars, -np.inf), np.zeros(n_scale_vars)]),
+              np.full(n_cam_vars + n_scale_vars, np.inf))
+    sol = least_squares(_residual, x0, jac=_jac, bounds=bounds, method="trf", max_nfev=2000)
+    c = sol.x[:n_cam_vars]
     s = np.ones(n_e)
-    s[keep] = sol.x[M.shape[1]:]
+    s[keep] = sol.x[n_cam_vars:n_cam_vars + n_scale_vars]
     centres = {root: np.zeros(3)}
     for n in free:
         centres[n] = c[col[n]:col[n] + 3]
     scales = {f"{e['a']}|{e['b']}": round(float(s[i]), 6) for i, e in enumerate(with_dir)}
-    residual = (M @ c - P @ s).reshape(-1, 3)
-    norms = np.linalg.norm(residual, axis=1)
+    direction_residual = (M @ c - P @ s).reshape(-1, 3)
+    direction_norms = np.linalg.norm(direction_residual, axis=1)
 
-    # Self-check on the solved layout: two cameras cannot occupy one point. Fed EXACT
-    # reference directions this formulation still produced coincident cameras and a
-    # 1.05-14x spread of pairwise distance ratios, i.e. it does not recover the layout.
-    # Reporting that as a centre accuracy would be a fabricated measurement, so the
-    # result is labelled ambiguous and no centre error is claimed from it.
+    # Cheirality residual at solution
+    cheirality_norms: list[float] = []
+    if n_cheirality > 0:
+        for cam_col, P_w, r_c, weight in cheirality:
+            cam_center = c[cam_col:cam_col + 3]
+            z = float(r_c @ (P_w - cam_center))
+            cheirality_norms.append(round(min(0.0, z), 6))
+    cheirality_violations = sum(1 for z in cheirality_norms if z < -1e-6)
+
+    # Self-check on the solved layout: two cameras cannot occupy one point.
     collapsed = 0
     for i in range(len(nodes)):
         for j in range(i + 1, len(nodes)):
             if float(np.linalg.norm(centres[nodes[i]] - centres[nodes[j]])) < 1e-6:
                 collapsed += 1
 
-    # A second, independent degeneracy check on the solved layout: if the centres span
-    # fewer than 3 dimensions the translation problem is underdetermined in the missing
-    # direction, and if an edge's baseline is pinned at zero two cameras were folded onto
-    # one point. Both are reported; neither is an accuracy measurement.
+    # Degeneracy check: if centres span fewer than 3 dimensions, the translation
+    # problem is underdetermined in the missing direction. Cheirality constraints
+    # can resolve handedness but not rank deficiency -- if all cameras and points
+    # are coplanar, the missing direction is still unconstrained.
     C = np.array([centres[n] for n in nodes], dtype=np.float64)
     sv = np.linalg.svd(C - C.mean(axis=0), compute_uv=False)
     layout_rank = int(np.sum(sv > max(float(sv[0]), 1e-12) * 1e-6)) if sv.size else 0
     zero_baseline = [f"{with_dir[i]['a']}|{with_dir[i]['b']}" for i in keep if s[i] <= 1e-9]
+
+    # With cheirality, a layout that passes direction constraints but violates
+    # cheirality (points behind cameras) is still ambiguous: the mirror layout
+    # satisfies directions but puts points behind cameras. Cheirality rules it out.
     ambiguous = collapsed > 0 or layout_rank < 3 or bool(zero_baseline)
+    if n_cheirality > 0 and cheirality_violations > 0:
+        ambiguous = True
     reasons: list[str] = []
     if collapsed:
         reasons.append(f"{collapsed} camera pairs sit at the same point")
@@ -700,12 +777,18 @@ def _translation_average(nodes: Sequence[str], accepted: Sequence[Mapping[str, A
         reasons.append(f"the solved centres span rank {layout_rank} (a {len(nodes)}-camera layout must span 3)")
     if zero_baseline:
         reasons.append(f"{len(zero_baseline)} baseline(s) are pinned at zero, which folds two cameras onto one point")
+    if n_cheirality > 0 and cheirality_violations > 0:
+        reasons.append(f"{cheirality_violations} cheirality violation(s): 3D point behind its observing camera")
+    extra_note = (
+        ". Cheirality constraints from observed 3D points were applied but the layout still failed a physicality check. "
+        if n_cheirality > 0 else
+        " Unit two-view directions with one unknown scale per edge admit layouts that fit every edge and are not "
+        "camera configurations (reproduced with EXACT reference directions), "
+    )
     return centres, {
         "status": "ambiguous" if ambiguous else "estimated",
         **({} if not ambiguous else {
-            "reason": ("the solved layout is not physical: " + "; ".join(reasons) +
-                       ". Unit two-view directions with one unknown scale per edge admit layouts that fit every "
-                       "edge and are not camera configurations (reproduced with EXACT reference directions), "
+            "reason": ("the solved layout is not physical: " + "; ".join(reasons) + extra_note +
                        "so this result is not used for any centre accuracy claim"),
             "collapsed_camera_pairs": collapsed,
             "zero_baseline_edges": zero_baseline,
@@ -719,17 +802,26 @@ def _translation_average(nodes: Sequence[str], accepted: Sequence[Mapping[str, A
                      "distance is set by the edge's unknown baseline, so its placement is not observable"),
         },
         "scale": (f"gauge: baseline of edge {with_dir[strongest]['a']}|{with_dir[strongest]['b']} "
-                  "fixed to 1, every other baseline bounded >= 0; no metric basis exists for "
-                  "this capture"),
+                  "fixed to 1, every other baseline bounded >= 0"
+                  + (f"; cheirality from {n_cheirality} observed 3D points pins handedness"
+                     if n_cheirality > 0 else "; no metric basis exists for this capture")),
         "edges_used": n_e,
         "baselines_non_negative": True,
         "baselines_at_zero": int(sum(1 for i in keep if s[i] <= 1e-9)),
         "solver": f"bounded least squares, {sol.nfev} evaluations, optimality {sol.optimality:.3g}",
         "direction_residual": {
-            "median": round(float(np.median(norms)), 6),
-            "p90": round(float(np.percentile(norms, 90)), 6),
-            "max": round(float(np.max(norms)), 6),
+            "median": round(float(np.median(direction_norms)), 6),
+            "p90": round(float(np.percentile(direction_norms, 90)), 6),
+            "max": round(float(np.max(direction_norms)), 6),
         },
+        "cheirality": {
+            "n_observations": n_cheirality,
+            "n_violations": cheirality_violations,
+            "median_residual": round(float(np.median(cheirality_norms)), 6) if cheirality_norms else None,
+            "max_residual": round(float(max(cheirality_norms)), 6) if cheirality_norms else None,
+            "note": ("residual = min(0, (R_c @ P + t_c).z); zero means the point is in front of the camera, "
+                     "negative means it is behind (a violation)") if n_cheirality > 0 else None,
+        } if n_cheirality > 0 else {"n_observations": 0, "note": "no 3D points supplied; direction-only solve"},
         "per_edge_scale": scales,
     }
 

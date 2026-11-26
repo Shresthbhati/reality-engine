@@ -230,11 +230,27 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> tuple[dict[
 
 
 def _pair_strategy(paths: Sequence[str], strategy: str) -> list[tuple[str, str]]:
-    """A reproducible, content-only pair set (no ground truth consulted)."""
+    """A reproducible, content-only pair set (no ground truth consulted).
+
+    Strategies:
+      * sequential        - stride 1 only (adjacent images)
+      * sequential_skip2  - strides 1 and 2 (default; overlap falls with stride)
+      * sequential_skip23 - strides 1, 2, 3 (more cross-sequence coverage)
+      * sequential_skip234- strides 1, 2, 3, 4 (widest local connectivity)
+      * all               - every pair (small datasets only)
+    """
+    n = len(paths)
+    if strategy == "all":
+        return [(paths[i], paths[j]) for i in range(n) for j in range(i + 1, n)]
+    strides: list[int] = {
+        "sequential": [1],
+        "sequential_skip2": [1, 2],
+        "sequential_skip23": [1, 2, 3],
+        "sequential_skip234": [1, 2, 3, 4],
+    }.get(strategy, [1, 2])
     pairs: list[tuple[str, str]] = []
-    stride = 2 if strategy == "sequential_skip2" else 1
-    for step in range(1, stride + 1):
-        for i in range(len(paths) - step):
+    for step in strides:
+        for i in range(n - step):
             pairs.append((paths[i], paths[i + step]))
     return pairs
 
@@ -439,7 +455,9 @@ def main() -> int:
     ap.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--max-images", type=int, default=None)
-    ap.add_argument("--pairs", choices=["sequential_skip2", "sequential"], default="sequential_skip2")
+    ap.add_argument("--pairs", choices=["sequential", "sequential_skip2", "sequential_skip23", "sequential_skip234", "all"], default="sequential_skip23",
+                    help="pair strategy: sequential (stride 1), sequential_skip2 (strides 1-2), "
+                         "sequential_skip23 (strides 1-3), sequential_skip234 (strides 1-4), all (every pair)")
     ap.add_argument("--min-inliers", type=int, default=DEFAULT_MIN_INLIERS)
     ap.add_argument("--allow-synthetic", action="store_true",
                     help="accept a dataset whose own manifest says it is synthetic (it is then labelled)")

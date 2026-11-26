@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from perception.engine_evidence import ObservationRecord, UnifiedEngineOutput
+from perception.engine_evidence import ObservationRecord, UnifiedEngineOutput, _mask_descriptor
 
 log = logging.getLogger("reality.engine_matrix_bridge")
 
@@ -93,6 +93,12 @@ def _draft_for(obs: ObservationRecord):
         "source_evidence_id": obs.evidence_id,
         "depth_map_ref": obs.depth_map_ref,
         "raw_output_ref": obs.raw_output_ref,
+        # Segmentation mask provenance: the row index into the run's MaskStore
+        # and the compact descriptor of the in-memory mask. Previously the
+        # bridge dropped both, so mask pixels reached no persistent consumer
+        # (found by independent review of PR #397).
+        "mask_ref": obs.mask_ref,
+        "mask": _mask_descriptor(obs.mask) if hasattr(obs, "mask") else None,
         **{k: v for k, v in dict(obs.metadata).items() if k not in ("bbox_px", "world_pos")},
     }
     uncertainty: dict[str, Any] | None = None
@@ -269,6 +275,10 @@ def import_multi_engine_report(
         "engine_statuses": dict(sorted(run_statuses.items())),
         "reload": {"checked": len(added), "missing": missing[:20]},
         "calibrated_confidence": "none: every imported observation is uncalibrated by construction",
+        # Content-addressed URI of the run's RLE mask store (if masks were
+        # produced); carried into world lineage so a fresh process can recover
+        # mask pixels via mask_ref + this artifact.
+        "mask_store_uri": getattr(report, "mask_store_uri", None),
     }
 
 
@@ -301,6 +311,7 @@ def world_lineage_block(summary: Mapping[str, Any]) -> dict[str, Any]:
         "observation_content_ids_by_engine": dict(summary.get("observation_content_ids_by_engine") or {}),
         "engine_statuses": dict(summary.get("engine_statuses") or {}),
         "calibrated_confidence": summary.get("calibrated_confidence"),
+        "mask_store_uri": summary.get("mask_store_uri"),
     }
 
 

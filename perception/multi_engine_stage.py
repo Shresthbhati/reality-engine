@@ -18,7 +18,6 @@ run in which any engine did not succeed is reported ``partial``, never
 from __future__ import annotations
 
 import logging
-import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -96,18 +95,24 @@ def run_multi_engine_for_job(
         # computed masks but the adapter stored only mask_area_px in metadata,
         # so mask pixels were discarded before reaching MaskStore, the
         # ObservationTable, or any downstream consumer.
-        mask_store_path: str | None = None
+        #
+        # The store is serialized to the run's content-addressed blob store
+        # (sha256:// URI) — durable across workers/restarts — not an ephemeral
+        # temp dir. mask_store_uri is consumed by the Evidence Matrix bridge,
+        # which stamps it into each observation's provenance.
+        mask_store_uri: str | None = None
         if report.observations:
+            from engine.pipeline.stages.content_store import store_bytes
             from world_ir.mask_store import MaskStore
 
-            from perception.mask_persistence import persist_masks, save_mask_store
+            from perception.mask_persistence import mask_store_bytes, persist_masks
 
             mask_store = MaskStore()
             stamped = persist_masks(list(report.observations), mask_store)
             report = replace(report, observations=tuple(stamped))
-            stage_dir = Path(tempfile.mkdtemp(prefix="reality_engine_masks_"))
-            mask_store_path = str(stage_dir / "masks.npz")
-            save_mask_store(mask_store, mask_store_path)
+            if len(mask_store) > 0:  # only persist when a mask was actually produced
+                digest, _ = store_bytes(mask_store_bytes(mask_store))
+                mask_store_uri = f"sha256://{digest}"
 
         facts: dict[str, Any] = {
             "status": _overall_status(dict(report.engines_run)),
@@ -122,10 +127,13 @@ def run_multi_engine_for_job(
             "total_wall_s": round(report.total_wall_s, 3),
             "vram_peak_mb": report.vram_peak_mb,
             "cross_engine_summary": report.cross_engine_summary,
-            #: Artifact path of the persisted MaskStore (RLE-encoded masks).
+            #: Content-addressed URI of the persisted MaskStore (RLE masks).
             #: None when no observation carried a mask.
-            "mask_store_path": mask_store_path,
+            "mask_store_uri": mask_store_uri,
         }
+        # Carry the mask artifact URI on the report so the Evidence Matrix
+        # bridge can stamp it into the run's persisted lineage.
+        report.mask_store_uri = mask_store_uri
 
         # Multi-engine detection fusion & cross-view identity over detection observations
         det_by_img_eng: dict[str, dict[str, list[Any]]] = {}

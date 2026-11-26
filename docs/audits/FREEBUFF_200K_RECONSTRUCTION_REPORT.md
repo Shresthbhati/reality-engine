@@ -19,11 +19,15 @@ Recovered and reconciled the existing reconstruction work across branches, workt
 5. Re-rendered `docs/STATUS.md` from `docs/status.yaml` (S5-23 fusion update confirmed intact).
 6. Wrote this recovery report + `FREEBUFF_DELIVERY_LEDGER.yaml`.
 
-**Not done this session (pending):**
-- `perception/bundle_adjustment.py` not committed (untested parallel BA; see §4.3).
+**Committed this session (beyond the initial recovery report commit `79c33276`):**
+- `5a51204a` refactor(multiengine): replace stub Provenance/Unit with real imports in evidence_fusion.py + test sync.
+- `36050335` feat(spatial): add KiloCode-authored object occlusion reasoning module (perception/spatial_intelligence/occlusion.py, 407 lines).
+
+**Still pending:**
+- `perception/bundle_adjustment.py` not committed (untested parallel BA; see §4.2).
 - Six-agent recovery audit: full branch-by-branch content inspection not completed; head commits captured, content not read.
 - Coordination with Cline/OpenCode not performed (no channel available).
-- Push of recovery report (no new code to push; report is a new file, committed with this session's work).
+- Push of recovery report: DONE (pushed `79c33276`, `5a51204a`, `36050335` to origin/feat/day4-real-geometry-measurements).
 
 ---
 
@@ -166,7 +170,9 @@ This stash contains substantive, legitimate operational work on the production b
 
 The current `apps/api/jobs.py` on this branch (from `git diff main..HEAD --stat`) shows it was modified (7 deletions). The stash's version of `_run_reconstruct_session` is a more complete implementation than what's on main. A diff between the stash and the current branch's `jobs.py` would show whether these are complementary or conflicting changes.
 
-### 4.2 `perception/bundle_adjustment.py` — recovered BA module (UNTRACKED)
+### 4.2 `perception/bundle_adjustment.py` — recovered BA module (UNTRACKED, not committed)
+
+**Current status:** Untracked in working tree. NOT committed. Preserved as recovered work product; evaluate before integrating (see recommendation at end of §4.2).
 
 **What it is:** A standalone bundle adjustment module implementing joint optimization of camera poses (rotation + translation) and 3D point positions to minimize reprojection error.
 
@@ -197,6 +203,27 @@ The current `apps/api/jobs.py` on this branch (from `git diff main..HEAD --stat`
 **Recommended next step:** Evaluate whether `perception/bundle_adjustment.py`'s design (gauge camera, posterior covariances, exact sparse LM) offers advantages over `core_pipeline.py`'s `BundleAdjustmentOptimizer`. If yes, either integrate its best features into the existing tested BA, or add tests and wire it in. If no, the recovery report preserves the record and the file can be archived or discarded.
 
 ### 4.3 `docs/engineering/*.md` — 9 untracked files (REMOVED)
+
+### 4.4 `perception/spatial_intelligence/occlusion.py` — KiloCode object occlusion module (COMMITTED)
+
+**What it is:** A 407-line pure-Python module implementing object-level occlusion reasoning and object permanence across views. Recovered as untracked work during this session; committed as `36050335` (feat(spatial): add KiloCode-authored object occlusion reasoning module).
+
+**Design:**
+- `compute_object_occlusions()`: pairwise object occlusion from box overlap + depth evidence. Median depth in overlap region decides nearer/farther. Metric depth → confident occlusion; relative/missing depth → 2D-only potential occlusion at lower confidence, never claimed as metric fact.
+- `OcclusionGraph` (dataclass): directed `occluder -> occluded` relations per camera view, with adjacency and `by_camera` index.
+- `OcclusionRelation` (dataclass): `occluder_id`, `occluded_id`, `camera_id`, `overlap_px`, `depth_separation_m` (optional), `confidence` (capped < 1.0), `metric` (bool).
+- `merge_graphs()`: combines occlusion graphs across views.
+- `transitive_occlusion_chain()`: transitive closure of occlusion (A occludes B occludes C → A indirectly occludes C).
+- `occluded_region_of()`: per-view occluded regions of each object.
+- `object_permanence_in_view()`: object permanence judgement — visible / occluded-but-present / not observed. Confidence: 0.9 visible, 0.7 partially visible, 0.6 fully occluded (present but hidden), 0.0 no evidence.
+- Pure, deterministic; no clocks, no RNG.
+
+**Relationship to existing modules:**
+- Does NOT replace `world_ir/relations.py` (box-derived spatial relations) or `engine.multiengine.visibility_reprojection.py` (point-level visibility).
+- Consumes box + depth evidence; produces object-level occlusion/permanence that those layers can consume.
+- KiloCode-owned spatial intelligence (WORKSTREAM 2), per its docstring.
+
+**Recovery verdict:** Legitimate, self-contained, well-structured, imports cleanly. Committed as recovered work from the KiloCode agent spatial intelligence workstream (agent/kilocode-desktop-studio).
 
 **What they were:** 9 files created in a prior agent session (recorded in EXECUTION_STATE.md as 2026-11-26, claiming "All 9 engineering ledger files created"). They were untracked in git (not in any commit) despite the EXECUTION_STATE.md and its commit message claiming they were created.
 
@@ -294,6 +321,10 @@ The repo contains substantial prior audit work in `docs/audits/`:
 
 ## 7. Current branch state (feat/day4-real-geometry-measurements)
 
+**Commits added this session (after the initial report):**
+- `5a51204a` refactor(multiengine): replace stub Provenance/Unit with real imports in evidence_fusion.py + test sync.
+- `36050335` feat(spatial): add KiloCode-authored object occlusion reasoning module (perception/spatial_intelligence/occlusion.py, 407 lines, committed + pushed).
+
 ### 7.1 Commit history (recent)
 
 ```
@@ -382,6 +413,7 @@ fba6a486 fix(perception): correct pair-geometry verification + reference-scored 
 5. **Coordinate with Cline/OpenCode:** No channel available to this agent. The delivery ledger documents the state for manual coordination.
 6. **Run focused test suite:** Use background process mode (`process_start`/`process_read`) to run `pytest tests/test_evidence_normalization_fusion.py tests/test_camera_pose_graph.py -v` to verify the committed fusion + cheirality work.
 7. **Re-render STATUS.md after any status changes:** `python scripts/render_status.py` (verified working this session).
+8. **Update recovery report with committed occlusion module:** Done (this session committed `36050335` + pushed).
 
 ---
 

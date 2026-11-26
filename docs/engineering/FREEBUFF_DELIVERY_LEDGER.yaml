@@ -58,6 +58,16 @@ Updated: 2026-11-26
 - recovery_report: docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md
 - delivery_ledger: docs/engineering/FREEBUFF_DELIVERY_LEDGER.yaml (this file)
 
+### Files committed this session (beyond recovery report)
+
+- commit_5a51204a: refactor(multiengine): replace stub Provenance/Unit with real imports in evidence_fusion.py
+  - evidence_fusion.py: 811 -> 765 lines; stub Provenance class removed; real imports (engine.core.units.Unit, provenance.Provenance)
+  - test_evidence_normalization_fusion.py: updated assertions to match real API (source_units="dimensionless", FusionError import)
+- commit_36050335: feat(spatial): add KiloCode-authored object occlusion reasoning module
+  - perception/spatial_intelligence/occlusion.py: 407 lines, new file
+  - OcclusionGraph, OcclusionRelation, compute_object_occlusions, merge_graphs, transitive_occlusion_chain, occluded_region_of, object_permanence_in_view
+  - KiloCode spatial intelligence workstream (agent/kilocode-desktop-studio); imports cleanly verified
+
 ### Files unchanged (existing, committed)
 
 - status_yaml_s5_23: advanced with fusion evidence + test (committed 4dc8d258)

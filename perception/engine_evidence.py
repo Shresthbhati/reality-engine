@@ -195,13 +195,10 @@ def _mask_descriptor(mask: np.ndarray | None) -> dict[str, Any] | None:
         return None
     arr = np.asarray(mask, dtype=bool)
     return {
-        "shape": [int(arr.shape[0]), int(arr.shape[1])],
+        "shape": [int(d) for d in arr.shape],
         "present": True,
         "coverage": round(float(arr.mean()), 4) if arr.size else 0.0,
     }
-#: compared on their own terms and the message names the unit that was used.
-_POSITION_TOLERANCE = {"metric": 0.1, "sfm_gauge": 0.1}
-_UNIT_LABEL = {"metric": "m", "sfm_gauge": "gauge units"}
 
 
 def bbox_iou(a: Sequence[float] | None, b: Sequence[float] | None) -> float:

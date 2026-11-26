@@ -21,6 +21,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
+from io import BytesIO
+
 import numpy as np
 
 from perception.engine_evidence import ObservationRecord
@@ -70,4 +72,36 @@ def load_mask_store(path: str | Path) -> MaskStore:
     return MaskStore.load(path)
 
 
-__all__ = ["persist_masks", "save_mask_store", "load_mask_store"]
+def mask_store_bytes(store: MaskStore) -> bytes:
+    """Serialize a MaskStore to bytes for the content-addressed blob store.
+
+    The run's MaskStore becomes a durable ``sha256://`` artifact via
+    ``engine.pipeline.stages.content_store.store_bytes`` instead of an ephemeral
+    temp path (a prior implementation leaked temp dirs and produced a path
+    unusable across workers/restarts — found by independent review).
+    """
+    buf = BytesIO()
+    lens = [len(c) for c in store._counts]
+    np.savez_compressed(
+        buf,
+        counts=np.concatenate(store._counts) if store._counts else np.zeros(0, np.uint32),
+        offsets=np.concatenate([[0], np.cumsum(lens)]).astype(np.int64),
+        shape=np.asarray(store._shapes, dtype=np.uint16).reshape(-1, 2),
+    )
+    return buf.getvalue()
+
+
+def load_mask_store_bytes(data: bytes) -> MaskStore:
+    """Load a MaskStore from bytes produced by :func:`mask_store_bytes`."""
+    z = np.load(BytesIO(data), allow_pickle=False)
+    store = MaskStore()
+    for i in range(len(z["shape"])):
+        store._counts.append(z["counts"][z["offsets"][i]:z["offsets"][i + 1]])
+        store._shapes.append((int(z["shape"][i][0]), int(z["shape"][i][1])))
+    return store
+
+
+__all__ = [
+    "persist_masks", "save_mask_store", "load_mask_store",
+    "mask_store_bytes", "load_mask_store_bytes",
+]

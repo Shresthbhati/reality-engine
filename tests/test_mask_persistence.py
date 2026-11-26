@@ -15,7 +15,13 @@ from perception.engine_evidence import (
     ObservationRecord,
     _mask_descriptor,
 )
-from perception.mask_persistence import load_mask_store, persist_masks, save_mask_store
+from perception.mask_persistence import (
+    load_mask_store,
+    load_mask_store_bytes,
+    mask_store_bytes,
+    persist_masks,
+    save_mask_store,
+)
 from world_ir.mask_store import MaskStore, decode, encode
 
 
@@ -105,3 +111,37 @@ def test_mask_ref_flows_through_to_dict_for_matrix():
     assert d["mask_ref"] == 0
     assert d["mask"]["shape"] == [20, 30]
     assert 0.0 <= d["mask"]["coverage"] <= 1.0
+
+
+def test_mask_store_bytes_round_trip_for_content_addressed_store():
+    """The run's MaskStore becomes a durable sha256:// artifact, not a temp path."""
+    masks = [np.random.default_rng(2).random((9, 11)) > 0.5, np.zeros((3, 4), bool)]
+    store = MaskStore()
+    for m in masks:
+        store.add(m)
+    data = mask_store_bytes(store)
+    assert isinstance(data, bytes) and len(data) > 0
+    reloaded = load_mask_store_bytes(data)
+    assert len(reloaded) == len(masks)
+    for row, m in enumerate(masks):
+        assert np.array_equal(reloaded.get(row), m)
+
+
+def test_matrix_bridge_preserves_mask_provenance(tmp_path):
+    """Independent review found the bridge dropped mask_ref/descriptor — regression test."""
+    from perception.engine_matrix_bridge import _draft_for
+
+    m = np.ones((6, 6), bool)
+    rec = persist_masks([_make_record(m)], MaskStore())[0]
+    draft = _draft_for(rec)
+    assert draft.predicted["mask_ref"] == 0
+    assert draft.predicted["mask"] == {"shape": [6, 6], "present": True, "coverage": 1.0}
+
+
+def test_mask_descriptor_handles_non_2d_mask():
+    """_mask_descriptor must not raise IndexError before persistence normalizes."""
+    from perception.engine_evidence import _mask_descriptor
+
+    d = _mask_descriptor(np.ones((2, 3, 4), bool))
+    assert d["shape"] == [2, 3, 4]
+    assert d["present"] is True

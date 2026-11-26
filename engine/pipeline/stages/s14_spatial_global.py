@@ -45,7 +45,9 @@ class SpatialGlobal:
                 # Module-global seam (backward compatibility with tests and ad-hoc registration).
                 # The per-job provider above takes precedence; this is the fallback.
                 try:
-                    from apps.api.spatial_global_stage import inputs_for_job as _inputs_for_job
+                    from engine.pipeline.spatial_global_stage import (
+                        inputs_for_job as _inputs_for_job,
+                    )
                     inputs = _inputs_for_job(ctx.state.get("job_obj"))
                 except Exception:  # noqa: BLE001
                     inputs = None

@@ -170,9 +170,13 @@ class DepthAnythingV2Backend(IDepthBackend):
         """Raw model prediction resized to the photo's own resolution."""
         import torch
 
-        inputs = self._processor(images=image, return_tensors="pt").to(self._device)
+        processor = self._processor
+        model = self._model
+        if processor is None or model is None:
+            raise DepthBackendUnavailableError("Depth Anything model is not initialized")
+        inputs = processor(images=image, return_tensors="pt").to(self._device)
         with torch.no_grad():
-            outputs = self._model(**inputs)
+            outputs = model(**inputs)
             predicted_depth = outputs.predicted_depth
             prediction = torch.nn.functional.interpolate(
                 predicted_depth.unsqueeze(1),

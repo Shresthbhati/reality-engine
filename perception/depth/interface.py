@@ -22,12 +22,9 @@ from provenance import Uncertainty
 class DepthMap:
     """Per-pixel depth for one evidence item (photo or video frame).
 
-    `values` is a plain row-major list of rows, not a numpy array --
-    this interface has zero dependencies beyond the stdlib, matching
-    this repo's dependency discipline (pyproject.toml declares none).
-    A concrete adapter wrapping a real depth model will likely convert
-    to/from numpy internally; that conversion is the adapter's job, not
-    this interface's.
+    `values` is row-major and may be represented as nested lists or a 2-D
+    float32 array. The array representation avoids the memory overhead of
+    nested Python floats; consumers read either representation the same way.
     """
     evidence_id: str
     width: int
@@ -35,7 +32,7 @@ class DepthMap:
     #: values[row][col]. A list of lists OR a 2-D float32 numpy array: producers pass arrays (about 8x smaller than nested
     #: Python floats, RE-PERF-000010) and consumers read both the same way (len, indexing, ``np.asarray``). float32, not
     #: float16: a float16 scalar times a Python float stays float16 and would silently coarsen un-projection.
-    values: list[list[float]]
+    values: Any
     unit: str = "relative"  # "relative" (unscaled, e.g. monocular) or "meters" (metric/scaled)
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     #: What the numbers ARE, because "relative" alone does not say which way is far. "depth":

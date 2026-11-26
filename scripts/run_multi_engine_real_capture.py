@@ -42,8 +42,9 @@ import platform
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -58,7 +59,7 @@ DEFAULT_MIN_INLIERS = 15
 
 
 # --------------------------------------------------------------------------- dataset
-def _dataset_manifest(dataset: Path) -> Dict[str, Any]:
+def _dataset_manifest(dataset: Path) -> dict[str, Any]:
     for name in ("MANIFEST.json", "manifest.json"):
         p = dataset / name
         if p.is_file():
@@ -66,18 +67,18 @@ def _dataset_manifest(dataset: Path) -> Dict[str, Any]:
     return {}
 
 
-def _is_synthetic(manifest: Dict[str, Any]) -> bool:
+def _is_synthetic(manifest: dict[str, Any]) -> bool:
     text = " ".join(str(manifest.get(k, "")) for k in ("dataset", "description", "identity")).lower()
     return "synthetic" in text
 
 
-def _camera_model(parts: List[str]) -> Optional[Dict[str, float]]:
+def _camera_model(parts: list[str]) -> dict[str, float] | None:
     """One cameras.txt row as {fx, fy, cx, cy, width, height, model} (or None if unsupported)."""
     if len(parts) < 5:
         return None
     model, width, height = parts[1], int(parts[2]), int(parts[3])
     params = [float(v) for v in parts[4:]]
-    row: Dict[str, float] = {"width": width, "height": height}
+    row: dict[str, float] = {"width": width, "height": height}
     if model in ("PINHOLE", "OPENCV") and len(params) >= 4:
         row.update(fx=params[0], fy=params[1], cx=params[2], cy=params[3])
         if model == "OPENCV" and len(params) >= 8:
@@ -94,7 +95,7 @@ def _camera_model(parts: List[str]) -> Optional[Dict[str, float]]:
     return row
 
 
-def _image_size(path: str) -> Optional[Tuple[int, int]]:
+def _image_size(path: str) -> tuple[int, int] | None:
     try:
         from PIL import Image
 
@@ -104,8 +105,8 @@ def _image_size(path: str) -> Optional[Tuple[int, int]]:
         return None
 
 
-def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[str, Dict[str, float]],
-                                                                          Dict[str, List[int]], Dict[str, Any]]:
+def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> tuple[dict[str, dict[str, float]],
+                                                                          dict[str, list[int]], dict[str, Any]]:
     """Camera intrinsics and reference co-visibility, with explicit provenance.
 
     Two cases, and they are NOT the same evidence:
@@ -120,10 +121,10 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
     """
     cam_file = dataset / "sparse" / "cameras.txt"
     img_file = dataset / "sparse" / "images.txt"
-    cams: Dict[int, Dict[str, float]] = {}
-    intrinsics: Dict[str, Dict[str, float]] = {}
-    covisibility: Dict[str, List[int]] = {}
-    provenance: Dict[str, Any] = {"source": "dataset sparse model", "overlap_with_reference_model": 0}
+    cams: dict[int, dict[str, float]] = {}
+    intrinsics: dict[str, dict[str, float]] = {}
+    covisibility: dict[str, list[int]] = {}
+    provenance: dict[str, Any] = {"source": "dataset sparse model", "overlap_with_reference_model": 0}
     if cam_file.is_file():
         for line in cam_file.read_text(encoding="utf-8").splitlines():
             if not line.strip() or line.lstrip().startswith("#"):
@@ -135,7 +136,7 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
             if row:
                 cams[int(parts[0])] = row
 
-    model_names: List[str] = []
+    model_names: list[str] = []
     if img_file.is_file():
         lines = img_file.read_text(encoding="utf-8").splitlines()
         for i in range(0, len(lines) - 1, 2):
@@ -147,7 +148,7 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
             if cam_id in cams:
                 intrinsics[name] = dict(cams[cam_id])
             observed = lines[i + 1].split()
-            ids: List[int] = []
+            ids: list[int] = []
             for j in range(2, len(observed), 3):
                 try:
                     pid = int(observed[j])
@@ -169,10 +170,10 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
         # every essential matrix (and therefore every recovered rotation) wrong
         # while the pixel-space epipolar residual stayed small. Rescaling by the
         # image-size ratio is exact for a pure resize.
-        rescaled: Dict[str, Dict[str, float]] = {}
+        rescaled: dict[str, dict[str, float]] = {}
         n_rescaled = 0
-        model_sizes: List[str] = []
-        no_size: List[str] = []
+        model_sizes: list[str] = []
+        no_size: list[str] = []
         for path in images:
             name = Path(path).name
             cam = intrinsics.get(name)
@@ -206,8 +207,8 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
         return rescaled, covisibility, provenance
 
     # Disjoint reference model: rescale the calibrated camera to each image's size.
-    rescale: Dict[str, Dict[str, float]] = {}
-    notes: List[str] = []
+    rescale: dict[str, dict[str, float]] = {}
+    notes: list[str] = []
     if len(cams) == 1:
         cam = next(iter(cams.values()))
         for path in images:
@@ -228,9 +229,9 @@ def _colmap_intrinsics(dataset: Path, images: Sequence[str] = ()) -> Tuple[Dict[
     return rescale, {}, provenance
 
 
-def _pair_strategy(paths: Sequence[str], strategy: str) -> List[Tuple[str, str]]:
+def _pair_strategy(paths: Sequence[str], strategy: str) -> list[tuple[str, str]]:
     """A reproducible, content-only pair set (no ground truth consulted)."""
-    pairs: List[Tuple[str, str]] = []
+    pairs: list[tuple[str, str]] = []
     stride = 2 if strategy == "sequential_skip2" else 1
     for step in range(1, stride + 1):
         for i in range(len(paths) - step):
@@ -255,25 +256,25 @@ class _UnionFind:
             self.parent[rb] = ra
 
 
-def _camera_graph(nodes: Sequence[str], verified_pairs: List[Dict[str, Any]],
-                  min_inliers: int) -> Dict[str, Any]:
+def _camera_graph(nodes: Sequence[str], verified_pairs: list[dict[str, Any]],
+                  min_inliers: int) -> dict[str, Any]:
     """Connectivity, weak cameras and triangle cycle consistency from VERIFIED pairs."""
     import numpy as np
 
     from perception.camera_pose_graph import cycle_residuals
 
     uf = _UnionFind(nodes)
-    edges: List[Tuple[str, str]] = []
+    edges: list[tuple[str, str]] = []
     for row in verified_pairs:
         if row["inliers"] >= min_inliers:
             a, b = row["a"], row["b"]
             uf.union(a, b)
             edges.append((a, b))
-    degree: Dict[str, int] = {n: 0 for n in nodes}
+    degree: dict[str, int] = {n: 0 for n in nodes}
     for a, b in edges:
         degree[a] += 1
         degree[b] += 1
-    components: Dict[str, List[str]] = {}
+    components: dict[str, list[str]] = {}
     for n in nodes:
         components.setdefault(uf.find(n), []).append(n)
 
@@ -309,15 +310,14 @@ def _camera_graph(nodes: Sequence[str], verified_pairs: List[Dict[str, Any]],
     }
 
 
-def _gt_covisibility_score(nodes: Sequence[str], engine_pairs: List[Tuple[str, str]],
-                           covisibility: Dict[str, List[int]], min_shared: int = 50) -> Dict[str, Any]:
+def _gt_covisibility_score(nodes: Sequence[str], engine_pairs: list[tuple[str, str]],
+                           covisibility: dict[str, list[int]], min_shared: int = 50) -> dict[str, Any]:
     """How well the engine pair graph covers the reference model's co-visibility graph."""
     if not covisibility:
         return {"status": "unavailable", "reason": "no sparse model co-visibility in this dataset"}
-    by_name = {Path(n).name: n for n in nodes}
     names = [Path(n).name for n in nodes]
     ids = {Path(n).name: set(covisibility.get(Path(n).name, [])) for n in names}
-    gt: set[Tuple[str, str]] = set()
+    gt: set[tuple[str, str]] = set()
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             a, b = names[i], names[j]
@@ -341,8 +341,8 @@ def _gt_covisibility_score(nodes: Sequence[str], engine_pairs: List[Tuple[str, s
 
 
 # --------------------------------------------------------------------------- stages
-def _stage1_registration(images: Sequence[str], intrinsics: Dict[str, Dict[str, float]],
-                         pairs: List[Tuple[str, str]], min_inliers: int) -> Dict[str, Any]:
+def _stage1_registration(images: Sequence[str], intrinsics: dict[str, dict[str, float]],
+                         pairs: list[tuple[str, str]], min_inliers: int) -> dict[str, Any]:
     from perception.engine_adapters import register_all_engines
     from perception.engine_orchestrator import MultiEngineOrchestrator, list_available_engines
 
@@ -370,9 +370,9 @@ def _stage1_registration(images: Sequence[str], intrinsics: Dict[str, Dict[str, 
             "n_observations": len(merged.observations), "merged": merged}
 
 
-def _pair_rows(merged: Any, min_inliers: int) -> List[Dict[str, Any]]:
+def _pair_rows(merged: Any, min_inliers: int) -> list[dict[str, Any]]:
     """One measured row per engine pair, straight from the engine's own observation."""
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for obs in merged.observations:
         m = dict(obs.metadata)
         engine_id = obs.model_id.architecture_id
@@ -420,7 +420,7 @@ print(json.dumps({
 """
 
 
-def _reference_poses(dataset: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def _reference_poses(dataset: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Per-image poses from the dataset's reference COLMAP text model, or ({}, reason)."""
     from perception.camera_pose_graph import read_colmap_text_model
 
@@ -470,7 +470,7 @@ def main() -> int:
 
     device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
     vram_total = round(torch.cuda.get_device_properties(0).total_memory / (1024 ** 2), 1) if torch.cuda.is_available() else None
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "dataset": {"path": str(dataset), "identity": manifest.get("identity") or manifest.get("dataset"),
                     "declared_synthetic": synthetic, "image_count": len(images),
                     "pair_strategy": args.pairs, "min_inliers": args.min_inliers},
@@ -499,12 +499,12 @@ def main() -> int:
     # Observations from every engine are merged into one report; each row names the engine
     # that produced it (its architecture id), so the per-engine statistics stay separate.
     rows = _pair_rows(merged, args.min_inliers)
-    by_engine: Dict[str, List[Dict[str, Any]]] = {}
+    by_engine: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_engine.setdefault(row["engine"], []).append(row)
     verified_pairs = [r for r in rows if r["verified"] and r["inliers"] and r["inliers"] >= args.min_inliers]
     # one row per image pair (prefer the engine with more inliers, record both)
-    best: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    best: dict[tuple[str, str], dict[str, Any]] = {}
     for r in verified_pairs:
         key = tuple(sorted((r["a"], r["b"])))
         if key not in best or (r["inliers"] or 0) > (best[key]["inliers"] or 0):
@@ -557,7 +557,11 @@ def main() -> int:
 
     if not args.skip_production:
         print("[stage 2] production evidence-world run (all engines + matrix + world)", flush=True)
-        from apps.api.evidence_world_stage import evidence_root, MULTI_ENGINE_EVIDENCE_FILE, run_for_job
+        from apps.api.evidence_world_stage import (
+            MULTI_ENGINE_EVIDENCE_FILE,
+            evidence_root,
+            run_for_job,
+        )
 
         base = out_dir
         job_id = f"real-{stamp}"
@@ -592,7 +596,7 @@ def main() -> int:
                                     world["version_id"], str(run_dir / MULTI_ENGINE_EVIDENCE_FILE)],
                                    cwd=str(REPO), capture_output=True, text=True, timeout=300)
             child_ok = child.returncode == 0
-            parsed: Dict[str, Any] = {}
+            parsed: dict[str, Any] = {}
             if child_ok:
                 try:
                     parsed = json.loads(child.stdout.strip().splitlines()[-1])

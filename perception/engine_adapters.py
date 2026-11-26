@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -50,7 +51,7 @@ def _model(engine_id: str, arch: str, checkpoint: str = "none", license: str = "
 # Two-view geometric verification (measured statistics, never invented ones)
 # ---------------------------------------------------------------------------
 
-def _camera_matrix(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]:
+def _camera_matrix(image_path: str, ctx: dict[str, Any]) -> np.ndarray | None:
     """The 3x3 intrinsic matrix of an image from the run context, or None if unknown.
 
     Context layout: ``ctx["intrinsics"] = {path: {"fx": .., "fy": .., "cx": .., "cy": ..}}``.
@@ -74,7 +75,7 @@ def _camera_matrix(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]
     return None
 
 
-def _camera_distortion(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]:
+def _camera_distortion(image_path: str, ctx: dict[str, Any]) -> np.ndarray | None:
     """The camera's distortion coefficients from the run context, or None.
 
     A missing distortion model is not treated as "no distortion": the pair records
@@ -115,9 +116,9 @@ def _sampson_distances(F: np.ndarray, p1: np.ndarray, p2: np.ndarray) -> np.ndar
 
 
 def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
-                            K1: Optional[np.ndarray], K2: Optional[np.ndarray],
-                            dist1: Optional[np.ndarray] = None,
-                            dist2: Optional[np.ndarray] = None) -> Dict[str, Any]:
+                            K1: np.ndarray | None, K2: np.ndarray | None,
+                            dist1: np.ndarray | None = None,
+                            dist2: np.ndarray | None = None) -> dict[str, Any]:
     """Measured two-view geometry for a putative correspondence set.
 
     Everything returned is measured from the matches: RANSAC inlier count and ratio, the
@@ -132,7 +133,7 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
 
     p1 = np.asarray(p1, dtype=np.float64).reshape(-1, 2)
     p2 = np.asarray(p2, dtype=np.float64).reshape(-1, 2)
-    out: Dict[str, Any] = {"putative_matches": int(len(p1)), "verified": False}
+    out: dict[str, Any] = {"putative_matches": int(len(p1)), "verified": False}
     if len(p1) < 8 or len(p2) < 8:
         out["reason"] = "fewer than 8 putative matches"
         return out
@@ -151,8 +152,8 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
     if out["verified"] and K1 is not None and K2 is not None:
         # Normalised coordinates, then a shared camera matrix of identity: the correct
         # essential-matrix form when the two cameras have different intrinsics.
-        n1 = cv2.undistortPoints(p1.reshape(-1, 1, 2), K1, dist1).reshape(-1, 2)
-        n2 = cv2.undistortPoints(p2.reshape(-1, 1, 2), K2, dist2).reshape(-1, 2)
+        n1 = cv2.undistortPoints(p1[inlier_mask].reshape(-1, 1, 2), K1, dist1).reshape(-1, 2)
+        n2 = cv2.undistortPoints(p2[inlier_mask].reshape(-1, 1, 2), K2, dist2).reshape(-1, 2)
         E, _mask_e = cv2.findEssentialMat(n1, n2, np.eye(3), method=cv2.RANSAC,
                                           prob=0.999, threshold=1e-3)
         if E is not None and np.asarray(E).shape == (3, 3):
@@ -176,7 +177,7 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
 # SIFT Matcher Adapter
 # ---------------------------------------------------------------------------
 
-def _sift_available() -> Optional[str]:
+def _sift_available() -> str | None:
     try:
         import cv2
         cv2.SIFT_create()
@@ -186,13 +187,14 @@ def _sift_available() -> Optional[str]:
 
 
 def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
-    import cv2
     import time as _t
+
+    import cv2
 
     t0 = _t.perf_counter()
     run_id = ctx.get("run_id", "sift_run")
-    obs: List[ObservationRecord] = []
-    unverified: List[Dict[str, Any]] = []
+    obs: list[ObservationRecord] = []
+    unverified: list[dict[str, Any]] = []
     pairs = ctx.get("pairs", [])
     if not pairs and len(image_paths) >= 2:
         pairs = [(image_paths[i], image_paths[i + 1]) for i in range(len(image_paths) - 1)]
@@ -200,7 +202,7 @@ def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     # One detector for the whole run: creating it per pair wasted time and gave every
     # image new keypoints. Feature extraction is cached per image across pairs.
     sift = cv2.SIFT_create(nfeatures=4000)
-    cache: Dict[str, Tuple[Optional[List[Any]], Optional[np.ndarray], int]] = {}
+    cache: dict[str, tuple[list[Any] | None, np.ndarray | None, int]] = {}
 
     def _features(path: str):
         if path not in cache:
@@ -267,27 +269,30 @@ def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
 # LightGlue-ALIKED Adapter
 # ---------------------------------------------------------------------------
 
-def _lightglue_aliked_available() -> Optional[str]:
+def _lightglue_aliked_available() -> str | None:
     try:
-        import torch
-        import kornia.feature as kf
+        from importlib import import_module
+
+        import_module("kornia.feature")
+        import_module("torch")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
 def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
-    import cv2
-    import torch
-    import kornia.feature as kf
     import time as _t
+
+    import cv2
+    import kornia.feature as kf
+    import torch
     from kornia.feature import LightGlue
 
     t0 = _t.perf_counter()
     run_id = ctx.get("run_id", "lightglue_run")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    obs: List[ObservationRecord] = []
-    unverified: List[Dict[str, Any]] = []
+    obs: list[ObservationRecord] = []
+    unverified: list[dict[str, Any]] = []
     pairs = ctx.get("pairs", [])
     if not pairs and len(image_paths) >= 2:
         pairs = [(image_paths[i], image_paths[i + 1]) for i in range(len(image_paths) - 1)]
@@ -298,7 +303,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     try:
         aliked = kf.ALIKED.from_pretrained("aliked-n16")
         aliked = aliked.to(device).eval()
-    except Exception as exc:
+    except Exception:
         try:
             aliked = kf.ALIKED()
             aliked = aliked.to(device).eval()
@@ -306,7 +311,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
             return UnifiedEngineOutput(engine_id="lightglue_aliked", run_id=run_id, observations=(),
                                       status="failed", error_message=str(exc2), wall_time_s=time.perf_counter() - t0)
     lg = LightGlue(features="aliked").to(device).eval()
-    peak: Optional[float] = None
+    peak: float | None = None
 
     def _feats(path: str):
         img = cv2.imread(path)
@@ -361,7 +366,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                 # Confidence is LightGlue's OWN per-match score, never a constant. When the
                 # matcher does not return scores there is no measured confidence at all, and
                 # the record says so (None) instead of claiming certainty.
-                mean_score: Optional[float] = None
+                mean_score: float | None = None
                 scores_tensor = matches.get("scores")
                 if isinstance(scores_tensor, (list, tuple)):
                     scores_tensor = scores_tensor[0] if scores_tensor else None
@@ -417,7 +422,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         import torch  # imported here: this module must import without torch installed
 
@@ -432,7 +437,7 @@ def _get_vram_peak() -> Optional[float]:
 # Registration — register all available engines
 # ---------------------------------------------------------------------------
 
-def register_all_engines() -> List[str]:
+def register_all_engines() -> list[str]:
     """Register all available engines with the MultiEngineOrchestrator."""
     registered = []
 

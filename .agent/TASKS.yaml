@@ -1964,3 +1964,5 @@ tasks:
     remaining:
       - "Phase 1 reopens if the user supplies the original geometries symptom"
       - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"
+
+# 1M wave-1 recorded; see docs/engineering/OPENCODE_DELIVERY_LEDGER.yaml wave_1m_backend_infra

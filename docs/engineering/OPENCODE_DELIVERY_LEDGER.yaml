@@ -47,3 +47,22 @@ human_dependent_blockers:
   - "15-image annotation manifest"
   - "branch protection on main"
   - "subagent capacity (free usage limit) prevented parallel workstreams"
+
+# ============================================================================
+# Wave 1 under the 1,000,000-LOC backend programme (honest accounting).
+# The 1M target is a long-running ambition, NOT met. No filler generated.
+# Existing repo already ~407K Python LOC; my slice is additive + verified.
+# States distinguished: written/tested/integrated/merged/production_connected.
+wave_1m_backend_infra:
+  base: "origin/main@d364cc40"
+  owned_domain: "backend + infrastructure (no Claude/Gemini/FreeBuff/Cline/KiloCode-owned edits; no routing/main.py wiring; additive)"
+  subagents:
+    activated_this_wave: []
+    note: "subagent capacity historically 'free usage limit'; one independent reviewer succeeded in prior session; #402-#404 NOT yet independently reviewed"
+  prs:
+    - {pr: 402, branch: "re1m/feature-flags", title: "additive feature-flag service", production_loc: 250, test_loc: 110, tests: "12 passed", state: {written: true, tested: true, integrated: true, merged: false, production_connected: false}}
+    - {pr: 403, branch: "re1m/event-persistence", title: "durable event store + replay + idempotent consumer", production_loc: 330, test_loc: 150, tests: "10 passed; +107 event regression passed/1 skipped", state: {written: true, tested: true, integrated: true, merged: false, production_connected: false}}
+    - {pr: 404, branch: "re1m/api-keys", title: "additive API-key service", production_loc: 250, test_loc: 110, tests: "9 passed", state: {written: true, tested: true, integrated: true, merged: false, production_connected: false}}
+  wave_net_substantive_loc: ~1330
+  cumulative_note: "adds to existing ~407K; 1M-line target NOT claimed"
+

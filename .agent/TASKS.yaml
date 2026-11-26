@@ -26,6 +26,25 @@ rules:
   do_not_reimplement_without_reason: true
   disaster_is_not_core: true
 
+# --- KiloCode session 2026-11-26 (independent production engineering + verification) ---
+# Branch: feat/day4-real-geometry-measurements @ 2e15cd44 (PR #395 MERGED per gh; branch ref confirms)
+# Completed (committed):
+#   - 5a51204a refactor(multiengine): real Unit/Provenance imports in evidence_fusion.py (+ test sync); 811->765 lines
+#   - 36050335 feat(spatial): KiloCode object occlusion reasoning module perception/spatial_intelligence/occlusion.py (407 lines)
+#   - 55f78109 test(spatial): tests/test_spatial_occlusion.py (262 lines, 13 tests)
+#   - 59ca5a39 / 8aa06d06 docs(recovery): KILOCODE_200K_ENGINEERING_REPORT.md + KILOCODE_DELIVERY_LEDGER.yaml
+#   - 2e15cd44 feat(api): upload dedup in create_upload (stash@{6} port) + test_upload_deduplicates_byte_identical_content
+# Comparison verdicts (this session): BA consolidation §4.3 — untracked bundle_adjustment.py is superior algorithm
+#   (true sparse-LM BA) vs committed BundleAdjustmentOptimizer (point refiner); NOT committed, decision deferred Option A/B/C.
+#   Ops stash §4.1 — CONFLICTING; _run_reconstruct_session rewrite NOT ported; upload dedup ported; do NOT drop stash.
+# Verification (this session): fusion 19/19 (8 previously failing now fixed); occlusion 13/13; upload dedup 1/1;
+# focused regression suite 138 passed, 0 failed.
+# Defects found+fixed (independent verification): duplicate Provenance/Unit stub; write_fused_back link-before-store;
+# _fuse_bboxes cross-source drop; _fuse_scalar_quantity None confidence.
+# No new external dependencies. Docs/engineering plan/backlog/state docs NOT recreated (AGENTS.md §51).
+# Persistent memory: .agent/EXECUTION_STATE.md + .agent/TASKS.yaml.
+# -----------------------------------------------------------------------------
+
 tasks:
 
   # ================= 52-WEEK MASTER ENGINEERING PROGRAMME =================

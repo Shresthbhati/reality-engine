@@ -254,7 +254,14 @@ def test_run_for_job_executes_the_pipeline_and_reports_what_it_did(tmp_path, pho
     from engine.multiengine.evidence_matrix import EvidenceMatrix
 
     m = EvidenceMatrix(_root(tmp_path))
-    assert {o.quantity for o in m.store.query()} == {"bbox", "detection_pipeline_summary"}
+    # This test injects a fake detector/segmenter, but run_for_job also registers
+    # the real engine set; when their weights are cached those engines add their
+    # own legitimate observations (wall/ceiling/depth_map). Assert the pipeline's
+    # own outputs are present rather than forbidding unrelated real-engine
+    # evidence -- an exact-set equality here was environment-dependent and
+    # failed a full-suite shard when HF weights happened to be available.
+    quantities = {o.quantity for o in m.store.query()}
+    assert {"bbox", "detection_pipeline_summary"} <= quantities
     assert any(run.engine_id == pdet.ENGINE_ID and run.status == "succeeded" for run in m.runs())  # the manager recorded the pipeline run
     assert m.verify() == []
     rd = ew.readiness(_root(tmp_path))["detection"]  # the frontend's view, read back from disk

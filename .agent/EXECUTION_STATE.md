@@ -153,3 +153,6 @@ Verification: manual test of core fusion paths (single passthrough, two consiste
 - Governing task: `.agent/TASKS.yaml` entry `P-52W-00` (the 52-week master programme as the authoritative queue).
 - Status source of truth: `docs/status.yaml` → `docs/STATUS.md` (rendered by `scripts/render_status.py`). The programme advances status items only with evidence, in the same change that produces it.
 - This file is updated at every meaningful milestone; the next session resumes from "Next action" above.
+## 1M backend wave-1 (2026-11-26)
+- Branch re1m/feature-flags PR#402; re1m/event-persistence PR#403; re1m/api-keys PR#404; re1m/delivery-ledger-1m PR#405.
+- Verified: feature_flags 12; event_store 10 + event regression 107/1; api_keys 9. Not merged. 1M LOC target NOT met; no filler.

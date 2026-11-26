@@ -153,3 +153,19 @@ Verification: manual test of core fusion paths (single passthrough, two consiste
 - Governing task: `.agent/TASKS.yaml` entry `P-52W-00` (the 52-week master programme as the authoritative queue).
 - Status source of truth: `docs/status.yaml` → `docs/STATUS.md` (rendered by `scripts/render_status.py`). The programme advances status items only with evidence, in the same change that produces it.
 - This file is updated at every meaningful milestone; the next session resumes from "Next action" above.
+
+## KiloCode session — continued (Phase 3 golden E2E + Phase 5 benchmark + verification)
+### Completed
+1. Authored golden vertical-slice end-to-end acceptance test `tests/integration/test_golden_e2e_workflow.py` (5 tests): real images -> EvidenceItems -> vertical_slice pipeline (deterministic test backend) -> WorldIR -> WorldStore persistence (save -> read-back verify -> load -> hash integrity) -> WorldDiff (self-diff empty, cross-version diff detects changes) -> export (glTF + PLY) -> validation -> rejected unsupported export format -> degraded optional stage recorded honestly. All 5 tests pass.
+2. Authored persistence integrity benchmark `benchmarks/persistence_integrity_bench.py`: save->verify->load->hash integrity (25 iters), version-chain lineage (40 versions), concurrent save/load safety (8 writers x 10 versions = 80 versions, no corruption). `all_passed: True`.
+3. Independent verification (regression): ran focused suites across the areas touched:
+   - tests/test_evidence_world_persistence.py, test_failure_modes_worldstore.py, test_evidence_fusion.py, test_fusion_pipeline.py, test_evidence_normalization_fusion.py: 57 passed, 0 failed.
+   - tests/test_spatial_reasoning.py, test_job_stage_runs_pipeline.py, test_detail_worldstore.py: 11 passed, 0 failed.
+   - Combined focused regression suites: 206 passed, 0 failed.
+   - Pre-existing unrelated failure `tests/integration/test_acceptance_p018.py::test_relative_run_real_photos` (needs real photos + COLMAP; environment-dependent) — untouched, not caused by this session.
+
+### New files this session (untracked, ready to commit/PR)
+- `tests/integration/test_golden_e2e_workflow.py`
+- `benchmarks/persistence_integrity_bench.py`
+
+### No new external dependencies; existing Python/numpy/scipy/pytest/PIL/scipy stack only.

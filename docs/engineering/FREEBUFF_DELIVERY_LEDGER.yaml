@@ -67,6 +67,10 @@ Updated: 2026-11-26
   - perception/spatial_intelligence/occlusion.py: 407 lines, new file
   - OcclusionGraph, OcclusionRelation, compute_object_occlusions, merge_graphs, transitive_occlusion_chain, occluded_region_of, object_permanence_in_view
   - KiloCode spatial intelligence workstream (agent/kilocode-desktop-studio); imports cleanly verified
+- commit_55f78109: test(spatial): add tests for KiloCode object occlusion reasoning module
+  - tests/test_spatial_occlusion.py: 262 lines, 13 tests, new file
+  - Tests: occlusion graph construction, transitive chains, occluded regions, object permanence
+  - Recovered alongside occlusion.py; verified: all 13 tests pass
 
 ### Files unchanged (existing, committed)
 
@@ -123,7 +127,7 @@ Updated: 2026-11-26
 | Model evaluation reports | pending | existing audits contain model evals; no new evals this session |
 | Dataset/licensing manifests | existing | OPEN_SOURCE_TECHNOLOGY_REGISTRY.md, TECHNOLOGY_EVALUATION.md, capability_matrix.md, model_registry.py |
 | Reconstruction benchmark manifests | existing | benchmarks/measured_rooms/, benchmarks/reality_benchmark/, datasets/south_building/ |
-| Push recovery report to GitHub | pending | no new code to push; report is new file |
+| Push recovery report to GitHub | done | pushed 79c33276, 5a51204a, 36050335, 55f78109 to origin/feat/day4-real-geometry-measurements |
 
 ---
 

@@ -21,7 +21,8 @@ Recovered and reconciled the existing reconstruction work across branches, workt
 
 **Committed this session (beyond the initial recovery report commit `79c33276`):**
 - `5a51204a` refactor(multiengine): replace stub Provenance/Unit with real imports in evidence_fusion.py + test sync.
-- `36050335` feat(spatial): add KiloCode-authored object occlusion reasoning module (perception/spatial_intelligence/occlusion.py, 407 lines).
+- `36050335` feat(spatial): add KiloCode-authored object occlusion reasoning module (perception/spatial_intelligence/occlusion.py, 407 lines, committed + pushed).
+- `55f78109` test(spatial): add tests for KiloCode object occlusion reasoning module (tests/test_spatial_occlusion.py, 262 lines, 13 tests, committed + pushed).
 
 **Still pending:**
 - `perception/bundle_adjustment.py` not committed (untested parallel BA; see §4.2).
@@ -411,9 +412,9 @@ fba6a486 fix(perception): correct pair-geometry verification + reference-scored 
 3. **Six-agent branch content inspection:** Read the key files from each of the 6 agent branches to assess what legitimate work they contain. Start with the branches that have PRs open (#54 kilocode, #66 cline-mobile) and the ones pointing to main.
 4. **Gemini spatial programme review:** The `gemini/*` branch set is large. The RCEAP Cycle 0 audit + SPATIAL_RECONSTRUCTION_CYCLE0_AUDIT.md provide the high-level picture. Prioritize branches that are off `main` (not off other Gemini branches) for integration review.
 5. **Coordinate with Cline/OpenCode:** No channel available to this agent. The delivery ledger documents the state for manual coordination.
-6. **Run focused test suite:** Use background process mode (`process_start`/`process_read`) to run `pytest tests/test_evidence_normalization_fusion.py tests/test_camera_pose_graph.py -v` to verify the committed fusion + cheirality work.
+6. **Run focused test suite:** Use background process mode (`process_start`/`process_read`) to run `pytest tests/test_evidence_normalization_fusion.py tests/test_camera_pose_graph.py tests/test_spatial_occlusion.py -v` to verify the committed fusion + cheirality + occlusion work.
 7. **Re-render STATUS.md after any status changes:** `python scripts/render_status.py` (verified working this session).
-8. **Update recovery report with committed occlusion module:** Done (this session committed `36050335` + pushed).
+8. **Update recovery report with committed occlusion module + tests:** Done (this session committed `36050335` + `55f78109` + pushed).
 
 ---
 

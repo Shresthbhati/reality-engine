@@ -1,10 +1,10 @@
 # Execution State — Reality Engine
 
 ## Branch / Commit
-- Branch: `feat/day4-real-geometry-measurements` (from `main`, PR #395 open)
-- Commit: `290ab106` — "docs(state): record Quarter 1 evidence normalization + task-specific fusion completion" (tip); prior commits `4dc8d258` (feat: evidence_fusion.py + test + status advance), `c10f9a2c`, `156f3e36`
-- Working tree: has changes (PR #395 merge in progress)
-  - Push state: branch pushed to `4dc8d258` and `290ab106`; PR #395 open, not merged
+- Branch: `feat/day4-real-geometry-measurements` (from `main`, PR #395 MERGED)
+- Commit: `4c1c38d2` — "docs(recovery): add BA consolidation analysis (§4.3) and ops stash comparison (§4.1)" (tip); session commits `8aa06d06` (report + ledger final update), `55f78109` (occlusion tests), `59ca5a39` (report + ledger update), `36050335` (occlusion module), `5a51204a` (evidence_fusion.py refactor), `79c33276` (initial recovery report); prior `290ab106`, `4dc8d258`, `c10f9a2c`, `156f3e36`
+- Working tree: clean except unrelated untracked files (finance `.claude`/`.codex` agents, `.github/agents/`, `perception/bundle_adjustment.py` recovered-but-untracked, plus KiloCode docs `KILOCODE_200K_ENGINEERING_REPORT.md` + `KILOCODE_DELIVERY_LEDGER.yaml`)
+  - Push state: branch pushed to `4c1c38d2`; remote matches local; PR #395 MERGED (per gh; remote branch ref confirms 4c1c38d2 landed)
 
 ## Reconciliation note (this session)
 - Inspected the mandate's "first inspect" list: `engine_orchestrator.py`, `engine_adapters.py`, `engine_matrix_bridge.py`, `engine/multiengine/evidence_matrix.py`, `perception/depth/`, `reconstruction/depth_to_points.py`, camera registration/pose-graph, `apps/api/evidence_world_stage.py`, WorldIR, WorldStore, Reality Studio, status ledger.
@@ -37,16 +37,51 @@
 1. Reconciled current source state against the mandate: confirmed all named modules exist and are wired; confirmed the depth fixes are committed/pushed; confirmed no `docs/engineering` ledger/backlog/state files exist.
 2. Updated this file (current branch/commit, completed work, exact next action).
 3. Added one governing task entry to `.agent/TASKS.yaml` (`P-52W-00`) so the 52-week master programme is represented as the authoritative work queue without recreating deleted backlogs.
-4. Implemented `perception/bundle_adjustment.py` (UNTRACKED — not committed): bundle adjustment over 3D points using exact sparse LM solver; camera 0 pinned as gauge; per-camera/per-point covariances; verified with synthetic data. Status: recovered work product; not yet wired into committed pipeline (a separate `BundleAdjustmentOptimizer` exists in `reconstruction/sfm/core_pipeline.py`, tested). Needs evaluation before integration.
+4. Implemented `perception/bundle_adjustment.py` (UNTRACKED — not committed): bundle adjustment over 3D points using exact sparse LM solver; camera 0 pinned as gauge; per-camera/per-point covariances. Status: recovered work product; NOT committed (evaluated this session — see §Comparison verdicts below).
 5. Extended `perception/camera_pose_graph.py` with optional `points3d` cheirality constraints — `(R_c @ P + t_c).z > 0` residuals pin handedness and scale; all 30 existing tests pass.
 6. Widened pair strategy in `scripts/run_multi_engine_real_capture.py` — added `sequential_skip23`, `sequential_skip234`, `all`; default = `sequential_skip23`.
 7. Created 9 engineering ledger files in `docs/engineering/` during a prior session; these were removed in the current recovery session per AGENTS.md §51 (4 were plan/roadmap/backlog/state documents prohibited from recreation; 5 were duplicates of canonical committed `docs/engineering/` records). Their unique content (bundle adjustment decision D-011, cheirality decision D-012, South Building 32-photo multi-engine execution results) is captured in the recovery report `docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md`.
 
-## Verification performed (this session)
-- `python scripts/render_status.py --check`: passed (docs/status.yaml still source of truth; STATUS.md in sync).
-  - Git working tree: `290ab106` on `feat/day4-real-geometry-measurements`; untracked: `perception/bundle_adjustment.py` (recovered, not committed).
-- All 75 existing tests pass (test_unified_engine_orchestration.py, test_engine_matrix_bridge.py, test_camera_pose_graph.py, test_depth_to_points.py).
-- Bundle adjustment verified with synthetic data: converges, gauge camera stays fixed, other cameras refined toward ground truth.
+## Comparison verdicts (performed 2026-11-26)
+
+### BA consolidation (perception/bundle_adjustment.py vs reconstruction/sfm/core_pipeline.py::BundleAdjustmentOptimizer)
+- Finding: NOT equivalent implementations. Untracked file is the correct, rigorous sparse-LM bundle adjustment (6-DOF cameras + 3-DOF points, analytic sparse Jacobian, gauge camera 0, Cauchy loss, per-camera/per-point covariances, full BundleAdjustmentResult). Committed BundleAdjustmentOptimizer is a weaker coordinate-descent point refiner (point positions only, rotations fixed, heuristic backprojection-ray Jacobian, no gauge, no covariances, Huber weighting post-hoc not in normal equations) mislabeled as BA.
+- Decision: do NOT commit as-is (untested, not integrated). Do NOT leave competing implementations. Recommended: Option A (integrate rigorous BA into canonical pipeline with tests + adapter from core_pipeline data structures to CameraParams/CameraObservation/Point3D), Option B (document distinction, track wiring task), or Option C (archive with explanation). Blocked by: no tests, no integration, no adapter.
+- Full analysis: `docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md` §4.3; ledger: `docs/engineering/FREEBUFF_DELIVERY_LEDGER.yaml` section `Comparison verdicts (this session)`.
+
+### Ops stash (stash@{6} vs current branch) — evaluated 2026-11-26
+- Verdict: CONFLICTING, not complementary. `_run_reconstruct_session` is a different architecture (stash: COLMAP backend + ReconstructionOrchestrator + reality.compile_world_from_reconstruction + WorldStore.save_version direct; current: stage-segmented vertical slice via run_progressive + vertical_slice + worldstore_service.commit_version + manifest grading). Same function signature, different body = direct conflict. Current branch's implementation is more complete and tested.
+- routes_worlds new routes (worldir/cameras/points/diff): SUPERSEDED — current already has these + full CAS-validated commit endpoint with version integrity, duplicate detection, four-way commit storm tests, space-graph.
+- upload dedup (routes_misc.py create_upload): IMPROVEMENT — current create_upload has no dedup; stash's checksum-based dedup is a genuine enhancement; touches same function; port selectively.
+- verify_artifact in storage.py: CONFLICTS — current storage.py already re-exports verify_artifact from engine.pipeline.stages.content_store.
+- graceful shutdown (main.py, 30s): SUBSET — current has 10s + shield + db dispose timeout (more defensive).
+- reclaim_abandoned_jobs (heartbeat-based): ALTERNATIVE — current uses proc-based recover_orphaned_jobs at startup; blocked by _run_reconstruct_session conflict from applying cleanly.
+- cli/main.py incremental update: INDEPENDENT — separate CLI concern; evaluate separately.
+- .obsidian/*: IGNORE — editor state.
+- test_application_api.py expansion: OBSOLETE — current test suite covers the chain.
+- Decision: do NOT apply stash@{6} to this branch. Do NOT drop it. Port piecemeal if valuable (upload dedup, heartbeat reclamation as alternative to proc-based recovery). Do NOT apply the _run_reconstruct_session rewrite.
+- Full analysis: `docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md` §4.1; ledger: `docs/engineering/FREEBUFF_DELIVERY_LEDGER.yaml` section `Comparison verdicts (this session)`.
+
+## KiloCode session 2026-11-26 (independent production engineering + verification)
+### Completed
+1. Independent verification of `engine/multiengine/evidence_fusion.py`: found and fixed 4 real defects (duplicate `Provenance`/`Unit` stub class type-incompatible with `reconstruction/fusion/fusion.py`; `write_fused_back` linked before storing; `_fuse_bboxes` dropped cross-source bboxes instead of recording incompatibility; `_fuse_scalar_quantity` passed `None` confidence into `FusableObservation`). All 19 fusion tests now pass (8 were failing pre-fix).
+2. Authored object-level occlusion reasoning + object permanence module `perception/spatial_intelligence/occlusion.py` (407 lines): `OcclusionGraph`, `OcclusionRelation`, `compute_object_occlusions`, `merge_graphs`, `transitive_occlusion_chain`, `occluded_region_of`, `object_permanence_in_view`. All 13 tests in `tests/test_spatial_occlusion.py` pass.
+3. Authored `tests/test_spatial_occlusion.py` (262 lines): occlusion graph construction, transitive chains, occluded regions, object permanence.
+4. Created KiloCode delivery documents per Workstream 12:
+   - `docs/audits/KILOCODE_200K_ENGINEERING_REPORT.md`
+   - `docs/engineering/KILOCODE_DELIVERY_LEDGER.yaml`
+5. Updated `.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` (this session).
+
+### Verification performed (KiloCode session)
+- `tests/test_evidence_normalization_fusion.py`: 19 passed (8 previously failing, now fixed).
+- `tests/test_spatial_occlusion.py`: 13 passed (verified this session via background process mode).
+- Focused regression suite (pose graph, depth backend, matrix bridge, orchestration, matrix executor, spatial reasoning, scene graph, depth consistency): all pass.
+- Combined focused suite: 138 passed, 0 failed.
+- No new external dependencies added; existing Python/numpy/scipy/pytest stack only.
+
+### KiloCode role
+Independent production engineering contributor, spatial-intelligence author, new-capability implementer, cross-system optimizer, and independent verification authority — defects found during verification were repaired, not merely reported.
+
 
 ## Remaining from prior work (carried forward, not re-verified this session)
 - Pre-existing unrelated test failure still at HEAD: `tests/test_detection_pipeline_engine.py::test_run_for_job_executes_the_pipeline_and_reports_what_it_did` (store holds extra `ceiling`/`mask`/`wall` quantities). Not touched this session.
@@ -83,9 +118,11 @@
 - Gaussian splatting / NeRF integration (P2 per priority order)
 
 ## Next action (exact)
-- Re-read `.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` `P-52W-00` (current state + governing task), then re-read `docs/status.yaml` S5-23/S5-26 `next` fields, `RELEASE.md`, and the `TASKS.yaml` tail before any production edit.
-- Choose the next implementation work package from mandate §13 priority order applied to reconciled state. Next candidate: Quarter 1 Week 2 — extend pose graph to integrate bundle adjustment refinement (S5-25 `next`: "Bundle adjustment over 3D points"); OR continue evidence fusion with confidence calibration (S5-26 `next`: "Make confidence a measured quantity or drop it").
+- Resume from `.agent/TASKS.yaml` `P-52W-00` and this file's KiloCode session section.
+- Next implementation candidates: evaluate/commit `perception/bundle_adjustment.py` (untracked recovered work; evaluation done — decision deferred to Option A/B/C with tests); extend pose graph to integrate bundle adjustment refinement (S5-25 next); continue evidence fusion confidence calibration (S5-26 next: "Make confidence a measured quantity or drop it").
+- Two comparisons complete this session: BA consolidation (§4.3 of report) — untracked file is superior algorithm but untested; ops stash (§4.1 of report) — CONFLICTING, not applied, do not drop.
 - Commit only when appropriate; never rewrite history; keep PRs focused; do not merge without authorization.
+- Coordinate with Cline/OpenCode on shared contracts before changing them (no agent channel; manual).
 
 ## Programme governance
 ### Quarter 1 generalized evidence normalization + task-specific fusion (mandate §2, Weeks 1–12)

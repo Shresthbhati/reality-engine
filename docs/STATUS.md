@@ -2,7 +2,7 @@
 
 Generated from `docs/status.yaml` by `scripts/render_status.py`. Do not edit by hand.
 
-Baseline: 290ab106
+Baseline: 4c1c38d2
 
 | ID | Capability | Status | Gate | Evidence | Tests | Updated | Next |
 |---|---|---|---|---|---|---|---|

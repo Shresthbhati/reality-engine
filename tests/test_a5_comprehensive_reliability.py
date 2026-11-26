@@ -667,3 +667,70 @@ def test_parse_claude_camera_poses_handles_defaults_and_uncertainty() -> None:
     assert cams["img_1"].position_m == (1.0, 2.0, 0.5)
     assert cams["img_1"].position_sigma_m == 0.04
     assert cams["img_1"].is_metric is True
+
+
+def test_a5_pipeline_blank_image_produces_zero_observations_and_honest_diagnostics() -> None:
+    blank_img = np.full((480, 640, 3), 128, dtype=np.uint8)
+    res = run_a5_production_pipeline(
+        "blank_safety_run",
+        images_rgb={"blank.png": blank_img},
+        observations=[],
+        run_live_detector=False,
+        run_live_segmenter=False,
+        persist_to_world=False,
+    )
+    assert res.image_qualities["blank.png"].is_blank is True
+    assert len(res.bundle.observations) == 0
+    assert len(res.handoff.observations) == 0
+    assert res.arch_geometry["blank.png"].line_segments == ()
+    assert res.arch_geometry["blank.png"].plane_hypotheses == ()
+    metrics = compute_a5_reliability_metrics(res)
+    assert metrics.raw_observations == 0
+    assert metrics.mask_coverage_fraction == 0.0
+    assert metrics.evidence_matrix_persisted is False
+
+
+def test_a5_resumable_runner_persists_valid_checkpoint_and_reloads_identities(tmp_path: Path) -> None:
+    obs = [
+        _obs("w1", "v1", "wall", (0, 20, 640, 400), category="architecture"),
+        _obs("c1", "v1", "chair", (120, 200, 240, 380)),
+        _obs("c2", "v2", "chair", (124, 202, 244, 382)),
+    ]
+    wdir = tmp_path / "ckpt_ws"
+    st1, res1, b1 = run_resumable_a5_job(
+        "ckpt_test",
+        wdir,
+        observations=obs,
+        run_live_detector=False,
+        run_live_segmenter=False,
+    )
+    assert st1.status == "completed"
+    assert res1 is not None
+    assert (wdir / "a5_pipeline_checkpoint.json").exists()
+    assert (wdir / "evidence_matrix" / "perception_handoff_v1.json").exists()
+
+    st2, res2, b2 = run_resumable_a5_job(
+        "ckpt_test",
+        wdir,
+        observations=obs,
+        run_live_detector=False,
+        run_live_segmenter=False,
+    )
+    assert st2.status == "resumed_from_cache"
+    assert res2 is None
+    assert [o.observation_id for o in b2.observations] == [o.observation_id for o in b1.observations]
+
+
+def test_a5_mask_geometry_and_dedup_boundary_cases() -> None:
+    single_px = np.zeros((32, 32), dtype=bool)
+    single_px[10, 15] = True
+    assert compute_tight_box_from_mask(single_px) == (15.0, 10.0, 16.0, 11.0)
+    poly = extract_mask_polygon_px(single_px)
+    assert len(poly) >= 1
+
+    # Two observations in different images must never be merged by deduplication_v2
+    o_a = _obs("oa", "img_a", "chair", (100, 100, 240, 260))
+    o_b = _obs("ob", "img_b", "chair", (100, 100, 240, 260))
+    res = resolve_duplicate_detections_v2([o_a, o_b])
+    assert res.summary["canonical_count"] == 2
+    assert res.summary["suppressed_count"] == 0

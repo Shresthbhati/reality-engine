@@ -419,6 +419,43 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                     for dec in associate_cross_view_detections(a_boxes, b_boxes):
                         cv_decisions.append(dec.to_dict())
 
+        # Run A3 Perception Intelligence Bundle (architectural, furniture, identity, relationships, diagnostics)
+        intel_summary: dict[str, Any] = {}
+        try:
+            from perception.intelligence.world_integration import (
+                build_intelligence_bundle,
+                observation_from_bbox_draft,
+            )
+
+            img_dims = {
+                str(im["source"]): (int(im["image_size"][0]), int(im["image_size"][1]))
+                for im in images
+                if im.get("image_size")
+            }
+            img_quals = {
+                str(im["source"]): dict(im.get("preprocessing") or {})
+                for im in images
+            }
+            norm_obs = []
+            for d in drafts:
+                if d.quantity == "bbox" and d.image_region is not None:
+                    iw, ih = img_dims.get(d.source_id, (1024, 768))
+                    norm_obs.append(observation_from_bbox_draft(
+                        d,
+                        image_width=iw,
+                        image_height=ih,
+                        architecture_family=self.detector.spec.family or self.detector.spec.engine_id,
+                        checkpoint_id=str(getattr(self.detector, "checkpoint", "unknown")),
+                    ))
+            bundle = build_intelligence_bundle(
+                run_id=str(request.payload.get("run_id", "pipeline_run") if request.payload else "pipeline_run"),
+                observations=norm_obs,
+                image_qualities=img_quals,
+            )
+            intel_summary = dict(bundle.diagnostics)
+        except Exception as exc:  # noqa: BLE001 -- additive intelligence pass
+            intel_summary = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
         self.last_facts = {
             "engine": ENGINE_ID, "images": images, "tile_size": self.tile_size, "detector": self.detector.spec.engine_id,
             "secondary_detectors": secondary_ran,
@@ -432,6 +469,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                 "ambiguous": sum(1 for d in cv_decisions if d["status"] == "ambiguous"),
                 "unmatched": sum(1 for d in cv_decisions if d["status"] == "unmatched"),
             },
+            "intelligence_bundle": intel_summary,
             "segmentation": {"requested": self.segmenter is not None, "status": "ran" if self._seg_ok else "unavailable", "reason": self._seg_reason,
                              "engine": self.segmenter.spec.engine_id if self.segmenter else None, "masks": n_masks,
                              "coverage": round(n_masks / n_boxes, 4) if n_boxes else None,

@@ -34,6 +34,8 @@ from apps.api.storage import (
     assemble_staged,
     clear_staging,
     staging_root,
+    staging_path,
+    validate_staging_id,
 )
 
 
@@ -329,16 +331,24 @@ async def resumable_chunk(
 
 @uploads.post("/resumable/{upload_id}/finalize", status_code=201)
 async def resumable_finalize(
-    upload_id: str, db: AsyncSession = Depends(get_db)
+    upload_id: str, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Finish a staged resumable upload: hash the staged bytes, store them
     content-addressed, complete the Upload row, and create Evidence + job."""
+    # Authorize before touching the filesystem or DB: a caller must own the
+    # upload. Previously this endpoint had no visibility check at all.
+    await assert_visible(db, Upload, upload_id, auth)
+    try:
+        validate_staging_id(upload_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     up = await db.get(Upload, upload_id)
     if up is None:
         raise HTTPException(404, "Upload not found")
     if up.status != "pending":
         raise HTTPException(409, f"Upload {upload_id} is already {up.status}")
-    stage = staging_root() / f"{upload_id}.partial"
+    stage = staging_path(upload_id)
     if not stage.exists():
         raise HTTPException(409, f"Upload {upload_id} has no staged chunks")
     data = stage.read_bytes()

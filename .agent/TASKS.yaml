@@ -28,6 +28,52 @@ rules:
 
 tasks:
 
+  # ================= 52-WEEK MASTER ENGINEERING PROGRAMME =================
+  # Governing queue for the one-year Reality Engine engineering mandate.
+  # This entry is the programme; the week-by-week scope lives in the mandate
+  # (Assembly은 RED. Do not recreate deleted docs/engineering plan/backlog/state
+  # documents per AGENTS.md §51. Persistent memory = this file + EXECUTION_STATE.md.
+  # Status is advanced only with evidence, in the same change (docs/status.yaml).
+  # Priority within the programme follows the mandate §13 task-selection order:
+  # broken production functionality → missing producer-consumer integrations →
+  # core reconstruction accuracy blockers → missing generalized evidence fusion →
+  # missing camera/depth/geometry → architectural/object intelligence → WorldIR/persistence
+  # → video/temporal → advanced representations → application workflows → performance →
+  # technology expansion → documentation/maintenance.
+  # The mandate is the WHAT; the current source state (reconciled this session) is the
+  # starting point; EXECUTION_STATE.md records where implementation actually resumes.
+  - id: P-52W-00
+    name: 52-week master engineering programme (governing queue)
+    status: NOW
+    evidence: >
+      Mandate received this session. Reconciled against current source: branch
+      feat/day4-real-geometry-measurements @ 156f3e36 (clean tree, PR #395 open), all
+      named production wiring present and connected (engine_orchestrator, engine_adapters,
+      engine_matrix_bridge, evidence_matrix, depth_to_points, evidence_world_stage, WorldIR,
+      WorldStore), and the three Day-6 depth defects already implemented/committed/pushed
+      (156f3e36 + 0e78c2db + fba6a486). No docs/engineering IMPLEMENTATION_LEDGER/
+      IMPLEMENTATION_BACKLOG/24_7_EXECUTION_STATE/NEXT_ACTION/52_WEEK_MASTER_PROGRAMME
+      created — AGENTS.md §51 forbids recreating deleted plan/backlog/state docs; memory
+      goes into .agent/EXECUTION_STATE.md + .agent/TASKS.yaml.
+    scope: >
+      Implement the 52-week master programme as one continuous engineering effort, starting
+      from the reconciled current state. Do not stop at the first working pipeline; do not
+      confuse integration with accuracy; do not claim completion without evidence; do not
+      recreate deleted plan documents. Advance status items in docs/status.yaml only with
+      evidence, in the same change.
+    verification:
+      - "session-start reconciliation done: source inspected, state recorded in EXECUTION_STATE.md, governing task added to TASKS.yaml"
+      - "next implementation work package selected from current state + mandate priority order, not from a recreated backlog"
+    next_action: >
+      Choose the next implementation work package from the mandate §13 priority order applied
+      to the reconciled current state. First candidate family: Quarter 1 generalized evidence
+      normalization + task-specific fusion (mandate §2, Weeks 1–12) — scope an explicit
+      task-specific fusion implementation (reliability/uncertainty/consistency-weighted, no
+      blind averaging) that consumes existing Evidence Matrix observations and writes fused
+      evidence back, since the unified contract + orchestrator + matrix bridge + evidence flow
+      already exist. Record the chosen work package and its verification in EXECUTION_STATE.md
+      before editing production code.
+
   # ================= PHASE 0 — ARCHITECTURAL RESET =================
 
   - id: P0-01

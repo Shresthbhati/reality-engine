@@ -18,7 +18,9 @@ run in which any engine did not succeed is reported ``partial``, never
 from __future__ import annotations
 
 import logging
+import tempfile
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +90,25 @@ def run_multi_engine_for_job(
             context["cameras"] = cameras
         report = orch.run_all(list(sources), context=context)
 
+        # Persist segmentation masks (SAM 2 and any mask-emitting engine) into
+        # the run's MaskStore and stamp each observation with its persisted
+        # mask_ref. This is the connection the A4 run was missing: SAM 2
+        # computed masks but the adapter stored only mask_area_px in metadata,
+        # so mask pixels were discarded before reaching MaskStore, the
+        # ObservationTable, or any downstream consumer.
+        mask_store_path: str | None = None
+        if report.observations:
+            from world_ir.mask_store import MaskStore
+
+            from perception.mask_persistence import persist_masks, save_mask_store
+
+            mask_store = MaskStore()
+            stamped = persist_masks(list(report.observations), mask_store)
+            report = replace(report, observations=tuple(stamped))
+            stage_dir = Path(tempfile.mkdtemp(prefix="reality_engine_masks_"))
+            mask_store_path = str(stage_dir / "masks.npz")
+            save_mask_store(mask_store, mask_store_path)
+
         facts: dict[str, Any] = {
             "status": _overall_status(dict(report.engines_run)),
             "available": available,
@@ -101,6 +122,9 @@ def run_multi_engine_for_job(
             "total_wall_s": round(report.total_wall_s, 3),
             "vram_peak_mb": report.vram_peak_mb,
             "cross_engine_summary": report.cross_engine_summary,
+            #: Artifact path of the persisted MaskStore (RLE-encoded masks).
+            #: None when no observation carried a mask.
+            "mask_store_path": mask_store_path,
         }
 
         # Multi-engine detection fusion & cross-view identity over detection observations

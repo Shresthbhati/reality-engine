@@ -82,6 +82,13 @@ class ObservationRecord:
     world_pos: tuple[float, float, float] | None = None
     depth_map_ref: str | None = None
     point_samples: tuple[tuple[float, float, float], ...] | None = None
+    # Segmentation mask: image-plane bool array at source-image resolution.
+    # Persisted separately via world_ir.mask_store.MaskStore; mask_ref is the
+    # persisted row index once stored (None until then). The in-memory array is
+    # kept so downstream consumers (association, fusion, lifting) can use it
+    # without re-decoding from the store.
+    mask: np.ndarray | None = None
+    mask_ref: int | None = None
     # Attributes
     material_hypothesis: str | None = None
     color_rgb: tuple[int, int, int] | None = None
@@ -107,6 +114,10 @@ class ObservationRecord:
             "world_pos": list(self.world_pos) if self.world_pos else None,
             "depth_map_ref": self.depth_map_ref,
             "point_samples": [list(p) for p in self.point_samples] if self.point_samples else None,
+            # Mask: compact descriptor (the full bool array is persisted via
+            # MaskStore and referenced by mask_ref; it is not dumped into JSON).
+            "mask": _mask_descriptor(self.mask),
+            "mask_ref": self.mask_ref,
             "material_hypothesis": self.material_hypothesis,
             "color_rgb": list(self.color_rgb) if self.color_rgb else None,
             "surface_normal": list(self.surface_normal) if self.surface_normal else None,
@@ -168,6 +179,26 @@ def compute_observation_hash(obs: ObservationRecord) -> str:
 #: Scale states whose positions are comparable with each other inside one frame id.
 _COMPARABLE_SCALE_STATES = frozenset({"metric", "sfm_gauge"})
 #: Position tolerance per scale state. A gauge unit is not a metre, so the two are
+#: compared on their own terms and the message names the unit that was used.
+_POSITION_TOLERANCE = {"metric": 0.1, "sfm_gauge": 0.1}
+_UNIT_LABEL = {"metric": "m", "sfm_gauge": "gauge units"}
+
+
+def _mask_descriptor(mask: np.ndarray | None) -> dict[str, Any] | None:
+    """Compact JSON-safe descriptor of an in-memory mask.
+
+    The full bool array lives in memory (and is persisted via MaskStore); this
+    descriptor is what goes into ``to_dict`` / dedup hashing so large masks are
+    never dumped into JSON.
+    """
+    if mask is None:
+        return None
+    arr = np.asarray(mask, dtype=bool)
+    return {
+        "shape": [int(arr.shape[0]), int(arr.shape[1])],
+        "present": True,
+        "coverage": round(float(arr.mean()), 4) if arr.size else 0.0,
+    }
 #: compared on their own terms and the message names the unit that was used.
 _POSITION_TOLERANCE = {"metric": 0.1, "sfm_gauge": 0.1}
 _UNIT_LABEL = {"metric": "m", "sfm_gauge": "gauge units"}

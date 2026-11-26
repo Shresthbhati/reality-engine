@@ -113,7 +113,6 @@ def run_multi_engine_for_job(
             if len(mask_store) > 0:  # only persist when a mask was actually produced
                 digest, _ = store_bytes(mask_store_bytes(mask_store))
                 mask_store_uri = f"sha256://{digest}"
-
         facts: dict[str, Any] = {
             "status": _overall_status(dict(report.engines_run)),
             "available": available,

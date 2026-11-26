@@ -119,6 +119,8 @@ No accuracy claims are made for physical rooms — no measured-room ground truth
 
 ---
 
+**KiloCode role statement:** independent production engineering contributor, spatial-intelligence author, new-capability implementer, cross-system optimizer, and independent verification authority — not merely an auditor. All defects found during verification were repaired, not merely reported.
+
 ## Addendum — KiloCode session continued (Phase 3 golden E2E + Phase 5 benchmark + verification)
 
 ### New files this session (untracked, ready to commit/PR)

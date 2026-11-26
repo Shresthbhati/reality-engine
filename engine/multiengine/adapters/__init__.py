@@ -39,6 +39,7 @@ from engine.multiengine.adapters.metric_3d_lifter import Metric3DLifterAdapter
 from engine.multiengine.adapters.perception_detectors import (
     Florence2EngineAdapter,
     GroundingDinoEngineAdapter,
+    MaskRCNNEngineAdapter,
     OwlVitEngineAdapter,
     probe_florence2,
     probe_grounding_dino,
@@ -77,6 +78,7 @@ def create_adapters_for_registry(reg: EngineRegistry) -> dict[str, EngineAdapter
         "grounding_dino": GroundingDinoEngineAdapter,
         "florence2": Florence2EngineAdapter,
         "owlvit": OwlVitEngineAdapter,
+        "mask_rcnn": MaskRCNNEngineAdapter,
         "sam": SamEngineAdapter,
         "sam2": Sam2EngineAdapter,
         "sam3": Sam3EngineAdapter,
@@ -108,6 +110,7 @@ __all__ = [
     "MidasEngineAdapter",
     "GroundingDinoEngineAdapter",
     "Florence2EngineAdapter",
+    "MaskRCNNEngineAdapter",
     "OwlVitEngineAdapter",
     "SamEngineAdapter",
     "Sam2EngineAdapter",

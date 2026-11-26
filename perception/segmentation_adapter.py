@@ -44,8 +44,12 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     bboxes = ctx.get("bboxes", {})  # {image_path: [(x1,y1,x2,y2), ...]}
 
     try:
-        processor = Sam2Processor.from_pretrained(model_name)
-        model = Sam2Model.from_pretrained(model_name)
+        try:
+            processor = Sam2Processor.from_pretrained(model_name, local_files_only=True)
+            model = Sam2Model.from_pretrained(model_name, local_files_only=True)
+        except Exception:
+            processor = Sam2Processor.from_pretrained(model_name)
+            model = Sam2Model.from_pretrained(model_name)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = model.to(device).eval()
     except Exception as exc:

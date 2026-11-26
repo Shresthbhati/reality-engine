@@ -46,7 +46,7 @@ ENGINE_ID = "detection_pipeline"
 ENV_TILE_SIZE = "RE_DETECTION_TILE_SIZE"
 DEFAULT_TILE_SIZE = 800
 DEFAULT_THRESHOLD = 0.10  # inner detector score floor (untuned starting value); the pipeline then applies its own class thresholds
-PROMPT_CHUNK = 32  # text queries per forward pass of an open-vocabulary detector
+PROMPT_CHUNK = 10  # text queries per forward pass of an open-vocabulary detector (smaller chunks avoid BERT attention dilution)
 
 
 class ProductionAdapterError(RuntimeError):
@@ -80,14 +80,28 @@ class AdapterDetector:
         from engine.multiengine.spatial_intelligence.detection_pipeline import DetectionBox
 
         path = Path(self._dir.name) / "input.png"
-        Image.fromarray(np.ascontiguousarray(image_rgb)).save(path)
+        rgb_contig = np.ascontiguousarray(image_rgb)
+        Image.fromarray(rgb_contig).save(path)
         prompts = [str(p) for p in text_prompts]
+        # Convert underscore_names to natural phrases for real open-vocab tokenizers,
+        # while mapping returned labels back to the caller's canonical prompt strings.
+        # (Test doubles that expect exact underscore queries still work if they are not real models,
+        # or if they match either form; for real HF models, spaces prevent BERT ##subword fragmentation.)
+        natural_to_orig: dict[str, str] = {}
+        query_prompts: list[str] = []
+        replace_underscores = self.inner.spec.engine_id in ("grounding_dino", "owlvit", "florence2")
+        for p in prompts:
+            nat = p.replace("_", " ").strip() if replace_underscores else p
+            natural_to_orig.setdefault(nat.lower(), p)
+            natural_to_orig.setdefault(p.lower(), p)
+            if nat not in query_prompts:
+                query_prompts.append(nat)
         out: list[Any] = []
-        for i in range(0, len(prompts), PROMPT_CHUNK):
-            chunk = prompts[i:i + PROMPT_CHUNK]
+        for i in range(0, len(query_prompts), PROMPT_CHUNK):
+            chunk = query_prompts[i:i + PROMPT_CHUNK]
             self.calls += 1
             self.queries += len(chunk)
-            for d in self.inner.infer(EngineRequest(sources=(str(path),), payload={"queries": chunk, "threshold": self.threshold}, seed=42)):
+            for d in self.inner.infer(EngineRequest(sources=(str(path),), payload={"queries": chunk, "threshold": self.threshold, "image_rgb": rgb_contig}, seed=42)):
                 if d.quantity != "bbox" or d.image_region is None:
                     continue
                 if d.predicted.get("is_test_double"):
@@ -95,12 +109,13 @@ class AdapterDetector:
                 label = d.predicted.get("label")
                 if not isinstance(label, str) or not label.strip():
                     continue
+                canon_label = natural_to_orig.get(label.strip().lower(), label.strip())
                 emitted = d.confidence if d.confidence is not None else d.predicted.get("score")
                 out.append(DetectionBox(
-                    box_id=f"{self.inner.spec.engine_id}:{next(self._ids)}", class_name=label, box_2d=tuple(float(v) for v in d.image_region),
+                    box_id=f"{self.inner.spec.engine_id}:{next(self._ids)}", class_name=canon_label, box_2d=tuple(float(v) for v in d.image_region),
                     # an engine that emits no score (e.g. Florence-2) enters the pipeline at a neutral 0.5 and is flagged: never a measured score
                     confidence=float(emitted) if emitted is not None else 0.5, source_engine=self.inner.spec.engine_id,
-                    attributes={"confidence_emitted": emitted is not None},
+                    attributes={"confidence_emitted": emitted is not None, "raw_label": label},
                 ))
         return out
 
@@ -246,6 +261,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
         )
 
         prompts = generate_domain_prompts(self.domain)
+        n_macro = len(prompts.get(DetectionScale.MACRO, []))
         n_std, n_micro = len(prompts.get(DetectionScale.STANDARD, [])), len(prompts.get(DetectionScale.MICRO, []))
         det = AdapterDetector(self.detector, threshold=self.threshold)
         seg: Any = AdapterSegmenter(self.segmenter) if (self._seg_ok and self.segmenter is not None) else _NoSegmenter()
@@ -282,6 +298,8 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                                    "mask_area_px": int(getattr(b, "mask_area_px", 0) or 0), "child_box_ids": list(getattr(b, "child_box_ids", ()) or ()),
                                    "box_normalized": [b.x1 / w, b.y1 / h, b.x2 / w, b.y2 / h],
                                    "calibrated_confidence": float(b.calibrated_confidence) if b.calibrated_confidence is not None else None,
+                                   "raw_score": float(b.raw_score) if (emitted and b.raw_score is not None) else (float(b.confidence) if emitted else None),
+                                   "calibration_status": b.attributes.get("calibration_method", "uncalibrated"),
                                    "mask_polygon": [list(pt) for pt in b.mask_polygon] if b.mask_polygon else None,
                                    "mask_topology": b.attributes.get("mask_topology"),
                                    "missing_expected_parts": b.attributes.get("missing_expected_parts", []),
@@ -302,7 +320,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
                     task="detection", quantity="detection_pipeline_summary", source_id=str(src), coordinate_system=coord,
                     predicted={"execution_stats": stats, "parent_part_tree": res.parent_part_tree, "raw_detections": raw_rows,
                                "rejection_ledger": list(res.rejection_ledger),
-                               "prompts": {"standard": n_std, "micro": n_micro}, "inner_detector": self.detector.spec.engine_id,
+                               "prompts": {"macro": n_macro, "standard": n_std, "micro": n_micro}, "inner_detector": self.detector.spec.engine_id,
                                "segmentation": {"status": "ran" if self._seg_ok else "unavailable", "reason": self._seg_reason,
                                                 "engine": self.segmenter.spec.engine_id if self.segmenter else None,
                                                 "boxes": len(res.refined_boxes), "masks": masks}}))
@@ -312,7 +330,7 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
         n_masks = sum(i["masks"] for i in images)
         self.last_facts = {
             "engine": ENGINE_ID, "images": images, "tile_size": self.tile_size, "detector": self.detector.spec.engine_id,
-            "detector_forward_passes": det.calls, "detector_queries": det.queries, "prompts": {"standard": n_std, "micro": n_micro},
+            "detector_forward_passes": det.calls, "detector_queries": det.queries, "prompts": {"macro": n_macro, "standard": n_std, "micro": n_micro},
             "tiles_processed": sum(i["tiles_processed"] for i in images), "subparts_detected": sum(i["subparts_detected"] for i in images),
             "raw_detections": sum(i["raw_detection_count"] for i in images), "refined_boxes": n_boxes,
             "segmentation": {"requested": self.segmenter is not None, "status": "ran" if self._seg_ok else "unavailable", "reason": self._seg_reason,
@@ -323,13 +341,16 @@ class PipelineDetectionEngineAdapter(EngineAdapter):
         return drafts
 
 
-def install(registry: Any, adapters: dict[str, Any], *, detector_id: str = "owlvit", segmenter_id: str = "sam", **kwargs: Any) -> str:
+def install(registry: Any, adapters: dict[str, Any], *, detector_id: str = "grounding_dino", segmenter_id: str = "sam", **kwargs: Any) -> str:
     """Add the ``detection_pipeline`` engine over the registry's REAL detector (and segmenter when present) and return its id.
 
     Raises ``ProductionAdapterError``/``KeyError`` rather than substituting anything: no detector adapter = no pipeline."""
     if detector_id not in adapters:
         raise KeyError(f"detector {detector_id!r} is not registered in this deployment; the detection pipeline will not run on a stand-in")
-    eng = PipelineDetectionEngineAdapter(adapters[detector_id], adapters.get(segmenter_id), **kwargs)
+    seg_adapter = adapters.get(segmenter_id)
+    if seg_adapter is None and segmenter_id == "sam" and "sam2" in adapters:
+        seg_adapter = adapters["sam2"]
+    eng = PipelineDetectionEngineAdapter(adapters[detector_id], seg_adapter, **kwargs)
     registry.register(eng.spec)
     adapters[ENGINE_ID] = eng
     return ENGINE_ID

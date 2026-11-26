@@ -45,45 +45,62 @@ def clean_and_split_detection_label(
     label: str | Any,
     known_queries: Sequence[str] | None = None,
 ) -> list[str]:
-    """Splits compound Grounding DINO labels and rejects empty, none, or whitespace labels."""
+    """Splits compound Grounding DINO labels and rejects empty, subword, or punctuation tokens."""
     if label is None:
         return []
     s = str(label).strip()
     if not s or s.lower() in ("none", "null", "unknown", "object", "undefined"):
         return []
+    # Reject raw BERT/WordPiece subword fragments or punctuation-only strings
+    if s.startswith("##") or not any(ch.isalpha() for ch in s):
+        return []
 
-    # If known queries supplied, look for matching tokens (longest/most specific first)
+    import re
+
+    # Normalize underscores/hyphens for matching, but preserve canonical query string when matched
+    s_norm = re.sub(r"[_\-]+", " ", s.lower()).strip()
+
     if known_queries:
-        queries_clean = [str(q).strip().lower() for q in known_queries if str(q).strip()]
-        s_lower = s.lower()
-        # Direct exact match
-        if s_lower in queries_clean:
-            return [s_lower]
+        # Build mapping from space-normalized query -> original query string
+        norm_to_orig: dict[str, str] = {}
+        for q in known_queries:
+            q_str = str(q).strip()
+            if not q_str:
+                continue
+            q_norm = re.sub(r"[_\-]+", " ", q_str.lower()).strip()
+            if q_norm and q_norm not in norm_to_orig:
+                norm_to_orig[q_norm] = q_str.lower()
 
-        # Match longest queries first, avoiding fragmented sub-word re-matching
-        sorted_queries = sorted(set(queries_clean), key=len, reverse=True)
+        if s_norm in norm_to_orig:
+            return [norm_to_orig[s_norm]]
+
+        sorted_norms = sorted(norm_to_orig.keys(), key=len, reverse=True)
         matched: list[str] = []
         covered_spans: list[tuple[int, int]] = []
 
-        import re
-
-        for q in sorted_queries:
-            # Word-boundary match for the query
-            pattern = r"(?:^|\b)" + re.escape(q) + r"(?:\b|$)"
-            for m in re.finditer(pattern, s_lower):
+        for qn in sorted_norms:
+            pattern = r"(?:^|\b)" + re.escape(qn) + r"(?:\b|$)"
+            for m in re.finditer(pattern, s_norm):
                 start, end = m.span()
-                # Check if this span is already covered by a longer match
                 if any(cs <= start and end <= ce for cs, ce in covered_spans):
                     continue
-                matched.append(q)
+                matched.append(norm_to_orig[qn])
                 covered_spans.append((start, end))
 
         if matched:
             return matched
 
-    # Fallback: split on punctuation/conjunctions
-    tokens = [t.strip().lower() for t in s.replace(".", " ").replace(",", " ").replace("/", " ").split()]
-    valid = [t for t in tokens if t not in ("", "none", "null", "unknown", "the", "a", "an", "and")]
+    tokens = [
+        t.strip().lower()
+        for t in s_norm.replace(".", " ").replace(",", " ").replace("/", " ").split()
+    ]
+    valid = [
+        t for t in tokens
+        if len(t) >= 2
+        and not t.startswith("##")
+        and any(ch.isalpha() for ch in t)
+        and t not in ("none", "null", "unknown", "the", "a", "an", "and")
+    ]
     return valid
 
 
@@ -127,6 +144,13 @@ def probe_grounding_dino() -> Availability:
     )
 
 
+def _resolve_florence2_checkpoint() -> str | None:
+    for repo in ("florence-community/Florence-2-base", "microsoft/Florence-2-base"):
+        if _is_hf_cached(repo):
+            return repo
+    return None
+
+
 def probe_florence2() -> Availability:
     """Honest availability probe for Florence-2."""
     if (
@@ -138,16 +162,17 @@ def probe_florence2() -> Availability:
             "transformers is required for Florence-2",
             "install transformers",
         )
-    if not _is_hf_cached("microsoft/Florence-2-base"):
+    repo = _resolve_florence2_checkpoint()
+    if repo is None:
         return Availability(
             AvailabilityStatus.BLOCKED,
             "dependencies present, but Florence-2 checkpoint is not in Hugging Face cache",
-            "huggingface-cli download microsoft/Florence-2-base",
+            "huggingface-cli download florence-community/Florence-2-base",
         )
     return Availability(
         AvailabilityStatus.AVAILABLE,
-        "transformers and cached weights verified for Florence-2",
-        evidence=("Florence-2 cached",),
+        f"transformers and cached weights verified for Florence-2 ({repo})",
+        evidence=(f"Florence-2 cached ({repo})",),
     )
 
 
@@ -258,8 +283,13 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
         thresh = float(request.payload.get("threshold", 0.25)) if request.payload else 0.25
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
+        payload_rgb = request.payload.get("image_rgb") if request.payload else None
+
         for s in sources:
-            img = Image.open(s).convert("RGB")
+            if payload_rgb is not None and len(sources) == 1:
+                img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
+            else:
+                img = Image.open(s).convert("RGB")
             w, h = img.size
             inputs = self._processor(images=img, text=prompt_text, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}
@@ -316,30 +346,41 @@ class GroundingDinoEngineAdapter(BaseModelEngineAdapter):
 class Florence2EngineAdapter(BaseModelEngineAdapter):
     """Adapter for Florence-2 multi-task vision-language grounding."""
 
-    DEFAULT_CHECKPOINT = "microsoft/Florence-2-base"
+    DEFAULT_CHECKPOINT = "florence-community/Florence-2-base"
 
-    def __init__(self, spec: EngineSpec, checkpoint: str = DEFAULT_CHECKPOINT) -> None:
+    def __init__(self, spec: EngineSpec, checkpoint: str | None = None) -> None:
         super().__init__(spec)
-        self.checkpoint = checkpoint
+        self.checkpoint = checkpoint or _resolve_florence2_checkpoint() or self.DEFAULT_CHECKPOINT
         self._processor = None
 
     def _load_model_weights(self, device: Device) -> None:
         if importlib.util.find_spec("transformers") is None:
             raise EngineError(EngineErrorKind.UNAVAILABLE, "transformers package missing.")
-        from transformers import AutoModelForCausalLM, AutoProcessor
+        from transformers import AutoProcessor
 
         dev_str = "cuda:0" if device.kind == "cuda" else "cpu"
         try:
-            self._processor = AutoProcessor.from_pretrained(
-                self.checkpoint, trust_remote_code=True, local_files_only=True
-            )
-            self._model = (
-                AutoModelForCausalLM.from_pretrained(
-                    self.checkpoint, trust_remote_code=True, local_files_only=True
+            self._processor = AutoProcessor.from_pretrained(self.checkpoint, local_files_only=True)
+            if "florence-community" in self.checkpoint:
+                from transformers import Florence2ForConditionalGeneration
+
+                self._model = (
+                    Florence2ForConditionalGeneration.from_pretrained(
+                        self.checkpoint, local_files_only=True
+                    )
+                    .to(dev_str)
+                    .eval()
                 )
-                .to(dev_str)
-                .eval()
-            )
+            else:
+                from transformers import AutoModelForCausalLM
+
+                self._model = (
+                    AutoModelForCausalLM.from_pretrained(
+                        self.checkpoint, trust_remote_code=True, local_files_only=True
+                    )
+                    .to(dev_str)
+                    .eval()
+                )
         except Exception as e:
             raise EngineError(
                 EngineErrorKind.MISSING_CHECKPOINT, f"Failed to load Florence-2 checkpoint: {e}"
@@ -383,8 +424,13 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
         task_prompt = "<OD>"
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
+        payload_rgb = request.payload.get("image_rgb") if request.payload else None
+
         for s in sources:
-            img = Image.open(s).convert("RGB")
+            if payload_rgb is not None and len(sources) == 1:
+                img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
+            else:
+                img = Image.open(s).convert("RGB")
             w, h = img.size
             inputs = self._processor(text=task_prompt, images=img, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}
@@ -421,6 +467,112 @@ class Florence2EngineAdapter(BaseModelEngineAdapter):
                     )
                 )
 
+        return drafts
+
+
+class MaskRCNNEngineAdapter(BaseModelEngineAdapter):
+    """Adapter for torchvision Mask R-CNN (COCO ResNet50-FPN) object detection + instance masks."""
+
+    DEFAULT_CHECKPOINT = "maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth"
+
+    def __init__(self, spec: EngineSpec, score_threshold: float = 0.5) -> None:
+        super().__init__(spec)
+        self.checkpoint = self.DEFAULT_CHECKPOINT
+        self._score_threshold = float(score_threshold)
+        self._categories: Sequence[str] = ()
+
+    def _load_model_weights(self, device: Device) -> None:
+        if importlib.util.find_spec("torchvision") is None:
+            raise EngineError(EngineErrorKind.UNAVAILABLE, "torchvision package missing.")
+        from torchvision.models.detection import (
+            MaskRCNN_ResNet50_FPN_Weights,
+            maskrcnn_resnet50_fpn,
+        )
+
+        dev_str = "cuda:0" if device.kind == "cuda" else "cpu"
+        try:
+            weights = MaskRCNN_ResNet50_FPN_Weights.COCO_V1
+            self._model = maskrcnn_resnet50_fpn(weights=weights).to(dev_str).eval()
+            self._categories = list(weights.meta.get("categories", ()))
+        except Exception as e:
+            raise EngineError(
+                EngineErrorKind.MISSING_CHECKPOINT,
+                f"Failed to load Mask R-CNN COCO weights: {e}",
+            ) from e
+
+    def infer(self, request: EngineRequest) -> Sequence[ObservationDraft]:
+        drafts: list[ObservationDraft] = []
+        sources = request.sources
+        virtual_run = all(str(s).startswith("virtual:") for s in sources)
+        if not virtual_run and self._model is None:
+            raise EngineError(
+                EngineErrorKind.RUNTIME_ERROR,
+                f"Model {self.spec.engine_id} not loaded. Call load() before infer().",
+            )
+        if virtual_run:
+            for s in sources:
+                drafts.append(
+                    ObservationDraft(
+                        task="detection",
+                        quantity="bbox",
+                        source_id=str(s),
+                        coordinate_system=f"image:{Path(str(s)).stem}",
+                        image_region=(80.0, 90.0, 260.0, 280.0),
+                        predicted={"label": "chair", "score": 0.91, "is_test_double": True},
+                        original_coordinates={"box_xyxy_px": [80, 90, 260, 280]},
+                        confidence=None,
+                    )
+                )
+            return drafts
+
+        import numpy as np
+        import torch
+        from PIL import Image
+
+        thresh = float(request.payload.get("threshold", self._score_threshold)) if request.payload else self._score_threshold
+        dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
+        payload_rgb = request.payload.get("image_rgb") if request.payload else None
+
+        for s in sources:
+            if payload_rgb is not None and len(sources) == 1:
+                img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
+            else:
+                img = Image.open(s).convert("RGB")
+            w, h = img.size
+            arr = np.asarray(img, dtype=np.float32) / 255.0
+            tensor = torch.from_numpy(arr).permute(2, 0, 1).to(dev_str)
+            with torch.no_grad():
+                out = self._model([tensor])[0]
+
+            boxes = out["boxes"].detach().cpu().numpy()
+            labels = out["labels"].detach().cpu().numpy()
+            scores = out["scores"].detach().cpu().numpy()
+            for idx in range(len(boxes)):
+                sc = float(scores[idx])
+                if sc < thresh:
+                    continue
+                li = int(labels[idx])
+                raw_lbl = self._categories[li] if 0 <= li < len(self._categories) else "object"
+                if raw_lbl in ("__background__", "N/A"):
+                    continue
+                b = [float(v) for v in boxes[idx]]
+                drafts.append(
+                    ObservationDraft(
+                        task="detection",
+                        quantity="bbox",
+                        source_id=str(s),
+                        coordinate_system=f"image:{Path(str(s)).stem}",
+                        image_region=(b[0], b[1], b[2], b[3]),
+                        predicted={
+                            "label": raw_lbl,
+                            "raw_label": raw_lbl,
+                            "score": sc,
+                            "box_normalized": [b[0] / w, b[1] / h, b[2] / w, b[3] / h],
+                        },
+                        original_coordinates={"box_xyxy_px": b},
+                        confidence=sc,
+                    )
+                )
         return drafts
 
 
@@ -499,8 +651,13 @@ class OwlVitEngineAdapter(BaseModelEngineAdapter):
         thresh = float(request.payload.get("threshold", 0.05)) if request.payload else 0.05
         dev_str = "cuda:0" if self._device.kind == "cuda" else "cpu"
 
+        payload_rgb = request.payload.get("image_rgb") if request.payload else None
+
         for s in sources:
-            img = Image.open(s).convert("RGB")
+            if payload_rgb is not None and len(sources) == 1:
+                img = Image.fromarray(payload_rgb) if not isinstance(payload_rgb, Image.Image) else payload_rgb
+            else:
+                img = Image.open(s).convert("RGB")
             w, h = img.size
             inputs = self._processor(text=[prompts], images=img, return_tensors="pt")
             inputs = {k: v.to(dev_str) for k, v in inputs.items()}

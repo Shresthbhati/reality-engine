@@ -319,7 +319,7 @@ def estimate_box_occlusion(
 
 def generate_domain_prompts(
     domain: Domain = Domain.INTERIOR,
-    scales: Sequence[DetectionScale] = (DetectionScale.STANDARD, DetectionScale.MICRO),
+    scales: Sequence[DetectionScale] = (DetectionScale.MACRO, DetectionScale.STANDARD, DetectionScale.MICRO),
 ) -> dict[DetectionScale, list[str]]:
     """Generates structured detection prompt queries partitioned by scale to prevent small fixture starvation."""
     prompts_by_scale: dict[DetectionScale, list[str]] = {s: [] for s in scales}
@@ -688,6 +688,8 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
     "chair": 0.26,
     "lamp": 0.22,
     "door": 0.32,
+    "opening": 0.28,
+    "structural_boundary": 0.25,
     # Architectural surfaces and structural elements
     "wall": 0.25,
     "floor": 0.25,
@@ -739,6 +741,10 @@ DEFAULT_CALIBRATED_CLASS_THRESHOLDS: dict[str, float] = {
     "sofa": 0.30,
     "bed": 0.30,
     "cabinet": 0.28,
+    "wardrobe": 0.28,
+    "storage_unit": 0.28,
+    "kitchen_furniture": 0.28,
+    "bathroom_fixture": 0.28,
     "drawer": 0.22,
     "drawer_handle": 0.18,
     "shelf": 0.25,
@@ -1396,7 +1402,7 @@ def suppress_duplicates_preserving_parts(
                 parent_box_id=target.parent_box_id,
                 scale=target.scale,
                 raw_score=target.raw_score,
-                calibrated_confidence=min(0.99, max(target.confidence, det.confidence) + 0.05),
+                calibrated_confidence=None,
                 attributes=dict(target.attributes),
             )
             kept[fused_with_idx] = fused_det
@@ -2079,6 +2085,7 @@ class DetectionPipeline:
 
         # 1. Open-vocab prompt generation
         if text_prompts:
+            macro_prompts: list[str] = []
             std_prompts = list(text_prompts)
             micro_prompts = [
                 p for p in text_prompts
@@ -2086,12 +2093,17 @@ class DetectionPipeline:
             ]
         else:
             prompts = generate_domain_prompts(domain)
+            macro_prompts = prompts.get(DetectionScale.MACRO, [])
             std_prompts = prompts.get(DetectionScale.STANDARD, [])
             micro_prompts = prompts.get(DetectionScale.MICRO, [])
 
-        # 2. Whole-image standard detection
-        base_dets = self.detector.detect(image_rgb, std_prompts)
+        # 2. Whole-image macro + standard detection
+        macro_set = {p.lower().replace(" ", "_") for p in macro_prompts}
+        whole_prompts = list(dict.fromkeys([*macro_prompts, *std_prompts]))
+        base_dets = self.detector.detect(image_rgb, whole_prompts)
         for b in base_dets:
+            cls_norm = b.class_name.lower().replace(" ", "_")
+            det_scale = DetectionScale.MACRO if cls_norm in macro_set else DetectionScale.STANDARD
             raw_accum.append(DetectionBox(
                 box_id=f"{b.box_id}_std",
                 class_name=b.class_name,
@@ -2101,7 +2113,7 @@ class DetectionPipeline:
                 source_image_id=image_id,
                 mask_2d=b.mask_2d,
                 parent_box_id=b.parent_box_id,
-                scale=DetectionScale.STANDARD,
+                scale=det_scale,
                 frame_index=frame_index,
                 timestamp_sec=timestamp_sec,
                 shot_id=shot_id,
@@ -2198,7 +2210,8 @@ class DetectionPipeline:
                                 continue
                     part_dets = self.detector.detect(crop_img, target_names)
                     for pd in part_dets:
-                        if pd.class_name == cand.class_name:
+                        canon_part_name = pd.class_name
+                        if canon_part_name == cand.class_name:
                             continue
                         pw = pd.width
                         ph = pd.height
@@ -2255,7 +2268,7 @@ class DetectionPipeline:
                         # Specificity-based ownership resolution:
                         best_parent_id, is_ambig, cand_parent_ids = resolve_component_ownership(
                             (px1, py1, px2, py2),
-                            pd.class_name,
+                            canon_part_name,
                             canonical_hosts,
                             min_containment_ioa=0.35,
                         )
@@ -2267,7 +2280,7 @@ class DetectionPipeline:
                         # Intra-host component deduplication across ROIs:
                         is_dup = False
                         for existing_part in cand_subparts:
-                            if existing_part.class_name == pd.class_name:
+                            if existing_part.class_name == canon_part_name:
                                 p_iou = compute_box_iou((px1, py1, px2, py2), existing_part.box_2d)
                                 p_inter = max(0.0, min(px2, existing_part.x2) - max(px1, existing_part.x1)) * max(0.0, min(py2, existing_part.y2) - max(py1, existing_part.y1))
                                 p_ioa = p_inter / part_area if part_area > 0 else 0.0
@@ -2280,7 +2293,7 @@ class DetectionPipeline:
                         if is_dup:
                             rejection_records.append({
                                 "box_id": f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
-                                "class_name": pd.class_name,
+                                "class_name": canon_part_name,
                                 "confidence": pd.confidence,
                                 "stage": "subpart_crop_validation",
                                 "reason": "intra_host_duplicate",
@@ -2292,7 +2305,7 @@ class DetectionPipeline:
 
                         subpart_box = DetectionBox(
                             box_id=f"part_{pd.box_id}_{cand.box_id}_{roi_name}",
-                            class_name=pd.class_name,
+                            class_name=canon_part_name,
                             box_2d=(px1, py1, px2, py2),
                             confidence=prop_conf,
                             source_engine=f"{pd.source_engine}_subpart",
@@ -2481,11 +2494,8 @@ class DetectionPipeline:
                 combined_attrs["is_calibrated"] = cal_res.is_calibrated
                 combined_attrs["calibration_method"] = cal_res.method
             else:
-                cal_conf = calibrate_detection_confidence(
-                    det.confidence,
-                    det.class_name,
-                    calibrator=self.calibrator,
-                )
+                # Honesty rule (A5): never emit a pseudo-calibrated probability when no fitted calibrator exists
+                cal_conf = None
                 combined_attrs["is_calibrated"] = False
                 combined_attrs["calibration_method"] = "uncalibrated"
 

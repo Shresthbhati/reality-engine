@@ -152,7 +152,7 @@ DOOR = _register(TaxonomyClass(
     name="door",
     domain=Domain.INTERIOR,
     category="opening",
-    aliases=("door", "interior door", "wooden door", "entryway"),
+    aliases=("door", "interior door", "wooden door", "entryway", "doorway"),
     expected_geometry=GeometryType.BOX,
     min_dimensions_m=(0.6, 0.03, 1.8),
     max_dimensions_m=(2.4, 0.25, 3.2),
@@ -175,6 +175,52 @@ DOOR_FRAME = _register(TaxonomyClass(
     min_dimensions_m=(0.65, 0.05, 1.85),
     max_dimensions_m=(2.6, 0.35, 3.3),
     hosts=("wall",),
+))
+
+OPENING = _register(TaxonomyClass(
+    taxonomy_id="interior.opening.opening",
+    name="opening",
+    domain=Domain.UNIVERSAL,
+    category="opening",
+    aliases=("opening", "structural opening", "wall opening", "archway", "pass through", "coved opening"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.5, 0.05, 0.5),
+    max_dimensions_m=(6.0, 0.60, 4.5),
+    can_contain_parts=True,
+    potential_parts=("door_frame", "window_frame", "window_sill"),
+    hosts=("wall",),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    common_confusion_classes=("door", "window", "wall"),
+    min_detector_confidence=0.22,
+))
+
+RAILING = _register(TaxonomyClass(
+    taxonomy_id="universal.circulation.railing",
+    name="railing",
+    domain=Domain.UNIVERSAL,
+    category="circulation",
+    aliases=("railing", "handrail", "balustrade", "guardrail", "stair railing"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.5, 0.03, 0.6),
+    max_dimensions_m=(30.0, 0.3, 1.5),
+    hosts=("staircase", "floor", "balcony"),
+    dimension_measurability=DimensionMeasurability.DIRECT,
+    is_structural=False,
+    min_detector_confidence=0.22,
+))
+
+STRUCTURAL_BOUNDARY = _register(TaxonomyClass(
+    taxonomy_id="interior.structural.structural_boundary",
+    name="structural_boundary",
+    domain=Domain.INTERIOR,
+    category="structural",
+    aliases=("structural boundary", "wall boundary", "floor boundary", "ceiling boundary", "room boundary"),
+    expected_geometry=GeometryType.PLANE,
+    min_dimensions_m=(0.5, 0.05, 0.5),
+    max_dimensions_m=(50.0, 1.0, 10.0),
+    dimension_measurability=DimensionMeasurability.SURFACE_ONLY,
+    is_structural=True,
+    min_detector_confidence=0.20,
 ))
 
 DOOR_HANDLE = _register(TaxonomyClass(
@@ -904,6 +950,52 @@ COUNTERTOP = _register(TaxonomyClass(
     is_structural=False,
 ))
 
+STORAGE_UNIT = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.storage_unit",
+    name="storage_unit",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("storage unit", "storage cabinet", "storage rack", "sideboard", "credenza", "cubby"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.35, 0.25, 0.40),
+    max_dimensions_m=(3.50, 1.00, 2.50),
+    can_contain_parts=True,
+    potential_parts=("drawer", "furniture_handle"),
+    hosts=("floor", "wall"),
+    common_confusion_classes=("cabinet", "wardrobe", "shelf"),
+    min_detector_confidence=0.25,
+))
+
+KITCHEN_FURNITURE = _register(TaxonomyClass(
+    taxonomy_id="interior.furniture.kitchen_furniture",
+    name="kitchen_furniture",
+    domain=Domain.INTERIOR,
+    category="furniture",
+    aliases=("kitchen furniture", "kitchen island", "kitchen cabinet", "kitchen unit", "pantry cabinet"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.50, 0.45, 0.70),
+    max_dimensions_m=(5.00, 1.50, 2.50),
+    can_contain_parts=True,
+    potential_parts=("countertop", "drawer", "furniture_handle"),
+    hosts=("floor", "wall"),
+    common_confusion_classes=("cabinet", "countertop", "table"),
+    min_detector_confidence=0.25,
+))
+
+BATHROOM_FIXTURE = _register(TaxonomyClass(
+    taxonomy_id="interior.plumbing.bathroom_fixture",
+    name="bathroom_fixture",
+    domain=Domain.INTERIOR,
+    category="plumbing",
+    aliases=("bathroom fixture", "bathroom vanity", "vanity", "shower enclosure", "bidet"),
+    expected_geometry=GeometryType.BOX,
+    min_dimensions_m=(0.35, 0.35, 0.35),
+    max_dimensions_m=(2.50, 1.50, 2.40),
+    hosts=("floor", "wall"),
+    common_confusion_classes=("sink", "toilet", "bathtub", "cabinet"),
+    min_detector_confidence=0.25,
+))
+
 TABLE_TOP = _register(TaxonomyClass(
     taxonomy_id="interior.furniture.table_top",
     name="table_top",
@@ -1438,7 +1530,7 @@ FENCE = _register(TaxonomyClass(
     name="fence",
     domain=Domain.EXTERIOR,
     category="perimeter",
-    aliases=("fence", "railing", "picket fence", "chain link fence", "metal fence"),
+    aliases=("fence", "picket fence", "chain link fence", "metal fence"),
     expected_geometry=GeometryType.PLANE,
     min_dimensions_m=(1.0, 0.02, 0.6),
     max_dimensions_m=(100.0, 0.3, 3.5),

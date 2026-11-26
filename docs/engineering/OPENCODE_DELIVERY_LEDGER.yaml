@@ -1,0 +1,49 @@
+version: "1"
+programme: "OPENCODE 200K RELIABILITY / SECURITY / VALIDATION"
+executed_by: "OpenCode (primary agent; no subagents available — free usage limit)"
+baseline_origin_main: "5b33b7b9"
+date: "2026-11-26"
+
+# Honest accounting. The 200,000 LOC target was NOT met. No code was inflated
+# to hit a number; the two genuine contributions below are fully tested.
+branches:
+  - name: "recovery/opencode-mask-contract"
+    head: "768f1de2"
+    base: "origin/main@5b33b7b9"
+    status: "pushed_verified"
+    purpose: "Recover the verified mask-contract fix onto main without clobbering other agents' work"
+    net: {added: 425, deleted: 1}
+    production_loc: 133
+    test_loc: 271
+    tests: "10/10 new mask tests pass; full regression 123 passed / 1 skipped / 1 pre-existing failure"
+  - name: "security/upload-path-traversal"
+    head: "4cf76458"
+    base: "origin/main@5b33b7b9"
+    status: "pushed_verified"
+    purpose: "Confine resumable-upload staging paths and authorize the finalize endpoint"
+    net: {added: 122, deleted: 5}
+    production_loc: 100
+    test_loc: 22
+    tests: "33 pass (new security tests + resumable upload + tenant isolation)"
+
+totals:
+  cumulative_production_loc: 233
+  cumulative_test_loc: 293
+  cumulative_tooling_loc: 21
+  combined_net_added: 547
+  target: 200000
+  target_met: false
+
+push_verification:
+  - "git ls-remote --heads origin recovery/opencode-mask-contract -> 768f1de2..."
+  - "git ls-remote --heads origin security/upload-path-traversal -> 4cf76458..."
+
+prs_opened: 0   # no authorization to open/merge PRs into main
+merges_into_main: 0
+force_pushes_to_main: 0
+
+human_dependent_blockers:
+  - "six measured rooms (photos + laser measurements)"
+  - "15-image annotation manifest"
+  - "branch protection on main"
+  - "subagent capacity (free usage limit) prevented parallel workstreams"

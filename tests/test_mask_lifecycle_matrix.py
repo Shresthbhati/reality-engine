@@ -22,57 +22,23 @@ from engine.multiengine.evidence_matrix import EvidenceMatrixEntry, EvidenceMatr
 
 
 def _encode_mask(mask: np.ndarray) -> bytes:
-    """RLE-encode a boolean mask to bytes (matches world_ir.mask_store.encode)."""
+    """RLE-encode a boolean mask to bytes for the EvidenceMatrixStore bytes
+    artifact store. mask_store.encode() returns a uint32 numpy array; we
+    serialise that array to bytes so save_artifact (bytes only) can store it,
+    and the test reconstructs the array from those bytes before calling
+    mask_store.decode()."""
     from world_ir.mask_store import encode
 
-    return encode(mask)
+    rle = encode(mask)
+    return rle.astype(np.uint32, copy=False).tobytes()
 
 
-def _make_mask_entry(
-    *,
-    evidence_id: str = "m-001",
-    model_id: str = "sam2@1",
-    architecture_id: str = "sam2",
-    checkpoint_id: str = "sam2-large",
-    run_id: str = "run-001",
-    source_ids: list[str] | None = None,
-    input_parameters: dict | None = None,
-    prediction_type: str = "segmentation_mask",
-    raw_output_reference: str = "evidence_artifacts/m-001/mask.rle",
-    coordinate_frame: str = "camera_local",
-    camera_reference: dict | None = None,
-    world_transform: list[list[float]] | None = None,
-    entity_association: str | None = None,
-    mask_width: int = 640,
-    mask_height: int = 480,
-    confidence: float = 0.92,
-    uncertainty: dict | None = None,
-    provenance: dict | None = None,
-    validation_results: dict | None = None,
-    execution_status: str = "completed",
-) -> EvidenceMatrixEntry:
-    return EvidenceMatrixEntry(
-        evidence_id=evidence_id,
-        model_id=model_id,
-        architecture_id=architecture_id,
-        checkpoint_id=checkpoint_id,
-        run_id=run_id,
-        source_ids=source_ids or [f"img-{evidence_id}"],
-        input_parameters=input_parameters or {"prompt": "chair"},
-        prediction_type=prediction_type,
-        raw_output_reference=raw_output_reference,
-        coordinate_frame=coordinate_frame,
-        camera_reference=camera_reference or {"intrinsics": [960.0, 960.0, 640.0, 360.0]},
-        world_transform=world_transform,
-        entity_association=entity_association or f"entity-{evidence_id}",
-        mask_width=mask_width,
-        mask_height=mask_height,
-        confidence=confidence,
-        uncertainty=uncertainty or {"method": "model", "value": 0.08},
-        provenance=provenance or {"model": model_id, "source": "model_output"},
-        validation_results=validation_results or {"mask_area_frac": 0.31},
-        execution_status=execution_status,
-    )
+def _decode_mask(data: bytes, shape: tuple[int, int]) -> np.ndarray:
+    """Reconstruct a RLE-encoded mask from its bytes."""
+    from world_ir.mask_store import decode
+
+    rle = np.frombuffer(data, dtype=np.uint32)
+    return decode(rle, shape)
 
 
 class TestMaskLifecycleThroughMatrix:
@@ -87,7 +53,7 @@ class TestMaskLifecycleThroughMatrix:
         mask = np.random.default_rng(0).random((480, 640)) > 0.5
         w, h = mask.shape[1], mask.shape[0]
 
-        # 1. Model output -> persist the mask artifact.
+        # 1. Model output -> persist the mask artifact (bytes).
         rel = store.save_artifact("m-001", "mask.rle", _encode_mask(mask))
 
         # 2. Create the matrix entry carrying the reference + inline dimensions.
@@ -118,12 +84,7 @@ class TestMaskLifecycleThroughMatrix:
         # 5. Mask reference resolves and the artifact shape matches the inline
         #    dimensions (mask dimensions verified end-to-end, not just asserted).
         data = reloaded.get_artifact(rel)
-        decoded = np.frombuffer(data, dtype=np.uint32)
-        # decode is run by the test for the shape check below; the matrix
-        # reference itself is the lifecycle link.
-        from world_ir.mask_store import decode
-
-        decoded_mask = decode(data, (w, h))
+        decoded_mask = _decode_mask(data, (h, w))
         assert decoded_mask.shape == (h, w)
         assert got.mask_width == decoded_mask.shape[1]
         assert got.mask_height == decoded_mask.shape[0]
@@ -156,8 +117,7 @@ class TestMaskLifecycleThroughMatrix:
         assert got.mask_width == 320 and got.mask_height == 240
         assert got.confidence == 0.0
         assert got.entity_association == "entity-empty"
-        decoded = reloaded.get_artifact(rel)
-        assert np.array_equal(from_iter(decoded, (240, 320)), mask)
+        assert np.array_equal(_decode_mask(reloaded.get_artifact(rel), (240, 320)), mask)
 
     def test_missing_mask_artifact_is_an_error_not_silent(self, tmp_path: str) -> None:
         """A reference to a mask artifact that does not exist is an error on
@@ -228,7 +188,6 @@ class TestMaskLifecycleThroughMatrix:
         index = tmp_path / "evidence_matrix.jsonl"
         text = index.read_text(encoding="utf-8")
         lines = text.splitlines()
-        # find the entry line and corrupt a dimension
         for i, line in enumerate(lines):
             if '"evidence_id": "m-001"' in line:
                 lines[i] = line.replace('"mask_width": 640', '"mask_width": 999')
@@ -238,7 +197,48 @@ class TestMaskLifecycleThroughMatrix:
             EvidenceMatrixStore(tmp_path)
 
 
-def from_iter(data: bytes, shape: tuple[int, int]) -> np.ndarray:
-    from world_ir.mask_store import decode
-
-    return decode(data, shape)
+def _make_mask_entry(
+    *,
+    evidence_id: str = "m-001",
+    model_id: str = "sam2@1",
+    architecture_id: str = "sam2",
+    checkpoint_id: str = "sam2-large",
+    run_id: str = "run-001",
+    source_ids: list[str] | None = None,
+    input_parameters: dict | None = None,
+    prediction_type: str = "segmentation_mask",
+    raw_output_reference: str = "evidence_artifacts/m-001/mask.rle",
+    coordinate_frame: str = "camera_local",
+    camera_reference: dict | None = None,
+    world_transform: list[list[float]] | None = None,
+    entity_association: str | None = None,
+    mask_width: int = 640,
+    mask_height: int = 480,
+    confidence: float = 0.92,
+    uncertainty: dict | None = None,
+    provenance: dict | None = None,
+    validation_results: dict | None = None,
+    execution_status: str = "completed",
+) -> EvidenceMatrixEntry:
+    return EvidenceMatrixEntry(
+        evidence_id=evidence_id,
+        model_id=model_id,
+        architecture_id=architecture_id,
+        checkpoint_id=checkpoint_id,
+        run_id=run_id,
+        source_ids=source_ids or [f"img-{evidence_id}"],
+        input_parameters=input_parameters or {"prompt": "chair"},
+        prediction_type=prediction_type,
+        raw_output_reference=raw_output_reference,
+        coordinate_frame=coordinate_frame,
+        camera_reference=camera_reference or {"intrinsics": [960.0, 960.0, 640.0, 360.0]},
+        world_transform=world_transform,
+        entity_association=entity_association or f"entity-{evidence_id}",
+        mask_width=mask_width,
+        mask_height=mask_height,
+        confidence=confidence,
+        uncertainty=uncertainty or {"method": "model", "value": 0.08},
+        provenance=provenance or {"model": model_id, "source": "model_output"},
+        validation_results=validation_results or {"mask_area_frac": 0.31},
+        execution_status=execution_status,
+    )

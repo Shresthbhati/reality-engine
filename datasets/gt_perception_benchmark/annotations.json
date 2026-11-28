@@ -1,0 +1,36 @@
+{
+  "info": {
+    "description": "Reality Engine Ground-Truth Perception Benchmark Fixture (COCO + Multi-View Track ID + Scene Graph)",
+    "version": "1.0"
+  },
+  "images": [
+    {"id": 1, "file_name": "indoor_view_0.jpg", "width": 1600, "height": 1200},
+    {"id": 2, "file_name": "indoor_view_1.jpg", "width": 1600, "height": 1200}
+  ],
+  "categories": [
+    {"id": 1, "name": "wall"},
+    {"id": 2, "name": "door"},
+    {"id": 3, "name": "switch"},
+    {"id": 4, "name": "socket"},
+    {"id": 5, "name": "door_handle"},
+    {"id": 6, "name": "chair"}
+  ],
+  "annotations": [
+    {"id": 1, "image_id": 1, "category_id": 1, "bbox": [0, 0, 1600, 1200], "track_id": "trk_wall_1", "is_small": false},
+    {"id": 2, "image_id": 1, "category_id": 2, "bbox": [600, 150, 320, 880], "track_id": "trk_door_1", "is_small": false},
+    {"id": 3, "image_id": 1, "category_id": 3, "bbox": [480, 520, 28, 36], "track_id": "trk_switch_1", "is_small": true},
+    {"id": 4, "image_id": 1, "category_id": 4, "bbox": [480, 960, 26, 26], "track_id": "trk_socket_1", "is_small": true},
+    {"id": 5, "image_id": 1, "category_id": 5, "bbox": [870, 560, 24, 18], "track_id": "trk_handle_1", "is_small": true},
+    {"id": 6, "image_id": 1, "category_id": 6, "bbox": [180, 620, 220, 360], "track_id": "trk_chair_1", "is_small": false},
+    {"id": 7, "image_id": 2, "category_id": 1, "bbox": [0, 0, 1600, 1200], "track_id": "trk_wall_1", "is_small": false},
+    {"id": 8, "image_id": 2, "category_id": 2, "bbox": [520, 160, 310, 860], "track_id": "trk_door_1", "is_small": false},
+    {"id": 9, "image_id": 2, "category_id": 3, "bbox": [410, 525, 28, 36], "track_id": "trk_switch_1", "is_small": true},
+    {"id": 10, "image_id": 2, "category_id": 5, "bbox": [785, 565, 24, 18], "track_id": "trk_handle_1", "is_small": true},
+    {"id": 11, "image_id": 2, "category_id": 6, "bbox": [120, 630, 210, 350], "track_id": "trk_chair_1", "is_small": false}
+  ],
+  "relationships": [
+    {"source_track_id": "trk_switch_1", "target_track_id": "trk_wall_1", "kind": "attached_to"},
+    {"source_track_id": "trk_socket_1", "target_track_id": "trk_wall_1", "kind": "attached_to"},
+    {"source_track_id": "trk_handle_1", "target_track_id": "trk_door_1", "kind": "part_of"}
+  ]
+}

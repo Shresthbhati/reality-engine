@@ -1,79 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-function getLocalDatasetPath(...segments: string[]) {
-  const candidates = [
-    path.resolve(process.cwd(), "..", "datasets", ...segments),
-    path.resolve(process.cwd(), "datasets", ...segments),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
-}
-
+/**
+ * Thin proxy to `GET /api/worlds/{id}/cameras` (the version's real registered
+ * camera poses).
+ *
+ * The local `datasets/room_capture/cameras.json` fallback is gone: those poses
+ * were never committed as a WorldStore version, so serving them as this
+ * world's calibration is fabricated state. `image_size` / `frame` defaults
+ * belong to the API, not to invented values here.
+ */
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+  void request;
 
-  // 1. Try Live Backend computational surface
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/cameras`, {
-      signal: AbortSignal.timeout(2500),
-    });
+    const response = await fetch(
+      `${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/cameras`,
+      { signal: AbortSignal.timeout(10000) }
+    );
 
-    if (response.ok) {
-      const data = await response.json();
-      return NextResponse.json({
-        frame: data.frame || "world (meters, +Y up)",
-        rotation_convention: data.rotation_convention || "camera-to-world quaternion (w, x, y, z)",
-        image_size: data.image_size || [1280, 960],
-        cameras: data.cameras || [],
-      });
+    const data = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          error:
+            (data?.detail as string | undefined) ??
+            `Camera request failed (HTTP ${response.status})`,
+          world_id: id,
+          available: false,
+        },
+        { status: response.status }
+      );
     }
-  } catch {
-    // Backend offline; fall through to authentic local dataset
+
+    return NextResponse.json(data);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        error: `Failed to reach the Reality Engine API for camera poses: ${message}`,
+        world_id: id,
+        available: false,
+      },
+      { status: 503 }
+    );
   }
-
-  // 2. Verified Local Pipeline Out Dataset (datasets/room_capture/pipeline_out)
-  const isLocalDataset =
-    id === "world-compiled-seed42" ||
-    id === "room-capture" ||
-    id === "dataset-room-capture" ||
-    id.startsWith("world-room");
-
-  if (isLocalDataset) {
-    const localCamerasPath = getLocalDatasetPath("room_capture", "pipeline_out", "cameras.json");
-    if (localCamerasPath && fs.existsSync(/*turbopackIgnore: true*/ localCamerasPath)) {
-      try {
-        const raw = fs.readFileSync(/*turbopackIgnore: true*/ localCamerasPath, "utf-8");
-        const json = JSON.parse(raw);
-        return NextResponse.json({
-          image_size: json.image_size || [1280, 960],
-          cameras: (json.cameras || []).map((c: { evidence_id: string; position_m: [number, number, number]; rotation_wxyz: [number, number, number, number] }) => ({
-            id: c.evidence_id,
-            evidence_id: c.evidence_id,
-            position_m: c.position_m,
-            rotation_wxyz: c.rotation_wxyz,
-          })),
-        });
-      } catch (err) {
-        console.error("Failed to read local cameras:", err);
-      }
-    }
-  }
-
-  return NextResponse.json(
-    {
-      error: "No calibrated cameras registered for this world",
-      world_id: id,
-      available: false,
-    },
-    { status: 404 }
-  );
 }

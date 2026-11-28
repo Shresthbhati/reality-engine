@@ -18,6 +18,10 @@ export * from "./unsupported";
 export * from "./worldir";
 export * from "./hooks";
 
+export * from "@/lib/interior/model";
+export * from "@/lib/interior/status";
+
+
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here
  * so screens import one module instead of two.

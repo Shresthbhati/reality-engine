@@ -1,64 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-function getLocalDatasetPath(...segments: string[]) {
-  const candidates = [
-    path.resolve(process.cwd(), "..", "datasets", ...segments),
-    path.resolve(process.cwd(), "datasets", ...segments),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
-}
-
+/**
+ * Thin proxy to the API's own evidence artifact surface
+ * `GET /api/evidence/{evidence_id}/artifact` (apps/api/routes_misc.py).
+ *
+ * The local `datasets/room_capture/images` fallback is gone: an image on the
+ * Next server's disk is not an Evidence row's stored artifact, so serving it
+ * for a given evidence id would attribute an unrelated photo to that
+ * record. Evidence preview only ever shows what the content store holds.
+ *
+ * The API distinguishes 404 (no such evidence / no artifact recorded) from
+ * 410 (recorded, but the blob is gone from the content store); both are
+ * passed through so the UI can say which one it is.
+ */
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string; evidenceId: string }> }
 ) {
   const { id, evidenceId } = await context.params;
+  void request;
 
-  // 1. Try Live Backend if reachable
   try {
-    const res = await fetch(`${BACKEND_URL}/api/evidence/${encodeURIComponent(evidenceId)}/file`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    if (res.ok) {
-      const blob = await res.arrayBuffer();
-      const contentType = res.headers.get("content-type") || "image/jpeg";
+    const response = await fetch(
+      `${BACKEND_URL}/api/evidence/${encodeURIComponent(evidenceId)}/artifact`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+
+    if (response.ok) {
+      const blob = await response.arrayBuffer();
+      const contentType = response.headers.get("content-type") || "application/octet-stream";
       return new NextResponse(blob, {
-        headers: {
-          "Content-Type": contentType,
-          "Cache-Control": "public, max-age=3600",
-        },
+        headers: { "Content-Type": contentType, "Cache-Control": "private, max-age=300" },
       });
     }
-  } catch {
-    // Backend offline; check authentic local dataset
-  }
 
-  // 2. Verified Local Pipeline Out Dataset (room_capture/images)
-  const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-  for (const ext of imageExtensions) {
-    const filename = evidenceId.endsWith(ext) ? evidenceId : `${evidenceId}${ext}`;
-    const imagePath = getLocalDatasetPath("room_capture", "images", filename);
-    if (imagePath && fs.existsSync(/*turbopackIgnore: true*/ imagePath)) {
-      const buffer = fs.readFileSync(/*turbopackIgnore: true*/ imagePath);
-      const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": mime,
-          "Cache-Control": "public, max-age=86400",
-        },
-      });
-    }
+    return NextResponse.json(
+      {
+        error: `Evidence file request failed with HTTP ${response.status}`,
+        evidence_id: evidenceId,
+        world_id: id,
+        available: false,
+      },
+      { status: response.status }
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        error: `Failed to reach the Reality Engine API for evidence file: ${message}`,
+        evidence_id: evidenceId,
+        world_id: id,
+        available: false,
+      },
+      { status: 503 }
+    );
   }
-
-  return NextResponse.json(
-    { error: "Evidence image not available", evidence_id: evidenceId, world_id: id },
-    { status: 404 }
-  );
 }

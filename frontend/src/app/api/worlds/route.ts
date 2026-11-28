@@ -1,82 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-function getLocalDatasetPath(...segments: string[]) {
-  const candidates = [
-    path.resolve(process.cwd(), "..", "datasets", ...segments),
-    path.resolve(process.cwd(), "datasets", ...segments),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
-}
-
+/**
+ * Thin proxy to the FastAPI contract `GET /api/worlds`.
+ *
+ * There is no local-dataset discovery fallback: a world that exists only as
+ * a file on the Next server's disk is not a world the API reconstructed, and
+ * listing it as a capture (with invented lat/lng and evidence counts) would
+ * be fabricated state. If the API is unreachable the list is empty and the
+ * UI shows its offline state.
+ */
 export async function GET() {
-  const items: Array<Record<string, unknown>> = [];
-
-  // 1. Try live backend
   try {
-    const backendRes = await fetch(`${BACKEND_URL}/api/worlds`, {
-      signal: AbortSignal.timeout(2000),
+    const response = await fetch(`${BACKEND_URL}/api/worlds`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
     });
-    if (backendRes.ok) {
-      const data = await backendRes.json();
-      if (Array.isArray(data.items)) {
-        for (const item of data.items) {
-          items.push({
-            id: item.id,
-            name: item.name,
-            location: item.description || "Captured Spatial World",
-            lat: item.latitude,
-            lng: item.longitude,
-            coverageKm2: 0.05,
-            sessionCount: item.session_count || 0,
-            evidenceCount: 0,
-            timeRangeStart: null,
-            timeRangeEnd: null,
-            updatedAt: item.created_at || "Recent",
-            has3DData: Boolean(item.current_version_id),
-          });
-        }
-      }
-    }
-  } catch {
-    // Backend offline
-  }
 
-  // 2. Discover authentic local datasets present on disk
-  const roomCaptureWorldir = getLocalDatasetPath("room_capture", "pipeline_out", "worldir.json");
-  if (roomCaptureWorldir && fs.existsSync(/*turbopackIgnore: true*/ roomCaptureWorldir)) {
-    try {
-      const raw = fs.readFileSync(/*turbopackIgnore: true*/ roomCaptureWorldir, "utf-8");
-      const parsed = JSON.parse(raw);
-      const datasetId = parsed.id || "world-compiled-seed42";
-      if (!items.some((w) => w.id === datasetId)) {
-        items.unshift({
-          id: datasetId,
-          name: "Room Capture (Physical Environment)",
-          location: "Verified Spatial Capture Dataset",
-          lat: 37.7749,
-          lng: -122.4194,
-          coverageKm2: 0.05,
-          sessionCount: 1,
-          evidenceCount: 25,
-          timeRangeStart: "2026-09-22",
-          timeRangeEnd: "2026-09-22",
-          updatedAt: "Verified Pipeline Out",
-          has3DData: true,
-        });
-      }
-    } catch (err) {
-      console.error("Failed to parse local dataset worldir:", err);
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: `Backend error: HTTP ${response.status}`, items: [] },
+        { status: response.status }
+      );
     }
-  }
 
-  return NextResponse.json({ items });
+    const data = (await response.json()) as { items?: unknown[] };
+    // Pass the API's own DTOs through untouched. The UI adapts them in
+    // lib/api/adapters; inventing `lat`/`evidenceCount`/`coverageKm2` here
+    // would fabricate fields the API never reported.
+    return NextResponse.json({ items: data.items ?? [] });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      { error: `Failed to reach the Reality Engine API: ${message}`, items: [] },
+      { status: 503 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {

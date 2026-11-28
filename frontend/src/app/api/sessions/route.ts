@@ -1,10 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const worldId = new URL(request.url).searchParams.get("world_id");
+
   try {
-    const response = await fetch(`${BACKEND_URL}/api/sessions`, {
+    const query = worldId ? `?world_id=${encodeURIComponent(worldId)}` : "";
+    const response = await fetch(`${BACKEND_URL}/api/sessions${query}`, {
       signal: AbortSignal.timeout(5000),
     });
     

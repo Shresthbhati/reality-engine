@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { WorldRow, SessionRow, EvidenceRow, WorldVersionRow } from "@/lib/types";
 import type { WorldIR, CamerasPayload } from "@/types/worldir";
 import { listWorlds, listWorldVersions } from "./worlds";
 import { listSessions } from "./sessions";
 import { listEvidence } from "./evidence";
 import { fetchWorldIR, fetchWorldPoints, fetchWorldCameras, fetchWorldReport } from "./worldir";
+import { buildInteriorModel } from "@/lib/interior/model";
+import { classifyReconstruction } from "@/lib/interior/status";
 
 export interface UseApiResult<T> {
   data: T | null;
@@ -116,4 +118,41 @@ export function useWorldVersions(worldId: string | null) {
       isCurrent: v.is_current ?? false,
     })) satisfies WorldVersionRow[];
   }, [worldId]);
+}
+
+/**
+ * The assembled interior view of a world: the real WorldIR version, the
+ * version's lineage head, its pipeline report, and the derived
+ * `InteriorModel` + `ReconstructionStatus`.
+ *
+ * `status` is never optimistic -- it comes from `classifyReconstruction`,
+ * which judges the version against the classes an interior needs.
+ */
+export function useInterior(worldId: string | null) {
+  const ir = useWorldIR(worldId);
+  const report = useWorldReport(worldId);
+  const versions = useWorldVersions(worldId);
+
+  const model = useMemo(
+    () => buildInteriorModel(ir.data, versions.data?.find((v) => v.isCurrent)?.id ?? null),
+    [ir.data, versions.data],
+  );
+
+  const status = useMemo(
+    () => classifyReconstruction(model, report.data, null),
+    [model, report.data],
+  );
+
+  return {
+    model,
+    status,
+    versions: versions.data ?? [],
+    isLoading: ir.isLoading || report.isLoading || versions.isLoading,
+    error: ir.error ?? report.error ?? versions.error,
+    refetch: () => {
+      ir.refetch();
+      report.refetch();
+      versions.refetch();
+    },
+  };
 }

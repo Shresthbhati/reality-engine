@@ -15,15 +15,50 @@ import {
   Loader2,
 } from "lucide-react";
 
+/** A session attached to this world, as offered in the selector. */
+export interface ConstructionSessionOption {
+  id: string;
+  name: string;
+}
+
 interface RoomConstructionModalProps {
   worldId: string;
+  /** Sessions attached to this world; the job is enqueued for the selected one. */
+  sessions: ConstructionSessionOption[];
+  /** Currently selected session; null when the world has none attached. */
+  sessionId: string | null;
+  onSelectSession?: (sessionId: string | null) => void;
   isOpen: boolean;
   onClose: () => void;
   onReconstructionSuccess?: () => void;
 }
 
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 60; // ~2 minutes; the backend job is the source of truth
+
+/**
+ * Backend job stages (apps/api/jobs.py `job.stage`) mapped onto the modal's
+ * progress steps. An unmapped stage is not a failure — the run continues and
+ * simply shows no step highlight.
+ */
+const STAGE_TO_STEP: Record<string, number> = {
+  checking_reconstruction_backend: 1,
+  resolving_evidence: 1,
+  reconstructing: 2,
+  compiling: 6,
+  committing_version: 7,
+};
+
+function stepForStage(stage: string | null | undefined): number | null {
+  if (!stage) return null;
+  return STAGE_TO_STEP[stage] ?? null;
+}
+
 export default function RoomConstructionModal({
   worldId,
+  sessions,
+  sessionId,
+  onSelectSession,
   isOpen,
   onClose,
   onReconstructionSuccess,
@@ -32,11 +67,6 @@ export default function RoomConstructionModal({
   const [activeStage, setActiveStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
-
-  // Configuration options
-  const [backend, setBackend] = useState("colmap");
-  const [depthModel, setDepthModel] = useState("midas");
-  const [useGpu, setUseGpu] = useState(false);
 
   if (!isOpen) return null;
 
@@ -86,63 +116,88 @@ export default function RoomConstructionModal({
   ];
 
   const handleRunPipeline = async () => {
+    if (!sessionId) {
+      setError(
+        "This world has no attached capture session to reconstruct. Attach a session with evidence first."
+      );
+      return;
+    }
+
     setRunning(true);
     setError(null);
     setCompleted(false);
     setActiveStage(1);
 
     try {
-      // Dispatch real reconstruction job to backend bridge
-      const res = await fetch("/api/jobs/reconstruct", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          package_path: "datasets/room_capture",
-          output_path: `data/reconstructions/${worldId}`,
-          colmap_binary: backend,
-          gpu: useGpu,
-        }),
-      });
+      // Enqueue a real RECONSTRUCT_SESSION job for this session. The 200 is
+      // an enqueue acknowledgement, not a result — the job id is polled below.
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/reconstruct`,
+        { method: "POST" }
+      );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(
-          data.error ||
-            "Reconstruction backend bridge offline (http://localhost:8100). The Golden Loop worker daemon is awaiting launch."
+          data?.detail ??
+            data?.error ??
+            `Reconstruction could not be enqueued (HTTP ${res.status}).`
         );
       }
 
-      if (data.job_id) {
-        // Poll real job status
-        let pollCount = 0;
-        while (pollCount < 30) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const jobRes = await fetch(`/api/jobs/${data.job_id}`);
-          if (jobRes.ok) {
-            const job = await jobRes.json();
-            if (job.status === "completed") {
-              setCompleted(true);
-              setRunning(false);
-              onReconstructionSuccess?.();
-              return;
-            } else if (job.status === "failed") {
-              throw new Error(job.error || "Reconstruction job failed");
-            }
-          }
-          pollCount++;
-        }
+      const jobId = data?.job_id;
+      if (!jobId) {
+        throw new Error("API accepted the request but returned no job id to track.");
       }
 
-      setCompleted(true);
-      setActiveStage(null);
+      let pollCount = 0;
+      let lastStage: string | null = null;
+      while (pollCount < MAX_POLLS) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        const jobRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+
+        if (!jobRes.ok) {
+          // A transient read failure is not a job failure; keep polling until
+          // the budget is spent, then report honestly.
+          pollCount++;
+          continue;
+        }
+
+        const job = await jobRes.json();
+
+        if (job.stage && job.stage !== lastStage) {
+          lastStage = job.stage;
+          const step = stepForStage(job.stage);
+          if (step) setActiveStage(step);
+        }
+
+        if (job.status === "completed") {
+          setActiveStage(7);
+          setCompleted(true);
+          setRunning(false);
+          onReconstructionSuccess?.();
+          return;
+        }
+
+        if (job.status === "failed") {
+          throw new Error(job.error || "Reconstruction job failed.");
+        }
+
+        pollCount++;
+      }
+
+      // Budget exhausted: the job is still running server-side. Say so instead
+      // of reporting a success that was never observed.
       setRunning(false);
-      onReconstructionSuccess?.();
+      setActiveStage(null);
+      setError(
+        `Job ${jobId} was still ${lastStage ?? "queued"} after ` +
+          `${Math.round((MAX_POLLS * POLL_INTERVAL_MS) / 1000)}s of polling. ` +
+          "The reconstruction may still finish server-side; re-open the world to see its version."
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(
-        message ||
-          "Reconstruction backend bridge offline (http://localhost:8100). Golden Loop backend worker is not running."
-      );
+      setError(message || "Reconstruction failed for an unknown reason.");
       setRunning(false);
       setActiveStage(null);
     }
@@ -181,53 +236,32 @@ export default function RoomConstructionModal({
 
         {/* Content Body */}
         <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 text-xs">
-          {/* Settings Bar */}
-          <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border border-[#1f222b] bg-[#14161f]">
-            <div>
-              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
-                SfM Backend
-              </label>
-              <select
-                value={backend}
-                onChange={(e) => setBackend(e.target.value)}
-                disabled={running}
-                className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
-              >
-                <option value="colmap">COLMAP (pycolmap)</option>
-                <option value="openmvg">OpenMVG</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
-                Depth Model
-              </label>
-              <select
-                value={depthModel}
-                onChange={(e) => setDepthModel(e.target.value)}
-                disabled={running}
-                className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
-              >
-                <option value="midas">MiDaS (Monocular)</option>
-                <option value="dpt">DPT Hybrid</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col justify-between">
-              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
-                Acceleration
-              </label>
-              <label className="flex items-center gap-2 h-7 cursor-pointer text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={useGpu}
-                  onChange={(e) => setUseGpu(e.target.checked)}
-                  disabled={running}
-                  className="accent-[#00e5ff]"
-                />
-                <span>CUDA GPU</span>
-              </label>
-            </div>
+          {/* Evidence source. The reconstruction job is per-Session, so this
+              is the only input that actually changes what runs. */}
+          <div className="p-3 rounded-lg border border-[#1f222b] bg-[#14161f]">
+            <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+              Capture Session
+            </label>
+            <select
+              value={sessionId ?? ""}
+              onChange={(e) => onSelectSession?.(e.target.value || null)}
+              disabled={running || sessions.length === 0}
+              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
+            >
+              {sessions.length === 0 && (
+                <option value="">No sessions attached to this world</option>
+              )}
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || s.id}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-neutral-500 mt-1.5 leading-relaxed">
+              Reconstruction runs on this session&apos;s stored evidence using the
+              backend&apos;s own pipeline configuration (SfM backend, depth model,
+              acceleration).
+            </p>
           </div>
 
           {/* Canonical 7 Pipeline Stages */}
@@ -303,7 +337,7 @@ export default function RoomConstructionModal({
             <div className="p-3 rounded-lg border border-[#e74c3c]/50 bg-[#2a1315] text-[#ff6b6b] flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <div className="font-semibold text-xs">Reconstruction Pipeline Bridge Offline</div>
+                <div className="font-semibold text-xs">Reconstruction did not complete</div>
                 <div className="text-[11px] leading-relaxed text-neutral-300 font-mono">
                   {error}
                 </div>

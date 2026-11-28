@@ -285,4 +285,11 @@ export interface CommitResponse {
   world_id: string;
   entity_id: string;
   changed_fields: string[];
+  /**
+   * True when the API short-circuited: the edit was byte-identical to the
+   * current version, so NO new version was minted. Callers must not tell the
+   * user a new version was created when this is true -- on a duplicate,
+   * `version_id` is the unchanged HEAD.
+   */
+  duplicate: boolean;
 }

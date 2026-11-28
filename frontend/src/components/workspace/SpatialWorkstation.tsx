@@ -107,6 +107,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     (allSessions || []).filter(s => s.worldId === worldId), 
     [allSessions, worldId]
   );
+
+  // Session the room-construction job is enqueued for. Defaults to the first
+  // attached session; the modal can switch it. Falls back if it goes away.
+  const [constructionSessionId, setConstructionSessionId] = useState<string | null>(null);
+  const effectiveConstructionSessionId = useMemo(() => {
+    if (constructionSessionId && sessions.some(s => s.id === constructionSessionId)) {
+      return constructionSessionId;
+    }
+    return sessions.length > 0 ? sessions[0].id : null;
+  }, [constructionSessionId, sessions]);
+  const constructionSessions = useMemo(
+    () => sessions.map(s => ({ id: s.id, name: s.name || s.id })),
+    [sessions]
+  );
+
   
   const currentWorldRow = useMemo(() => 
     (worlds || []).find(w => w.id === worldId) || {
@@ -188,12 +203,31 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     commitMessage: string
   ) => {
     if (!worldId) return;
-    await commitWorldCorrection(worldId, {
+    // No current version means there is nothing to correct yet; the API
+    // would reject an empty parent. Say so instead of firing a doomed call.
+    const head = versions[0]?.id;
+    if (!head) {
+      throw new Error(
+        "This world has no reconstruction version yet, so there is nothing to correct."
+      );
+    }
+
+    const result = await commitWorldCorrection(worldId, {
       entity_id: entityId,
       changes,
-      parent_version_id: versions[0]?.id || "",
+      parent_version_id: head,
       commit_message: commitMessage,
     });
+
+    // The API short-circuits an edit identical to HEAD: no new version is
+    // minted. Report that outcome honestly rather than implying a version
+    // was created.
+    if (result.duplicate) {
+      throw new Error(
+        "No change: the correction is identical to the current version, so no new version was created."
+      );
+    }
+
     refetchVersions();
     refetchIr();
   }, [worldId, versions, refetchVersions, refetchIr]);
@@ -565,6 +599,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       {/* Room Construction Pipeline Modal */}
       <RoomConstructionModal
         worldId={worldId}
+        sessions={constructionSessions}
+        sessionId={effectiveConstructionSessionId}
+        onSelectSession={setConstructionSessionId}
         isOpen={constructionModalOpen}
         onClose={() => setConstructionModalOpen(false)}
         onReconstructionSuccess={() => {

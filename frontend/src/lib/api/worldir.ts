@@ -1,5 +1,6 @@
 import type { CamerasPayload, PipelineReport, WorldIR } from "@/types/worldir";
 import { apiGet } from "./client";
+import type { ApiList, JobDto } from "./types";
 
 export async function fetchWorldIR(worldId: string): Promise<WorldIR | null> {
   try {
@@ -34,6 +35,29 @@ export async function fetchWorldCameras(worldId: string): Promise<CamerasPayload
 export async function fetchWorldReport(worldId: string): Promise<PipelineReport | null> {
   try {
     return await apiGet<PipelineReport>(`/api/worlds/${encodeURIComponent(worldId)}/report`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The world's most recent reconstruction job, when one exists.
+ *
+ * Jobs are the only record of WHY a version is missing or partial, so the
+ * failure-state UI needs them. Returns null when the world has no job or the
+ * API is unreachable -- the caller then says "unknown", not "succeeded".
+ */
+export async function fetchLatestReconstructJob(
+  worldId: string,
+): Promise<JobDto | null> {
+  try {
+    const res = await apiGet<ApiList<JobDto>>("/api/jobs");
+    const jobs = res.items.filter(
+      (j) => j.type === "RECONSTRUCT_SESSION" && j.status !== "completed",
+    );
+    if (jobs.length === 0) return null;
+    // Newest first; the API already orders by created_at desc.
+    return jobs[0] ?? null;
   } catch {
     return null;
   }

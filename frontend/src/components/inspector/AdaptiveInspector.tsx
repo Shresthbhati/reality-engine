@@ -234,6 +234,7 @@ function EntityDetails({
   const [commitMessage, setCommitMessage] = useState(`Review & verify ${entity.id}`);
   const [submitting, setSubmitting] = useState(false);
   const [committedSuccess, setCommittedSuccess] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
 
   // Real, entity-specific trace-to-evidence -- refetched whenever the
   // selected entity (or world) changes. Never falls back to fabricated
@@ -257,6 +258,7 @@ function EntityDetails({
   const handleSaveCorrection = async () => {
     if (!onCommitCorrection) return;
     setSubmitting(true);
+    setCommitError(null);
     try {
       await onCommitCorrection(
         entity.id,
@@ -273,7 +275,14 @@ function EntityDetails({
         setIsEditing(false);
       }, 1500);
     } catch (e) {
-      console.error("Commit failed", e);
+      // A rejected correction must be visible. Swallowing it into the console
+      // while the form still reads "editing" implies the edit is pending when
+      // in fact nothing was saved.
+      setCommitError(
+        e instanceof Error
+          ? e.message
+          : "The correction was not accepted by the API."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -497,6 +506,14 @@ function EntityDetails({
               <span>Commit World Version</span>
             )}
           </button>
+          {commitError && (
+            <p
+              role="alert"
+              className="mt-1.5 text-[11px] leading-relaxed text-[#ff6b6b]"
+            >
+              {commitError}
+            </p>
+          )}
         </div>
       )}
 

@@ -214,8 +214,14 @@ def render(registry: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _dump_json(registry: dict) -> str:
-    return json.dumps({"shards": SHARDS, "entries": registry["entries"]}, indent=1, sort_keys=True) + "\n"
+def _stable(entry: dict) -> dict:
+    """The committed view: drop the volatile per-edit fields (test count, size-weighted shard number)."""
+    return {k: v for k, v in entry.items() if k not in ("tests", "shard")}
+
+
+def _dump_json(registry: dict, full: bool = False) -> str:
+    entries = registry["entries"] if full else [_stable(x) for x in registry["entries"]]
+    return json.dumps({"shards": SHARDS, "entries": entries}, indent=1, sort_keys=True) + "\n"
 
 
 def _diff(old: dict, new: dict) -> list[str]:

@@ -14,9 +14,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "perception",
@@ -35,9 +33,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": true,
-   "tests": 2
+   "slow": true
   },
   {
    "area": "reconstruction",
@@ -53,9 +49,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "engine",
@@ -71,9 +65,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -89,9 +81,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -107,9 +97,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "-",
@@ -130,9 +118,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": true,
-   "tests": 1
+   "slow": true
   },
   {
    "area": "sdk",
@@ -148,9 +134,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -172,9 +156,7 @@
     "fastapi",
     "psutil"
    ],
-   "shard": 2,
-   "slow": true,
-   "tests": 1
+   "slow": true
   },
   {
    "area": "worldstore",
@@ -190,9 +172,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -210,9 +190,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "-",
@@ -231,9 +209,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 3,
-   "slow": true,
-   "tests": 1
+   "slow": true
   },
   {
    "area": "worldstore",
@@ -251,9 +227,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -269,9 +243,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -287,9 +259,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -305,9 +275,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "perception",
@@ -330,9 +298,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": true,
-   "tests": 8
+   "slow": true
   },
   {
    "area": "worldstore",
@@ -348,9 +314,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -371,9 +335,7 @@
     "colmap",
     "dataset:real_room_capture/*.jpg"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -389,9 +351,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -407,9 +367,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -430,9 +388,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 6,
-   "slow": true,
-   "tests": 3
+   "slow": true
   },
   {
    "area": "reconstruction",
@@ -448,9 +404,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -471,9 +425,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 21
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -489,9 +441,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -511,9 +461,7 @@
     "cv2",
     "numpy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -529,9 +477,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -547,9 +493,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -565,9 +509,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -583,9 +525,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -603,9 +543,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -621,9 +559,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -639,9 +575,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "perception",
@@ -657,9 +591,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 30
+   "slow": false
   },
   {
    "area": "perception",
@@ -675,9 +607,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -693,9 +623,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -720,9 +648,7 @@
     "torch",
     "transformers"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -740,9 +666,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -759,9 +683,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -778,9 +700,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -797,9 +717,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -818,9 +736,7 @@
    "requires": [
     "alembic"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -836,9 +752,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -858,9 +772,7 @@
     "aiosqlite",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "apps",
@@ -877,9 +789,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -897,9 +807,7 @@
    "requires": [
     "alembic"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -915,9 +823,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -933,9 +839,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -951,9 +855,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "procedural",
@@ -969,9 +871,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "apps",
@@ -990,9 +890,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -1013,9 +911,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "engine",
@@ -1037,9 +933,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "apps",
@@ -1060,9 +954,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -1082,9 +974,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "apps",
@@ -1100,9 +990,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "apps",
@@ -1118,9 +1006,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1141,9 +1027,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1164,9 +1048,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -1186,9 +1068,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "apps",
@@ -1204,9 +1084,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1227,9 +1105,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1245,9 +1121,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -1267,9 +1141,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 78
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1285,9 +1157,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -1303,9 +1173,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "perception",
@@ -1321,9 +1189,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1339,9 +1205,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1357,9 +1221,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1376,9 +1238,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -1394,9 +1254,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1412,9 +1270,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -1434,9 +1290,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1452,9 +1306,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1474,9 +1326,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1492,9 +1342,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1510,9 +1358,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1528,9 +1374,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -1546,9 +1390,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1565,9 +1407,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": true,
-   "tests": 8
+   "slow": true
   },
   {
    "area": "world_ir",
@@ -1584,9 +1424,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1602,9 +1440,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "apps",
@@ -1621,9 +1457,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "apps",
@@ -1640,9 +1474,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1658,9 +1490,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -1677,9 +1507,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -1695,9 +1523,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -1714,9 +1540,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "apps",
@@ -1733,9 +1557,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "apps",
@@ -1752,9 +1574,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -1772,9 +1592,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -1790,9 +1608,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -1808,9 +1624,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -1826,9 +1640,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -1844,9 +1656,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -1862,9 +1672,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -1880,9 +1688,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "apps",
@@ -1898,9 +1704,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1917,9 +1721,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1940,9 +1742,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -1959,9 +1759,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -1977,9 +1775,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -1995,9 +1791,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2013,9 +1807,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2031,9 +1823,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2049,9 +1839,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -2074,9 +1862,7 @@
     "open3d",
     "trimesh"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2093,9 +1879,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 42
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2111,9 +1895,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "engine",
@@ -2129,9 +1911,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2147,9 +1927,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -2165,9 +1943,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "-",
@@ -2184,9 +1960,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "perception",
@@ -2202,9 +1976,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -2220,9 +1992,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "engine",
@@ -2238,9 +2008,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -2256,9 +2024,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "-",
@@ -2274,9 +2040,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -2292,9 +2056,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2310,9 +2072,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2331,9 +2091,7 @@
     "cv2",
     "numpy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2349,9 +2107,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "-",
@@ -2367,9 +2123,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "-",
@@ -2385,9 +2139,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "-",
@@ -2403,9 +2155,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2421,9 +2171,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "evidence",
@@ -2442,9 +2190,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "engine",
@@ -2460,9 +2206,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2478,9 +2222,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2496,9 +2238,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2514,9 +2254,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2533,9 +2271,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2552,9 +2288,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 25
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2570,9 +2304,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2591,9 +2323,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2609,9 +2339,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -2628,9 +2356,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "apps",
@@ -2647,9 +2373,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -2665,9 +2389,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "evidence",
@@ -2683,9 +2405,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 54
+   "slow": false
   },
   {
    "area": "perception",
@@ -2702,9 +2422,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2721,9 +2439,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2739,9 +2455,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2757,9 +2471,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2775,9 +2487,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2793,9 +2503,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2811,9 +2519,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "-",
@@ -2829,9 +2535,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2847,9 +2551,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -2865,9 +2567,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -2883,9 +2583,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2901,9 +2599,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2919,9 +2615,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2937,9 +2631,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "apps",
@@ -2959,9 +2651,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -2977,9 +2667,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -2995,9 +2683,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3013,9 +2699,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3031,9 +2715,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3053,9 +2735,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3071,9 +2751,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3089,9 +2767,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3107,9 +2783,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -3125,9 +2799,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "engine",
@@ -3143,9 +2815,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3161,9 +2831,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3179,9 +2847,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3197,9 +2863,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3215,9 +2879,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3233,9 +2895,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3255,9 +2915,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3274,9 +2932,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -3292,9 +2948,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3310,9 +2964,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3328,9 +2980,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "registration",
@@ -3346,9 +2996,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3365,9 +3013,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "engine",
@@ -3383,9 +3029,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "perception",
@@ -3410,9 +3054,7 @@
     "torch",
     "transformers"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "apps",
@@ -3428,9 +3070,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -3446,9 +3086,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3464,9 +3102,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3482,9 +3118,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3501,9 +3135,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3519,9 +3151,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3538,9 +3168,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3556,9 +3184,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3574,9 +3200,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3593,9 +3217,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3613,9 +3235,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "-",
@@ -3631,9 +3251,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -3649,9 +3267,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 30
+   "slow": false
   },
   {
    "area": "apps",
@@ -3667,9 +3283,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3685,9 +3299,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "engine",
@@ -3703,9 +3315,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3721,9 +3331,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "evidence",
@@ -3741,9 +3349,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "provenance",
@@ -3759,9 +3365,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 35
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3783,9 +3387,7 @@
     "open3d",
     "trimesh"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3801,9 +3403,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3819,9 +3419,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3837,9 +3435,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3855,9 +3451,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "-",
@@ -3874,9 +3468,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3892,9 +3484,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -3910,9 +3500,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3928,9 +3516,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3946,9 +3532,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -3964,9 +3548,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -3982,9 +3564,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -4000,9 +3580,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -4020,9 +3598,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4038,9 +3614,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4056,9 +3630,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -4076,9 +3648,7 @@
    "requires": [
     "huggingface_hub"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -4094,9 +3664,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -4112,9 +3680,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "perception",
@@ -4130,9 +3696,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -4152,9 +3716,7 @@
    "requires": [
     "torch"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4170,9 +3732,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4190,9 +3750,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4209,9 +3767,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -4231,9 +3787,7 @@
    "requires": [
     "torch"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4249,9 +3803,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "-",
@@ -4267,9 +3819,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "apps",
@@ -4290,9 +3840,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4309,9 +3857,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4327,9 +3873,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -4345,9 +3889,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "engine",
@@ -4363,9 +3905,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4381,9 +3921,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -4405,9 +3943,7 @@
     "torch",
     "torchvision"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4424,9 +3960,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4442,9 +3976,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4460,9 +3992,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 22
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4478,9 +4008,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "engine",
@@ -4496,9 +4024,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 27
+   "slow": false
   },
   {
    "area": "events",
@@ -4514,9 +4040,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "events",
@@ -4532,9 +4056,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4550,9 +4072,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4568,9 +4088,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "evidence",
@@ -4592,9 +4110,7 @@
     "numpy",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -4610,9 +4126,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -4628,9 +4142,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4647,9 +4159,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 34
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4666,9 +4176,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -4684,9 +4192,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 24
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4703,9 +4209,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 25
+   "slow": false
   },
   {
    "area": "evidence",
@@ -4721,9 +4225,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4743,9 +4245,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4767,9 +4267,7 @@
     "torch",
     "torchvision"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -4785,9 +4283,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "apps",
@@ -4803,9 +4299,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -4825,9 +4319,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4843,9 +4335,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4865,9 +4355,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4884,9 +4372,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -4903,9 +4389,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -4928,9 +4412,7 @@
     "ifcopenshell",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -4946,9 +4428,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -4964,9 +4444,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -4982,9 +4460,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -5000,9 +4476,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -5018,9 +4492,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5036,9 +4508,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -5054,9 +4524,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5072,9 +4540,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -5090,9 +4556,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5113,9 +4577,7 @@
    "requires": [
     "ezdxf"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -5131,9 +4593,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -5149,9 +4609,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -5167,9 +4625,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5185,9 +4641,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 22
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -5203,9 +4657,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -5221,9 +4673,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -5241,9 +4691,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "-",
@@ -5261,9 +4709,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "-",
@@ -5279,9 +4725,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "-",
@@ -5298,9 +4742,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "synthetic",
@@ -5316,9 +4758,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -5334,9 +4774,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5352,9 +4790,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5370,9 +4806,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5388,9 +4822,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5406,9 +4838,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5424,9 +4854,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5442,9 +4870,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 39
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5460,9 +4886,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 27
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5478,9 +4902,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5496,9 +4918,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -5514,9 +4934,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "perception",
@@ -5532,9 +4950,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5551,9 +4967,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5569,9 +4983,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5587,9 +4999,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -5605,9 +5015,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -5624,9 +5032,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": true,
-   "tests": 1
+   "slow": true
   },
   {
    "area": "-",
@@ -5645,9 +5051,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5663,9 +5067,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "-",
@@ -5682,9 +5084,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5700,9 +5100,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "perception",
@@ -5720,9 +5118,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "geometry",
@@ -5738,9 +5134,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -5756,9 +5150,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -5774,9 +5166,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5792,9 +5182,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -5814,9 +5202,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "provenance",
@@ -5832,9 +5218,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5850,9 +5234,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5872,9 +5254,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5895,9 +5275,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -5918,9 +5296,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "evidence",
@@ -5936,9 +5312,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "-",
@@ -5954,9 +5328,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "engine",
@@ -5972,9 +5344,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -5990,9 +5360,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6008,9 +5376,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6026,9 +5392,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6044,9 +5408,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6062,9 +5424,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 28
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6080,9 +5440,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "provenance",
@@ -6098,9 +5456,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6116,9 +5472,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6134,9 +5488,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6153,9 +5505,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": true,
-   "tests": 12
+   "slow": true
   },
   {
    "area": "worldstore",
@@ -6171,9 +5521,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -6189,9 +5537,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6209,9 +5555,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6227,9 +5571,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6245,9 +5587,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -6267,9 +5607,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6285,9 +5623,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6306,9 +5642,7 @@
     "aiosqlite",
     "fastapi"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6325,9 +5659,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "-",
@@ -6347,9 +5679,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -6368,9 +5698,7 @@
     "aiosqlite",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "apps",
@@ -6390,9 +5718,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -6413,9 +5739,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -6435,9 +5759,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "engine",
@@ -6453,9 +5775,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6471,9 +5791,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6489,9 +5807,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -6507,9 +5823,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 27
+   "slow": false
   },
   {
    "area": "registration",
@@ -6525,9 +5839,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "synthetic",
@@ -6543,9 +5855,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -6561,9 +5871,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "procedural",
@@ -6579,9 +5887,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6597,9 +5903,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "-",
@@ -6615,9 +5919,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6633,9 +5935,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6652,9 +5952,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6674,9 +5972,7 @@
    "requires": [
     "open3d"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6692,9 +5988,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6710,9 +6004,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6732,9 +6024,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6750,9 +6040,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6768,9 +6056,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -6786,9 +6072,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -6804,9 +6088,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "geometry",
@@ -6822,9 +6104,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6840,9 +6120,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6859,9 +6137,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6877,9 +6153,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6895,9 +6169,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -6913,9 +6185,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "perception",
@@ -6935,9 +6205,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": true,
-   "tests": 4
+   "slow": true
   },
   {
    "area": "reconstruction",
@@ -6953,9 +6221,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6971,9 +6237,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -6991,9 +6255,7 @@
    "requires": [
     "cv2"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7009,9 +6271,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -7027,9 +6287,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7045,9 +6303,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7064,9 +6320,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7083,9 +6337,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7102,9 +6354,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7120,9 +6370,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7138,9 +6386,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7157,9 +6403,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7179,9 +6423,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7201,9 +6443,7 @@
     "cv2",
     "numpy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 36
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7224,9 +6464,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "geometry",
@@ -7246,9 +6484,7 @@
    "requires": [
     "manifold3d"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7264,9 +6500,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7284,9 +6518,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7304,9 +6536,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7322,9 +6552,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7341,9 +6569,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": true,
-   "tests": 28
+   "slow": true
   },
   {
    "area": "reconstruction",
@@ -7359,9 +6585,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -7377,9 +6601,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "engine",
@@ -7395,9 +6617,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7413,9 +6633,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7431,9 +6649,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7449,9 +6665,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7467,9 +6681,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "perception",
@@ -7485,9 +6697,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7503,9 +6713,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "provenance",
@@ -7524,9 +6732,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "engine",
@@ -7542,9 +6748,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "evidence",
@@ -7560,9 +6764,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 34
+   "slow": false
   },
   {
    "area": "engine",
@@ -7578,9 +6780,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -7597,9 +6797,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "engine",
@@ -7615,9 +6813,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -7633,9 +6829,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -7651,9 +6845,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -7669,9 +6861,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "engine",
@@ -7687,9 +6877,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -7705,9 +6893,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "registration",
@@ -7723,9 +6909,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -7741,9 +6925,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7759,9 +6941,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 44
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7777,9 +6957,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -7795,9 +6973,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "engine",
@@ -7813,9 +6989,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -7831,9 +7005,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 28
+   "slow": false
   },
   {
    "area": "perception",
@@ -7849,9 +7021,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "engine",
@@ -7867,9 +7037,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -7885,9 +7053,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "perception",
@@ -7903,9 +7069,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "engine",
@@ -7921,9 +7085,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -7941,9 +7103,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "engine",
@@ -7959,9 +7119,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "perception",
@@ -7977,9 +7135,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 32
+   "slow": false
   },
   {
    "area": "engine",
@@ -7995,9 +7151,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -8013,9 +7167,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8031,9 +7183,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "engine",
@@ -8049,9 +7199,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -8067,9 +7215,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8085,9 +7231,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8104,9 +7248,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8122,9 +7264,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8140,9 +7280,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "perception",
@@ -8159,9 +7297,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8177,9 +7313,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8195,9 +7329,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "perception",
@@ -8213,9 +7345,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8232,9 +7362,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8250,9 +7378,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8269,9 +7395,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8287,9 +7411,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8306,9 +7428,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -8324,9 +7444,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8342,9 +7460,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "provenance",
@@ -8360,9 +7476,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8378,9 +7492,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "provenance",
@@ -8396,9 +7508,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "apps",
@@ -8420,9 +7530,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8438,9 +7546,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -8456,9 +7562,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -8478,9 +7582,7 @@
    "requires": [
     "torch"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -8496,9 +7598,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -8514,9 +7614,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "perception",
@@ -8532,9 +7630,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8550,9 +7646,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -8568,9 +7662,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "perception",
@@ -8586,9 +7678,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -8604,9 +7694,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -8622,9 +7710,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8640,9 +7726,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "perception",
@@ -8658,9 +7742,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -8676,9 +7758,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "perception",
@@ -8694,9 +7774,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "geometry",
@@ -8712,9 +7790,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -8730,9 +7806,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8748,9 +7822,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8766,9 +7838,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8784,9 +7854,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8802,9 +7870,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8820,9 +7886,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "-",
@@ -8838,9 +7902,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "perception",
@@ -8856,9 +7918,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -8874,9 +7934,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "perception",
@@ -8892,9 +7950,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "engine",
@@ -8910,9 +7966,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -8928,9 +7982,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -8946,9 +7998,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -8964,9 +8014,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -8984,9 +8032,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -9002,9 +8048,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -9020,9 +8064,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9038,9 +8080,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -9056,9 +8096,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "perception",
@@ -9074,9 +8112,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -9092,9 +8128,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "provenance",
@@ -9111,9 +8145,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -9129,9 +8161,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -9147,9 +8177,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "engine",
@@ -9165,9 +8193,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -9183,9 +8209,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9201,9 +8225,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9219,9 +8241,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "engine",
@@ -9237,9 +8257,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 32
+   "slow": false
   },
   {
    "area": "engine",
@@ -9255,9 +8273,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9273,9 +8289,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "engine",
@@ -9291,9 +8305,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "engine",
@@ -9309,9 +8321,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9327,9 +8337,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "evidence",
@@ -9345,9 +8353,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9363,9 +8369,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9382,9 +8386,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9400,9 +8402,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -9418,9 +8418,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "engine",
@@ -9436,9 +8434,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9454,9 +8450,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9472,9 +8466,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -9490,9 +8482,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "events",
@@ -9508,9 +8498,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -9526,9 +8514,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -9544,9 +8530,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -9562,9 +8546,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "engine",
@@ -9580,9 +8562,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -9598,9 +8578,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "apps",
@@ -9621,9 +8599,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9641,9 +8617,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9659,9 +8633,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9677,9 +8649,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "-",
@@ -9695,9 +8665,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9717,9 +8685,7 @@
    "requires": [
     "open3d"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9739,9 +8705,7 @@
    "requires": [
     "pycolmap"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9757,9 +8721,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9775,9 +8737,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "registration",
@@ -9793,9 +8753,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -9811,9 +8769,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -9829,9 +8785,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -9847,9 +8801,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9867,9 +8819,7 @@
    "requires": [
     "pxr.Usd"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9885,9 +8835,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9903,9 +8851,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "procedural",
@@ -9925,9 +8871,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -9943,9 +8887,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "engine",
@@ -9968,9 +8910,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": true,
-   "tests": 4
+   "slow": true
   },
   {
    "area": "world_ir",
@@ -9986,9 +8926,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10004,9 +8942,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 33
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10022,9 +8958,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "provenance",
@@ -10044,9 +8978,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -10062,9 +8994,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -10080,9 +9010,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "provenance",
@@ -10098,9 +9026,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10116,9 +9042,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "engine",
@@ -10134,9 +9058,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10152,9 +9074,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10174,9 +9094,7 @@
    "requires": [
     "trimesh"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10192,9 +9110,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -10213,9 +9129,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10231,9 +9145,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10249,9 +9161,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -10276,9 +9186,7 @@
     "torch",
     "transformers"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "perception",
@@ -10294,9 +9202,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10314,9 +9220,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 34
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10333,9 +9237,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -10353,9 +9255,7 @@
    "requires": [
     "jsonschema"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -10371,9 +9271,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -10393,9 +9291,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10411,9 +9307,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10429,9 +9323,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -10447,9 +9339,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10465,9 +9355,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10483,9 +9371,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10501,9 +9387,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10519,9 +9403,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10541,9 +9423,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10559,9 +9439,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 27
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10577,9 +9455,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10595,9 +9471,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10613,9 +9487,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10631,9 +9503,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -10653,9 +9523,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10671,9 +9539,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10689,9 +9555,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10708,9 +9572,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10727,9 +9589,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "perception",
@@ -10745,9 +9605,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "registration",
@@ -10764,9 +9622,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 22
+   "slow": false
   },
   {
    "area": "apps",
@@ -10782,9 +9638,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -10801,9 +9655,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "-",
@@ -10820,9 +9672,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "perception",
@@ -10838,9 +9688,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "engine",
@@ -10856,9 +9704,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -10879,9 +9725,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -10901,9 +9745,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -10919,9 +9761,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10938,9 +9778,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10957,9 +9795,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10976,9 +9812,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -10994,9 +9828,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -11012,9 +9844,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11033,9 +9863,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "synthetic",
@@ -11052,9 +9880,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11070,9 +9896,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11088,9 +9912,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -11107,9 +9929,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11126,9 +9946,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11144,9 +9962,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "evidence",
@@ -11162,9 +9978,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11180,9 +9994,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11198,9 +10010,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11217,9 +10027,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -11235,9 +10043,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -11257,9 +10063,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "-",
@@ -11276,9 +10080,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11294,9 +10096,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11312,9 +10112,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 44
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11335,9 +10133,7 @@
    "requires": [
     "boto3"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "perception",
@@ -11357,9 +10153,7 @@
    "requires": [
     "torch"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "provenance",
@@ -11378,9 +10172,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "engine",
@@ -11396,9 +10188,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11414,9 +10204,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11432,9 +10220,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -11456,9 +10242,7 @@
     "ifcopenshell",
     "trimesh"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11478,9 +10262,7 @@
    "requires": [
     "trimesh"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11497,9 +10279,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -11517,9 +10297,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "benchmarks",
@@ -11535,9 +10313,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11553,9 +10329,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11571,9 +10345,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -11589,9 +10361,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11607,9 +10377,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11625,9 +10393,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11643,9 +10409,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11662,9 +10426,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11682,9 +10444,7 @@
    "requires": [
     "fastapi"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "apps",
@@ -11701,9 +10461,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11719,9 +10477,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11738,9 +10494,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11756,9 +10510,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 22
+   "slow": false
   },
   {
    "area": "evidence",
@@ -11777,9 +10529,7 @@
     "PIL.Image",
     "numpy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 52
+   "slow": false
   },
   {
    "area": "engine",
@@ -11799,9 +10549,7 @@
    "requires": [
     "torch"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11817,9 +10565,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "apps",
@@ -11836,9 +10582,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "evidence",
@@ -11858,9 +10602,7 @@
     "cv2",
     "numpy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 35
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -11876,9 +10618,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -11894,9 +10634,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11912,9 +10650,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11932,9 +10668,7 @@
    "requires": [
     "engine.compiler.physics_compiler"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11950,9 +10684,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -11970,9 +10702,7 @@
    ],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "perception",
@@ -11988,9 +10718,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "perception",
@@ -12006,9 +10734,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -12024,9 +10750,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -12042,9 +10766,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12064,9 +10786,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "perception",
@@ -12082,9 +10802,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12100,9 +10818,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12118,9 +10834,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 39
+   "slow": false
   },
   {
    "area": "engine",
@@ -12136,9 +10850,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -12158,9 +10870,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12180,9 +10890,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world",
@@ -12198,9 +10906,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12216,9 +10922,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12234,9 +10938,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12252,9 +10954,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12270,9 +10970,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12288,9 +10986,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 30
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12306,9 +11002,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 22
+   "slow": false
   },
   {
    "area": "perception",
@@ -12324,9 +11018,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12342,9 +11034,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -12360,9 +11050,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12378,9 +11066,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12396,9 +11082,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12414,9 +11098,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12436,9 +11118,7 @@
    "requires": [
     "open3d"
    ],
-   "shard": 7,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12454,9 +11134,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12472,9 +11150,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12490,9 +11166,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12509,9 +11183,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "apps",
@@ -12527,9 +11199,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -12545,9 +11215,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -12563,9 +11231,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 10
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12586,9 +11252,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -12608,9 +11272,7 @@
     "aiosqlite",
     "sqlalchemy"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -12626,9 +11288,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12646,9 +11306,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -12666,9 +11324,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -12686,9 +11342,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "engine",
@@ -12706,9 +11360,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -12724,9 +11376,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12744,9 +11394,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12764,9 +11412,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -12784,9 +11430,7 @@
    "requires": [
     "PIL"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -12806,9 +11450,7 @@
     "aiosqlite",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "engine",
@@ -12825,9 +11467,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "engine",
@@ -12843,9 +11483,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12861,9 +11499,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "-",
@@ -12879,9 +11515,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -12897,9 +11531,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "-",
@@ -12915,9 +11547,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12933,9 +11563,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12951,9 +11579,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -12969,9 +11595,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "apps",
@@ -12987,9 +11611,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "-",
@@ -13005,9 +11627,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13023,9 +11643,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13042,9 +11660,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 11
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13060,9 +11676,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13079,9 +11693,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "perception",
@@ -13097,9 +11709,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13115,9 +11725,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13137,9 +11745,7 @@
    "requires": [
     "open3d"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -13155,9 +11761,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "synthetic",
@@ -13173,9 +11777,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13191,9 +11793,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13209,9 +11809,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "apps",
@@ -13228,9 +11826,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "evidence",
@@ -13247,9 +11843,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13270,9 +11864,7 @@
     "cv2",
     "torch"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13288,9 +11880,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -13306,9 +11896,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "provenance",
@@ -13324,9 +11912,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13342,9 +11928,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13361,9 +11945,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13379,9 +11961,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "perception",
@@ -13397,9 +11977,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "apps",
@@ -13416,9 +11994,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -13434,9 +12010,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -13457,9 +12031,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "geo",
@@ -13475,9 +12047,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13493,9 +12063,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13511,9 +12079,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13530,9 +12096,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "procedural",
@@ -13548,9 +12112,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "apps",
@@ -13567,9 +12129,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13585,9 +12145,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13603,9 +12161,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -13621,9 +12177,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -13642,9 +12196,7 @@
    "requires": [
     "imageio.v3"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "perception",
@@ -13660,9 +12212,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -13679,9 +12229,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 23
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -13697,9 +12245,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 18
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -13715,9 +12261,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "trajectories",
@@ -13734,9 +12278,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -13752,9 +12294,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -13770,9 +12310,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "perception",
@@ -13788,9 +12326,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -13806,9 +12342,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "uncertainty",
@@ -13824,9 +12358,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 40
+   "slow": false
   },
   {
    "area": "perception",
@@ -13842,9 +12374,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "engine",
@@ -13860,9 +12390,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13878,9 +12406,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world",
@@ -13896,9 +12422,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "evidence",
@@ -13914,9 +12438,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world",
@@ -13932,9 +12454,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -13950,9 +12470,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -13968,9 +12486,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -13986,9 +12502,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "apps",
@@ -14009,9 +12523,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 8,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "apps",
@@ -14027,9 +12539,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14045,9 +12555,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "apps",
@@ -14069,9 +12577,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14088,9 +12594,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14106,9 +12610,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14124,9 +12626,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "engine",
@@ -14142,9 +12642,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14160,9 +12658,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 19
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14178,9 +12674,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "exporters",
@@ -14200,9 +12694,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 14
+   "slow": false
   },
   {
    "area": "apps",
@@ -14221,9 +12713,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "provenance",
@@ -14239,9 +12729,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -14257,9 +12745,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -14276,9 +12762,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 15
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14294,9 +12778,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "apps",
@@ -14312,9 +12794,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 1
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -14332,9 +12812,7 @@
    "requires": [
     "cv2"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "evidence",
@@ -14350,9 +12828,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "evidence",
@@ -14368,9 +12844,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "engine",
@@ -14386,9 +12860,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14404,9 +12876,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "reconstruction",
@@ -14422,9 +12892,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "engine",
@@ -14440,9 +12908,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "engine",
@@ -14459,9 +12925,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14477,9 +12941,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14495,9 +12957,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14514,9 +12974,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14536,9 +12994,7 @@
    "requires": [
     "ifcopenshell"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14554,9 +13010,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "engine",
@@ -14572,9 +13026,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 20
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14590,9 +13042,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14608,9 +13058,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 2
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14627,9 +13075,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14646,9 +13092,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -14668,9 +13112,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14687,9 +13129,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "engine",
@@ -14705,9 +13145,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 26
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14723,9 +13161,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 17
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -14741,9 +13177,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "apps",
@@ -14763,9 +13197,7 @@
     "fastapi",
     "sqlalchemy"
    ],
-   "shard": 5,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14782,9 +13214,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -14800,9 +13230,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 30
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14818,9 +13246,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14836,9 +13262,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 35
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14854,9 +13278,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 16
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14872,9 +13294,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14895,9 +13315,7 @@
     "greenlet",
     "sqlalchemy"
    ],
-   "shard": 6,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14913,9 +13331,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14931,9 +13347,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 13
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -14949,9 +13363,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14967,9 +13379,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -14985,9 +13395,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15007,9 +13415,7 @@
    "requires": [
     "trimesh"
    ],
-   "shard": 2,
-   "slow": false,
-   "tests": 9
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15026,9 +13432,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 2,
-   "slow": false,
-   "tests": 12
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15044,9 +13448,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15062,9 +13464,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 1,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -15080,9 +13480,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 6
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15098,9 +13496,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 3,
-   "slow": false,
-   "tests": 3
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -15116,9 +13512,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 4
+   "slow": false
   },
   {
    "area": "world_ir",
@@ -15134,9 +13528,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 8,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15152,9 +13544,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 5,
-   "slow": false,
-   "tests": 7
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15170,9 +13560,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 4,
-   "slow": false,
-   "tests": 5
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15188,9 +13576,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 6,
-   "slow": false,
-   "tests": 8
+   "slow": false
   },
   {
    "area": "worldstore",
@@ -15206,9 +13592,7 @@
    "optional_deps": [],
    "owner": "@Shresthbhati",
    "requires": [],
-   "shard": 7,
-   "slow": false,
-   "tests": 19
+   "slow": false
   }
  ],
  "shards": 8

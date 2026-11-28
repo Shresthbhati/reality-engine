@@ -45,6 +45,7 @@ OUT_JSON = ROOT / "docs" / "reconstruction" / "REAL_RUN_STAGE_REPORT.json"
 OUT_MD = ROOT / "docs" / "reconstruction" / "REAL_RUN_STAGE_REPORT.md"
 MODEL_EXT = (".pt", ".pth", ".safetensors", ".bin", ".onnx", ".ckpt", ".gguf")
 SKIP_STATES = {"skipped", "refused", "failed", "unavailable", "rejected", "degraded", "error"}
+LAST_PROG = None   # set by run_pipeline(): the ProgressiveResult of the most recent run (None if the ladder raised)
 
 
 # ------------------------------------------------------------------ small helpers
@@ -499,6 +500,8 @@ def run_pipeline(images: list[Path], work: Path) -> dict:
             ladder_exc = {"type": type(exc).__name__, "message": str(exc)[:600], "trace_tail": traceback.format_exc().splitlines()[-8:]}
         finally:
             unload_layout()
+    global LAST_PROG
+    LAST_PROG = prog      # the full ProgressiveResult, for callers that score it (scripts/real_photo_accuracy_benchmark.py)
     rep["stages"].extend(fine_stages)
     rep["ladder"] = {"wall_s": round(time.perf_counter() - t0, 2), "peak_rss_mb": round(sm_all.peak_self, 0),
                      "peak_child_colmap_rss_mb": round(sm_all.peak_child, 0), "exception": ladder_exc}

@@ -21,6 +21,12 @@ from world_ir.artifact_store import FileArtifactStore
 
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 
+#: Version of the MEANING of a cached depth array. Bump it whenever a depth backend changes what its numbers are
+#: (units, depth vs inverse depth, normalisation, hole encoding), because the key (engine, weights, image bytes) does not
+#: change when only the output convention does and a stale map would then be served under the new contract.
+#: v2 = 156f3e36: Depth Anything passes raw inverse depth through (no per-image min-max), holes are NaN + valid_mask.
+DEPTH_CONVENTION = "v2"
+
 
 def file_sha256(path: str | os.PathLike[str]) -> str:
     h = hashlib.sha256()
@@ -41,7 +47,7 @@ class DepthCache:
         """``None`` (= not cacheable) unless the checkpoint hash and the image hash are both real SHA-256 digests."""
         if not (checkpoint_sha256 and _SHA.match(checkpoint_sha256) and _SHA.match(image_sha256)):
             return None
-        return f"{engine_id}|{checkpoint_sha256}|{image_sha256}"
+        return f"{engine_id}|{DEPTH_CONVENTION}|{checkpoint_sha256}|{image_sha256}"
 
     def _index(self) -> dict[str, str]:
         try:

@@ -37,6 +37,20 @@ def test_well_supported_sparse_model_escalates_with_every_criterion_reported():
     assert all(c["passed"] for c in facts["criteria"].values())
 
 
+def test_monocular_depth_points_never_count_as_sparse_structure():
+    """Regression: depth-stage points (1 source camera each) must not dilute the measured track length / inflate the count."""
+    res, n = _result(6)
+    for i, p in enumerate(res.points):
+        p.track_id = f"sfm-{i}"
+    res.points += [SimpleNamespace(position=(0.0, 0.0, 0.0), source_evidence_ids=["ev-0"], track_id=f"depth-ev-0-{i:05d}")
+                   for i in range(5000)]
+    facts = dg.dense_readiness(res, n, _coverage(res))
+    assert facts["measured"]["median_track_length"] == 4.0 and facts["measured"]["structure_points"] == 600
+    assert facts["escalate"] is True
+    only_depth = SimpleNamespace(camera_poses=res.camera_poses, points=res.points[600:], arc_deg=res.arc_deg)
+    assert dg.dense_readiness(only_depth, n, _coverage(res))["escalate"] is False   # depth alone is not structure
+
+
 def test_photo_count_alone_decides_nothing_three_photos_can_qualify_twenty_can_fail():
     few, n = _result(3)
     assert dg.dense_readiness(few, n, _coverage(few))["escalate"] is True      # 3 photos, strong measured support

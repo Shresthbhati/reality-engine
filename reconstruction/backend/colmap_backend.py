@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -90,25 +90,6 @@ def _uri_to_path(uri: str) -> Path:
             path = path[1:]
         return Path(path)
     return Path(uri)
-
-
-def _size_folders(paths: List[Path]) -> Optional[Dict[Path, str]]:
-    """{path: folder} when the photographs come in >= 2 pixel sizes, else None. Same-size photographs are put in one sub-folder so
-    COLMAP's ``single_camera_per_folder`` gives them ONE shared camera: mixed sizes otherwise fell back to a camera per image,
-    each fitted its own focal (observed 1,090-15,607 px on an 11-photo room), and the solved intrinsics were then unusable
-    (depth/perception skipped). Unreadable image -> None (the per-image default is kept)."""
-    from PIL import Image
-
-    sizes: Dict[Path, tuple] = {}
-    try:
-        for p in paths:
-            with Image.open(p) as im:
-                sizes[p] = im.size
-    except Exception:  # noqa: BLE001
-        return None
-    if len(set(sizes.values())) < 2:
-        return None
-    return {p: f"size_{w}x{h}" for p, (w, h) in sizes.items()}
 
 
 def _uniform_image_size(paths: List[Path]) -> bool:
@@ -257,9 +238,8 @@ DEFAULT_GUIDED_MATCHING = False
 #: Mapper attempts, in order. COLMAP's own default seed is -1 (random every run); a fixed first seed makes a run
 #: reproducible, and the later attempts only run when registration is weak: another seed, then relaxed initialisation
 #: and absolute-pose thresholds (weak-texture or low-parallax captures).
-COLMAP_SEED = 0   # the first attempt's seed; the one a run record and the stage metrics report
 MAPPER_ATTEMPTS: Tuple[Tuple[str, ...], ...] = (
-    ("--Mapper.random_seed", str(COLMAP_SEED)),
+    ("--Mapper.random_seed", "0"),
     ("--Mapper.random_seed", "1"),
     ("--Mapper.random_seed", "2", "--Mapper.init_min_tri_angle", "8", "--Mapper.abs_pose_min_num_inliers", "20",
      "--Mapper.abs_pose_min_inlier_ratio", "0.15"),
@@ -338,13 +318,6 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 MAX_WORKSPACE_PATH_CHARS = ColmapConfig.max_workspace_path_chars   # default ceiling; ColmapConfig can override per run
 
 
-def _as_text(value: bytes | str | None) -> str:
-    """TimeoutExpired carries bytes even when the run was text=True."""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return value or ""
-
-
 class WorkspacePathTooLong(RuntimeError):
     """The COLMAP workspace path would push COLMAP's own file paths past what Windows allows."""
 
@@ -385,16 +358,12 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: Optional engine.pipeline.candidate_selection.WorldArbiter (assess(result, tag) / choose(a, b)).
         #: When set, incremental-vs-full is decided by how each candidate evolves the WORLD, not by how
         #: many photographs it registered. None keeps the registration-count rule.
-        self.candidate_arbiter: Any = None
+        self.candidate_arbiter = None
         # Default False: the official Windows release used here is a
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build
         # should pass use_gpu=True explicitly.
-        #: Resolved in reconstruct() (needs the binary on PATH): explicit kwarg/config wins, else detect_colmap_gpu().
-        self._use_gpu = bool(self._config.use_gpu) if self._config.use_gpu is not None and use_gpu is None else bool(use_gpu)
-        self._explicit_gpu = use_gpu if use_gpu is not None else self._config.use_gpu
-        #: Why the GPU is or is not used, recorded on every run (a CPU fallback states its reason and effect).
-        self.gpu_decision: Dict[str, object] = {}
+        self._use_gpu = self._config.use_gpu if use_gpu is None else bool(use_gpu)
         #: Affine-shape + domain-size-pooling SIFT. Measured default ON:
         #: +22% verified points at unchanged fidelity on the committed
         #: real 32-photo subset. Costs ~3x extraction time (CPU-only in
@@ -490,8 +459,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 "to run real reconstruction (see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
             )
         env = _subprocess_env(colmap_path)
-        self._resolve_gpu(colmap_path)
-        gpu_flag = "1" if self._use_gpu else "0"
+        gpu_flag = "1" if self._config.use_gpu else "0"
 
         # Dense continuation is an explicit opt-in, and its capability
         # precondition is checked BEFORE any compute is spent: a binary
@@ -514,8 +482,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         if self.session is not None:
             return self._reconstruct_in_session(image_evidence, env, gpu_flag)
 
-        with tempfile.TemporaryDirectory(prefix="colmap_") as workspace_name:
-            workspace = Path(workspace_name)
+        with tempfile.TemporaryDirectory(prefix="colmap_") as workspace:
+            workspace = Path(workspace)
             image_dir = workspace / "images"
             image_dir.mkdir()
             evidence_id_by_name = {}
@@ -544,7 +512,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             # is on, extraction/matching run on CPU (the measured
             # configuration); GPU stays available for the baseline.
             extraction_gpu = "0" if self.robust_sift else gpu_flag
-            matching_gpu = gpu_flag  # descriptor matching is independent of how the descriptors were extracted
+            matching_gpu = "0" if self.robust_sift else gpu_flag
             _run("feature_extractor",
                  ["--database_path", str(db_path), "--image_path", str(image_dir),
                   *extractor_args, "--FeatureExtraction.use_gpu", extraction_gpu])
@@ -583,9 +551,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
 
             self.last_run_info = {
                 "colmap_version": self._get_colmap_version(),
-                "seed": COLMAP_SEED,
+                "seed": 0,
                 "deterministic": is_det,
-                "gpu": dict(self.gpu_decision),
             }
 
             if not self.dense_mvs:
@@ -597,26 +564,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             )
 
     # ------------------------------------------------------------------ shared steps
-    def _resolve_gpu(self, colmap_path: str) -> None:
-        """Pick GPU/CPU once per run and record the decision, with the effect of any CPU fallback."""
-        import os
-        from reconstruction.backend.colmap_config import detect_colmap_gpu
-
-        env_forced = os.environ.get("RE_COLMAP_GPU", "").strip().lower() in ("0", "1", "true", "false")
-        if env_forced or self._explicit_gpu is None:
-            d = detect_colmap_gpu(colmap_path)
-            self._use_gpu = bool(d["use_gpu"])
-        else:
-            d = {"use_gpu": self._use_gpu, "reason": "explicit use_gpu argument/config", "source": "explicit", "free_vram_mb": None}
-        d = dict(d)
-        d["sift_extraction"] = "cpu (affine+DSP SIFT is CPU-only in COLMAP)" if self.robust_sift else ("gpu" if self._use_gpu else "cpu")
-        d["matching"] = "gpu" if self._use_gpu else "cpu"
-        if not self._use_gpu:
-            d["effect"] = ("CPU SIFT extraction/matching: same results, slower (exhaustive matching is O(n^2) pairs)")
-        elif self.robust_sift:
-            d["effect"] = "extraction stays on CPU (robust_sift; ~3x slower than plain SIFT, +22% points measured); matching on GPU, not verified bit-identical to CPU"
-        self.gpu_decision = d
-
     def _run_step(self, step: str, args: List[str], env: Dict[str, str]) -> None:
         # Bounded, OWNED subprocess lifecycle: a hung COLMAP step
         # must fail explicitly instead of outliving its job, and a
@@ -641,8 +588,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 step,
                 subprocess.CompletedProcess(
                     args=[self._colmap_binary, step, *args], returncode=-1,
-                    stdout=_as_text(exc.stdout),
-                    stderr=_as_text(exc.stderr) + f"\n[TIMEOUT after {timeout_s:.0f}s]",
+                    stdout=exc.stdout or "",
+                    stderr=(exc.stderr or "") + f"\n[TIMEOUT after {timeout_s:.0f}s]",
                 ),
                 [self._colmap_binary, step, *args],
             ) from exc
@@ -778,11 +725,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         trusted = _trusted_intrinsics(image_evidence)
         by_name: Dict[str, Tuple[EvidenceItem, Path]] = {}
         items = sorted(image_evidence, key=lambda it: (str(_uri_to_path(it.source_uri).name), it.id)) if is_det else list(image_evidence)
-        folders = _size_folders([_uri_to_path(it.source_uri) for it in items]) if trusted is None else None
         for item in items:
             src = _uri_to_path(item.source_uri)
-            prefix = f"{folders[src]}/" if folders else ""
-            by_name[f"{prefix}{item.id}{src.suffix or '.jpg'}"] = (item, src)
+            by_name[f"{item.id}{src.suffix or '.jpg'}"] = (item, src)
         # Unknown intrinsics and one pixel size across the set: one device took these, so solve ONE shared camera.
         # Per-image cameras let COLMAP fit a different focal to every photo (observed spread 694-1109 px plus a
         # diverged 150,712 px camera on a ten-photo room), which no downstream stage can use.
@@ -791,8 +736,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                      "trusted_intrinsics": list(trusted) if trusted is not None else None}
         if single_camera:
             signature["single_camera"] = True   # only when on: states committed before this keep their signature
-        if folders:
-            signature["camera_per_size"] = True
         evidence_id_by_name = {n: it.id for n, (it, _) in by_name.items()}
 
         ws, prior = self.session.begin(signature, by_name)
@@ -804,7 +747,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         known = set(prior["images"]) if prior else set()
         new_names = [n for n in by_name if n not in known]
         for n in new_names:
-            (image_dir / n).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(by_name[n][1], image_dir / n)
         db_path = ws / "database.db"
         extractor_args: List[str] = []
@@ -814,12 +756,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                               "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}"]
         if single_camera:
             extractor_args += ["--ImageReader.single_camera", "1"]
-        elif folders:
-            extractor_args += ["--ImageReader.single_camera_per_folder", "1"]
         extractor_args += _sift_extraction_args(robust=self.robust_sift)
         # Affine-shape SIFT is CPU-only in COLMAP (see reconstruct()).
         cpu_or_gpu = "0" if self.robust_sift else gpu_flag
-        match_gpu = gpu_flag
         pinned = ["--Mapper.ba_refine_focal_length", "0", "--Mapper.ba_refine_extra_params", "0"] \
             if trusted is not None else []
 
@@ -835,7 +774,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 args += ["--image_list_path", str(lst)]
             run("feature_extractor", args)
             matcher_extra = ["--FeatureMatching.num_threads", "1"] if is_det else []
-            run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", match_gpu,
+            run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
                                        *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
 
         mapper_attempts_log: List[Dict[str, object]] = []
@@ -872,7 +811,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             "new_images": [evidence_id_by_name[n] for n in new_names],
             "prior_registered": len(prior["registered"]) if prior else 0,
             "colmap_version": self._get_colmap_version(),
-            "seed": COLMAP_SEED,
+            "seed": 0,
             "deterministic": is_det,
         }
         chosen_dir: Path
@@ -999,9 +938,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         self.session.write_manifest({
             "signature": signature, "images": evidence_id_by_name, "registered": registered_names,
             "model_dir": "sparse/0", "incremental_ok": incremental_ok, "info": info,
-            "deterministic": is_det, "seed": COLMAP_SEED, "colmap_version": info["colmap_version"],
+            "deterministic": is_det, "seed": 0, "colmap_version": info["colmap_version"],
         })
-        info["gpu"] = dict(self.gpu_decision)
         self.last_run_info = info
         self.session.last_run_info = info
 
@@ -1053,7 +991,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             if n > best:
                 best, reference_dir = n, d
         if reference_dir is None:
-            from reconstruction.dense_pipeline import DenseMVSUnavailableError
             raise DenseMVSUnavailableError(
                 "no sparse sub-model directory found to continue into "
                 f"dense MVS (looked under {sparse_dir})"
@@ -1066,7 +1003,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             binary=self._colmap_binary,
             # Dense stereo honors the same GPU decision as sparse; the
             # CPU Windows build must not be handed use_gpu=1.
-            use_gpu=bool(self._use_gpu),
+            use_gpu=True if self._config.use_gpu else False,
         )
 
         fused_bytes = Path(run.fused_ply_path).read_bytes()

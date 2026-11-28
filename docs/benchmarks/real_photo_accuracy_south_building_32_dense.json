@@ -1,0 +1,194 @@
+{
+ "name": "south_building_32_dense",
+ "git_sha": "156f3e36e9cbabe139f529caa20ce6f36a3ce161",
+ "when": "2026-11-28T13:51:31",
+ "n_images": 32,
+ "image_sha256": {
+  "P1180141.JPG": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560",
+  "P1180145.JPG": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81",
+  "P1180149.JPG": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa",
+  "P1180153.JPG": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f",
+  "P1180157.JPG": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a",
+  "P1180161.JPG": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27",
+  "P1180165.JPG": "6347daa83d388bf04611899a3861da73681a3d22e97b6e1ede468d15153c9b35",
+  "P1180169.JPG": "523708e760032167f6dfe03828c719633c9e1b60b942b1247ac97c17aa987ccd",
+  "P1180173.JPG": "477fb522f1702411a5c97faa8df664945e974ab8a119cb72b2d1fc5468f67616",
+  "P1180177.JPG": "9773e3098f2573285d6897f979a684a5b2de256663a57b524fa7771473ea5127",
+  "P1180181.JPG": "c9c2898880a6bb8d5e9e6d7a343db1a5a21436aa4c0dc8d93d28581855b0754e",
+  "P1180185.JPG": "2108609d7b35e0c43ea0323c81f1b34a12c6dc5f136464b97d7e2f5b0341ca8d",
+  "P1180189.JPG": "8c4e06b5e2d6b5943825c1eb6ace745358966a2baf6f4937b0b6ccf6260438bd",
+  "P1180193.JPG": "104dadbcb46cca17f65ec55ec6d3c245725668b2fadfcf8925210d50bc775591",
+  "P1180197.JPG": "beb3c84231e151a3fa1c1a665a09042ec656d9a162a7981745b53fc812ef9dd3",
+  "P1180201.JPG": "75c1af7d00380d9efb30fb2bf57f58f81ae943dae87dc16fcc94b5ac561fd8ac",
+  "P1180205.JPG": "42c6b484c831784d4ef7e4e8e4faafb8779ec4fce814b109c607a15e9dd6f0ff",
+  "P1180209.JPG": "f86f5eb93c09e1e7fb669c3b92b4d15e280dc31112eb19b015adbb7ce4a3e214",
+  "P1180213.JPG": "f1d65884cdc62471fad26567b72cd12ce00a0ce60523d52ae0a3b3310bfb5efb",
+  "P1180217.JPG": "ac114d5c7a8f22c981ffc62c8133391b251e2da55f49609f6964fde627ff320f",
+  "P1180221.JPG": "ebbd9cf01b38c40d91634c7349d5511d3086780025d0b5824d82deaedb20dcc1",
+  "P1180225.JPG": "db7360dc851da386cc10f3a3191ac880a51a0b830059c5a0e154811a2d757212",
+  "P1180308.JPG": "43dcda77f284ba087bcbc9c48ad8ef55ac8316007d0dd3a6b464afddfd3be358",
+  "P1180312.JPG": "9208666f44bf283e922c543562817a25441244a96f1a242413058e6364739ed6",
+  "P1180316.JPG": "7f434fa6b78f0ca46ed58406c7c9e9140e597227ca1fa5be673b5e9bc88a14c7",
+  "P1180320.JPG": "b2cf76c307a7a4e6e048c05384ad666f6b238128f31a27c561e45dd1db4c1f7e",
+  "P1180324.JPG": "ea984bb006655a4c1ee416d109de09c20202e94df71c5752cff5892f2771c1dc",
+  "P1180328.JPG": "d529f382396ce54a89608408fb8e571440ecefac8096a53fe0554b730949ffb6",
+  "P1180332.JPG": "b42fcbaf55d7a5ac0ae9595ff7403719134433c0a2ab90150017c881d8722f10",
+  "P1180336.JPG": "bb0f90328f2ce1e3dbb31fafc07961808cd696542f1b2f13723971fda8040673",
+  "P1180340.JPG": "e86745312006735abafc156fff3a728b60a8ba91cb000039215107725c61dfc2",
+  "P1180344.JPG": "0919b3419da020205a50c4ce48905990f9b74bc2ebb86649c2fa2b19b9f4d958"
+ },
+ "production_path": "scripts/stage_report.run_pipeline -> progressive.run_progressive -> vertical_slice (all stages enabled)",
+ "independent_ground_truth": false,
+ "reference": "datasets/south_building/sparse (COLMAP SfM model of the same photos; NOT independently measured)",
+ "wall_s": 1411.8,
+ "ladder": {
+  "wall_s": 1021.41,
+  "peak_rss_mb": 1307.0,
+  "peak_child_colmap_rss_mb": 2485.0,
+  "exception": null,
+  "level": 3,
+  "level_name": "dense reconstruction",
+  "model_state": "PARTIAL",
+  "attempts": [
+   {
+    "level": 2,
+    "name": "sparse photogrammetric reconstruction",
+    "outcome": "succeeded",
+    "elapsed_s": 960.62,
+    "detail": "25/32 cameras registered"
+   },
+   {
+    "level": 3,
+    "name": "dense reconstruction",
+    "outcome": "succeeded",
+    "detail": "126799 dense points fused"
+   }
+  ],
+  "degraded": [
+   "registration 'partial': 25/32 cameras"
+  ],
+  "scale_state": "relative",
+  "registered": 25,
+  "inputs": 32,
+  "excluded": [],
+  "entities": 4,
+  "entity_types": {
+   "structure": 4
+  }
+ },
+ "scores": {
+  "registration_rate": {
+   "metric": "registration_rate",
+   "value": 0.78125,
+   "n_registered": 25,
+   "n_input": 32
+  },
+  "scale_validity": {
+   "metric": "scale_validity",
+   "value": "relative",
+   "metres_claim_allowed": false,
+   "scale_state": "relative",
+   "calibration_status": "none"
+  },
+  "pose_vs_reference": {
+   "alignment": "sim3_scale_fitted_to_reference",
+   "center_error_units": "reference_units_after_sim3_scale_fit",
+   "residual_is_independent_metric_accuracy": false,
+   "estimated_scale_state": "relative",
+   "refused": false,
+   "common_cameras": 25,
+   "rotation_deg_median": 0.12324555685328095,
+   "rotation_deg_max": 94.82043354059935,
+   "rotation_deg_mean": 8.725712199066585,
+   "center_error_median": 0.007018968044757145,
+   "center_error_max": 4.152141989252671,
+   "center_error_mean": 0.4169272641375332,
+   "scale_ratio": 1.2057803317889977,
+   "outliers": [
+    {
+     "camera": "P1180173.JPG",
+     "rotation_deg": 94.8204,
+     "center_error": 4.152142
+    },
+    {
+     "camera": "P1180177.JPG",
+     "rotation_deg": 76.3167,
+     "center_error": 3.896248
+    },
+    {
+     "camera": "P1180181.JPG",
+     "rotation_deg": 44.0989,
+     "center_error": 2.231397
+    }
+   ],
+   "notes": [
+    "gauge refit on 22/25 cameras; 3 implausible camera(s) (> 15 deg after first pass) reported in outliers, still fully measured",
+    "estimate is not declared metric: centre errors are scale-fitted residuals and say nothing about metric accuracy"
+   ]
+  },
+  "point_cloud_vs_reference": {
+   "refused": false,
+   "measured_points": 18653,
+   "reference_points": 49608,
+   "dist_mean": 0.12100485665966197,
+   "dist_median": 0.016292023062419256,
+   "dist_p90": 0.28437570444503696,
+   "dist_max": 46.14364426331642,
+   "est_points_total": 186527
+  },
+  "point_cloud_completeness": {
+   "metric": "point_cloud_completeness",
+   "value": 0.9946379616190937,
+   "recall": 0.9946379616190937,
+   "precision": 0.9970888932969489,
+   "f1": 0.9958619194535289,
+   "tau": 1.3583796332780171,
+   "n_est": 186527,
+   "n_ref": 49608,
+   "tau_definition": "2% of reference bounding-box diagonal, in reference (gauge) units",
+   "frame_note": "estimate aligned to the reference by a Sim(3) fit (scale fitted): shape agreement only"
+  },
+  "dense": {
+   "status": "succeeded",
+   "wall_s": 134.88,
+   "metrics": {
+    "dense_points_added": 126799.0
+   },
+   "warnings": [
+    "plane_sweep: disabled (CPU plane sweep is opt-in (set plane_sweep_enabled=True))",
+    "fusion: skipped (world is not METRIC-scale -- fusing unit-less ranges would silently claim meters)",
+    "dense_structure: kept_sparse"
+   ],
+   "outputs": {
+    "keys": [
+     "world",
+     "diagnostics",
+     "dense_mvs_facts",
+     "dense_gate_facts",
+     "structure_facts",
+     "plane_sweep_facts",
+     "fusion_facts"
+    ]
+   }
+  },
+  "dense_invoked": true,
+  "dense_points_added": 126799.0,
+  "pose_graph_cycle_error": {
+   "value": null,
+   "refused": "absolute poses are cycle-consistent by construction; pairwise-edge cycle residuals are produced by scripts/run_multi_engine_real_capture.py (perception.camera_pose_graph)"
+  },
+  "stage_status": {
+   "pose": "degraded",
+   "scale": "succeeded",
+   "depth": "succeeded",
+   "layout": "degraded",
+   "perception": "skipped",
+   "mesh": "skipped",
+   "dense": "succeeded",
+   "detail": "succeeded",
+   "finalize": "succeeded"
+  }
+ },
+ "level_name": "dense reconstruction",
+ "scale_state": "relative"
+}

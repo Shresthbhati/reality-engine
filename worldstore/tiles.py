@@ -637,9 +637,48 @@ class WorldVersionHandle:
         self, bounds_min: Tuple[float, float, float], bounds_max: Tuple[float, float, float],
     ) -> Dict[str, Entity]:
         """Loads ONLY the tiles whose manifest bounds overlap the query
-        region, then filters to entities within it. A query touching
-        one tile never loads the rest of the world."""
-        return self.query_region_with_geometries(bounds_min, bounds_max)[0]
+        region, then filters to entities whose position lies within the
+        exact requested AABB or whose geometry AABB overlaps it -- the
+        same canonical rule as SpatialIndex.within_region. A query
+        touching one tile never loads the rest of the world."""
+        entities, geometries = self.query_region_with_geometries(bounds_min, bounds_max)
+        # Apply the canonical per-entity filter using the production query
+        # engine. Without this, an entity sitting in an overlapping tile but
+        # OUTSIDE the exact requested box is returned (#7: "spatial tile
+        # queries may return entities outside exact requested bounds").
+        # query_region_with_geometries remains the raw tile-loader used by
+        # lazy_query.py, which applies its own filter via SpatialIndex.
+        if not entities:
+            return entities
+        from engine.scene_graph.spatial_common import _aabb_overlaps, _entity_bounds, _point_in_aabb, entity_position
+
+        region = (bounds_min, bounds_max)
+        partial = self._partial_world(entities, geometries)
+        result: Dict[str, Entity] = {}
+        for eid, entity in entities.items():
+            pos = entity_position(partial, entity)
+            hit = pos is not None and _point_in_aabb(pos, region)
+            if not hit:
+                bounds = _entity_bounds(partial, entity)
+                if bounds is not None:
+                    hit = _aabb_overlaps(bounds, region)
+            if hit:
+                result[eid] = entity
+        return result
+
+    @staticmethod
+    def _partial_world(entities: Dict[str, Entity], geometries: Dict[str, Geometry]) -> "WorldIR":
+        """A real WorldIR over just the loaded subset -- the canonical
+        geometry helpers only read .entities/.geometries."""
+        from world_ir.coordinates import Frame
+        from world_ir.world_v1 import WorldIR
+
+        return WorldIR(
+            id="tile-query",
+            entities=entities,
+            geometries=geometries,
+            coordinate_frame=Frame("world"),
+        )
 
     def query_region_with_geometries(
         self, bounds_min: Tuple[float, float, float], bounds_max: Tuple[float, float, float],

@@ -1,0 +1,1129 @@
+{
+ "probe": "scripts/stage_map_probe.py",
+ "photos": 21,
+ "photo_sha256": {
+  "IMG_0000.jpg": "d4c43b82995ced1a61f24287b5a47dcaa8451eefdcacbc2f9a308961d869e744",
+  "IMG_0001.jpg": "48e674d54abe9169f35913aa0595277b3336747e14328d421f590426abf9f857",
+  "IMG_0002.jpg": "d8b5ffd84ded7a2bb9d896e7545d3dfa7c51c4e05bf98a5a3a0202fba0622bd0",
+  "IMG_0003.jpg": "f554dac456a1063fbc351db94042966e08649753afc0a21fb3721574f61fcd0d",
+  "IMG_0004.jpg": "8d532d7d4040fc3c0cb6b8a6125cac8feab1bc2bffb91125b63ff8ee5ec2d05f",
+  "IMG_0005.jpg": "b77fe13e7515a4ee008aa6151ce9c598b554414ff805b02d8ee8fa5f53b72961",
+  "IMG_0006.jpg": "6de4fcdcd9eb4bddaa1c4ea9d80d2171f56ce24766e8fff743934f4fceb64023",
+  "IMG_0007.jpg": "3cc6f953e800e0914ad10c0705652c4dcb01dc1b101ed2bf005de062a8650989",
+  "IMG_0008.jpg": "06e1067a02e1971b609464965240ef25b449b71f04082606e965f509b5ba996f",
+  "IMG_0009.jpg": "d15572284cb3f43bcf24e2ced34096fcc8294b21ca62536b3d9e8b73f31a7e6d",
+  "IMG_0010.jpg": "ce693ed9cec432c5c8b5b6f12e9f6b57206790832e5628749ceda2ddf2d9541a",
+  "IMG_0011.jpg": "e6f442e7e1a2b507d11dd882d369c7a903b20e7c3df8114dc4bdb1c36c7a3b2e",
+  "IMG_0012.jpg": "239ea3f9677a0df26d967e7f639c28b87d86f0071c37300505e32906b4c68657",
+  "IMG_0013.jpg": "57dd2a722d1794fdacd8e80aa574c8706b43720d9d83da844185ebb7597ffb32",
+  "IMG_0014.jpg": "d320c5a511e263ae190d29465a0c9a66a5847680702d8dc0376947cc4424028b",
+  "IMG_0015.jpg": "7c932601aa13b78b60a555a67622d73c4e12cddb0d38115b9352b63bc37b0ac6",
+  "IMG_0016.jpg": "228b88102ecba33ac87e7696b45670bcd607dcbe3d813e29b3cba3de1fd13011",
+  "IMG_0017.jpg": "4a1ea421aed5fa665cc4d9ead64e1a1c58ce9255fc950fc0c8226ac35eea0a73",
+  "IMG_0018.jpg": "9682f3559b99287c6253fa1b8ec9d1f86adac05155ea69347e86b5a54c4ef056",
+  "IMG_0019.jpg": "44e613a4c83b9a7bdc11a514f0a9d33b3943b19938e87dc1aa98a675f579aaf6",
+  "IMG_0020.jpg": "60f5bb4bdfcfdbf1cb62980d761958104a9d62414e918450387cac0209a51c68"
+ },
+ "env": {
+  "STORAGE_ROOT": "C:\\Users\\shres\\AppData\\Local\\Temp\\claude\\4a8786c2ade21a6d\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\scratchpad\\run3\\art",
+  "WORLDSTORE_ROOT": "C:\\Users\\shres\\AppData\\Local\\Temp\\claude\\4a8786c2ade21a6d\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\scratchpad\\run3\\ws",
+  "RE_MEMORY_ADMISSION": "record",
+  "RE_EVIDENCE_WORLD": "1",
+  "RE_EVIDENCE_WORLD_DEPTH_ENGINES": "midas,depth_anything"
+ },
+ "evidence_world_enabled": true,
+ "contention_note": "COLMAP/GPU may have been shared with another process during this run; see host_processes_at_start",
+ "python": "3.14.7",
+ "host_processes_at_start": [
+  "colmap.exe"
+ ],
+ "host_cpu_count": 16,
+ "host_cpu_percent_at_start": 34.0,
+ "upload_seconds": 14.95,
+ "poll_errors": [],
+ "job_wall_seconds": 1017.7,
+ "job": {
+  "id": "job_b2c8bc1480e6",
+  "type": "RECONSTRUCT_SESSION",
+  "status": "failed",
+  "stage": "failed",
+  "attempts": 1,
+  "error": "ReconstructionUnavailable: no reconstruction level could be produced: L2 failed: VerticalSliceError: reconstruction stage failed: all candidate backends failed or declined: ColmapReconstructionBackend: ReconstructionStepError: colmap feature_extractor failed (exit 3221225477)\ncommand: colmap feature_extractor --database_path C:\\Users\\shres\\AppData\\Local\\Temp\\claude\\4a8786c2ade21a6d\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\scratchpad\\run3\\ws\\colmap-sessions\\wld_de4f97d4202d\\staging; L0 failed: IMG_0000.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0001.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0002.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0003.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0004.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0005.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0006.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0007.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0008.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0009.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0010.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0011.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0012.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0013.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0014.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0015.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0016.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0017.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0018.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0019.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0020.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2",
+  "worker_id": "worker-69f6398e",
+  "cancel_requested": false,
+  "stage_counts": {},
+  "failure_reason": "ReconstructionUnavailable: no reconstruction level could be produced: L2 failed: VerticalSliceError: reconstruction stage failed: all candidate backends failed or declined: ColmapReconstructionBackend: ReconstructionStepError: colmap feature_extractor failed (exit 3221225477)\ncommand: colmap feature_extractor --database_path C:\\Users\\shres\\AppData\\Local\\Temp\\claude\\4a8786c2ade21a6d\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\scratchpad\\run3\\ws\\colmap-sessions\\wld_de4f97d4202d\\staging; L0 failed: IMG_0000.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0001.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0002.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0003.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0004.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0005.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0006.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0007.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0008.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0009.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0010.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0011.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0012.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0013.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0014.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0015.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0016.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0017.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0018.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0019.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\n\n; L0 failed: IMG_0020.jpg: monocular depth unavailable: CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nThe CUDA driver logged these messages, which may provide useful details:\nSticky error detected\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2",
+  "progress": 0.0,
+  "photos_total": 21,
+  "photos_placed": null,
+  "terminal": true,
+  "entity_type": "session",
+  "entity_id": "ses_bdd79d138acf",
+  "payload": {
+   "traceback_logged": true,
+   "failure_kind": "reconstruction_unavailable"
+  },
+  "created_at": "2026-11-24T06:34:46.021231",
+  "started_at": "2026-11-24T06:34:48.711762",
+  "completed_at": "2026-11-24T06:51:42.870550"
+ },
+ "stage_timeline": [
+  {
+   "t_since_start_s": 17.3,
+   "t_since_job_s": 0.0,
+   "stage": null,
+   "status": "queued"
+  },
+  {
+   "t_since_start_s": 21.8,
+   "t_since_job_s": 4.5,
+   "stage": "analyzing_evidence",
+   "status": "running"
+  },
+  {
+   "t_since_start_s": 256.1,
+   "t_since_job_s": 238.8,
+   "stage": "reconstructing",
+   "status": "running"
+  },
+  {
+   "t_since_start_s": 1034.9,
+   "t_since_job_s": 1017.7,
+   "stage": "failed",
+   "status": "failed"
+  }
+ ],
+ "world_report": {
+  "detail": "World has no reconstruction versions yet - run reconstruction first"
+ },
+ "quality": {
+  "detail": "World has no reconstruction versions yet - run reconstruction first"
+ },
+ "versions": {
+  "items": []
+ },
+ "spatial_intelligence": {
+  "detail": "World has no reconstruction versions yet - run reconstruction first"
+ },
+ "evidence_world_runs": {
+  "world_id": "wld_de4f97d4202d",
+  "runs": []
+ },
+ "evidence_world_readiness": {
+  "detail": "Run not found"
+ },
+ "evidence_world_manifest": {
+  "detail": "Run not found"
+ },
+ "exports": {
+  "3dtiles": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "blender": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "citygml": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "cityjson": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "dae": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "floorplan_dxf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "floorplan_pdf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "floorplan_svg": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "geojson": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "glb": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "gltf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "godot": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "habitat": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "ifc": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "multisheet_floorplan_pdf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "obj": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "ply": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "room_report_pdf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "room_schedule_csv": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "sdf": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "stl": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "sumo": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "tscn": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "unreal": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "usda": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  },
+  "usdc": {
+   "available": false,
+   "reason": "World has no reconstruction versions yet - run reconstruction first"
+  }
+ },
+ "api_reads": {
+  "report": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "worldir": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "points": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "cameras": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "quality": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "versions": {
+   "status": 200,
+   "bytes": 12,
+   "sha256": "eef46741adfc3a9f76294d3b78f37a45f113092ac9d44ee77c7a038a88ff09a1"
+  },
+  "spatial_intelligence": {
+   "status": 404,
+   "bytes": 80,
+   "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+  },
+  "evidence_world_list": {
+   "status": 200,
+   "bytes": 41,
+   "sha256": "4c8636a4675a328ef1ba3604240763838c0a8632af688dcb04d947c3c9919772"
+  },
+  "evidence_world_readiness": {
+   "status": 404,
+   "bytes": 26,
+   "sha256": "dd59a76d2c1d40269ca62320aafac7c5a69d08cd0efc1708f1309fa4acaed8d9"
+  },
+  "evidence_world_manifest": {
+   "status": 404,
+   "bytes": 26,
+   "sha256": "dd59a76d2c1d40269ca62320aafac7c5a69d08cd0efc1708f1309fa4acaed8d9"
+  },
+  "export_formats": {
+   "status": 200,
+   "bytes": 3089,
+   "sha256": "a15c6e9eea76327ca248dd9ca359ae8f0470d020c2a1387d79227496705668dd"
+  }
+ },
+ "viewer": {
+  "note": "no browser driven by this probe: only that the viewer's data endpoints (/points, /cameras, /worldir) answered",
+  "endpoints": {
+   "points": {
+    "status": 404,
+    "bytes": 80,
+    "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+   },
+   "cameras": {
+    "status": 404,
+    "bytes": 80,
+    "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+   },
+   "worldir": {
+    "status": 404,
+    "bytes": 80,
+    "sha256": "1009eb6cbd3dbaf76bff5872ced059499a6fa8e913ba7012004f246e1589f764"
+   }
+  }
+ },
+ "world_id": "wld_de4f97d4202d",
+ "session_id": "ses_bdd79d138acf",
+ "job_id": "job_b2c8bc1480e6",
+ "total_seconds": 1035.6,
+ "peaks_by_job_stage": {
+  "init": {
+   "samples": 7,
+   "peak_rss_self_mb": 610.9,
+   "peak_rss_children_mb": 8.9,
+   "peak_rss_total_mb": 619.8,
+   "peak_vram_used_mb": 0.0,
+   "children_seen": [
+    "conhost.exe"
+   ]
+  },
+  "None": {
+   "samples": 2,
+   "peak_rss_self_mb": 605.3,
+   "peak_rss_children_mb": 8.9,
+   "peak_rss_total_mb": 614.1999999999999,
+   "peak_vram_used_mb": 0.0,
+   "children_seen": [
+    "conhost.exe"
+   ]
+  },
+  "analyzing_evidence": {
+   "samples": 87,
+   "peak_rss_self_mb": 1244.5,
+   "peak_rss_children_mb": 8.9,
+   "peak_rss_total_mb": 1253.0,
+   "peak_vram_used_mb": 3002.0,
+   "children_seen": [
+    "conhost.exe"
+   ]
+  },
+  "reconstructing": {
+   "samples": 410,
+   "peak_rss_self_mb": 1719.6,
+   "peak_rss_children_mb": 1026.0,
+   "peak_rss_total_mb": 1720.3,
+   "peak_vram_used_mb": 5859.0,
+   "children_seen": [
+    "colmap.exe",
+    "conhost.exe"
+   ]
+  },
+  "post_job_api_reads": {
+   "samples": 1,
+   "peak_rss_self_mb": 1499.5,
+   "peak_rss_children_mb": 0.7,
+   "peak_rss_total_mb": 1500.2,
+   "peak_vram_used_mb": 1884.0,
+   "children_seen": [
+    "conhost.exe"
+   ]
+  }
+ },
+ "peak_overall": {
+  "rss_self_mb": 1719.6,
+  "rss_children_mb": 1026.0,
+  "rss_total_mb": 1720.3,
+  "vram_used_mb": 5859.0,
+  "samples": 507,
+  "period_s": 0.5
+ },
+ "sampler_trace_every_10th": [
+  {
+   "t": 1.18,
+   "label": "init",
+   "rss_self_mb": 576.9,
+   "rss_children_mb": {
+    "conhost.exe": 8.9
+   },
+   "vram_used_mb": 0.0,
+   "vram_per_pid": {}
+  },
+  {
+   "t": 23.75,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 634.8,
+   "rss_children_mb": {
+    "conhost.exe": 8.9
+   },
+   "vram_used_mb": 0.0,
+   "vram_per_pid": {}
+  },
+  {
+   "t": 38.55,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 706.6,
+   "rss_children_mb": {
+    "conhost.exe": 8.9
+   },
+   "vram_used_mb": 0.0,
+   "vram_per_pid": {}
+  },
+  {
+   "t": 55.29,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 607.4,
+   "rss_children_mb": {
+    "conhost.exe": 8.5
+   },
+   "vram_used_mb": 79.0,
+   "vram_per_pid": {
+    "10540": null
+   }
+  },
+  {
+   "t": 62.97,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 1165.5,
+   "rss_children_mb": {
+    "conhost.exe": 8.5
+   },
+   "vram_used_mb": 2343.0,
+   "vram_per_pid": {
+    "10540": null
+   }
+  },
+  {
+   "t": 74.98,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 1166.5,
+   "rss_children_mb": {
+    "conhost.exe": 8.5
+   },
+   "vram_used_mb": 2349.0,
+   "vram_per_pid": {
+    "10540": null
+   }
+  },
+  {
+   "t": 85.39,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 1086.9,
+   "rss_children_mb": {
+    "conhost.exe": 0.9
+   },
+   "vram_used_mb": 2349.0,
+   "vram_per_pid": {
+    "10540": null
+   }
+  },
+  {
+   "t": 112.36,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 55.4,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 130.6,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 56.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 147.41,
+   "label": "analyzing_evidence",
+   "rss_self_mb": 50.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 271.8,
+   "label": "reconstructing",
+   "rss_self_mb": 69.4,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 310.15,
+   "label": "reconstructing",
+   "rss_self_mb": 25.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.6,
+    "colmap.exe": 45.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 341.62,
+   "label": "reconstructing",
+   "rss_self_mb": 42.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 366.69,
+   "label": "reconstructing",
+   "rss_self_mb": 51.0,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 383.97,
+   "label": "reconstructing",
+   "rss_self_mb": 150.3,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 398.26,
+   "label": "reconstructing",
+   "rss_self_mb": 453.8,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 406.65,
+   "label": "reconstructing",
+   "rss_self_mb": 799.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2748.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 415.74,
+   "label": "reconstructing",
+   "rss_self_mb": 1033.8,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2748.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 424.1,
+   "label": "reconstructing",
+   "rss_self_mb": 1076.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2748.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 433.12,
+   "label": "reconstructing",
+   "rss_self_mb": 954.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2986.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 450.33,
+   "label": "reconstructing",
+   "rss_self_mb": 573.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 463.94,
+   "label": "reconstructing",
+   "rss_self_mb": 67.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2748.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 529.06,
+   "label": "reconstructing",
+   "rss_self_mb": 313.3,
+   "rss_children_mb": {
+    "conhost.exe": 0.3
+   },
+   "vram_used_mb": null,
+   "vram_per_pid": {}
+  },
+  {
+   "t": 538.09,
+   "label": "reconstructing",
+   "rss_self_mb": 534.1,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 547.31,
+   "label": "reconstructing",
+   "rss_self_mb": 855.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 556.03,
+   "label": "reconstructing",
+   "rss_self_mb": 1708.9,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 567.81,
+   "label": "reconstructing",
+   "rss_self_mb": 763.6,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3036.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 579.44,
+   "label": "reconstructing",
+   "rss_self_mb": 436.0,
+   "rss_children_mb": {
+    "conhost.exe": 1.2
+   },
+   "vram_used_mb": 2496.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 643.8,
+   "label": "reconstructing",
+   "rss_self_mb": 378.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.2
+   },
+   "vram_used_mb": 3002.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 653.58,
+   "label": "reconstructing",
+   "rss_self_mb": 453.1,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 664.01,
+   "label": "reconstructing",
+   "rss_self_mb": 850.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 672.28,
+   "label": "reconstructing",
+   "rss_self_mb": 1707.6,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 683.51,
+   "label": "reconstructing",
+   "rss_self_mb": 950.1,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2692.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 695.72,
+   "label": "reconstructing",
+   "rss_self_mb": 435.6,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2536.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 734.29,
+   "label": "reconstructing",
+   "rss_self_mb": 191.0,
+   "rss_children_mb": {
+    "conhost.exe": 0.4
+   },
+   "vram_used_mb": null,
+   "vram_per_pid": {}
+  },
+  {
+   "t": 829.9,
+   "label": "reconstructing",
+   "rss_self_mb": 1333.0,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 839.47,
+   "label": "reconstructing",
+   "rss_self_mb": 553.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 871.7,
+   "label": "reconstructing",
+   "rss_self_mb": 641.6,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 882.31,
+   "label": "reconstructing",
+   "rss_self_mb": 864.9,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2798.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 891.42,
+   "label": "reconstructing",
+   "rss_self_mb": 996.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2672.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 902.3,
+   "label": "reconstructing",
+   "rss_self_mb": 427.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.1
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 925.67,
+   "label": "reconstructing",
+   "rss_self_mb": 770.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 3022.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 934.56,
+   "label": "reconstructing",
+   "rss_self_mb": 846.7,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 941.94,
+   "label": "reconstructing",
+   "rss_self_mb": 946.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 950.01,
+   "label": "reconstructing",
+   "rss_self_mb": 873.8,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 958.5,
+   "label": "reconstructing",
+   "rss_self_mb": 1157.2,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2618.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 966.46,
+   "label": "reconstructing",
+   "rss_self_mb": 1048.8,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 976.25,
+   "label": "reconstructing",
+   "rss_self_mb": 1718.6,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2558.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 988.48,
+   "label": "reconstructing",
+   "rss_self_mb": 1164.5,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2748.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 999.66,
+   "label": "reconstructing",
+   "rss_self_mb": 1597.0,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 2494.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null
+   }
+  },
+  {
+   "t": 1011.88,
+   "label": "reconstructing",
+   "rss_self_mb": 966.1,
+   "rss_children_mb": {
+    "conhost.exe": 0.7
+   },
+   "vram_used_mb": 5659.0,
+   "vram_per_pid": {
+    "10540": null,
+    "13788": null,
+    "21440": null,
+    "18740": null
+   }
+  }
+ ],
+ "job_stage_runs": [
+  {
+   "name": "evidence_resolve",
+   "version": "1",
+   "status": "succeeded",
+   "attempt": 1,
+   "inputs_hash": "f4c83d7431a3e6074da0b7124a5cccce8a3365256beac0ebeea3c9285813cb42",
+   "outputs": {},
+   "metrics": {
+    "admission_need_ram_mb": 150,
+    "admission_need_vram_mb": 0.0,
+    "avail_ram_before_mb": 2718.0,
+    "rss_before_mb": 605.9,
+    "admission_waited_s": 0.0,
+    "rss_after_mb": 610.0
+   },
+   "warnings": [],
+   "error": null,
+   "peak_rss_mb": 610.03125,
+   "started_at": "2026-11-24 06:34:49.571892",
+   "ended_at": "2026-11-24 06:34:50.344698",
+   "wall_s": 0.773
+  },
+  {
+   "name": "evidence_quality",
+   "version": "1",
+   "status": "succeeded",
+   "attempt": 1,
+   "inputs_hash": "f4c83d7431a3e6074da0b7124a5cccce8a3365256beac0ebeea3c9285813cb42",
+   "outputs": {},
+   "metrics": {
+    "admission_need_ram_mb": 400,
+    "admission_need_vram_mb": 0.0,
+    "avail_ram_before_mb": 2752.5,
+    "rss_before_mb": 610.0,
+    "admission_waited_s": 0.0,
+    "rss_after_mb": 128.7
+   },
+   "warnings": [],
+   "error": null,
+   "peak_rss_mb": 1238.07421875,
+   "started_at": "2026-11-24 06:34:50.407260",
+   "ended_at": "2026-11-24 06:38:43.447081",
+   "wall_s": 233.04
+  },
+  {
+   "name": "reconstruct",
+   "version": "1",
+   "status": "failed",
+   "attempt": 1,
+   "inputs_hash": "f4c83d7431a3e6074da0b7124a5cccce8a3365256beac0ebeea3c9285813cb42",
+   "outputs": {},
+   "metrics": {
+    "admission_need_ram_mb": 2500,
+    "admission_need_vram_mb": 0.0,
+    "avail_ram_before_mb": 152.7,
+    "rss_before_mb": 132.4,
+    "admission_waited_s": 0.0,
+    "rss_after_mb": 1498.1
+   },
+   "warnings": [],
+   "error": "ReconstructionUnavailable(\"no reconstruction level could be produced: L2 failed: VerticalSliceError: reconstruction stage failed: all candidate backends failed or declined: ColmapReconstructionBackend: ReconstructionStepError: colmap feature_extractor failed (exit 3221225477)\\ncommand: colmap feature_extractor --database_path C:\\\\Users\\\\shres\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\4a8786c2ade21a6d\\\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\\\scratchpad\\\\run3\\\\ws\\\\colmap-sessions\\\\wld_de4f97d4202d\\\\staging; L0 failed: IMG_0000.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0001.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0002.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0003.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0004.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0005.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0006.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0007.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0008.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0009.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0010.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0011.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0012.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0013.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0014.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0015.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0016.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0017.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0018.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0019.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n; L0 failed: IMG_0020.jpg: monocular depth unavailable: CUDA error: out of memory\\nSearch for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nThe CUDA driver logged these messages, which may provide useful details:\\nSticky error detected\\nReturning 2 (CUDA_ERROR_OUT_OF_MEMORY) from cuMemFree_v2\\n\\n\")",
+   "peak_rss_mb": 2191.00390625,
+   "started_at": "2026-11-24 06:38:43.761757",
+   "ended_at": "2026-11-24 06:51:41.873438",
+   "wall_s": 778.112
+  }
+ ],
+ "artifact_hashes": {
+  "worldstore": {},
+  "storage_root_files": 63
+ },
+ "scratch_dir": "C:\\Users\\shres\\AppData\\Local\\Temp\\claude\\4a8786c2ade21a6d\\2550e9d3-df33-495f-bf2e-e8a7b55ee800\\scratchpad\\run3"
+}

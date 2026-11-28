@@ -6,6 +6,7 @@ label cleaning, taxonomy completeness, and cross-view ambiguity preservation.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from engine.multiengine.adapters.perception_detectors import (
     clean_and_split_detection_label,
@@ -112,6 +113,8 @@ def test_cross_view_association_preserves_ambiguity_for_identical_chairs():
     assert set(res[0].candidate_target_ids) == {"tgt_chair_1", "tgt_chair_2"}
 
 
+@pytest.mark.requires("torch", "transformers", "hf_cache:IDEA-Research/grounding-dino-tiny",
+                      "hf_cache:microsoft/Florence-2-base", "hf_cache:facebook/sam2.1-hiera-small")
 def test_available_probes_for_real_cached_models():
     # On this workstation all three are cached; probes must return Availability cleanly
     assert probe_grounding_dino().ok

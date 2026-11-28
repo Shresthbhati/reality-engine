@@ -126,6 +126,7 @@ def _no_box_inputs(depth):
     return f
 
 
+@pytest.mark.requires("open3d")   # plane extraction (engine/multiengine/surfaces.py) needs open3d; the `geometry` extra
 def test_aligned_depth_reaches_the_surfaces_stage_even_when_no_detection_was_made(tmp_path, photos, monkeypatch):  # noqa: F811
     """Regression: the stage used to return before publishing aligned depth, so the surfaces stage reported
     "no aligned depth maps" while fusion had already produced a mesh from those same maps."""

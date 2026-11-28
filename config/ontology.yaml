@@ -3386,7 +3386,7 @@ classes:
   label: Molding
   domain: fine_architectural
   category: envelope
-  parent: architecture/wall
+  parent: envelope.wall
   world_type: structure
   geometry: extruded_profile
   size_m: [0.02, 5.0]
@@ -3400,7 +3400,7 @@ classes:
   label: Trim
   domain: fine_architectural
   category: envelope
-  parent: architecture/wall
+  parent: envelope.wall
   world_type: structure
   geometry: extruded_profile
   size_m: [0.02, 4.0]

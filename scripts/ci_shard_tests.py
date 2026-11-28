@@ -48,7 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.shard or not 1 <= args.shard <= args.of:
         ap.error("--shard must be between 1 and --of")
-    print("\n".join(parts[args.shard - 1]))
+    # Not print(): on Windows it would emit "\r\n" and leave a stray "\r" on every path in the manifest.
+    sys.stdout.buffer.write(("\n".join(parts[args.shard - 1]) + "\n").encode("utf-8"))
     return 0
 
 

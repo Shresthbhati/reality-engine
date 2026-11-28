@@ -29,7 +29,11 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-import torch
+
+try:  # torch is the optional ``perception`` extra: importing this module must work without it. _maskrcnn_available()
+    import torch  # reports the explicit reason and _maskrcnn_run() honours it, so "unavailable" is never fabricated.
+except ImportError:  # pragma: no cover - exercised in the torch-free CI image
+    torch = None  # type: ignore[assignment]
 
 from perception.engine_evidence import (
     CoordinateFrame,

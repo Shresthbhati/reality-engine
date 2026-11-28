@@ -171,6 +171,7 @@ def test_end_to_end_golden_bridge_to_worldstore_and_idempotent_reprocessing(tmp_
     assert reloaded.entities["wall_north"].custom_properties["wall_slab"]["start_xyz_m"] is not None
 
 
+@pytest.mark.requires("torch", "torchvision")
 def test_real_rtx4050_models_execute_when_available(tmp_path):
     import time
     import torch

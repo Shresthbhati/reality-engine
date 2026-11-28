@@ -291,7 +291,11 @@ def test_engines_endpoint_reports_real_availability_integration_level_and_polici
     assert res.status_code == 200
     body = res.json()
     real = real_models_by_name()
-    assert {e["engine_id"] for e in body["engines"]} == set(real)
+    # The default endpoint lists the 6 baseline engines (engine/multiengine/registry.py::default_registry); the probe set
+    # (real_models_by_name) also covers newer models (dinov2, florence2, grounding_dino, ...) that only the extended
+    # registry exposes, so the listed ids are an exact baseline AND a subset of what is probed.
+    assert {e["engine_id"] for e in body["engines"]} == {"colmap", "depth_anything", "mask_rcnn", "midas", "owlvit", "sam"}
+    assert {e["engine_id"] for e in body["engines"]} <= set(real)
     for e in body["engines"]:
         assert e["availability"]["status"] == real[e["engine_id"]].status
         assert e["hardware"]["min_vram_mb"] is None

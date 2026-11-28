@@ -45,6 +45,10 @@ from worldstore.store import WorldStore
 DATASET = Path("datasets/real_room_capture")
 IMAGE_SIZE = (4032, 3024)
 
+# Real COLMAP on a PHYSICAL capture (datasets/real_room_capture is not committed): never substituted with synthetic data.
+# Missing -> visible skip with the reason; under RE_STRICT_REQUIREMENTS=1 (the physical-data lane) -> failure.
+pytestmark = [pytest.mark.requires("colmap", "dataset:real_room_capture")]
+
 
 def _real_evidence_items(limit: int | None = None) -> list[EvidenceItem]:
     """Build EvidenceItem objects from real JPEG files on disk."""

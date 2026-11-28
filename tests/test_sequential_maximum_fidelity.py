@@ -136,6 +136,7 @@ def test_licensing_enforcement_dust3r_and_mast3r():
 
 
 @requires_colmap
+@pytest.mark.requires("torch")   # the 13-stage run persists observations from real torch engines; none can run without it
 def test_sequential_maximum_fidelity_pipeline_execution():
     """Verify end-to-end sequential pipeline execution across all stages on source photos."""
     from PIL import Image
@@ -180,6 +181,7 @@ def test_sequential_maximum_fidelity_pipeline_execution():
 
 
 @requires_colmap
+@pytest.mark.requires("torch")
 def test_api_routes_engines_endpoints():
     """Verify that /api/engines endpoints correctly serve the sequential pipeline."""
     client = TestClient(app)

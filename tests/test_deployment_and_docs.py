@@ -72,7 +72,24 @@ def test_dockerignore_configuration():
     assert "__pycache__" in lines
 
 
-def test_openapi_schema_generation_and_export():
+def test_committed_openapi_lists_every_route():
+    """docs/openapi.json is a committed artefact: it must list exactly the routes the app serves. (This file's export test
+    used to OVERWRITE the committed docs as a side effect of running, which hid the staleness and dirtied every checkout.)
+    Regenerate with:  python -c "from apps.api.export_openapi import *; write_openapi_json(); generate_markdown_docs()" """
+    import json
+    from pathlib import Path
+
+    committed = json.loads((Path(__file__).resolve().parents[1] / "docs" / "openapi.json").read_text(encoding="utf-8"))
+    live = export_openapi_schema()
+
+    def ops(schema):
+        return {(p, m) for p, item in schema["paths"].items() for m in item if m in ("get", "post", "put", "patch", "delete")}
+
+    missing, extra = sorted(ops(live) - ops(committed)), sorted(ops(committed) - ops(live))
+    assert not missing and not extra, f"docs/openapi.json is stale. Not documented: {missing[:8]}; removed: {extra[:8]}"
+
+
+def test_openapi_schema_generation_and_export(tmp_path):
     schema = export_openapi_schema()
     assert isinstance(schema, dict)
     assert schema.get("openapi", "").startswith("3.")
@@ -87,11 +104,11 @@ def test_openapi_schema_generation_and_export():
     assert "/healthz" in paths
 
     # Test file writing
-    json_path = write_openapi_json("docs/openapi.json")
+    json_path = write_openapi_json(tmp_path / "openapi.json")
     assert json_path.exists()
     assert json_path.stat().st_size > 50_000
 
-    md_path = generate_markdown_docs("docs/API_DOCUMENTATION.md")
+    md_path = generate_markdown_docs(tmp_path / "API_DOCUMENTATION.md")
     assert md_path.exists()
     assert md_path.stat().st_size > 2_000
     md_content = md_path.read_text(encoding="utf-8")

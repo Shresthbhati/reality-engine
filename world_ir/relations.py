@@ -42,11 +42,13 @@ def _grid(boxes: list[Box]) -> dict:
     return g
 
 
-def _overlap_xy(a: Box, b: Box) -> float:
-    ox = min(a.hi[0], b.hi[0]) - max(a.lo[0], b.lo[0]); oy = min(a.hi[1], b.hi[1]) - max(a.lo[1], b.lo[1])
+def _overlap_horiz(a: Box, b: Box, axes: tuple[int, int] = (0, 1)) -> float:
+    ax0, ax1 = axes
+    ox = min(a.hi[ax0], b.hi[ax0]) - max(a.lo[ax0], b.lo[ax0])
+    oy = min(a.hi[ax1], b.hi[ax1]) - max(a.lo[ax1], b.lo[ax1])
     if ox <= 0 or oy <= 0:
         return 0.0
-    return ox * oy / max((a.hi[0] - a.lo[0]) * (a.hi[1] - a.lo[1]), 1e-12)
+    return ox * oy / max((a.hi[ax0] - a.lo[ax0]) * (a.hi[ax1] - a.lo[ax1]), 1e-12)
 
 
 def _gap(a: Box, b: Box) -> float:
@@ -60,8 +62,11 @@ def _inside_share(a: Box, b: Box) -> float:
     return inter / vol if vol > 0 else 0.0
 
 
-def derive_relations(boxes: Iterable[Box]) -> list[tuple[str, str, str]]:
-    """``(a, kind, b)`` triples; ``z`` is up."""
+def derive_relations(boxes: Iterable[Box], *, up_axis: int = 2) -> list[tuple[str, str, str]]:
+    """``(a, kind, b)`` triples; ``up_axis`` is ``1`` for ``Frame.Y_UP`` or ``2`` for Z-up."""
+    if up_axis not in (1, 2):
+        raise ValueError(f"up_axis must be 1 (Y-up) or 2 (Z-up), got {up_axis!r}")
+    horiz_axes = (0, 2) if up_axis == 1 else (0, 1)
     bx = list(boxes)
     pairs: set[tuple[int, int]] = set()
     for members in _grid(bx).values():
@@ -79,11 +84,50 @@ def derive_relations(boxes: Iterable[Box]) -> list[tuple[str, str, str]]:
                     out.append((b.id, "contains", a.id))
             elif b.is_wall and not a.is_wall and _gap(a, b) <= ATTACH_TOL_M:
                 out.append((a.id, "attached_to", b.id)); found = True
-            elif not a.is_wall and abs(a.lo[2] - b.hi[2]) <= ON_TOL_M and _overlap_xy(a, b) >= ON_OVERLAP:
+            elif not a.is_wall and abs(a.lo[up_axis] - b.hi[up_axis]) <= ON_TOL_M and _overlap_horiz(a, b, horiz_axes) >= ON_OVERLAP:
                 out.append((a.id, "on", b.id)); found = True
         if not found and _gap(bx[i], bx[j]) < ADJ_GAP_M:
             out.append((bx[i].id, "adjacent_to", bx[j].id))
     return out
+
+
+def validate_scene_graph_consistency(
+    boxes: Iterable[Box],
+    relations: Iterable[tuple[str, str, str]],
+    *,
+    max_attach_gap_m: float = 0.25,
+) -> list[dict[str, str]]:
+    """Verify that derived/asserted spatial relationships agree with 3D box geometry.
+
+    Returns a list of consistency violations (empty when consistent). Checks:
+    - ``attached_to`` / ``hosted_by`` targets exist and are within ``max_attach_gap_m``
+    - ``part_of`` has no contradictory multi-parent assignments
+    """
+    by_id = {b.id: b for b in boxes}
+    violations: list[dict[str, str]] = []
+    parents: dict[str, set[str]] = defaultdict(set)
+    for subj, kind, obj in relations:
+        if subj not in by_id or obj not in by_id:
+            violations.append({
+                "subject": subj, "kind": kind, "object": obj,
+                "reason": "dangling entity reference in relationship",
+            })
+            continue
+        if kind in ("attached_to", "hosted_by"):
+            gap = _gap(by_id[subj], by_id[obj])
+            if gap > max_attach_gap_m:
+                violations.append({
+                    "subject": subj, "kind": kind, "object": obj,
+                    "reason": f"3D gap {gap:.3f}m exceeds max_attach_gap_m {max_attach_gap_m:.3f}m",
+                })
+        if kind == "part_of":
+            parents[subj].add(obj)
+            if len(parents[subj]) > 1:
+                violations.append({
+                    "subject": subj, "kind": kind, "object": obj,
+                    "reason": f"contradictory parent_of targets: {sorted(parents[subj])}",
+                })
+    return violations
 
 
 def interior_state(box: Box) -> Optional[str]:

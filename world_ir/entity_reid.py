@@ -238,9 +238,23 @@ def rekey_entities(world: WorldIR, mapping: dict) -> dict:
     world.entities = {applied.get(k, k): v for k, v in world.entities.items()}
     for new_id, ent in world.entities.items():
         ent.id = new_id
+        if getattr(ent, "parent_id", None):
+            ent.parent_id = applied.get(ent.parent_id, ent.parent_id)
         for rel in ent.relationships:
             rel.target_id = applied.get(rel.target_id, rel.target_id)
+        props = getattr(ent, "custom_properties", None)
+        if isinstance(props, dict):
+            for key in ("boundary_element_ids", "connected_level_ids", "connected_room_ids"):
+                if isinstance(props.get(key), list):
+                    props[key] = [applied.get(x, x) for x in props[key]]
+            if isinstance(props.get("host_wall_id"), str):
+                props["host_wall_id"] = applied.get(props["host_wall_id"], props["host_wall_id"])
     world.transforms = {applied.get(k, k): v for k, v in world.transforms.items()}
+    meta = getattr(world, "metadata", None)
+    if isinstance(meta, dict) and isinstance(meta.get("association_decisions"), list):
+        for dec in meta["association_decisions"]:
+            if isinstance(dec, dict) and isinstance(dec.get("entity_id"), str):
+                dec["entity_id"] = applied.get(dec["entity_id"], dec["entity_id"])
     for ev in world.temporal_events.values():
         if getattr(ev, "entity_id", None):
             ev.entity_id = applied.get(ev.entity_id, ev.entity_id)

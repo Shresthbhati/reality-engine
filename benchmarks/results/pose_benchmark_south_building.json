@@ -1,0 +1,389 @@
+{
+ "commit": "156f3e36e9cbabe139f529caa20ce6f36a3ce161",
+ "dataset": "datasets\\south_building",
+ "split": "all images (no split)",
+ "colmap": "COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA)",
+ "hardware": {
+  "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU, 6141 MiB",
+  "platform": "Windows-11-10.0.26300-SP0"
+ },
+ "deps": {
+  "python": "3.14.7",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1"
+ },
+ "image_ids": [
+  "P1180141.JPG",
+  "P1180145.JPG",
+  "P1180149.JPG",
+  "P1180153.JPG",
+  "P1180157.JPG",
+  "P1180161.JPG",
+  "P1180165.JPG",
+  "P1180169.JPG",
+  "P1180173.JPG",
+  "P1180177.JPG",
+  "P1180181.JPG",
+  "P1180185.JPG",
+  "P1180189.JPG",
+  "P1180193.JPG",
+  "P1180197.JPG",
+  "P1180201.JPG",
+  "P1180205.JPG",
+  "P1180209.JPG",
+  "P1180213.JPG",
+  "P1180217.JPG",
+  "P1180221.JPG",
+  "P1180225.JPG",
+  "P1180308.JPG",
+  "P1180312.JPG",
+  "P1180316.JPG",
+  "P1180320.JPG",
+  "P1180324.JPG",
+  "P1180328.JPG",
+  "P1180332.JPG",
+  "P1180336.JPG",
+  "P1180340.JPG",
+  "P1180344.JPG"
+ ],
+ "reference": {
+  "kind": "COLMAP model shipped with dataset (not independent)",
+  "scale": "relative",
+  "cameras": 32
+ },
+ "config": {
+  "features": "SIFT default",
+  "matching": "exhaustive",
+  "checkpoints": "none (classical)"
+ },
+ "candidates": {
+  "incremental": {
+   "mapper_runtime_s": 26.26,
+   "models": {
+    "0": 22
+   },
+   "registered": 22,
+   "of": 32,
+   "unregistered": [
+    "P1180157.JPG",
+    "P1180161.JPG",
+    "P1180165.JPG",
+    "P1180169.JPG",
+    "P1180173.JPG",
+    "P1180177.JPG",
+    "P1180181.JPG",
+    "P1180336.JPG",
+    "P1180340.JPG",
+    "P1180344.JPG"
+   ],
+   "eval": {
+    "refused": false,
+    "common_cameras": 22,
+    "scale_state": {
+     "est": "relative",
+     "ref": "relative"
+    },
+    "alignment": "sim3",
+    "gauge_scale": 0.9068315137563987,
+    "alignment_inliers": 22,
+    "alignment_threshold_ref_units": 0.1813083820331622,
+    "ate_translation_ref_units": {
+     "inliers": {
+      "rmse": 0.021498710895173915,
+      "median": 0.012581772007019421,
+      "max": 0.0754250172496626
+     },
+     "all": {
+      "rmse": 0.021498710895173915,
+      "median": 0.012581772007019421,
+      "max": 0.0754250172496626
+     }
+    },
+    "rotation_error_deg": {
+     "inliers": {
+      "rmse": 0.21309957488525735,
+      "median": 0.14088015531691095,
+      "max": 0.6727639099183833
+     },
+     "all": {
+      "rmse": 0.21309957488525735,
+      "median": 0.14088015531691095,
+      "max": 0.6727639099183833
+     }
+    },
+    "outliers": [],
+    "notes": [
+     "reference scale is arbitrary: ATE is in reference units, not metres"
+    ],
+    "rpe": {
+     "refused": false,
+     "delta": 1,
+     "pairs": 21,
+     "rot_deg": {
+      "rmse": 0.272760206348634,
+      "median": 0.18929692338757032,
+      "max": 0.7668661568991503
+     },
+     "trans_ref_units": {
+      "rmse": 0.028045800504049444,
+      "median": 0.017615981376955477,
+      "max": 0.07686601050595306
+     }
+    }
+   },
+   "validation": {
+    "cameras": 22,
+    "valid": 22,
+    "issues": [
+     {
+      "issue": "trajectory_discontinuity",
+      "between": [
+       "P1180153.JPG",
+       "P1180185.JPG"
+      ],
+      "step_deg": 124.25193432044543
+     },
+     {
+      "issue": "trajectory_discontinuity",
+      "between": [
+       "P1180225.JPG",
+       "P1180308.JPG"
+      ],
+      "step_deg": 123.64265245713578
+     }
+    ],
+    "components": null,
+    "rotation_steps": {
+     "median_deg": 21.23528250382284,
+     "mad_deg": 12.00693958488548,
+     "threshold_deg": 93.27692001313572
+    },
+    "scale_state_note": "validation is unit-free; it never infers metric scale"
+   },
+   "log": [
+    {
+     "cmd": "mapper --database_path",
+     "rc": 0,
+     "s": 26.26,
+     "stderr_tail": ""
+    },
+    {
+     "cmd": "model_converter --input_path",
+     "rc": 0,
+     "s": 0.79,
+     "stderr_tail": ""
+    }
+   ]
+  },
+  "global": {
+   "mapper_runtime_s": 14.19,
+   "models": {
+    "0": 32
+   },
+   "registered": 32,
+   "of": 32,
+   "unregistered": [],
+   "eval": {
+    "refused": false,
+    "common_cameras": 32,
+    "scale_state": {
+     "est": "relative",
+     "ref": "relative"
+    },
+    "alignment": "sim3",
+    "gauge_scale": 0.6322818181378931,
+    "alignment_inliers": 15,
+    "alignment_threshold_ref_units": 0.17424463474435067,
+    "ate_translation_ref_units": {
+     "inliers": {
+      "rmse": 0.018506872535821794,
+      "median": 0.006542406204339657,
+      "max": 0.05709485269583805
+     },
+     "all": {
+      "rmse": 16.05011313426141,
+      "median": 2.6701078646289513,
+      "max": 88.13350943808999
+     }
+    },
+    "rotation_error_deg": {
+     "inliers": {
+      "rmse": 0.2577487768736163,
+      "median": 0.1868431584010156,
+      "max": 0.744305138028687
+     },
+     "all": {
+      "rmse": 98.0714940614646,
+      "median": 26.533886829986244,
+      "max": 177.14465809342067
+     }
+    },
+    "outliers": [
+     {
+      "name": "P1180157.JPG",
+      "center_err": 1.1881947073891703,
+      "rot_err_deg": 24.67897056586245
+     },
+     {
+      "name": "P1180161.JPG",
+      "center_err": 6.048745223242859,
+      "rot_err_deg": 176.86354116189128
+     },
+     {
+      "name": "P1180165.JPG",
+      "center_err": 5.503075019969718,
+      "rot_err_deg": 176.68989044898905
+     },
+     {
+      "name": "P1180169.JPG",
+      "center_err": 5.674910723918651,
+      "rot_err_deg": 176.52890909188508
+     },
+     {
+      "name": "P1180173.JPG",
+      "center_err": 6.223041000229798,
+      "rot_err_deg": 176.67051228367268
+     },
+     {
+      "name": "P1180177.JPG",
+      "center_err": 6.064772573615683,
+      "rot_err_deg": 177.14465809342067
+     },
+     {
+      "name": "P1180181.JPG",
+      "center_err": 6.406517534127241,
+      "rot_err_deg": 176.6171059698395
+     },
+     {
+      "name": "P1180185.JPG",
+      "center_err": 4.152021021868732,
+      "rot_err_deg": 89.52386562164325
+     },
+     {
+      "name": "P1180189.JPG",
+      "center_err": 5.001931351056406,
+      "rot_err_deg": 89.59333712759926
+     },
+     {
+      "name": "P1180193.JPG",
+      "center_err": 5.639292914568047,
+      "rot_err_deg": 89.78873987917916
+     },
+     {
+      "name": "P1180197.JPG",
+      "center_err": 5.596219633707283,
+      "rot_err_deg": 89.72182788647179
+     },
+     {
+      "name": "P1180201.JPG",
+      "center_err": 4.173078836625271,
+      "rot_err_deg": 89.91195149240501
+     },
+     {
+      "name": "P1180308.JPG",
+      "center_err": 5.861727951189961,
+      "rot_err_deg": 89.76721247056948
+     },
+     {
+      "name": "P1180312.JPG",
+      "center_err": 5.667525362809601,
+      "rot_err_deg": 89.7112394502229
+     },
+     {
+      "name": "P1180336.JPG",
+      "center_err": 88.13350943808999,
+      "rot_err_deg": 28.388803094110038
+     },
+     {
+      "name": "P1180340.JPG",
+      "center_err": 6.038695822676898,
+      "rot_err_deg": 176.89135872180864
+     },
+     {
+      "name": "P1180344.JPG",
+      "center_err": 5.753070221319882,
+      "rot_err_deg": 176.85398302969958
+     }
+    ],
+    "notes": [
+     "reference scale is arbitrary: ATE is in reference units, not metres"
+    ],
+    "rpe": {
+     "refused": false,
+     "delta": 1,
+     "pairs": 31,
+     "rot_deg": {
+      "rmse": 51.85371438572823,
+      "median": 0.2607285580521157,
+      "max": 160.32247814729774
+     },
+     "trans_ref_units": {
+      "rmse": 23.29784803984455,
+      "median": 0.07921241641805592,
+      "max": 94.61759525005593
+     }
+    }
+   },
+   "validation": {
+    "cameras": 32,
+    "valid": 32,
+    "issues": [
+     {
+      "issue": "trajectory_discontinuity",
+      "between": [
+       "P1180157.JPG",
+       "P1180161.JPG"
+      ],
+      "step_deg": 140.9677890220603
+     },
+     {
+      "issue": "trajectory_discontinuity",
+      "between": [
+       "P1180336.JPG",
+       "P1180340.JPG"
+      ],
+      "step_deg": 151.45726147598933
+     }
+    ],
+    "components": null,
+    "rotation_steps": {
+     "median_deg": 21.226675356771114,
+     "mad_deg": 13.533966822432134,
+     "threshold_deg": 102.43047629136392
+    },
+    "scale_state_note": "validation is unit-free; it never infers metric scale"
+   },
+   "log": [
+    {
+     "cmd": "global_mapper --database_path",
+     "rc": 0,
+     "s": 14.19,
+     "stderr_tail": ""
+    },
+    {
+     "cmd": "model_converter --input_path",
+     "rc": 0,
+     "s": 0.98,
+     "stderr_tail": ""
+    }
+   ]
+  }
+ },
+ "shared_stage_log": [
+  {
+   "cmd": "feature_extractor --database_path",
+   "rc": 0,
+   "s": 3.67,
+   "stderr_tail": ""
+  },
+  {
+   "cmd": "exhaustive_matcher --database_path",
+   "rc": 0,
+   "s": 4.2,
+   "stderr_tail": ""
+  }
+ ],
+ "peak_vram_mib_incl_baseline": 1032,
+ "baseline_vram_mib": 191,
+ "note": "image order for RPE is filename order (a photo set, not a video): RPE is indicative only"
+}

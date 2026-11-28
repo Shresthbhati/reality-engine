@@ -20,7 +20,6 @@ Output: docs/benchmarks/real_photo_production_<name>.json
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import hashlib
 import json
 import os
@@ -115,7 +114,7 @@ def main() -> int:
     ap.add_argument("--workdir", default=None)
     a = ap.parse_args()
 
-    import stage_report                                  # noqa: E402  (scripts/ on sys.path)
+    import stage_report  # noqa: E402  (scripts/ on sys.path)
     from run_south_building_e2e import _load_gt_images, _load_gt_points  # noqa: E402
 
     imgs = sorted(p for p in Path(a.images).iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"})

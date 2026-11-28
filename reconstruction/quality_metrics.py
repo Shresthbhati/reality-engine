@@ -14,8 +14,9 @@ Design rules (see tests/test_reconstruction_quality_metrics.py, which enforces t
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 

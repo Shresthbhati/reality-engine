@@ -525,6 +525,9 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             # related (split / merge / ambiguous) -- identity is never forced
             "identity": report.get("identity"),
             "capture_quality": report.get("capture_quality"),
+            # model.capture_readiness: {status: ready|needs_more_photos|blocked|unknown, reason, user_message, actions[],
+            # frame{shared_frame, registered_ids, unregistered_ids}, images[].diagnosis, artifact{sha256}}; None when not run
+            "capture_readiness": report.get("capture_readiness"),
             "structure_points": report.get("structure_points", []),
             "images_used": len(ev_report.get("input_ids") or []),
             "images_registered": len(ev_report.get("registered_ids") or []),

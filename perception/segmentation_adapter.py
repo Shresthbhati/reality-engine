@@ -14,6 +14,8 @@ import numpy as np
 import torch
 
 from perception.engine_evidence import (
+    CoordinateFrame,
+    ModelIdentity,
     ObservationRecord,
     UnifiedEngineOutput,
 )
@@ -143,7 +145,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
                     obs.append(ObservationRecord(
                         evidence_id=f"sam2:{img_path}:{i}:{j}",
                         source_image_id=str(img_path),
-                        coordinate_frame=__import__("perception.engine_evidence", fromlist=["CoordinateFrame"]).CoordinateFrame(
+                        coordinate_frame=CoordinateFrame(
                             frame_id="image", scale_state="image", units="pixels"),
                         model_id=ModelIdentity(
                             engine_id="segmentation", architecture_id="sam2", checkpoint_id=model_name,

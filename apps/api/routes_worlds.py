@@ -329,6 +329,9 @@ async def entity_provenance(
         }
 
     session_ids = row.source_session_ids or []
+    # A generated entity was never built from the capture, however many sessions the version records.
+    if entity.provenance is Provenance.GENERATED:
+        session_ids = []
     if session_ids:
         res = await db.execute(select(Evidence).where(Evidence.session_id.in_(session_ids)))
         session_evidence = [

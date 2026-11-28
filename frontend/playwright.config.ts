@@ -13,7 +13,7 @@ const sandbox = path.join(__dirname, "test-results", "e2e");
 
 fs.mkdirSync(sandbox, { recursive: true });
 
-export const API_URL = "http://localhost:8100";
+export const API_URL = "http://localhost:8210";
 export const SEED_FILE = path.join(sandbox, "seed.json");
 
 export default defineConfig({
@@ -28,7 +28,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3210",
     channel,
     trace: "retain-on-failure",
   },
@@ -42,7 +42,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "python -m uvicorn apps.api.main:app --port 8100",
+      command: "python -m uvicorn apps.api.main:app --port 8210",
       cwd: root,
       url: `${API_URL}/api/health`,
       reuseExistingServer: !process.env.CI,
@@ -51,15 +51,17 @@ export default defineConfig({
         DATABASE_URL: `sqlite+aiosqlite:///${path.join(sandbox, "app.db").replace(/\\/g, "/")}`,
         STORAGE_ROOT: path.join(sandbox, "storage"),
         WORLDSTORE_ROOT: path.join(sandbox, "worldstore"),
+        CORS_ORIGINS: "http://localhost:3210",
       },
     },
     {
       // CI serves the production build (a cold `next dev` compiles each route on first hit: slow/flaky there).
-      command: process.env.CI ? "npm run start" : "npm run dev",
+      command: process.env.CI ? "npm run start" : "npm run dev -- -p 3210 --webpack",
       cwd: __dirname,
-      url: "http://localhost:3000",
+      url: "http://localhost:3210",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
+      env: { NEXT_PUBLIC_API_BASE_URL: "http://localhost:8210", REALITY_BACKEND_URL: "http://localhost:8210" },
     },
   ],
 });

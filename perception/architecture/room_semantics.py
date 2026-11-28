@@ -264,7 +264,7 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
         # Only added to the world once the measurements succeed AND there is enclosure evidence (see below): an
         # exterior scene must never be given a room.
         boundary = sorted(e.id for e in world.entities.values() if e.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING))
-        room = Entity(id="room-001", name="room 001", type=EntityType.ROOM, provenance=Provenance.INFERRED, confidence=0.5,
+        room = Entity(id="room-001", name="room 001", type=EntityType.ROOM, provenance=Provenance.INFERRED, confidence=None,
                       custom_properties={"boundary_element_ids": boundary,
                                          "created_by": "room_semantics: the structural chain produced no room entity"})
         rooms = [room]
@@ -424,7 +424,7 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
     hi = wxyz.max(axis=0) + u * top
     gid = anchor.geometry_ids[0] if anchor.geometry_ids else f"geom-{anchor.id}"
     world.geometries[gid] = Geometry(id=gid, type=GeometryType.BOX, bounds_min=Vector3(*map(float, lo)),
-                                     bounds_max=Vector3(*map(float, hi)), provenance=Provenance.INFERRED, confidence=0.5)
+                                     bounds_max=Vector3(*map(float, hi)), provenance=Provenance.INFERRED, confidence=None)
     if gid not in anchor.geometry_ids:
         anchor.geometry_ids.append(gid)
     wcol = mean_color(np.flatnonzero(wall_band & (HH > 0.3) & (HH < 1.8)))

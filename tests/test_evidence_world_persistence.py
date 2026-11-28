@@ -98,6 +98,58 @@ def test_correction_creates_a_new_valid_version_a_diff_and_an_export_that_reflec
     assert persisted.entities[chair_id].name == "Sofa"  # while the persisted world itself carries the correction
 
 
+def test_the_multi_engine_pass_runs_once_and_the_report_keeps_its_matrix_import(tmp_path, monkeypatch):
+    """A second, matrix-less multi-engine pass used to replace facts["multi_engine"] and drop the lineage.
+
+    The stage ran the whole engine registry twice: once with ``matrix_root`` (which imports the observations into this
+    run's Evidence Matrix and returns ``matrix_import``/``mask_store_uri``) and once without it. The second result won,
+    so the job report lost the mask store and the import lineage while every engine was paid for twice. One pass only.
+    """
+    import perception.multi_engine_stage as mes
+
+    calls: list[dict] = []
+    matrix_import = {
+        "status": "imported",
+        "n_observations_imported": 4,
+        "n_run_records": 1,
+        "observation_content_ids_by_engine": {"grounding_dino": ["c1", "c2"]},
+        "engine_statuses": {"grounding_dino": "succeeded"},
+        "mask_store_uri": "sha256://deadbeef",
+    }
+
+    def fake_multi_engine(**kwargs):
+        calls.append(kwargs)
+        base = {"status": "succeeded", "engines_run": {"grounding_dino": "succeeded"}, "n_observations": 4}
+        if kwargs.get("matrix_root") is None:  # what a matrix-less pass returns in production: no import, no mask store
+            return {**base, "mask_store_uri": None}
+        return {**base, "mask_store_uri": "sha256://deadbeef", "matrix_import": matrix_import}
+
+    monkeypatch.setattr(mes, "run_multi_engine_for_job", fake_multi_engine)
+    files = []
+    for n in ("img1.jpg", "img2.jpg"):
+        p = tmp_path / n
+        p.write_bytes(b"\xff\xd8\xff\xd9")
+        files.append(str(p))
+
+    def inputs():
+        reg, adapters = _setup(())
+        return reg, adapters, None
+
+    facts = ew.run_for_job(team_id="t1", world_id="w1", job_id="job-me", sources=files, base=tmp_path / "ws", flow_inputs=inputs)
+    root = tmp_path / "ws" / "evidence-world" / "t1" / "w1" / "job-me"
+    assert len(calls) == 1, "the engine registry must run once per job"
+    assert calls[0]["matrix_root"] == root  # and that single pass is the one that imports into the run's matrix
+    assert facts["multi_engine"]["matrix_import"] == matrix_import
+    assert facts["multi_engine"]["mask_store_uri"] == "sha256://deadbeef"
+    assert facts["multi_engine_evidence"]["status"] == "imported"
+    assert facts["multi_engine_evidence"]["mask_store_uri"] == "sha256://deadbeef"
+    assert facts["multi_engine_evidence"]["observation_content_ids_by_engine"] == {"grounding_dino": ["c1", "c2"]}
+    recorded = json.loads((root / "multi_engine_evidence.json").read_text(encoding="utf-8"))
+    assert recorded["mask_store_uri"] == "sha256://deadbeef"  # the lineage is on disk, not only in the report
+    world = WorldStore(root / "worldstore").load_version(facts["world_ir"]["version_id"])
+    assert world.metadata["multi_engine_evidence"]["mask_store_uri"] == "sha256://deadbeef"  # and the world inherits it
+
+
 def test_a_world_that_cannot_be_validated_is_not_persisted_and_the_stage_is_not_complete(tmp_path, monkeypatch):
     import world_ir.validation as v
 

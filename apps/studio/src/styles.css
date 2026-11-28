@@ -131,6 +131,12 @@ button:disabled {
   font-size: 12px;
 }
 
+.error-banner {
+  background: #450a0a;
+  border-color: #dc2626;
+  color: #fecaca;
+}
+
 .status-bar {
   padding: 6px 14px;
   font-size: 12px;

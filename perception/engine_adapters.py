@@ -291,6 +291,12 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     t0 = _t.perf_counter()
     run_id = ctx.get("run_id", "lightglue_run")
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.reset_peak_memory_stats(0)
+        except Exception:
+            pass
+    max_long_edge_px = int(ctx.get("max_long_edge_px", 1600) or 1600)
     obs: list[ObservationRecord] = []
     unverified: list[dict[str, Any]] = []
     pairs = ctx.get("pairs", [])
@@ -316,19 +322,29 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     def _feats(path: str):
         img = cv2.imread(path)
         if img is None:
-            return None, None
+            return None, None, 1.0, 1.0
+        oh, ow = img.shape[:2]
+        scale_x = 1.0
+        scale_y = 1.0
+        if max_long_edge_px > 0 and max(oh, ow) > max_long_edge_px:
+            ratio = max_long_edge_px / float(max(oh, ow))
+            nw = max(16, int(round(ow * ratio)))
+            nh = max(16, int(round(oh * ratio)))
+            img = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+            scale_x = ow / float(nw)
+            scale_y = oh / float(nh)
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().div(255.0).unsqueeze(0).to(device)
         with torch.no_grad():
             f = aliked(tensor)[0]
-        return f, tensor
+        return f, tensor, scale_x, scale_y
 
     try:
         for a_path, b_path in pairs:
             pair_t0 = _t.perf_counter()
             try:
-                feats_a, tensor_a = _feats(a_path)
-                feats_b, tensor_b = _feats(b_path)
+                feats_a, tensor_a, sx_a, sy_a = _feats(a_path)
+                feats_b, tensor_b, sx_b, sy_b = _feats(b_path)
                 if feats_a is None or feats_b is None:
                     unverified.append({"a_path": a_path, "b_path": b_path, "reason": "unreadable image"})
                     continue
@@ -361,6 +377,10 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                     continue
                 kp_a = feats_a.keypoints.detach().cpu().reshape(-1, 2).numpy()
                 kp_b = feats_b.keypoints.detach().cpu().reshape(-1, 2).numpy()
+                if sx_a != 1.0 or sy_a != 1.0:
+                    kp_a = kp_a * np.array([sx_a, sy_a], dtype=kp_a.dtype)
+                if sx_b != 1.0 or sy_b != 1.0:
+                    kp_b = kp_b * np.array([sx_b, sy_b], dtype=kp_b.dtype)
                 p1 = kp_a[mt[:, 0].numpy()]
                 p2 = kp_b[mt[:, 1].numpy()]
                 # Confidence is LightGlue's OWN per-match score, never a constant. When the
@@ -385,7 +405,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                     evidence_id=f"lg_aliked:{a_path}->{b_path}",
                     source_image_id=a_path,
                     coordinate_frame=CoordinateFrame(frame_id="image", scale_state="image", units="pixels"),
-                    model_id=_model("matching", "lightglue_aliked", "aliked", "Apache-2.0", False, "gpu"),
+                    model_id=_model("matching", "lightglue_aliked", "aliked", "Apache-2.0", False, device),
                     label="feature_match",
                     category="correspondence",
                     confidence=mean_score,
@@ -412,9 +432,18 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
         except Exception:
             pass
 
+    if unverified and not obs:
+        lg_status = "failed"
+    elif unverified and obs:
+        lg_status = "partial"
+    elif obs:
+        lg_status = "succeeded"
+    else:
+        lg_status = "partial"
+
     return UnifiedEngineOutput(
         engine_id="lightglue_aliked", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if obs else "partial",
+        status=lg_status,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=peak,
         summary={"n_pairs": len(pairs), "n_verified_pairs": len(obs), "n_unverified_pairs": len(unverified),

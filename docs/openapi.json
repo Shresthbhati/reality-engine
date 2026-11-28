@@ -7632,7 +7632,7 @@
           "export"
         ],
         "summary": "Download Export",
-        "description": "Stream back a previously exported artifact by its content hash.",
+        "description": "Stream back a previously exported artifact by its content hash,\nverifying that the export belongs to the authorized world and tenant.",
         "operationId": "download_export_api_worlds__world_id__export__content_hash__download_get",
         "parameters": [
           {
@@ -9865,6 +9865,70 @@
         }
       }
     },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/calibrate": {
+      "post": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Calibrate Run World",
+        "description": "Physically anchor the run's world from independent measurements. The anchors are fitted and tested on held-out anchors\n(``scale_anchors``); only a calibration that is ``validated`` or ``unvalidated`` (>= 2 consistent anchors, none held out) is applied, and\nit is applied as a NEW immutable version whose parent is the gauge version (``world_scale``). Anything else is refused (409) with the\nfull calibration record -- insufficient or failed anchors never change the world. A world that is already calibrated is refused (409):\nscaling it again would multiply the scale twice.",
+        "operationId": "calibrate_run_world_api_worlds__world_id__evidence_world__run_id__calibrate_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Calibrate Run World Api Worlds  World Id  Evidence World  Run Id  Calibrate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/evidence-world/{run_id}/propose": {
       "post": {
         "tags": [
@@ -10751,6 +10815,60 @@
         }
       }
     },
+    "/api/worlds/{world_id}/evidence-world/{run_id}/spatial-inputs": {
+      "get": {
+        "tags": [
+          "evidence-world"
+        ],
+        "summary": "Get Spatial Inputs V1",
+        "description": "Validated ``spatial_inputs.v1`` payload emitted by perception for this run (404 when absent).",
+        "operationId": "get_spatial_inputs_v1_api_worlds__world_id__evidence_world__run_id__spatial_inputs_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Spatial Inputs V1 Api Worlds  World Id  Evidence World  Run Id  Spatial Inputs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/evidence-world/{run_id}/artifacts/{digest}": {
       "get": {
         "tags": [
@@ -10794,6 +10912,426 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "List Versions",
+        "operationId": "list_versions_api_worlds__world_id__spatial_global_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Versions Api Worlds  World Id  Spatial Global Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/latest": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Latest",
+        "operationId": "latest_api_worlds__world_id__spatial_global_latest_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Latest Api Worlds  World Id  Spatial Global Latest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/versions/{version_id}": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Version",
+        "operationId": "version_api_worlds__world_id__spatial_global_versions__version_id__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Version Api Worlds  World Id  Spatial Global Versions  Version Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/entities/{entity_id}": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Entity",
+        "operationId": "entity_api_worlds__world_id__spatial_global_entities__entity_id__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Entity Api Worlds  World Id  Spatial Global Entities  Entity Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/changes/{version_id}": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Changes",
+        "operationId": "changes_api_worlds__world_id__spatial_global_changes__version_id__get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Changes Api Worlds  World Id  Spatial Global Changes  Version Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/export": {
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Export",
+        "operationId": "export_api_worlds__world_id__spatial_global_export_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Export Api Worlds  World Id  Spatial Global Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/spatial-global/corrections": {
+      "post": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "Add Correction",
+        "description": "Records the judgment as a NEW child version of the latest spatial version (history is never rewritten). Dimension and class\ncorrections reuse world_ir.corrections and are replayed onto every later run; an exclusion removes the observation(s) from the\nnext optimisation (the originals stay in the world's record) and changes the input hash, so the next job reprocesses.",
+        "operationId": "add_correction_api_worlds__world_id__spatial_global_corrections_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Add Correction Api Worlds  World Id  Spatial Global Corrections Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "spatial-global"
+        ],
+        "summary": "List Corrections",
+        "operationId": "list_corrections_api_worlds__world_id__spatial_global_corrections_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Corrections Api Worlds  World Id  Spatial Global Corrections Get"
+                }
               }
             }
           },
@@ -15917,7 +16455,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -15934,7 +16472,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -16109,7 +16647,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -16123,7 +16661,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -16137,7 +16675,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -16163,7 +16701,7 @@
           },
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -16220,7 +16758,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -16606,6 +17144,40 @@
         "additionalProperties": false,
         "type": "object",
         "title": "BuildingPatch"
+      },
+      "CalibrateBody": {
+        "properties": {
+          "distance_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/DistanceAnchorBody"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Distance Anchors"
+          },
+          "point_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/PointAnchorBody"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Point Anchors"
+          },
+          "expected_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version Id"
+          }
+        },
+        "type": "object",
+        "title": "CalibrateBody"
       },
       "CallIn": {
         "properties": {
@@ -17248,6 +17820,81 @@
         ],
         "title": "ConnectorIn"
       },
+      "CorrectionBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^(dimension|reclassify|exclude)$",
+            "title": "Kind"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "new_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Class"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CorrectionBody",
+        "description": "One user judgment on the latest spatial version. kind: `dimension` (a stated real length/area, needs the world's metric scale),\n`reclassify` (entity class), `exclude` (this observation, or all evidence of this entity, is wrong)."
+      },
       "CorridorIn": {
         "properties": {
           "name": {
@@ -17721,6 +18368,85 @@
           "label"
         ],
         "title": "DesignOptionIn"
+      },
+      "DistanceAnchorBody": {
+        "properties": {
+          "anchor_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Anchor Id"
+          },
+          "point_a": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Point A"
+          },
+          "point_b": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Point B"
+          },
+          "measured": {
+            "type": "number",
+            "title": "Measured"
+          },
+          "sigma": {
+            "type": "number",
+            "title": "Sigma"
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 4,
+            "title": "Unit"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Source"
+          },
+          "measured_at": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Measured At"
+          },
+          "provenance": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Provenance"
+          },
+          "endpoint_sigma_gauge": {
+            "type": "number",
+            "title": "Endpoint Sigma Gauge",
+            "default": 0.0
+          },
+          "held_out": {
+            "type": "boolean",
+            "title": "Held Out",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "anchor_id",
+          "point_a",
+          "point_b",
+          "measured",
+          "sigma",
+          "unit",
+          "source",
+          "measured_at",
+          "provenance"
+        ],
+        "title": "DistanceAnchorBody"
       },
       "DistrictDetailIn": {
         "properties": {
@@ -19387,6 +20113,69 @@
         "type": "object",
         "title": "PlacementPatch"
       },
+      "PointAnchorBody": {
+        "properties": {
+          "anchor_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Anchor Id"
+          },
+          "recon_xyz": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Recon Xyz"
+          },
+          "physical_xyz": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Physical Xyz"
+          },
+          "sigma_m": {
+            "type": "number",
+            "title": "Sigma M"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Source"
+          },
+          "measured_at": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Measured At"
+          },
+          "provenance": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Provenance"
+          },
+          "held_out": {
+            "type": "boolean",
+            "title": "Held Out",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "anchor_id",
+          "recon_xyz",
+          "physical_xyz",
+          "sigma_m",
+          "source",
+          "measured_at",
+          "provenance"
+        ],
+        "title": "PointAnchorBody"
+      },
       "PortalRequest": {
         "properties": {
           "return_url": {
@@ -20525,6 +21314,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

@@ -43,7 +43,7 @@ Category priority: release-gate > physics-excluded > physical-data > native > gp
 | `tests/integration/test_pipeline_matrix.py` | @Shresthbhati | worldstore | integration |  |  |  |  |  |  | full |
 | `tests/integration/test_progressive_product_journey.py` | @Shresthbhati | perception | physical-data | yes |  | yes | south_building |  | aiosqlite, fastapi, sqlalchemy | full, nightly-slow |
 | `tests/integration/test_provenance_firewall.py` | @Shresthbhati | worldstore | integration |  |  |  |  |  |  | full |
-| `tests/integration/test_real_photo_acceptance.py` | @Shresthbhati | worldstore | physical-data |  |  | yes | real_room_capture |  | colmap, dataset:real_room_capture | full |
+| `tests/integration/test_real_photo_acceptance.py` | @Shresthbhati | worldstore | physical-data |  |  | yes | real_room_capture |  | colmap, dataset:real_room_capture/*.jpg | full |
 | `tests/integration/test_real_synthetic_separation.py` | @Shresthbhati | worldstore | integration |  |  |  |  |  |  | full |
 | `tests/integration/test_reconstruction_to_worldos_e2e.py` | @Shresthbhati | worldstore | integration |  |  |  |  |  |  | full |
 | `tests/integration/test_release_gate.py` | @Shresthbhati | worldstore | release-gate | yes |  | yes | south_building |  | fastapi | full, nightly-slow |

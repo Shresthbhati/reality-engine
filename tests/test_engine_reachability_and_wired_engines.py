@@ -126,8 +126,10 @@ class TestEngineReachabilityMeasurement:
         # is why the test verifies structure + consistency, not a frozen literal.
         assert per["perception"]["implemented"] >= 160
         assert per["engine"]["implemented"] >= 200
-        assert per["reconstruction"]["implemented"] == 89
-        assert per["reconstruction"]["unreachable"] == 80
+        # Lower bounds, not frozen literals (the module count grows with every new reconstruction module, as the
+        # comment above says; it was ``== 89`` / ``== 80`` and broke the first time main added a module).
+        assert per["reconstruction"]["implemented"] >= 89
+        assert per["reconstruction"]["unreachable"] >= 80
 
         # The reconstruction unreachable set is the actionable one: implemented
         # backend modules not consumed by the production job path.

@@ -138,6 +138,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}`**: Get Run
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/artifacts/{digest}`**: Get Artifact
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/associations`**: Handler
+- **`POST /api/worlds/{world_id}/evidence-world/{run_id}/calibrate`**: Calibrate Run World
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/capture-requests`**: Handler
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/conflicts`**: Handler
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/entities`**: List Entities
@@ -154,6 +155,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/rejected`**: List Rejected
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/rows`**: List Rows
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/runs`**: List Engine Runs
+- **`GET /api/worlds/{world_id}/evidence-world/{run_id}/spatial-inputs`**: Get Spatial Inputs V1
 - **`GET /api/worlds/{world_id}/evidence-world/{run_id}/world`**: Get Persisted World
 
 ### export
@@ -313,6 +315,17 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/sites/{site_id}/placements`**: Add Placement
 - **`DELETE /api/sites/{site_id}/placements/{placement_id}`**: Delete Placement
 - **`PATCH /api/sites/{site_id}/placements/{placement_id}`**: Patch Placement
+
+### spatial-global
+
+- **`GET /api/worlds/{world_id}/spatial-global`**: List Versions
+- **`GET /api/worlds/{world_id}/spatial-global/changes/{version_id}`**: Changes
+- **`GET /api/worlds/{world_id}/spatial-global/corrections`**: List Corrections
+- **`POST /api/worlds/{world_id}/spatial-global/corrections`**: Add Correction
+- **`GET /api/worlds/{world_id}/spatial-global/entities/{entity_id}`**: Entity
+- **`GET /api/worlds/{world_id}/spatial-global/export`**: Export
+- **`GET /api/worlds/{world_id}/spatial-global/latest`**: Latest
+- **`GET /api/worlds/{world_id}/spatial-global/versions/{version_id}`**: Version
 
 ### splats
 

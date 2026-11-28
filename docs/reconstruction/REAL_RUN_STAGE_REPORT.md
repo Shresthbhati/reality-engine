@@ -57,6 +57,12 @@ Honest reading of room11: the gate is a no-op there (control identical), but thi
 room6: CPU run 329 s (mapper failed, 233 s single-image fallback); GPU run 1856 s (mapper failed again even with per-size cameras; fallback much slower) while the GPU was shared; not re-run idle. A 4-8x slowdown for identical code when the 6 GB GPU is shared is what these numbers show; the cause (VRAM paging) is suspected, not proven. Torch residual after every stage is <= 90 MB (models are released); the Grounding DINO + SAM 2 + DINOv2 perception stage peaks at 3.6 GB torch allocation / 4.2 GB whole device, so it must not share the GPU with anything else. Depth (DPT_Hybrid) and detectors load on CUDA (torch peak 659 MB and 3586 MB), not CPU.
 
 
+**Room-geometry validation `synthetic:canonical_interior_promote_building_False`**: verdict `no_violations_found_with_unknowns`, errors 0, warnings 0, unknown 1; checks `{"duplicate_walls": "pass", "room_closure": "pass", "footprint_validity": "pass", "openings": "not_applicable", "surface_bounding": "pass", "attachments": "not_applicable", "camera_conflicts": "pass", "topology": "partial"}`; rooms `{"room-plane-000": "closed", "room-plane-001": "closed"}`; context `{"up_axis": "y", "scale_state": "unknown_or_relative", "walls": 12, "walls_readable": 12, "rooms": 2, "cameras": 5}`
+
+**Room-geometry validation `synthetic:canonical_interior_promote_building_True`**: verdict `no_violations_found`, errors 0, warnings 0, unknown 0; checks `{"duplicate_walls": "pass", "room_closure": "pass", "footprint_validity": "pass", "openings": "not_applicable", "surface_bounding": "pass", "attachments": "not_applicable", "camera_conflicts": "pass", "topology": "pass"}`; rooms `{"room-plane-000": "closed", "room-plane-001": "closed"}`; context `{"up_axis": "y", "scale_state": "unknown_or_relative", "walls": 16, "walls_readable": 16, "rooms": 2, "cameras": 5}`
+
+**Room-geometry validation `synthetic:room_fidelity_fixture`**: verdict `no_violations_found_with_unknowns`, errors 0, warnings 0, unknown 1; checks `{"duplicate_walls": "pass", "room_closure": "pass", "footprint_validity": "pass", "openings": "pass", "surface_bounding": "pass", "attachments": "not_applicable", "camera_conflicts": "unknown", "topology": "pass"}`; rooms `{"room-plane-000": "closed"}`; context `{"up_axis": "z", "scale_state": "unknown_or_relative", "walls": 8, "walls_readable": 8, "rooms": 1, "cameras": 0}`
+
 ## Run `room6`
 
 - images: `datasets/user_room_nov14/images` (6 used), run at 2026-11-23T18:58:50, RTX 4050 6GB laptop, Windows; COLMAP colmap
@@ -559,6 +565,63 @@ warnings logged: 0
 - `C:\Users\shres\.cache\torch\hub\checkpoints\dpt_hybrid_384.pt` 469.9 MB sha256 `501f0c75b3bca7da...` stages ['depth', 'ladder_after_finalize'] via python open()
 
 **COLMAP `staging`**: models ['0'], registered per model [6], images in db 11, two_view_geometries {"pairs_total": 55, "pairs_with_inliers": 23, "inlier_hist": {"0-0": 32, "1-14": 0, "15-29": 14, "30-49": 5, "50-99": 1, "100-199": 2, "200-499": 1, "500-+": 0}, "config_counts": {"0": 32, "3": 23}}
+
+warnings logged: 0
+
+## Run `room11_geom`
+
+- images: `datasets/user_room_nov14/images` (11 used), run at 2026-11-23T23:58:07, RTX 4050 6GB laptop, Windows; COLMAP colmap
+- intrinsics before solve: `{"image_size": [1672, 941], "intrinsics": null, "mixed_image_sizes": {"1536x1024": 2, "1672x941": 9}, "note": "no EXIF focal length or earlier COLMAP intrinsics: intrinsics unset, dependent stages skip"}`
+- ladder: `{"wall_s": 282.78, "peak_rss_mb": 1644.0, "peak_child_colmap_rss_mb": 3884.0, "exception": null, "level": 2, "level_name": "sparse photogrammetric reconstruction", "model_state": "PARTIAL", "attempts": [{"level": 2, "name": "sparse photogrammetric reconstruction", "outcome": "succeeded", "elapsed_s": 277.397, "detail": "6/11 cameras registered"}, {"level": 3, "name": "dense reconstruction", "outcome": "skipped", "detail": "registration: 6 of 11 photographs registered (55%; needs >= 80%); geometric support: median structure point is seen by 1 cameras (needs >= 3)"}], "degraded": ["registration 'partial': 6/11 cameras"], "scale_state": "relative", "registered": 6, "inputs": 11, "excluded": [], "entities": 13, "entity_types": {"wall": 1, "floor": 2, "support_surface": 1, "furniture": 6, "unknown": 1, "structure": 2}}`
+
+| stage | status | wall s | peak RSS MB (proc / colmap child) | min free RAM MB | torch CUDA peak / residual MB | GPU used MB (whole device) | inputs | outputs |
+|---|---|---|---|---|---|---|---|---|
+| evidence_resolve | succeeded | 0.08 | - / - | - | - / - | - | `{"files": 11}` | `{"unique": 11, "exact_duplicates_dropped": 0}` |
+| evidence_quality | succeeded | 2.78 | 649.0 / - | - | - / - | - | `{"images": 11}` | `{"ok": 11, "geometry_eligible": 11, "evidence_class": {"photograph_unverified": 11}, "sizes": ["1536x1024", "1672x941"], "images_with_exif_focal_35mm": 0, "exif_keys_seen": []}` |
+| scene_gate | ok | 27.63 | 1518.0 / - | - | - / - | - | `{"images": 11}` | `{"groups": [10], "verified_pairs": 18, "excluded": 0, "unlinked": ["ev_006"], "uncertain_links": [{"a": "ev_000", "b": "ev_001", "matches": 22, "inliers": 10, "inlier_ratio": 0.4545}, {"a": "ev_000", "b": "ev_006", "matches": 15, "inliers": 9, "inlier_ratio": 0.6}, {"a": "ev_000", "b": "ev_009", "ma` |
+| pose | degraded | 34.41 | 1088.0 / 3884.0 | 1.0 | 8.0 / 8.0 | 860.0 | `{"images": 11}` | `{"cameras_registered": 6, "sparse_points": 108, "registration_status": "partial"}` |
+| scale | succeeded | 0.37 | 96.0 / 0.0 | 3266.0 | 8.0 / 8.0 | None | `{}` | `{"scale_state": "relative", "meters_per_unit": null, "note": "no metric reference supplied -- reconstruction stays in arbitrary model units (RELATIVE); all measurements derived from it are unit-less model distances, NOT meters | working unit: solver units scaled"}` |
+| depth | succeeded | 58.47 | 1316.0 / 0.0 | 430.0 | 659.0 / 26.0 | 919.0 | `{}` | `{"metric_depth_maps": 6}` |
+| layout | succeeded | 12.11 | 744.0 / 0.0 | 341.0 | 640.0 / 26.0 | 1091.0 | `{}` | `{"entities": 4}` |
+| perception | succeeded | 165.78 | 1614.0 / 0.0 | 390.0 | 3586.0 / 90.0 | 4229.0 | `{"metric_depth_maps": 6, "images": 11}` | `{"status": "ran", "views_segmented": 6, "masks_considered": 67, "hypotheses_lifted": 67, "candidates_merged": 7, "entities_promoted": 7}` |
+| mesh | skipped | 0.0 | 408.0 / 0.0 | 2631.0 | 90.0 / 90.0 | None | `{}` | `{"keys": ["facts"]}` |
+| dense | skipped | 0.02 | 408.0 / 0.0 | 2632.0 | 90.0 / 90.0 | None | `{}` | `{"keys": ["world", "diagnostics", "dense_mvs_facts", "dense_gate_facts", "structure_facts", "plane_sweep_facts", "fusion_facts"]}` |
+| detail | succeeded | 4.03 | 417.0 / 0.0 | 1945.0 | 90.0 / 90.0 | 391.0 | `{}` | `{"keys": ["facts"]}` |
+| finalize | succeeded | 0.39 | 420.0 / 0.0 | 1944.0 | 90.0 / 90.0 | None | `{}` | `{}` |
+
+**Observations (perception)**: `{"detections_2d": 67, "masks_considered": 67, "lifted_to_3d": 67, "merged_candidates": 7, "promoted_entities": 7, "association_decisions": {"DIFFERENT_ENTITY": 64, "SAME_ENTITY_CONFIRMED": 3}, "dropped_candidates_by_reason": {"outside_scene": 14, "single_view": 25}, "mask_source": {"requested": "sam2", "sam2": 67, "depth_band": 0, "fallback_reason": null}, "appearance": {"requested": "dinov2", "embedded": 67, "skipped": 0, "fallback_reason": null, "backend": "dinov2", "matrix_dtype": "float16", "matrix_bytes": 51456}}`
+
+**Failures / rejections**
+
+- none
+
+**Every fallback / skip taken**
+
+- `pose` @ `StageResult.warnings` [degraded]: "no trusted intrinsics: using the focal length COLMAP estimated for this run (fx=1058.1px, trust=estimated)" -- effect: "see reason"
+- `pose` @ `StageResult.warnings` [degraded]: "registration_status='partial': 6/11 cameras registered" -- effect: "see reason"
+- `layout` @ `<stage>` [unavailable]: "no learned single-image room-layout estimator is installed: HorizonNet/LayoutNet weights are not in this repository and installing a specific model is a product decision (plan section 6, item 3)" -- effect: "NOT STATED by the pipeline"
+- `layout` @ `StageResult.warnings` [succeeded]: "layout_evidence: unavailable (no layout/<stem>.json sidecars in the capture)" -- effect: "see reason"
+- `perception` @ `resolution.appearance` [fallback]: null -- effect: "NOT STATED by the pipeline"
+- `perception` @ `masks` [fallback]: null -- effect: "NOT STATED by the pipeline"
+- `mesh` @ `<stage>` [skipped]: "world is not METRIC-scale -- meshing unit-less points would silently claim meters" -- effect: "NOT STATED by the pipeline"
+- `mesh` @ `StageResult.warnings` [skipped]: "mesh: skipped (world is not METRIC-scale -- meshing unit-less points would silently claim meters)" -- effect: "see reason"
+- `dense` @ `fusion` [skipped]: "world is not METRIC-scale -- fusing unit-less ranges would silently claim meters" -- effect: "NOT STATED by the pipeline"
+- `dense` @ `StageResult.warnings` [skipped]: "dense_mvs: disabled (dense MVS is off by default (heavyweight GPU stage); set dense_mvs_enabled=True and name the capture paths to run it)" -- effect: "see reason"
+- `dense` @ `StageResult.warnings` [skipped]: "plane_sweep: disabled (CPU plane sweep is opt-in (set plane_sweep_enabled=True))" -- effect: "see reason"
+- `dense` @ `StageResult.warnings` [skipped]: "fusion: skipped (world is not METRIC-scale -- fusing unit-less ranges would silently claim meters)" -- effect: "see reason"
+- `ladder` @ `ladder.attempts[1]` [skipped]: "registration: 6 of 11 photographs registered (55%; needs >= 80%); geometric support: median structure point is seen by 1 cameras (needs >= 3)" -- effect: "level achieved: sparse photogrammetric reconstruction"
+- `ladder` @ `ladder.degraded` [degraded]: "registration 'partial': 6/11 cameras" -- effect: "grades the job partial"
+
+**Models / checkpoints actually opened**
+
+- `C:\Users\shres\.cache\torch\hub\checkpoints\depth-save.pth` 4.2 MB sha256 `9c2ee4ded238892d...` stages ['scene_gate', 'ladder_after_finalize'] via python open()
+- `C:\Users\shres\.cache\torch\hub\checkpoints\dpt_hybrid_384.pt` 469.9 MB sha256 `501f0c75b3bca7da...` stages ['depth', 'ladder_after_finalize'] via python open()
+
+**COLMAP `staging`**: models ['0'], registered per model [6], images in db 11, two_view_geometries {"pairs_total": 55, "pairs_with_inliers": 23, "inlier_hist": {"0-0": 32, "1-14": 0, "15-29": 14, "30-49": 5, "50-99": 1, "100-199": 2, "200-499": 1, "500-+": 0}, "config_counts": {"0": 32, "3": 22, "6": 1}}
+
+**Independent SIFT+RANSAC check**: `{"images": 11, "pairs": 55, "inlier_hist": {"0-0": 0, "1-14": 37, "15-29": 14, "30-49": 2, "50-99": 2, "100-199": 0, "200-499": 0, "500-+": 0}, "pairs_ge_30": 4, "pairs_ge_100": 0, "median_inliers": 13.0, "components_at_30_inliers": [4, 1, 1, 1, 1, 1, 1, 1]}`
+
+**Room-geometry validation `room11_geom`**: verdict `no_violations_found_with_unknowns`, errors 0, warnings 0, unknown 6; checks `{"duplicate_walls": "not_applicable", "room_closure": "not_applicable", "footprint_validity": "not_applicable", "openings": "not_applicable", "surface_bounding": "unknown", "attachments": "unknown", "camera_conflicts": "partial", "topology": "unknown"}`; rooms `{}`; context `{"up_axis": "y", "scale_state": "unknown_or_relative", "walls": 1, "walls_readable": 0, "rooms": 0, "cameras": 6}`
 
 warnings logged: 0
 

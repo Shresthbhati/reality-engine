@@ -20484,6 +20484,2917 @@
    "when": "2026-11-23T21:38:10",
    "total_wall_s": 185.8,
    "machine": "RTX 4050 6GB laptop, Windows; COLMAP colmap"
+  },
+  "room11_geom": {
+   "stages": [
+    {
+     "stage": "evidence_resolve",
+     "status": "succeeded",
+     "wall_s": 0.08,
+     "inputs": {
+      "files": 11
+     },
+     "outputs": {
+      "unique": 11,
+      "exact_duplicates_dropped": 0
+     }
+    },
+    {
+     "stage": "evidence_quality",
+     "status": "succeeded",
+     "wall_s": 2.78,
+     "peak_rss_mb": 649.0,
+     "inputs": {
+      "images": 11
+     },
+     "outputs": {
+      "ok": 11,
+      "geometry_eligible": 11,
+      "evidence_class": {
+       "photograph_unverified": 11
+      },
+      "sizes": [
+       "1536x1024",
+       "1672x941"
+      ],
+      "images_with_exif_focal_35mm": 0,
+      "exif_keys_seen": []
+     },
+     "rejected": []
+    },
+    {
+     "stage": "scene_gate",
+     "status": "ok",
+     "wall_s": 27.63,
+     "peak_rss_mb": 1518.0,
+     "inputs": {
+      "images": 11
+     },
+     "outputs": {
+      "groups": [
+       10
+      ],
+      "verified_pairs": 18,
+      "excluded": 0,
+      "unlinked": [
+       "ev_006"
+      ],
+      "uncertain_links": [
+       {
+        "a": "ev_000",
+        "b": "ev_001",
+        "matches": 22,
+        "inliers": 10,
+        "inlier_ratio": 0.4545
+       },
+       {
+        "a": "ev_000",
+        "b": "ev_006",
+        "matches": 15,
+        "inliers": 9,
+        "inlier_ratio": 0.6
+       },
+       {
+        "a": "ev_000",
+        "b": "ev_009",
+        "matches": 18,
+        "inliers": 9,
+        "inlier_ratio": 0.5
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_002",
+        "matches": 698,
+        "inliers": 116,
+        "inlier_ratio": 0.1662
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_003",
+        "matches": 403,
+        "inliers": 68,
+        "inlier_ratio": 0.1687
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_004",
+        "matches": 738,
+        "inliers": 95,
+        "inlier_ratio": 0.1287
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_005",
+        "matches": 188,
+        "inliers": 32,
+        "inlier_ratio": 0.1702
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_006",
+        "matches": 21,
+        "inliers": 9,
+        "inlier_ratio": 0.4286
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_007",
+        "matches": 666,
+        "inliers": 114,
+        "inlier_ratio": 0.1712
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_008",
+        "matches": 653,
+        "inliers": 109,
+        "inlier_ratio": 0.1669
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_010",
+        "matches": 693,
+        "inliers": 95,
+        "inlier_ratio": 0.1371
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_003",
+        "matches": 465,
+        "inliers": 83,
+        "inlier_ratio": 0.1785
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_004",
+        "matches": 1058,
+        "inliers": 157,
+        "inlier_ratio": 0.1484
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_005",
+        "matches": 546,
+        "inliers": 100,
+        "inlier_ratio": 0.1832
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_006",
+        "matches": 19,
+        "inliers": 10,
+        "inlier_ratio": 0.5263
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_008",
+        "matches": 397,
+        "inliers": 78,
+        "inlier_ratio": 0.1965
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_010",
+        "matches": 950,
+        "inliers": 134,
+        "inlier_ratio": 0.1411
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_004",
+        "matches": 631,
+        "inliers": 108,
+        "inlier_ratio": 0.1712
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_005",
+        "matches": 149,
+        "inliers": 25,
+        "inlier_ratio": 0.1678
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_006",
+        "matches": 24,
+        "inliers": 9,
+        "inlier_ratio": 0.375
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_008",
+        "matches": 418,
+        "inliers": 80,
+        "inlier_ratio": 0.1914
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_010",
+        "matches": 511,
+        "inliers": 85,
+        "inlier_ratio": 0.1663
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_006",
+        "matches": 22,
+        "inliers": 10,
+        "inlier_ratio": 0.4545
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_007",
+        "matches": 1557,
+        "inliers": 296,
+        "inlier_ratio": 0.1901
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_008",
+        "matches": 550,
+        "inliers": 81,
+        "inlier_ratio": 0.1473
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_009",
+        "matches": 547,
+        "inliers": 104,
+        "inlier_ratio": 0.1901
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_010",
+        "matches": 1223,
+        "inliers": 235,
+        "inlier_ratio": 0.1922
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_006",
+        "matches": 22,
+        "inliers": 9,
+        "inlier_ratio": 0.4091
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_008",
+        "matches": 217,
+        "inliers": 38,
+        "inlier_ratio": 0.1751
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_010",
+        "matches": 339,
+        "inliers": 64,
+        "inlier_ratio": 0.1888
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_008",
+        "matches": 17,
+        "inliers": 8,
+        "inlier_ratio": 0.4706
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_009",
+        "matches": 22,
+        "inliers": 9,
+        "inlier_ratio": 0.4091
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_010",
+        "matches": 14,
+        "inliers": 8,
+        "inlier_ratio": 0.5714
+       },
+       {
+        "a": "ev_007",
+        "b": "ev_008",
+        "matches": 571,
+        "inliers": 103,
+        "inlier_ratio": 0.1804
+       },
+       {
+        "a": "ev_007",
+        "b": "ev_010",
+        "matches": 1387,
+        "inliers": 251,
+        "inlier_ratio": 0.181
+       },
+       {
+        "a": "ev_008",
+        "b": "ev_010",
+        "matches": 579,
+        "inliers": 75,
+        "inlier_ratio": 0.1295
+       }
+      ]
+     },
+     "rejected": [],
+     "scene": {
+      "state": "ok",
+      "primary_group_id": "sg-540e6f22ae",
+      "groups": [
+       {
+        "group_id": "sg-540e6f22ae",
+        "members": [
+         "'ev_000'",
+         "'ev_001'",
+         "'ev_002'",
+         "'ev_003'",
+         "'ev_004'",
+         "'ev_005'",
+         "'ev_007'",
+         "'ev_008'",
+         "'ev_009'",
+         "'ev_010'"
+        ]
+       }
+      ],
+      "unlinked": [
+       "ev_006"
+      ],
+      "uncertain_links": [
+       {
+        "a": "ev_000",
+        "b": "ev_001",
+        "matches": 22,
+        "inliers": 10,
+        "inlier_ratio": 0.4545
+       },
+       {
+        "a": "ev_000",
+        "b": "ev_006",
+        "matches": 15,
+        "inliers": 9,
+        "inlier_ratio": 0.6
+       },
+       {
+        "a": "ev_000",
+        "b": "ev_009",
+        "matches": 18,
+        "inliers": 9,
+        "inlier_ratio": 0.5
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_002",
+        "matches": 698,
+        "inliers": 116,
+        "inlier_ratio": 0.1662
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_003",
+        "matches": 403,
+        "inliers": 68,
+        "inlier_ratio": 0.1687
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_004",
+        "matches": 738,
+        "inliers": 95,
+        "inlier_ratio": 0.1287
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_005",
+        "matches": 188,
+        "inliers": 32,
+        "inlier_ratio": 0.1702
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_006",
+        "matches": 21,
+        "inliers": 9,
+        "inlier_ratio": 0.4286
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_007",
+        "matches": 666,
+        "inliers": 114,
+        "inlier_ratio": 0.1712
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_008",
+        "matches": 653,
+        "inliers": 109,
+        "inlier_ratio": 0.1669
+       },
+       {
+        "a": "ev_001",
+        "b": "ev_010",
+        "matches": 693,
+        "inliers": 95,
+        "inlier_ratio": 0.1371
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_003",
+        "matches": 465,
+        "inliers": 83,
+        "inlier_ratio": 0.1785
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_004",
+        "matches": 1058,
+        "inliers": 157,
+        "inlier_ratio": 0.1484
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_005",
+        "matches": 546,
+        "inliers": 100,
+        "inlier_ratio": 0.1832
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_006",
+        "matches": 19,
+        "inliers": 10,
+        "inlier_ratio": 0.5263
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_008",
+        "matches": 397,
+        "inliers": 78,
+        "inlier_ratio": 0.1965
+       },
+       {
+        "a": "ev_002",
+        "b": "ev_010",
+        "matches": 950,
+        "inliers": 134,
+        "inlier_ratio": 0.1411
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_004",
+        "matches": 631,
+        "inliers": 108,
+        "inlier_ratio": 0.1712
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_005",
+        "matches": 149,
+        "inliers": 25,
+        "inlier_ratio": 0.1678
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_006",
+        "matches": 24,
+        "inliers": 9,
+        "inlier_ratio": 0.375
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_008",
+        "matches": 418,
+        "inliers": 80,
+        "inlier_ratio": 0.1914
+       },
+       {
+        "a": "ev_003",
+        "b": "ev_010",
+        "matches": 511,
+        "inliers": 85,
+        "inlier_ratio": 0.1663
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_006",
+        "matches": 22,
+        "inliers": 10,
+        "inlier_ratio": 0.4545
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_007",
+        "matches": 1557,
+        "inliers": 296,
+        "inlier_ratio": 0.1901
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_008",
+        "matches": 550,
+        "inliers": 81,
+        "inlier_ratio": 0.1473
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_009",
+        "matches": 547,
+        "inliers": 104,
+        "inlier_ratio": 0.1901
+       },
+       {
+        "a": "ev_004",
+        "b": "ev_010",
+        "matches": 1223,
+        "inliers": 235,
+        "inlier_ratio": 0.1922
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_006",
+        "matches": 22,
+        "inliers": 9,
+        "inlier_ratio": 0.4091
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_008",
+        "matches": 217,
+        "inliers": 38,
+        "inlier_ratio": 0.1751
+       },
+       {
+        "a": "ev_005",
+        "b": "ev_010",
+        "matches": 339,
+        "inliers": 64,
+        "inlier_ratio": 0.1888
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_008",
+        "matches": 17,
+        "inliers": 8,
+        "inlier_ratio": 0.4706
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_009",
+        "matches": 22,
+        "inliers": 9,
+        "inlier_ratio": 0.4091
+       },
+       {
+        "a": "ev_006",
+        "b": "ev_010",
+        "matches": 14,
+        "inliers": 8,
+        "inlier_ratio": 0.5714
+       },
+       {
+        "a": "ev_007",
+        "b": "ev_008",
+        "matches": 571,
+        "inliers": 103,
+        "inlier_ratio": 0.1804
+       },
+       {
+        "a": "ev_007",
+        "b": "ev_010",
+        "matches": 1387,
+        "inliers": 251,
+        "inlier_ratio": 0.181
+       },
+       {
+        "a": "ev_008",
+        "b": "ev_010",
+        "matches": 579,
+        "inliers": 75,
+        "inlier_ratio": 0.1295
+       }
+      ],
+      "declared_conflicts": [
+       {
+        "session": "s",
+        "reason": "declared as one capture but verified correspondences split it into 2 scene groups (or unlinked images)",
+        "members": [
+         "'ev_000'",
+         "'ev_001'",
+         "'ev_002'",
+         "'ev_003'",
+         "'ev_004'",
+         "'ev_005'",
+         "'ev_006'",
+         "'ev_007'",
+         "'ev_008'",
+         "'ev_009'",
+         "'ev_010'"
+        ]
+       }
+      ],
+      "verified_pairs": 18
+     }
+    },
+    {
+     "stage": "pose",
+     "status": "degraded",
+     "wall_s": 34.41,
+     "peak_rss_mb": 1088.0,
+     "peak_child_colmap_rss_mb": 3884.0,
+     "peak_gpu_used_mb_whole_device": 860.0,
+     "min_system_free_ram_mb": 1.0,
+     "peak_cuda_alloc_mb": 8.0,
+     "cuda_residual_after_stage_mb": 8.0,
+     "inputs": {
+      "images": 11
+     },
+     "outputs": {
+      "cameras_registered": 6,
+      "sparse_points": 108,
+      "registration_status": "partial"
+     },
+     "metrics": {
+      "cameras_registered": 6.0,
+      "cameras_input": 11.0,
+      "points": 108.0
+     },
+     "warnings": [
+      "no trusted intrinsics: using the focal length COLMAP estimated for this run (fx=1058.1px, trust=estimated)",
+      "registration_status='partial': 6/11 cameras registered"
+     ],
+     "facts": {
+      "colmap_gpu_decision": {
+       "use_gpu": true,
+       "source": "auto",
+       "free_vram_mb": 5804,
+       "reason": "CUDA COLMAP build and 5804 MB VRAM free",
+       "sift_extraction": "cpu (affine+DSP SIFT is CPU-only in COLMAP)",
+       "matching": "gpu",
+       "effect": "extraction stays on CPU (robust_sift; ~3x slower than plain SIFT, +22% points measured); matching on GPU, not verified bit-identical to CPU"
+      },
+      "backend": {
+       "evidence_count": 11,
+       "image_evidence_count": 11,
+       "evidence_validation": {
+        "total": 11,
+        "image": 11,
+        "kinds": [
+         "'photo'"
+        ],
+        "issues": []
+       },
+       "attempts": [
+        {
+         "backend_name": "'ColmapReconstructionBackend'",
+         "outcome": "'partial'",
+         "available": "True",
+         "detail": "'registration_status=partial'",
+         "error": "''",
+         "duration_s": "34.28168640000513"
+        }
+       ],
+       "final_status": "partial",
+       "backend_name": "ColmapReconstructionBackend",
+       "duration_s": 34.30724920000648,
+       "error": "",
+       "depth_consistency": null
+      },
+      "registration_status": "partial",
+      "cameras": 6,
+      "notes": null
+     },
+     "fallbacks": [
+      {
+       "where": "StageResult.warnings",
+       "state": "degraded",
+       "reason": "no trusted intrinsics: using the focal length COLMAP estimated for this run (fx=1058.1px, trust=estimated)",
+       "effect_stated_by_pipeline": "see reason"
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "degraded",
+       "reason": "registration_status='partial': 6/11 cameras registered",
+       "effect_stated_by_pipeline": "see reason"
+      }
+     ]
+    },
+    {
+     "stage": "scale",
+     "status": "succeeded",
+     "wall_s": 0.37,
+     "peak_rss_mb": 96.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": null,
+     "min_system_free_ram_mb": 3266.0,
+     "peak_cuda_alloc_mb": 8.0,
+     "cuda_residual_after_stage_mb": 8.0,
+     "inputs": {},
+     "outputs": {
+      "scale_state": "relative",
+      "meters_per_unit": null,
+      "note": "no metric reference supplied -- reconstruction stays in arbitrary model units (RELATIVE); all measurements derived from it are unit-less model distances, NOT meters | working unit: solver units scaled"
+     },
+     "metrics": {
+      "unit_k": 0.5269568339036813
+     },
+     "warnings": [],
+     "facts": "no metric reference supplied -- reconstruction stays in arbitrary model units (RELATIVE); all measurements derived from it are unit-less model distances, NOT meters | working unit: solver units scaled so the median camera-to-point distance is 3 working units (a typical interior viewing distance); a working unit, NOT metres",
+     "fallbacks": []
+    },
+    {
+     "stage": "depth",
+     "status": "succeeded",
+     "wall_s": 58.47,
+     "peak_rss_mb": 1316.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": 919.0,
+     "min_system_free_ram_mb": 430.0,
+     "peak_cuda_alloc_mb": 659.0,
+     "cuda_residual_after_stage_mb": 26.0,
+     "inputs": {},
+     "outputs": {
+      "metric_depth_maps": 6
+     },
+     "metrics": {
+      "maps": 11.0,
+      "metricized": 6.0,
+      "dense_points": 15297.0
+     },
+     "warnings": [],
+     "facts": {
+      "status": "ran",
+      "model": "DPT_Hybrid",
+      "maps": 11,
+      "metricized": 6,
+      "metricize_failed": 5,
+      "dense_points": 15297,
+      "dense_points_trimmed_outside_scene": 21873,
+      "dense_points_with_colour": 15297,
+      "stride": 16,
+      "residual_median_m": 1.1302473108007853,
+      "alignments": [
+       {
+        "evidence_id": "ev_002",
+        "residual_median_m": 0.23126747603913378,
+        "inlier_fraction": 0.8301886792452831,
+        "aligned_pixels": 106,
+        "scale": 0.14725039267180662,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 106 SfM sparse points (residual median 231.3 mm, inlier fraction 0.83); correct where the sparse cloud is dense, approximate elsewhere"
+       },
+       {
+        "evidence_id": "ev_003",
+        "residual_median_m": 3.4696248574741424,
+        "inlier_fraction": 0.9074074074074074,
+        "aligned_pixels": 108,
+        "scale": 0.031232154273149952,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 108 SfM sparse points (residual median 3469.6 mm, inlier fraction 0.91); correct where the sparse cloud is dense, approximate elsewhere"
+       },
+       {
+        "evidence_id": "ev_004",
+        "residual_median_m": 1.1302473108007853,
+        "inlier_fraction": 0.7685185185185185,
+        "aligned_pixels": 108,
+        "scale": 0.14790590095715656,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 108 SfM sparse points (residual median 1130.2 mm, inlier fraction 0.77); correct where the sparse cloud is dense, approximate elsewhere"
+       },
+       {
+        "evidence_id": "ev_007",
+        "residual_median_m": 0.6808649957209177,
+        "inlier_fraction": 0.9038461538461539,
+        "aligned_pixels": 104,
+        "scale": 0.18104183051629452,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 104 SfM sparse points (residual median 680.9 mm, inlier fraction 0.90); correct where the sparse cloud is dense, approximate elsewhere"
+       },
+       {
+        "evidence_id": "ev_009",
+        "residual_median_m": 1.8555077742086485,
+        "inlier_fraction": 0.8411214953271028,
+        "aligned_pixels": 107,
+        "scale": 0.07479052748825155,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 107 SfM sparse points (residual median 1855.5 mm, inlier fraction 0.84); correct where the sparse cloud is dense, approximate elsewhere"
+       },
+       {
+        "evidence_id": "ev_010",
+        "residual_median_m": 0.9161435780821034,
+        "inlier_fraction": 0.8796296296296297,
+        "aligned_pixels": 108,
+        "scale": 0.2699824131528756,
+        "shift": 0.0,
+        "model": "scale",
+        "note": "relative depth metricized by scale inverse-depth alignment against 108 SfM sparse points (residual median 916.1 mm, inlier fraction 0.88); correct where the sparse cloud is dense, approximate elsewhere"
+       }
+      ],
+      "note": "relative monocular depth metricized per-view against the SfM sparse cloud (documented approximation, see reconstruction.depth_to_points)",
+      "frame_refined": {
+       "correction_deg": 6.27,
+       "planes_used": 87,
+       "up_source": "camera_up_vectors+vertical_plane+dense_planes"
+      }
+     },
+     "fallbacks": []
+    },
+    {
+     "stage": "layout",
+     "status": "succeeded",
+     "wall_s": 12.11,
+     "peak_rss_mb": 744.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": 1091.0,
+     "min_system_free_ram_mb": 341.0,
+     "peak_cuda_alloc_mb": 640.0,
+     "cuda_residual_after_stage_mb": 26.0,
+     "inputs": {},
+     "outputs": {
+      "entities": 4
+     },
+     "metrics": {
+      "entities": 4.0,
+      "rooms_detected": 0.0,
+      "layout_hypotheses": 0.0
+     },
+     "warnings": [
+      "layout_evidence: unavailable (no layout/<stem>.json sidecars in the capture)"
+     ],
+     "facts": {
+      "status": "unavailable",
+      "reason": "no learned single-image room-layout estimator is installed: HorizonNet/LayoutNet weights are not in this repository and installing a specific model is a product decision (plan section 6, item 3)",
+      "accepted_input": "layout/<stem>.json sidecars from any estimator, in the format documented in this module",
+      "unblocked_by": "choosing and installing a layout model (offline weights or a CPU-runnable package)",
+      "hypotheses": 0,
+      "errors": [],
+      "note": "no layout/<stem>.json sidecars in the capture",
+      "scene_gate": {
+       "allow_indoor": true,
+       "state": "passed",
+       "reason": "indoor scene (confidence 1.00)",
+       "scene": {
+        "scene_type": "indoor",
+        "confidence": 1.0,
+        "score": 1.0,
+        "views_measured": 8,
+        "views_total": 8,
+        "evidence": {
+         "mean_outdoor_share": "0.0",
+         "mean_indoor_share": "0.5005",
+         "per_view_scores": "[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]",
+         "threshold": "0.3",
+         "min_coverage": "0.1",
+         "top_outdoor_classes": "{}",
+         "top_indoor_classes": "{'shelf': 0.117, 'ceiling': 0.1051, 'floor': 0.0996, 'sofa': 0.0324}"
+        }
+       }
+      }
+     },
+     "fallbacks": [
+      {
+       "where": "<stage>",
+       "state": "unavailable",
+       "reason": "no learned single-image room-layout estimator is installed: HorizonNet/LayoutNet weights are not in this repository and installing a specific model is a product decision (plan section 6, item 3)",
+       "effect_stated_by_pipeline": "NOT STATED by the pipeline",
+       "fallback_keys": {}
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "succeeded",
+       "reason": "layout_evidence: unavailable (no layout/<stem>.json sidecars in the capture)",
+       "effect_stated_by_pipeline": "see reason"
+      }
+     ]
+    },
+    {
+     "stage": "perception",
+     "status": "succeeded",
+     "wall_s": 165.78,
+     "peak_rss_mb": 1614.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": 4229.0,
+     "min_system_free_ram_mb": 390.0,
+     "peak_cuda_alloc_mb": 3586.0,
+     "cuda_residual_after_stage_mb": 90.0,
+     "inputs": {
+      "metric_depth_maps": 6,
+      "images": 11
+     },
+     "outputs": {
+      "status": "ran",
+      "views_segmented": 6,
+      "masks_considered": 67,
+      "hypotheses_lifted": 67,
+      "candidates_merged": 7,
+      "entities_promoted": 7
+     },
+     "metrics": {
+      "views_segmented": 6.0,
+      "masks_considered": 67.0,
+      "hypotheses_lifted": 67.0,
+      "candidates_merged": 7.0,
+      "entities_promoted": 7.0
+     },
+     "warnings": [],
+     "facts": {
+      "status": "ran",
+      "model": "grounded",
+      "detections_2d": {
+       "ev_002": [
+        {
+         "region_id": "'seg-ev_002-000'",
+         "label": "'coffee table'",
+         "confidence": "0.9114",
+         "bbox_px": "[492.0, 659.0, 962.0, 873.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-001'",
+         "label": "'potted plant'",
+         "confidence": "0.7792",
+         "bbox_px": "[1544.0, 538.0, 1619.0, 647.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-002'",
+         "label": "'floor lamp'",
+         "confidence": "0.7555",
+         "bbox_px": "[16.0, 304.0, 208.0, 572.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-003'",
+         "label": "'bookshelf'",
+         "confidence": "0.7426",
+         "bbox_px": "[642.0, 335.0, 811.0, 660.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-004'",
+         "label": "'potted plant'",
+         "confidence": "0.7413",
+         "bbox_px": "[653.0, 604.0, 752.0, 701.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-005'",
+         "label": "'curtain'",
+         "confidence": "0.6844",
+         "bbox_px": "[86.0, 142.0, 207.0, 577.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-006'",
+         "label": "'curtain'",
+         "confidence": "0.5864",
+         "bbox_px": "[521.0, 251.0, 577.0, 639.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-007'",
+         "label": "'sofa'",
+         "confidence": "0.5771",
+         "bbox_px": "[0.0, 596.0, 899.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-008'",
+         "label": "'rug'",
+         "confidence": "0.5474",
+         "bbox_px": "[474.0, 742.0, 1208.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-009'",
+         "label": "'tv stand'",
+         "confidence": "0.4843",
+         "bbox_px": "[768.0, 547.0, 1021.0, 702.0]"
+        },
+        {
+         "region_id": "'seg-ev_002-010'",
+         "label": "'potted plant'",
+         "confidence": "0.4808",
+         "bbox_px": "[732.0, 292.0, 823.0, 545.0]"
+        }
+       ],
+       "ev_003": [
+        {
+         "region_id": "'seg-ev_003-000'",
+         "label": "'coffee table'",
+         "confidence": "0.9123",
+         "bbox_px": "[758.0, 565.0, 851.0, 651.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-001'",
+         "label": "'sofa'",
+         "confidence": "0.9038",
+         "bbox_px": "[608.0, 541.0, 721.0, 668.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-002'",
+         "label": "'rug'",
+         "confidence": "0.7286",
+         "bbox_px": "[634.0, 627.0, 934.0, 687.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-003'",
+         "label": "'potted plant'",
+         "confidence": "0.6784",
+         "bbox_px": "[1569.0, 627.0, 1672.0, 776.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-004'",
+         "label": "'bookshelf'",
+         "confidence": "0.6371",
+         "bbox_px": "[938.0, 422.0, 994.0, 603.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-005'",
+         "label": "'chair'",
+         "confidence": "0.6181",
+         "bbox_px": "[1225.0, 719.0, 1516.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-006'",
+         "label": "'desk'",
+         "confidence": "0.5704",
+         "bbox_px": "[1308.0, 733.0, 1672.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-007'",
+         "label": "'curtain'",
+         "confidence": "0.5431",
+         "bbox_px": "[848.0, 390.0, 879.0, 588.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-008'",
+         "label": "'floor lamp'",
+         "confidence": "0.528",
+         "bbox_px": "[140.0, 550.0, 212.0, 732.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-009'",
+         "label": "'wardrobe'",
+         "confidence": "0.5126",
+         "bbox_px": "[1169.0, 366.0, 1286.0, 706.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-010'",
+         "label": "'tv stand'",
+         "confidence": "0.504",
+         "bbox_px": "[983.0, 566.0, 1053.0, 651.0]"
+        },
+        {
+         "region_id": "'seg-ev_003-011'",
+         "label": "'armchair'",
+         "confidence": "0.4882",
+         "bbox_px": "[1325.0, 626.0, 1493.0, 706.0]"
+        }
+       ],
+       "ev_004": [
+        {
+         "region_id": "'seg-ev_004-000'",
+         "label": "'coffee table'",
+         "confidence": "0.9145",
+         "bbox_px": "[465.0, 512.0, 685.0, 683.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-001'",
+         "label": "'sofa'",
+         "confidence": "0.9138",
+         "bbox_px": "[171.0, 494.0, 483.0, 837.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-002'",
+         "label": "'potted plant'",
+         "confidence": "0.7737",
+         "bbox_px": "[1373.0, 716.0, 1539.0, 840.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-003'",
+         "label": "'potted plant'",
+         "confidence": "0.7665",
+         "bbox_px": "[186.0, 587.0, 389.0, 896.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-004'",
+         "label": "'bookshelf'",
+         "confidence": "0.7241",
+         "bbox_px": "[652.0, 230.0, 774.0, 491.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-005'",
+         "label": "'rug'",
+         "confidence": "0.7162",
+         "bbox_px": "[419.0, 575.0, 849.0, 824.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-006'",
+         "label": "'picture frame'",
+         "confidence": "0.6923",
+         "bbox_px": "[1519.0, 354.0, 1672.0, 482.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-007'",
+         "label": "'curtain'",
+         "confidence": "0.6842",
+         "bbox_px": "[509.0, 177.0, 570.0, 486.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-008'",
+         "label": "'floor lamp'",
+         "confidence": "0.665",
+         "bbox_px": "[171.0, 326.0, 276.0, 486.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-009'",
+         "label": "'curtain'",
+         "confidence": "0.6079",
+         "bbox_px": "[159.0, 180.0, 281.0, 485.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-010'",
+         "label": "'desk'",
+         "confidence": "0.5688",
+         "bbox_px": "[1123.0, 694.0, 1672.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-011'",
+         "label": "'tv stand'",
+         "confidence": "0.5253",
+         "bbox_px": "[758.0, 427.0, 921.0, 552.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-012'",
+         "label": "'chair'",
+         "confidence": "0.5089",
+         "bbox_px": "[1133.0, 671.0, 1228.0, 790.0]"
+        },
+        {
+         "region_id": "'seg-ev_004-013'",
+         "label": "'chair'",
+         "confidence": "0.4547",
+         "bbox_px": "[1404.0, 628.0, 1594.0, 751.0]"
+        }
+       ],
+       "ev_007": [
+        {
+         "region_id": "'seg-ev_007-000'",
+         "label": "'coffee table'",
+         "confidence": "0.9089",
+         "bbox_px": "[406.0, 646.0, 711.0, 846.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-001'",
+         "label": "'floor lamp'",
+         "confidence": "0.766",
+         "bbox_px": "[16.0, 367.0, 155.0, 580.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-002'",
+         "label": "'rug'",
+         "confidence": "0.7429",
+         "bbox_px": "[451.0, 708.0, 950.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-003'",
+         "label": "'bookshelf'",
+         "confidence": "0.7206",
+         "bbox_px": "[639.0, 337.0, 789.0, 657.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-004'",
+         "label": "'curtain'",
+         "confidence": "0.66",
+         "bbox_px": "[479.0, 256.0, 541.0, 620.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-005'",
+         "label": "'curtain'",
+         "confidence": "0.6435",
+         "bbox_px": "[46.0, 189.0, 154.0, 563.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-006'",
+         "label": "'tv stand'",
+         "confidence": "0.5753",
+         "bbox_px": "[762.0, 562.0, 984.0, 712.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-007'",
+         "label": "'desk'",
+         "confidence": "0.5443",
+         "bbox_px": "[1460.0, 684.0, 1672.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_007-008'",
+         "label": "'sofa'",
+         "confidence": "0.5054",
+         "bbox_px": "[0.0, 570.0, 452.0, 939.0]"
+        }
+       ],
+       "ev_009": [
+        {
+         "region_id": "'seg-ev_009-000'",
+         "label": "'coffee table'",
+         "confidence": "0.9139",
+         "bbox_px": "[645.0, 472.0, 753.0, 563.0]"
+        },
+        {
+         "region_id": "'seg-ev_009-001'",
+         "label": "'picture frame'",
+         "confidence": "0.759",
+         "bbox_px": "[139.0, 0.0, 314.0, 253.0]"
+        },
+        {
+         "region_id": "'seg-ev_009-002'",
+         "label": "'rug'",
+         "confidence": "0.6511",
+         "bbox_px": "[597.0, 541.0, 841.0, 614.0]"
+        },
+        {
+         "region_id": "'seg-ev_009-003'",
+         "label": "'curtain'",
+         "confidence": "0.6083",
+         "bbox_px": "[803.0, 272.0, 842.0, 510.0]"
+        },
+        {
+         "region_id": "'seg-ev_009-004'",
+         "label": "'sofa'",
+         "confidence": "0.5094",
+         "bbox_px": "[598.0, 430.0, 669.0, 554.0]"
+        },
+        {
+         "region_id": "'seg-ev_009-005'",
+         "label": "'tv stand'",
+         "confidence": "0.4877",
+         "bbox_px": "[893.0, 453.0, 958.0, 559.0]"
+        }
+       ],
+       "ev_010": [
+        {
+         "region_id": "'seg-ev_010-000'",
+         "label": "'coffee table'",
+         "confidence": "0.926",
+         "bbox_px": "[451.0, 600.0, 714.0, 851.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-001'",
+         "label": "'sofa'",
+         "confidence": "0.7969",
+         "bbox_px": "[92.0, 599.0, 507.0, 939.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-002'",
+         "label": "'floor lamp'",
+         "confidence": "0.7604",
+         "bbox_px": "[92.0, 386.0, 220.0, 564.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-003'",
+         "label": "'bookshelf'",
+         "confidence": "0.7216",
+         "bbox_px": "[629.0, 260.0, 756.0, 550.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-004'",
+         "label": "'rug'",
+         "confidence": "0.709",
+         "bbox_px": "[404.0, 615.0, 915.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-005'",
+         "label": "'potted plant'",
+         "confidence": "0.7046",
+         "bbox_px": "[1452.0, 772.0, 1569.0, 885.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-006'",
+         "label": "'curtain'",
+         "confidence": "0.6564",
+         "bbox_px": "[482.0, 206.0, 553.0, 552.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-007'",
+         "label": "'curtain'",
+         "confidence": "0.6364",
+         "bbox_px": "[94.0, 212.0, 231.0, 562.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-008'",
+         "label": "'chair'",
+         "confidence": "0.6102",
+         "bbox_px": "[1511.0, 679.0, 1672.0, 800.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-009'",
+         "label": "'desk'",
+         "confidence": "0.5925",
+         "bbox_px": "[1247.0, 724.0, 1672.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-010'",
+         "label": "'picture frame'",
+         "confidence": "0.5785",
+         "bbox_px": "[17.0, 335.0, 72.0, 518.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-011'",
+         "label": "'picture frame'",
+         "confidence": "0.5393",
+         "bbox_px": "[0.0, 365.0, 45.0, 613.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-012'",
+         "label": "'chair'",
+         "confidence": "0.524",
+         "bbox_px": "[1197.0, 787.0, 1300.0, 941.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-013'",
+         "label": "'tv stand'",
+         "confidence": "0.5219",
+         "bbox_px": "[742.0, 467.0, 940.0, 635.0]"
+        },
+        {
+         "region_id": "'seg-ev_010-014'",
+         "label": "'chair'",
+         "confidence": "0.5079",
+         "bbox_px": "[1269.0, 693.0, 1355.0, 870.0]"
+        }
+       ]
+      },
+      "views_segmented": 6,
+      "masks_considered": 67,
+      "hypotheses_lifted": 67,
+      "candidates_merged": 7,
+      "entities_promoted": 7,
+      "resolution": {
+       "resolver": "association",
+       "appearance": {
+        "requested": "dinov2",
+        "embedded": 67,
+        "skipped": 0,
+        "fallback_reason": null,
+        "backend": "dinov2",
+        "matrix_dtype": "float16",
+        "matrix_bytes": 51456
+       },
+       "decisions": {
+        "DIFFERENT_ENTITY": 64,
+        "SAME_ENTITY_CONFIRMED": 3
+       },
+       "ambiguous_entities": 0,
+       "fused_overlapping": 18,
+       "scene_box_cleaning": {
+        "n_in": 15405,
+        "nb_neighbors": 20,
+        "std_ratio": 2.0,
+        "backend": "scipy",
+        "n_kept": 14770
+       },
+       "dropped_detail": [
+        {
+         "label": "'armchair'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.488",
+         "position_m": "[1.06, 0.42, -1.55]"
+        },
+        {
+         "label": "'bookshelf'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.724",
+         "position_m": "[-4.97, -1.09, 4.72]"
+        },
+        {
+         "label": "'bookshelf'",
+         "reason": "'outside_scene'",
+         "views": "2",
+         "confidence": "0.722",
+         "position_m": "[-3.31, -0.53, 3.32]"
+        },
+        {
+         "label": "'bookshelf'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.743",
+         "position_m": "[-2.2, -0.29, 2.45]"
+        },
+        {
+         "label": "'bookshelf'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.637",
+         "position_m": "[-0.25, 0.14, 0.13]"
+        },
+        {
+         "label": "'chair'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.61",
+         "position_m": "[-0.57, 0.01, 0.32]"
+        },
+        {
+         "label": "'chair'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.618",
+         "position_m": "[1.13, 0.43, -1.58]"
+        },
+        {
+         "label": "'coffee table'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.914",
+         "position_m": "[-2.29, -0.47, -0.2]"
+        },
+        {
+         "label": "'coffee table'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.909",
+         "position_m": "[-0.53, -0.51, 1.26]"
+        },
+        {
+         "label": "'coffee table'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.911",
+         "position_m": "[-0.14, -0.73, 1.84]"
+        },
+        {
+         "label": "'coffee table'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.912",
+         "position_m": "[0.86, 0.29, -1.07]"
+        },
+        {
+         "label": "'desk'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.544",
+         "position_m": "[-0.37, -0.4, 0.66]"
+        },
+        {
+         "label": "'desk'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.593",
+         "position_m": "[-0.19, 0.08, 0.42]"
+        },
+        {
+         "label": "'desk'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.569",
+         "position_m": "[0.05, 0.16, 0.32]"
+        },
+        {
+         "label": "'desk'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.57",
+         "position_m": "[1.13, 0.43, -1.59]"
+        },
+        {
+         "label": "'floor lamp'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.756",
+         "position_m": "[-0.2, -0.43, 2.47]"
+        },
+        {
+         "label": "'floor lamp'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.528",
+         "position_m": "[1.19, 0.43, -1.52]"
+        },
+        {
+         "label": "'picture frame'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.759",
+         "position_m": "[-2.64, -0.27, -1.39]"
+        },
+        {
+         "label": "'picture frame'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.692",
+         "position_m": "[-0.59, 0.25, 0.22]"
+        },
+        {
+         "label": "'picture frame'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.578",
+         "position_m": "[0.01, 0.14, 1.29]"
+        },
+        {
+         "label": "'picture frame'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.539",
+         "position_m": "[0.1, 0.13, 1.13]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.779",
+         "position_m": "[-3.02, -0.49, -0.12]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.481",
+         "position_m": "[-2.0, -0.08, 2.28]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.705",
+         "position_m": "[-0.32, 0.05, 0.38]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.741",
+         "position_m": "[-0.17, -0.65, 1.88]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.774",
+         "position_m": "[-0.01, 0.19, 0.27]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.766",
+         "position_m": "[0.17, 0.07, 0.79]"
+        },
+        {
+         "label": "'potted plant'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.678",
+         "position_m": "[1.12, 0.44, -1.59]"
+        },
+        {
+         "label": "'rug'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.651",
+         "position_m": "[-2.49, -0.44, -0.75]"
+        },
+        {
+         "label": "'rug'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.743",
+         "position_m": "[-0.46, -0.55, 1.11]"
+        },
+        {
+         "label": "'rug'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.547",
+         "position_m": "[-0.33, -0.82, 1.65]"
+        },
+        {
+         "label": "'rug'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.729",
+         "position_m": "[0.98, 0.33, -1.27]"
+        },
+        {
+         "label": "'sofa'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.509",
+         "position_m": "[-2.26, -0.42, -0.38]"
+        },
+        {
+         "label": "'sofa'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.505",
+         "position_m": "[-0.07, -0.4, 0.95]"
+        },
+        {
+         "label": "'sofa'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.577",
+         "position_m": "[0.34, -0.68, 1.81]"
+        },
+        {
+         "label": "'sofa'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.904",
+         "position_m": "[1.02, 0.33, -1.22]"
+        },
+        {
+         "label": "'tv stand'",
+         "reason": "'single_view'",
+         "views": "1",
+         "confidence": "0.488",
+         "position_m": "[-2.61, -0.4, -0.42]"
+        },
+        {
+         "label": "'tv stand'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.504",
+         "position_m": "[0.81, 0.33, -1.21]"
+        },
+        {
+         "label": "'wardrobe'",
+         "reason": "'outside_scene'",
+         "views": "1",
+         "confidence": "0.513",
+         "position_m": "[0.88, 0.41, -1.38]"
+        }
+       ],
+       "dropped": {
+        "outside_scene": 14,
+        "single_view": 25
+       },
+       "dropped_weak_single_view": 25
+      },
+      "masks": {
+       "requested": "sam2",
+       "sam2": 67,
+       "depth_band": 0,
+       "fallback_reason": null
+      },
+      "note": "Grounding DINO boxes with SAM 2 instance masks (depth-band cut where SAM 2 gave none) lifted via SfM-aligned depth (metric-by-alignment, approximate); merged by the gated association resolver (or label+proximity if object_resolver='union_find'); provenance INFERRED with per-entity evidence ids"
+     },
+     "fallbacks": [
+      {
+       "where": "resolution.appearance",
+       "state": "fallback",
+       "reason": null,
+       "effect_stated_by_pipeline": "NOT STATED by the pipeline",
+       "fallback_keys": {
+        "fallback_reason": null
+       }
+      },
+      {
+       "where": "masks",
+       "state": "fallback",
+       "reason": null,
+       "effect_stated_by_pipeline": "NOT STATED by the pipeline",
+       "fallback_keys": {
+        "fallback_reason": null
+       }
+      }
+     ],
+     "observations": {
+      "detections_2d": 67,
+      "masks_considered": 67,
+      "lifted_to_3d": 67,
+      "merged_candidates": 7,
+      "promoted_entities": 7,
+      "association_decisions": {
+       "DIFFERENT_ENTITY": 64,
+       "SAME_ENTITY_CONFIRMED": 3
+      },
+      "dropped_candidates_by_reason": {
+       "outside_scene": 14,
+       "single_view": 25
+      },
+      "mask_source": {
+       "requested": "sam2",
+       "sam2": 67,
+       "depth_band": 0,
+       "fallback_reason": null
+      },
+      "appearance": {
+       "requested": "dinov2",
+       "embedded": 67,
+       "skipped": 0,
+       "fallback_reason": null,
+       "backend": "dinov2",
+       "matrix_dtype": "float16",
+       "matrix_bytes": 51456
+      }
+     }
+    },
+    {
+     "stage": "mesh",
+     "status": "skipped",
+     "wall_s": 0.0,
+     "peak_rss_mb": 408.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": null,
+     "min_system_free_ram_mb": 2631.0,
+     "peak_cuda_alloc_mb": 90.0,
+     "cuda_residual_after_stage_mb": 90.0,
+     "inputs": {},
+     "outputs": {
+      "keys": [
+       "facts"
+      ]
+     },
+     "metrics": {},
+     "warnings": [
+      "mesh: skipped (world is not METRIC-scale -- meshing unit-less points would silently claim meters)"
+     ],
+     "facts": {
+      "status": "skipped",
+      "note": "world is not METRIC-scale -- meshing unit-less points would silently claim meters"
+     },
+     "fallbacks": [
+      {
+       "where": "<stage>",
+       "state": "skipped",
+       "reason": "world is not METRIC-scale -- meshing unit-less points would silently claim meters",
+       "effect_stated_by_pipeline": "NOT STATED by the pipeline",
+       "fallback_keys": {}
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "skipped",
+       "reason": "mesh: skipped (world is not METRIC-scale -- meshing unit-less points would silently claim meters)",
+       "effect_stated_by_pipeline": "see reason"
+      }
+     ]
+    },
+    {
+     "stage": "dense",
+     "status": "skipped",
+     "wall_s": 0.02,
+     "peak_rss_mb": 408.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": null,
+     "min_system_free_ram_mb": 2632.0,
+     "peak_cuda_alloc_mb": 90.0,
+     "cuda_residual_after_stage_mb": 90.0,
+     "inputs": {},
+     "outputs": {
+      "keys": [
+       "world",
+       "diagnostics",
+       "dense_mvs_facts",
+       "dense_gate_facts",
+       "structure_facts",
+       "plane_sweep_facts",
+       "fusion_facts"
+      ]
+     },
+     "metrics": {},
+     "warnings": [
+      "dense_mvs: disabled (dense MVS is off by default (heavyweight GPU stage); set dense_mvs_enabled=True and name the capture paths to run it)",
+      "plane_sweep: disabled (CPU plane sweep is opt-in (set plane_sweep_enabled=True))",
+      "fusion: skipped (world is not METRIC-scale -- fusing unit-less ranges would silently claim meters)"
+     ],
+     "facts": {
+      "dense_mvs": {
+       "status": "disabled",
+       "note": "dense MVS is off by default (heavyweight GPU stage); set dense_mvs_enabled=True and name the capture paths to run it"
+      },
+      "dense_gate": {
+       "escalate": false,
+       "criteria": {
+        "registration": {
+         "passed": "False",
+         "measured": "'6 of 11 photographs registered (55%; needs >= 80%)'"
+        },
+        "geometric support": {
+         "passed": "False",
+         "measured": "'median structure point is seen by 1 cameras (needs >= 3)'"
+        },
+        "coverage": {
+         "passed": "True",
+         "measured": "'cameras span 128 degrees around the scene (needs >= 15)'"
+        },
+        "structure": {
+         "passed": "True",
+         "measured": "'15405 sparse structure points (needs >= 300)'"
+        }
+       },
+       "reasons": [
+        "registration: 6 of 11 photographs registered (55%; needs >= 80%)",
+        "geometric support: median structure point is seen by 1 cameras (needs >= 3)"
+       ],
+       "thresholds_status": "EXPERIMENTAL",
+       "measured": {
+        "registered": 6,
+        "input": 11,
+        "registered_fraction": 0.545,
+        "median_track_length": 1.0,
+        "structure_points": 15405,
+        "coverage_deg": 128.4
+       },
+       "decision": "sparse only: dense not justified by the measured evidence"
+      },
+      "structure": null,
+      "plane_sweep": {
+       "status": "disabled",
+       "note": "CPU plane sweep is opt-in (set plane_sweep_enabled=True)"
+      },
+      "fusion": {
+       "status": "skipped",
+       "note": "world is not METRIC-scale -- fusing unit-less ranges would silently claim meters"
+      }
+     },
+     "fallbacks": [
+      {
+       "where": "fusion",
+       "state": "skipped",
+       "reason": "world is not METRIC-scale -- fusing unit-less ranges would silently claim meters",
+       "effect_stated_by_pipeline": "NOT STATED by the pipeline",
+       "fallback_keys": {}
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "skipped",
+       "reason": "dense_mvs: disabled (dense MVS is off by default (heavyweight GPU stage); set dense_mvs_enabled=True and name the capture paths to run it)",
+       "effect_stated_by_pipeline": "see reason"
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "skipped",
+       "reason": "plane_sweep: disabled (CPU plane sweep is opt-in (set plane_sweep_enabled=True))",
+       "effect_stated_by_pipeline": "see reason"
+      },
+      {
+       "where": "StageResult.warnings",
+       "state": "skipped",
+       "reason": "fusion: skipped (world is not METRIC-scale -- fusing unit-less ranges would silently claim meters)",
+       "effect_stated_by_pipeline": "see reason"
+      }
+     ]
+    },
+    {
+     "stage": "detail",
+     "status": "succeeded",
+     "wall_s": 4.03,
+     "peak_rss_mb": 417.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": 391.0,
+     "min_system_free_ram_mb": 1945.0,
+     "peak_cuda_alloc_mb": 90.0,
+     "cuda_residual_after_stage_mb": 90.0,
+     "inputs": {},
+     "outputs": {
+      "keys": [
+       "facts"
+      ]
+     },
+     "metrics": {
+      "n_candidates": 62.0
+     },
+     "warnings": [],
+     "facts": {
+      "status": "ran",
+      "quality": {
+       "gsd_mm_per_px": null,
+       "detail_tier": "scale_unavailable",
+       "observed_fraction": 1.0,
+       "view_counts": {
+        "104": 6,
+        "105": 6,
+        "112": 6,
+        "113": 6,
+        "12": 6,
+        "121": 6,
+        "123": 6,
+        "124": 6,
+        "125": 6,
+        "127": 6,
+        "13": 6,
+        "131": 6,
+        "135": 6,
+        "136": 6,
+        "139": 6,
+        "14": 6,
+        "142": 6,
+        "145": 6,
+        "146": 6,
+        "147": 6,
+        "149": 6,
+        "15": 6,
+        "150": 6,
+        "151": 6,
+        "153": 6,
+        "155": 6,
+        "157": 6,
+        "158": 6,
+        "159": 6,
+        "16": 6,
+        "160": 5,
+        "161": 5,
+        "17": 6,
+        "171": 6,
+        "173": 6,
+        "174": 6,
+        "175": 6,
+        "176": 6,
+        "177": 6,
+        "178": 6,
+        "179": 6,
+        "18": 6,
+        "183": 6,
+        "186": 6,
+        "187": 6,
+        "188": 6,
+        "190": 6,
+        "191": 6,
+        "192": 6,
+        "194": 6,
+        "195": 6,
+        "197": 6,
+        "198": 6,
+        "199": 6,
+        "201": 6,
+        "202": 6,
+        "203": 6,
+        "204": 6,
+        "205": 6,
+        "206": 6,
+        "208": 6,
+        "209": 6,
+        "21": 6,
+        "211": 6,
+        "212": 6,
+        "214": 5,
+        "217": 6,
+        "219": 6,
+        "220": 4,
+        "222": 6,
+        "223": 6,
+        "224": 6,
+        "225": 6,
+        "226": 6,
+        "227": 6,
+        "228": 6,
+        "229": 6,
+        "23": 6,
+        "24": 6,
+        "25": 6
+       },
+       "unprojectable_point_ids": [],
+       "overclaim_count": 4,
+       "view_angle_diversity_deg": 38.463228428320704,
+       "view_angle_diversity_n": 497,
+       "per_point_gsd_mm": {},
+       "scale_state": "relative",
+       "gsd_model_units_per_px": 0.0024849643116466647
+      },
+      "summary": {
+       "n_points": 15405,
+       "n_candidates": 62,
+       "n_rois": 2,
+       "n_refined": 2,
+       "n_refused": 0,
+       "n_entities": 2,
+       "voxel": {
+        "size": 0.6505331724767229,
+        "basis": "scene_extent_fraction",
+        "scene_extent": 4.0658323279795185,
+        "fraction": 0.16
+       },
+       "scale_state": "relative",
+       "n_geometries": 2,
+       "n_refusals": 0
+      },
+      "n_candidates": 62,
+      "voxel_size": 0.07398420328114962,
+      "voxel_basis": "1.5% of the scene extent (relative-scale world: model units, not meters)",
+      "budget_units": "model-unit mm/px: GSD level bands are NOT metric",
+      "rois": [
+       {
+        "roi_id": "roi--4--1-0",
+        "parent_entity_id": null,
+        "bounds": [
+         "-2.6021326899068917",
+         "-0.6505331724767229",
+         "0.0",
+         "-1.9515995174301688",
+         "0.0",
+         "1.3010663449534459"
+        ],
+        "n_cells": 2,
+        "n_points": 676,
+        "detail_cells": [
+         "'-4,-1,0'",
+         "'-4,-1,1'"
+        ],
+        "point_ids": [
+         "'21'",
+         "'32'",
+         "'53'",
+         "'59'",
+         "'depth-ev_002-00432-01392'",
+         "'depth-ev_002-00544-01392'",
+         "'depth-ev_002-00560-01392'",
+         "'depth-ev_002-00640-01632'",
+         "'depth-ev_004-00400-01296'",
+         "'depth-ev_004-00416-01296'",
+         "'depth-ev_004-00416-01312'",
+         "'depth-ev_004-00432-01296'",
+         "'depth-ev_004-00432-01312'",
+         "'depth-ev_004-00432-01328'",
+         "'depth-ev_004-00432-01344'",
+         "'depth-ev_004-00448-01296'",
+         "'depth-ev_004-00448-01312'",
+         "'depth-ev_004-00448-01328'",
+         "'depth-ev_004-00448-01344'",
+         "'depth-ev_004-00448-01360'",
+         "'depth-ev_004-00464-01296'",
+         "'depth-ev_004-00464-01312'",
+         "'depth-ev_004-00464-01328'",
+         "'depth-ev_004-00464-01344'",
+         "'depth-ev_004-00464-01360'",
+         "'depth-ev_004-00480-01296'",
+         "'depth-ev_004-00480-01312'",
+         "'depth-ev_004-00480-01328'",
+         "'depth-ev_004-00480-01344'",
+         "'depth-ev_004-00480-01360'",
+         "'depth-ev_004-00496-01296'",
+         "'depth-ev_004-00496-01312'",
+         "'depth-ev_004-00496-01328'",
+         "'depth-ev_004-00496-01344'",
+         "'depth-ev_004-00512-01280'",
+         "'depth-ev_004-00512-01296'",
+         "'depth-ev_004-00512-01312'",
+         "'depth-ev_004-00512-01328'",
+         "'depth-ev_004-00512-01344'",
+         "'depth-ev_004-00528-01280'",
+         "... +1 more"
+        ],
+        "budget": {
+         "justified_level": "'L2'",
+         "compute_tier": "'standard'",
+         "max_gsd_mm_per_px": "None",
+         "coverage_capped": "False",
+         "basis": "'relative_scale'",
+         "gsd_basis": "'unavailable'"
+        },
+        "max_curvature": 0.2190855313097835,
+        "status": "refined",
+        "provenance": {
+         "voxel_size": "0.6505331724767229",
+         "discovery": "'perception.detail.discovery.discover_detail'",
+         "grouping": "'26-adjacent region growth, <= max_cells_per_roi'"
+        },
+        "refinement_outcome": {
+         "backend": "'plane'",
+         "rms_residual_m": "0.13888492833359092",
+         "max_residual_m": "0.40039440725388176",
+         "quality": "0.341424836579544",
+         "n_points": "676",
+         "fit": "{'normal': [0.9538957587273942, -0.15373129262757748, -0.25777814327235626], 'point': [-2.161966869915571, -0.3098688076"
+        },
+        "status_reason": null
+       },
+       {
+        "roi_id": "roi--4--2-3",
+        "parent_entity_id": null,
+        "bounds": [
+         "-2.6021326899068917",
+         "-1.3010663449534459",
+         "0.0",
+         "0.0",
+         "0.6505331724767229",
+         "3.9031990348603376"
+        ],
+        "n_cells": 27,
+        "n_points": 9433,
+        "detail_cells": [
+         "'-4,-2,3'",
+         "'-4,-1,2'",
+         "'-4,-1,3'",
+         "'-4,-1,4'",
+         "'-4,0,1'",
+         "'-4,0,2'",
+         "'-4,0,3'",
+         "'-4,0,4'",
+         "'-4,0,5'",
+         "'-3,-2,2'",
+         "'-3,-1,0'",
+         "'-3,-1,1'",
+         "'-3,-1,2'",
+         "'-3,-1,5'",
+         "'-3,0,1'",
+         "'-3,0,2'",
+         "'-3,0,3'",
+         "'-3,0,4'",
+         "'-3,0,5'",
+         "'-2,-1,1'",
+         "'-2,-1,2'",
+         "'-2,-1,4'",
+         "'-2,0,1'",
+         "'-2,0,2'",
+         "'-1,-1,1'",
+         "'-1,0,0'",
+         "'-1,0,2'"
+        ],
+        "point_ids": [
+         "'178'",
+         "'depth-ev_002-00608-00672'",
+         "'depth-ev_004-00480-00816'",
+         "'depth-ev_004-00480-00832'",
+         "'depth-ev_004-00496-00832'",
+         "'depth-ev_004-00512-00832'",
+         "'depth-ev_004-00512-00848'",
+         "'depth-ev_004-00528-00640'",
+         "'depth-ev_004-00528-00656'",
+         "'depth-ev_004-00528-00672'",
+         "'depth-ev_004-00528-00688'",
+         "'depth-ev_004-00528-00704'",
+         "'depth-ev_004-00528-00720'",
+         "'depth-ev_004-00528-00736'",
+         "'depth-ev_004-00528-00752'",
+         "'depth-ev_004-00528-00768'",
+         "'depth-ev_004-00528-00784'",
+         "'depth-ev_004-00528-00800'",
+         "'depth-ev_004-00528-00816'",
+         "'depth-ev_004-00528-00832'",
+         "'depth-ev_004-00528-00848'",
+         "'depth-ev_004-00544-00768'",
+         "'depth-ev_007-00624-00736'",
+         "'depth-ev_007-00624-00752'",
+         "'depth-ev_007-00624-00768'",
+         "'depth-ev_007-00640-00736'",
+         "'depth-ev_007-00640-00752'",
+         "'depth-ev_007-00640-00768'",
+         "'depth-ev_007-00640-00784'",
+         "'depth-ev_007-00656-00720'",
+         "'depth-ev_007-00656-00736'",
+         "'depth-ev_007-00656-00752'",
+         "'depth-ev_007-00656-00768'",
+         "'depth-ev_007-00656-00784'",
+         "'depth-ev_007-00656-00800'",
+         "'depth-ev_007-00672-00704'",
+         "'depth-ev_007-00672-00720'",
+         "'depth-ev_007-00672-00736'",
+         "'depth-ev_007-00672-00752'",
+         "'depth-ev_007-00672-00768'",
+         "... +1 more"
+        ],
+        "budget": {
+         "justified_level": "'L1'",
+         "compute_tier": "'light'",
+         "max_gsd_mm_per_px": "None",
+         "coverage_capped": "True",
+         "basis": "'relative_scale'",
+         "gsd_basis": "'unavailable'"
+        },
+        "max_curvature": 0.2606291147778252,
+        "status": "refined",
+        "provenance": {
+         "voxel_size": "0.6505331724767229",
+         "discovery": "'perception.detail.discovery.discover_detail'",
+         "grouping": "'26-adjacent region growth, <= max_cells_per_roi'"
+        },
+        "refinement_outcome": {
+         "backend": "'plane'",
+         "rms_residual_m": "0.33270122816499503",
+         "max_residual_m": "0.938265502856314",
+         "quality": "0.08285683251208552",
+         "n_points": "9433",
+         "fit": "{'normal': [-0.03346676141924664, 0.998140595422717, -0.050944358365683375], 'point': [-1.2473563868893724, -0.069758188"
+        },
+        "status_reason": null
+       }
+      ],
+      "outcomes": [
+       {
+        "roi_id": "roi--4--1-0",
+        "status": "refined",
+        "reason": null,
+        "refinement": {
+         "backend": "'plane'",
+         "rms_residual_m": "0.13888492833359092",
+         "max_residual_m": "0.40039440725388176",
+         "quality": "0.341424836579544",
+         "n_points": "676",
+         "fit": "{'normal': [0.9538957587273942, -0.15373129262757748, -0.25777814327235626], 'point': [-2.161966869915571, -0.3098688076"
+        },
+        "fits_attempted": 1,
+        "fits_succeeded": 1,
+        "backends_run": [
+         "'plane'"
+        ]
+       },
+       {
+        "roi_id": "roi--4--2-3",
+        "status": "refined",
+        "reason": null,
+        "refinement": {
+         "backend": "'plane'",
+         "rms_residual_m": "0.33270122816499503",
+         "max_residual_m": "0.938265502856314",
+         "quality": "0.08285683251208552",
+         "n_points": "9433",
+         "fit": "{'normal': [-0.03346676141924664, 0.998140595422717, -0.050944358365683375], 'point': [-1.2473563868893724, -0.069758188"
+        },
+        "fits_attempted": 1,
+        "fits_succeeded": 1,
+        "backends_run": [
+         "'plane'"
+        ]
+       }
+      ],
+      "note": "discovery budgets derive from the measured evidence-quality report; refinement consumes resolvable evidence only -- refusals are recorded, never retried with invented geometry"
+     },
+     "fallbacks": []
+    },
+    {
+     "stage": "finalize",
+     "status": "succeeded",
+     "wall_s": 0.39,
+     "peak_rss_mb": 420.0,
+     "peak_child_colmap_rss_mb": 0.0,
+     "peak_gpu_used_mb_whole_device": null,
+     "min_system_free_ram_mb": 1944.0,
+     "peak_cuda_alloc_mb": 90.0,
+     "cuda_residual_after_stage_mb": 90.0,
+     "inputs": {},
+     "outputs": {},
+     "metrics": {
+      "points": 15405.0,
+      "entities": 13.0,
+      "cameras_registered": 6.0
+     },
+     "warnings": [],
+     "facts": null,
+     "fallbacks": []
+    }
+   ],
+   "id_to_name": {
+    "ev_000": "00cb288e-568a-40fb-928f-4e2e083e8443.png",
+    "ev_001": "09998e84-779b-43c3-a2bd-863742882324.png",
+    "ev_002": "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+    "ev_003": "724325b7-fd34-4cb2-81f7-cd354e73726e.png",
+    "ev_004": "724f8486-b08e-4665-aaff-d235e63ee836.png",
+    "ev_005": "8099fa3d-71b0-44c6-8633-e6fb808651a3.png",
+    "ev_006": "adb6e250-43f9-4901-91b2-23081e0de2a4.png",
+    "ev_007": "b6d37095-8802-4247-bd50-05bc4f5acb6b.png",
+    "ev_008": "cd60e108-bf43-4081-b31e-48b2e5db9b5a.png",
+    "ev_009": "d7ee57e4-3a75-448c-9d4a-7dde73ef91d3.png",
+    "ev_010": "fb4570e2-cb5d-46f1-8de9-5a3749d5944f.png"
+   },
+   "intrinsics_record_before_solve": {
+    "image_size": [
+     1672,
+     941
+    ],
+    "intrinsics": null,
+    "mixed_image_sizes": {
+     "1536x1024": 2,
+     "1672x941": 9
+    },
+    "note": "no EXIF focal length or earlier COLMAP intrinsics: intrinsics unset, dependent stages skip"
+   },
+   "options": {
+    "perception_model": "grounded",
+    "depth_model": "DPT_Hybrid",
+    "intrinsics": null,
+    "intrinsics_trust": "trusted",
+    "image_size": [
+     1672,
+     941
+    ],
+    "measured_baselines": 0,
+    "dense_auto": true,
+    "perception_mask_source": "sam2",
+    "perception_appearance": "dinov2"
+   },
+   "ladder": {
+    "wall_s": 282.78,
+    "peak_rss_mb": 1644.0,
+    "peak_child_colmap_rss_mb": 3884.0,
+    "exception": null,
+    "level": 2,
+    "level_name": "sparse photogrammetric reconstruction",
+    "model_state": "PARTIAL",
+    "attempts": [
+     {
+      "level": 2,
+      "name": "sparse photogrammetric reconstruction",
+      "outcome": "succeeded",
+      "elapsed_s": 277.397,
+      "detail": "6/11 cameras registered"
+     },
+     {
+      "level": 3,
+      "name": "dense reconstruction",
+      "outcome": "skipped",
+      "detail": "registration: 6 of 11 photographs registered (55%; needs >= 80%); geometric support: median structure point is seen by 1 cameras (needs >= 3)"
+     }
+    ],
+    "degraded": [
+     "registration 'partial': 6/11 cameras"
+    ],
+    "scale_state": "relative",
+    "registered": 6,
+    "inputs": 11,
+    "excluded": [],
+    "entities": 13,
+    "entity_types": {
+     "wall": 1,
+     "floor": 2,
+     "support_surface": 1,
+     "furniture": 6,
+     "unknown": 1,
+     "structure": 2
+    }
+   },
+   "fallbacks_ladder": [
+    {
+     "where": "ladder.attempts[1]",
+     "state": "skipped",
+     "reason": "registration: 6 of 11 photographs registered (55%; needs >= 80%); geometric support: median structure point is seen by 1 cameras (needs >= 3)",
+     "effect_stated_by_pipeline": "level achieved: sparse photogrammetric reconstruction"
+    },
+    {
+     "where": "ladder.degraded",
+     "state": "degraded",
+     "reason": "registration 'partial': 6/11 cameras",
+     "effect_stated_by_pipeline": "grades the job partial"
+    }
+   ],
+   "geometry_validation": {
+    "verdict": "no_violations_found_with_unknowns",
+    "errors": 0,
+    "warnings": 0,
+    "unknowns": 6,
+    "checks": {
+     "duplicate_walls": {
+      "check": "duplicate_walls",
+      "state": "not_applicable",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 0,
+      "reasons": []
+     },
+     "room_closure": {
+      "check": "room_closure",
+      "state": "not_applicable",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 0,
+      "reasons": []
+     },
+     "footprint_validity": {
+      "check": "footprint_validity",
+      "state": "not_applicable",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 0,
+      "reasons": []
+     },
+     "openings": {
+      "check": "openings",
+      "state": "not_applicable",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 0,
+      "reasons": []
+     },
+     "surface_bounding": {
+      "check": "surface_bounding",
+      "state": "unknown",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 2,
+      "reasons": [
+       "floor struct-plane-006 is not linked to a room, so its bounding walls are unknown",
+       "floor struct-plane-111 is not linked to a room, so its bounding walls are unknown"
+      ]
+     },
+     "attachments": {
+      "check": "attachments",
+      "state": "unknown",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 2,
+      "reasons": [
+       "6 furniture piece(s) have no room with a known floor/ceiling level, so floating/below-floor/above-ceiling is not decidable",
+       "1 wall(s) with unreadable orientation were not tested for penetration against 6 furniture piece(s)"
+      ]
+     },
+     "camera_conflicts": {
+      "check": "camera_conflicts",
+      "state": "partial",
+      "evaluated": 6,
+      "violations": 0,
+      "undecided": 1,
+      "reasons": [
+       "1 wall(s) have unreadable orientation, so the inside-wall test is incomplete for 6 camera(s)"
+      ]
+     },
+     "topology": {
+      "check": "topology",
+      "state": "unknown",
+      "evaluated": 0,
+      "violations": 0,
+      "undecided": 1,
+      "reasons": [
+       "the world has no room entity, so no element can be called an orphan"
+      ]
+     }
+    },
+    "rooms": {},
+    "context": {
+     "up_axis": "y",
+     "scale_state": "unknown_or_relative",
+     "characteristic_length": null,
+     "walls": 1,
+     "walls_readable": 0,
+     "rooms": 0,
+     "cameras": 6,
+     "tolerances_are": "fractions of characteristic_length",
+     "config": {
+      "thin_wall_ratio": 0.06,
+      "duplicate_offset": 0.03,
+      "duplicate_overlap": 0.5,
+      "gap": 0.08,
+      "opening": 0.04,
+      "surface": 0.1,
+      "attach": 0.08,
+      "penetration": 0.05,
+      "camera": 0.01,
+      "camera_room": 0.05,
+      "area_mismatch": 0.1,
+      "min_m": 0.02
+     },
+     "frame_note": "walls are read from axis-aligned bounds; camera centres are assumed to be in the world frame"
+    },
+    "findings": [
+     {
+      "code": "surface_no_room",
+      "check": "surface_bounding",
+      "severity": "info",
+      "status": "unknown",
+      "message": "floor struct-plane-006 is not linked to a room, so its bounding walls are unknown",
+      "element_ids": [
+       "struct-plane-006"
+      ],
+      "evidence": {
+       "entity_ids": [
+        "struct-plane-006"
+       ],
+       "geometry_ids": [
+        "geom-struct-plane-006"
+       ],
+       "supporting_evidence_ids": [
+        "ev_002",
+        "ev_004",
+        "ev_010"
+       ]
+      }
+     },
+     {
+      "code": "surface_no_room",
+      "check": "surface_bounding",
+      "severity": "info",
+      "status": "unknown",
+      "message": "floor struct-plane-111 is not linked to a room, so its bounding walls are unknown",
+      "element_ids": [
+       "struct-plane-111"
+      ],
+      "evidence": {
+       "entity_ids": [
+        "struct-plane-111"
+       ],
+       "geometry_ids": [
+        "geom-struct-plane-111"
+       ],
+       "supporting_evidence_ids": [
+        "ev_002",
+        "ev_004",
+        "ev_010"
+       ]
+      }
+     },
+     {
+      "code": "attachment_no_floor_level",
+      "check": "attachments",
+      "severity": "info",
+      "status": "unknown",
+      "message": "6 furniture piece(s) have no room with a known floor/ceiling level, so floating/below-floor/above-ceiling is not decidable",
+      "element_ids": [
+       "entity-object-chair-01",
+       "entity-object-coffee_table-01",
+       "entity-object-floor_lamp-01",
+       "entity-object-rug-01",
+       "entity-object-sofa-01",
+       "entity-object-tv_stand-01"
+      ],
+      "evidence": {
+       "entity_ids": [
+        "entity-object-chair-01",
+        "entity-object-coffee_table-01",
+        "entity-object-floor_lamp-01",
+        "entity-object-rug-01",
+        "entity-object-sofa-01",
+        "entity-object-tv_stand-01"
+       ],
+       "geometry_ids": [
+        "geom-entity-object-chair-01",
+        "geom-entity-object-coffee_table-01",
+        "geom-entity-object-floor_lamp-01",
+        "geom-entity-object-rug-01",
+        "geom-entity-object-sofa-01",
+        "geom-entity-object-tv_stand-01"
+       ],
+       "supporting_evidence_ids": []
+      }
+     },
+     {
+      "code": "attachment_wall_test_partial",
+      "check": "attachments",
+      "severity": "info",
+      "status": "unknown",
+      "message": "1 wall(s) with unreadable orientation were not tested for penetration against 6 furniture piece(s)",
+      "element_ids": [
+       "entity-object-chair-01",
+       "entity-object-coffee_table-01",
+       "entity-object-floor_lamp-01",
+       "entity-object-rug-01",
+       "entity-object-sofa-01",
+       "entity-object-tv_stand-01",
+       "struct-plane-004"
+      ],
+      "evidence": {
+       "entity_ids": [
+        "entity-object-chair-01",
+        "entity-object-coffee_table-01",
+        "entity-object-floor_lamp-01",
+        "entity-object-rug-01",
+        "entity-object-sofa-01",
+        "entity-object-tv_stand-01",
+        "struct-plane-004"
+       ],
+       "geometry_ids": [
+        "geom-entity-object-chair-01",
+        "geom-entity-object-coffee_table-01",
+        "geom-entity-object-floor_lamp-01",
+        "geom-entity-object-rug-01",
+        "geom-entity-object-sofa-01",
+        "geom-entity-object-tv_stand-01",
+        "geom-struct-plane-004"
+       ],
+       "supporting_evidence_ids": [
+        "ev_002",
+        "ev_004",
+        "ev_007",
+        "ev_009",
+        "ev_010"
+       ]
+      }
+     },
+     {
+      "code": "camera_wall_test_partial",
+      "check": "camera_conflicts",
+      "severity": "info",
+      "status": "unknown",
+      "message": "1 wall(s) have unreadable orientation, so the inside-wall test is incomplete for 6 camera(s)",
+      "element_ids": [
+       "struct-plane-004"
+      ],
+      "evidence": {
+       "entity_ids": [
+        "struct-plane-004"
+       ],
+       "geometry_ids": [
+        "geom-struct-plane-004"
+       ],
+       "supporting_evidence_ids": [
+        "ev_002",
+        "ev_004",
+        "ev_007",
+        "ev_009",
+        "ev_010"
+       ]
+      }
+     },
+     {
+      "code": "orphans_undecidable",
+      "check": "topology",
+      "severity": "info",
+      "status": "unknown",
+      "message": "the world has no room entity, so no element can be called an orphan",
+      "element_ids": [],
+      "evidence": {
+       "entity_ids": [],
+       "geometry_ids": [],
+       "supporting_evidence_ids": []
+      }
+     }
+    ],
+    "camera_centres_supplied": 6,
+    "entity_types": {
+     "wall": 1,
+     "floor": 2,
+     "support_surface": 1,
+     "furniture": 6,
+     "unknown": 1,
+     "structure": 2
+    }
+   },
+   "colmap": {
+    "staging": {
+     "root": "C:\\Users\\shres\\AppData\\Local\\Temp\\stage_report_room11_geom_ex_zusxv\\colmap-sessions\\world\\staging",
+     "sparse_model_dirs": [
+      "0"
+     ],
+     "models": [
+      {
+       "model": "0",
+       "registered_images": 6,
+       "points3D": 108,
+       "cameras_txt": [
+        "2 SIMPLE_RADIAL 1672 941 1058.083456071517 836 470.5 -0.1140199562339046"
+       ],
+       "image_names": [
+        "size_1672x941/ev_003.png",
+        "size_1672x941/ev_007.png",
+        "size_1672x941/ev_010.png",
+        "size_1672x941/ev_004.png",
+        "size_1672x941/ev_009.png",
+        "size_1672x941/ev_002.png"
+       ]
+      }
+     ],
+     "images_in_db": 11,
+     "images_with_keypoints": 11,
+     "keypoints_per_image": {
+      "size_1536x1024/ev_000.png": 4617,
+      "size_1536x1024/ev_006.png": 8721,
+      "size_1672x941/ev_001.png": 7525,
+      "size_1672x941/ev_002.png": 10738,
+      "size_1672x941/ev_003.png": 4726,
+      "size_1672x941/ev_004.png": 7430,
+      "size_1672x941/ev_005.png": 6904,
+      "size_1672x941/ev_007.png": 6127,
+      "size_1672x941/ev_008.png": 8556,
+      "size_1672x941/ev_009.png": 5341,
+      "size_1672x941/ev_010.png": 6788
+     },
+     "cameras_in_db": [
+      {
+       "camera_id": 1,
+       "model": 2,
+       "w": 1536,
+       "h": 1024,
+       "params": [
+        1843.1999999999998,
+        768.0,
+        512.0,
+        0.0
+       ],
+       "prior_focal": 0
+      },
+      {
+       "camera_id": 2,
+       "model": 2,
+       "w": 1672,
+       "h": 941,
+       "params": [
+        2006.3999999999999,
+        836.0,
+        470.5,
+        0.0
+       ],
+       "prior_focal": 0
+      }
+     ],
+     "matches_rows": 28,
+     "two_view_geometries": {
+      "pairs_total": 55,
+      "pairs_with_inliers": 23,
+      "inlier_hist": {
+       "0-0": 32,
+       "1-14": 0,
+       "15-29": 14,
+       "30-49": 5,
+       "50-99": 1,
+       "100-199": 2,
+       "200-499": 1,
+       "500-+": 0
+      },
+      "config_counts": {
+       "0": 32,
+       "3": 22,
+       "6": 1
+      }
+     },
+     "top_pairs": [
+      {
+       "a": "size_1672x941/ev_007.png",
+       "b": "size_1672x941/ev_004.png",
+       "inliers": 263,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_010.png",
+       "b": "size_1672x941/ev_004.png",
+       "inliers": 186,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_007.png",
+       "b": "size_1672x941/ev_010.png",
+       "inliers": 112,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_007.png",
+       "b": "size_1672x941/ev_002.png",
+       "inliers": 93,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_003.png",
+       "b": "size_1672x941/ev_009.png",
+       "inliers": 42,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_004.png",
+       "b": "size_1672x941/ev_002.png",
+       "inliers": 38,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_003.png",
+       "b": "size_1672x941/ev_007.png",
+       "inliers": 37,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_010.png",
+       "b": "size_1672x941/ev_002.png",
+       "inliers": 35,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_007.png",
+       "b": "size_1672x941/ev_009.png",
+       "inliers": 30,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_003.png",
+       "b": "size_1672x941/ev_004.png",
+       "inliers": 27,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_001.png",
+       "b": "size_1672x941/ev_008.png",
+       "inliers": 26,
+       "config": 3
+      },
+      {
+       "a": "size_1672x941/ev_009.png",
+       "b": "size_1672x941/ev_002.png",
+       "inliers": 23,
+       "config": 3
+      }
+     ],
+     "pairs_with_inliers_ge_15": 23,
+     "pairs_with_inliers_ge_50": 4
+    }
+   },
+   "models_loaded": [
+    {
+     "path": "C:\\Users\\shres\\.cache\\torch\\hub\\checkpoints\\depth-save.pth",
+     "size_mb": 4.2,
+     "stages": [
+      "scene_gate",
+      "ladder_after_finalize"
+     ],
+     "opened_via": "python open()",
+     "sha256": "9c2ee4ded238892dfa51569941372601e35e4a74aa6f84ea80053d2ab1c07abe"
+    },
+    {
+     "path": "C:\\Users\\shres\\.cache\\torch\\hub\\checkpoints\\dpt_hybrid_384.pt",
+     "size_mb": 469.9,
+     "stages": [
+      "depth",
+      "ladder_after_finalize"
+     ],
+     "opened_via": "python open()",
+     "sha256": "501f0c75b3bca7daec6b3682c5054c09b366765aef6fa3a09d03a5cb4b230853"
+    }
+   ],
+   "logged_warnings": [],
+   "not_run_here": [
+    "quality_report",
+    "compile_validate",
+    "changeset_commit"
+   ],
+   "sift_check": {
+    "images": 11,
+    "pairs": 55,
+    "inlier_hist": {
+     "0-0": 0,
+     "1-14": 37,
+     "15-29": 14,
+     "30-49": 2,
+     "50-99": 2,
+     "100-199": 0,
+     "200-499": 0,
+     "500-+": 0
+    },
+    "pairs_ge_30": 4,
+    "pairs_ge_100": 0,
+    "median_inliers": 13.0,
+    "components_at_30_inliers": [
+     4,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "top_pairs": [
+     {
+      "a": "724f8486-b08e-4665-aaff-d235e63ee836.png",
+      "b": "b6d37095-8802-4247-bd50-05bc4f5acb6b.png",
+      "ratio_matches": 247,
+      "ransac_inliers": 87
+     },
+     {
+      "a": "724f8486-b08e-4665-aaff-d235e63ee836.png",
+      "b": "fb4570e2-cb5d-46f1-8de9-5a3749d5944f.png",
+      "ratio_matches": 190,
+      "ransac_inliers": 68
+     },
+     {
+      "a": "b6d37095-8802-4247-bd50-05bc4f5acb6b.png",
+      "b": "fb4570e2-cb5d-46f1-8de9-5a3749d5944f.png",
+      "ratio_matches": 163,
+      "ransac_inliers": 45
+     },
+     {
+      "a": "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+      "b": "b6d37095-8802-4247-bd50-05bc4f5acb6b.png",
+      "ratio_matches": 184,
+      "ransac_inliers": 33
+     },
+     {
+      "a": "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+      "b": "fb4570e2-cb5d-46f1-8de9-5a3749d5944f.png",
+      "ratio_matches": 133,
+      "ransac_inliers": 20
+     },
+     {
+      "a": "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+      "b": "724f8486-b08e-4665-aaff-d235e63ee836.png",
+      "ratio_matches": 133,
+      "ransac_inliers": 19
+     },
+     {
+      "a": "09998e84-779b-43c3-a2bd-863742882324.png",
+      "b": "cd60e108-bf43-4081-b31e-48b2e5db9b5a.png",
+      "ratio_matches": 85,
+      "ransac_inliers": 17
+     },
+     {
+      "a": "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+      "b": "d7ee57e4-3a75-448c-9d4a-7dde73ef91d3.png",
+      "ratio_matches": 121,
+      "ransac_inliers": 17
+     }
+    ]
+   },
+   "gpu_used_mb_before_run": 0.0,
+   "images_dir": "datasets/user_room_nov14/images",
+   "n_images": 11,
+   "image_files": [
+    "00cb288e-568a-40fb-928f-4e2e083e8443.png",
+    "09998e84-779b-43c3-a2bd-863742882324.png",
+    "1f2c0a86-676e-455a-9b66-7d6336cadd1e.png",
+    "724325b7-fd34-4cb2-81f7-cd354e73726e.png",
+    "724f8486-b08e-4665-aaff-d235e63ee836.png",
+    "8099fa3d-71b0-44c6-8633-e6fb808651a3.png",
+    "adb6e250-43f9-4901-91b2-23081e0de2a4.png",
+    "b6d37095-8802-4247-bd50-05bc4f5acb6b.png",
+    "cd60e108-bf43-4081-b31e-48b2e5db9b5a.png",
+    "d7ee57e4-3a75-448c-9d4a-7dde73ef91d3.png",
+    "fb4570e2-cb5d-46f1-8de9-5a3749d5944f.png"
+   ],
+   "workdir": "C:\\Users\\shres\\AppData\\Local\\Temp\\stage_report_room11_geom_ex_zusxv",
+   "when": "2026-11-23T23:58:07",
+   "total_wall_s": 343.4,
+   "machine": "RTX 4050 6GB laptop, Windows; COLMAP colmap"
   }
  },
  "diagnosis_md": [
@@ -20542,5 +23453,431 @@
   "room6: CPU run 329 s (mapper failed, 233 s single-image fallback); GPU run 1856 s (mapper failed again even with per-size cameras; fallback much slower) while the GPU was shared; not re-run idle. A 4-8x slowdown for identical code when the 6 GB GPU is shared is what these numbers show; the cause (VRAM paging) is suspected, not proven. Torch residual after every stage is <= 90 MB (models are released); the Grounding DINO + SAM 2 + DINOv2 perception stage peaks at 3.6 GB torch allocation / 4.2 GB whole device, so it must not share the GPU with anything else. Depth (DPT_Hybrid) and detectors load on CUDA (torch peak 659 MB and 3586 MB), not CPU.",
   "",
   ""
- ]
+ ],
+ "synthetic_geometry": {
+  "canonical_interior_promote_building_False": {
+   "verdict": "no_violations_found_with_unknowns",
+   "errors": 0,
+   "warnings": 0,
+   "unknowns": 1,
+   "checks": {
+    "duplicate_walls": {
+     "check": "duplicate_walls",
+     "state": "pass",
+     "evaluated": 66,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "room_closure": {
+     "check": "room_closure",
+     "state": "pass",
+     "evaluated": 2,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "footprint_validity": {
+     "check": "footprint_validity",
+     "state": "pass",
+     "evaluated": 2,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "openings": {
+     "check": "openings",
+     "state": "not_applicable",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "surface_bounding": {
+     "check": "surface_bounding",
+     "state": "pass",
+     "evaluated": 6,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "attachments": {
+     "check": "attachments",
+     "state": "not_applicable",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "camera_conflicts": {
+     "check": "camera_conflicts",
+     "state": "pass",
+     "evaluated": 5,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "topology": {
+     "check": "topology",
+     "state": "partial",
+     "evaluated": 18,
+     "violations": 0,
+     "undecided": 1,
+     "reasons": [
+      "no door/opening/CONNECTS evidence exists, room connectivity cannot be assessed"
+     ]
+    }
+   },
+   "rooms": {
+    "room-plane-000": {
+     "closure": {
+      "state": "closed",
+      "wall_count": 8,
+      "tolerance": 0.18799999999999997
+     },
+     "footprint": {
+      "vertices": 4,
+      "area": 5.76
+     }
+    },
+    "room-plane-001": {
+     "closure": {
+      "state": "closed",
+      "wall_count": 4,
+      "tolerance": 0.18799999999999997
+     },
+     "footprint": {
+      "vertices": 4,
+      "area": 5.76
+     }
+    }
+   },
+   "context": {
+    "up_axis": "y",
+    "scale_state": "unknown_or_relative",
+    "characteristic_length": 2.35,
+    "walls": 12,
+    "walls_readable": 12,
+    "rooms": 2,
+    "cameras": 5,
+    "tolerances_are": "fractions of characteristic_length",
+    "config": {
+     "thin_wall_ratio": 0.06,
+     "duplicate_offset": 0.03,
+     "duplicate_overlap": 0.5,
+     "gap": 0.08,
+     "opening": 0.04,
+     "surface": 0.1,
+     "attach": 0.08,
+     "penetration": 0.05,
+     "camera": 0.01,
+     "camera_room": 0.05,
+     "area_mismatch": 0.1,
+     "min_m": 0.02
+    },
+    "frame_note": "walls are read from axis-aligned bounds; camera centres are assumed to be in the world frame"
+   },
+   "findings": [
+    {
+     "code": "connectivity_unknown",
+     "check": "topology",
+     "severity": "info",
+     "status": "unknown",
+     "message": "no door/opening/CONNECTS evidence exists, room connectivity cannot be assessed",
+     "element_ids": [
+      "room-plane-000",
+      "room-plane-001"
+     ],
+     "evidence": {
+      "entity_ids": [
+       "room-plane-000",
+       "room-plane-001"
+      ],
+      "geometry_ids": [
+       "geom-room-plane-000"
+      ],
+      "supporting_evidence_ids": []
+     }
+    }
+   ],
+   "camera_centres_supplied": 5,
+   "entity_types": {
+    "floor": 3,
+    "ceiling": 3,
+    "wall": 12,
+    "room": 2
+   }
+  },
+  "canonical_interior_promote_building_True": {
+   "verdict": "no_violations_found",
+   "errors": 0,
+   "warnings": 0,
+   "unknowns": 0,
+   "checks": {
+    "duplicate_walls": {
+     "check": "duplicate_walls",
+     "state": "pass",
+     "evaluated": 120,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "room_closure": {
+     "check": "room_closure",
+     "state": "pass",
+     "evaluated": 2,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "footprint_validity": {
+     "check": "footprint_validity",
+     "state": "pass",
+     "evaluated": 2,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "openings": {
+     "check": "openings",
+     "state": "not_applicable",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "surface_bounding": {
+     "check": "surface_bounding",
+     "state": "pass",
+     "evaluated": 8,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "attachments": {
+     "check": "attachments",
+     "state": "not_applicable",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "camera_conflicts": {
+     "check": "camera_conflicts",
+     "state": "pass",
+     "evaluated": 5,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "topology": {
+     "check": "topology",
+     "state": "pass",
+     "evaluated": 24,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    }
+   },
+   "rooms": {
+    "room-plane-000": {
+     "closure": {
+      "state": "closed",
+      "wall_count": 8,
+      "tolerance": 0.192
+     },
+     "footprint": {
+      "vertices": 4,
+      "area": 5.76
+     }
+    },
+    "room-plane-001": {
+     "closure": {
+      "state": "closed",
+      "wall_count": 8,
+      "tolerance": 0.192
+     },
+     "footprint": {
+      "vertices": 4,
+      "area": 5.76
+     }
+    }
+   },
+   "context": {
+    "up_axis": "y",
+    "scale_state": "unknown_or_relative",
+    "characteristic_length": 2.4,
+    "walls": 16,
+    "walls_readable": 16,
+    "rooms": 2,
+    "cameras": 5,
+    "tolerances_are": "fractions of characteristic_length",
+    "config": {
+     "thin_wall_ratio": 0.06,
+     "duplicate_offset": 0.03,
+     "duplicate_overlap": 0.5,
+     "gap": 0.08,
+     "opening": 0.04,
+     "surface": 0.1,
+     "attach": 0.08,
+     "penetration": 0.05,
+     "camera": 0.01,
+     "camera_room": 0.05,
+     "area_mismatch": 0.1,
+     "min_m": 0.02
+    },
+    "frame_note": "walls are read from axis-aligned bounds; camera centres are assumed to be in the world frame"
+   },
+   "findings": [],
+   "camera_centres_supplied": 5,
+   "entity_types": {
+    "floor": 4,
+    "ceiling": 4,
+    "wall": 16,
+    "room": 2,
+    "storey": 2,
+    "building": 1
+   }
+  },
+  "room_fidelity_fixture": {
+   "verdict": "no_violations_found_with_unknowns",
+   "errors": 0,
+   "warnings": 0,
+   "unknowns": 1,
+   "checks": {
+    "duplicate_walls": {
+     "check": "duplicate_walls",
+     "state": "pass",
+     "evaluated": 28,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "room_closure": {
+     "check": "room_closure",
+     "state": "pass",
+     "evaluated": 1,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "footprint_validity": {
+     "check": "footprint_validity",
+     "state": "pass",
+     "evaluated": 1,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "openings": {
+     "check": "openings",
+     "state": "pass",
+     "evaluated": 2,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "surface_bounding": {
+     "check": "surface_bounding",
+     "state": "pass",
+     "evaluated": 4,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "attachments": {
+     "check": "attachments",
+     "state": "not_applicable",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    },
+    "camera_conflicts": {
+     "check": "camera_conflicts",
+     "state": "unknown",
+     "evaluated": 0,
+     "violations": 0,
+     "undecided": 1,
+     "reasons": [
+      "no registered camera centres were supplied to the validator"
+     ]
+    },
+    "topology": {
+     "check": "topology",
+     "state": "pass",
+     "evaluated": 14,
+     "violations": 0,
+     "undecided": 0,
+     "reasons": []
+    }
+   },
+   "rooms": {
+    "room-plane-000": {
+     "closure": {
+      "state": "closed",
+      "wall_count": 8,
+      "tolerance": 0.35998915907260115
+     },
+     "footprint": {
+      "vertices": 4,
+      "area": 19.871708
+     }
+    }
+   },
+   "context": {
+    "up_axis": "z",
+    "scale_state": "unknown_or_relative",
+    "characteristic_length": 4.499864,
+    "walls": 8,
+    "walls_readable": 8,
+    "rooms": 1,
+    "cameras": 0,
+    "tolerances_are": "fractions of characteristic_length",
+    "config": {
+     "thin_wall_ratio": 0.06,
+     "duplicate_offset": 0.03,
+     "duplicate_overlap": 0.5,
+     "gap": 0.08,
+     "opening": 0.04,
+     "surface": 0.1,
+     "attach": 0.08,
+     "penetration": 0.05,
+     "camera": 0.01,
+     "camera_room": 0.05,
+     "area_mismatch": 0.1,
+     "min_m": 0.02
+    },
+    "frame_note": "walls are read from axis-aligned bounds; camera centres are assumed to be in the world frame"
+   },
+   "findings": [
+    {
+     "code": "cameras_not_supplied",
+     "check": "camera_conflicts",
+     "severity": "info",
+     "status": "unknown",
+     "message": "no registered camera centres were supplied to the validator",
+     "element_ids": [],
+     "evidence": {
+      "entity_ids": [],
+      "geometry_ids": [],
+      "supporting_evidence_ids": []
+     }
+    }
+   ],
+   "camera_centres_supplied": 0,
+   "entity_types": {
+    "floor": 2,
+    "wall": 8,
+    "ceiling": 2,
+    "support_surface": 1,
+    "room": 1,
+    "window": 1,
+    "storey": 1,
+    "building": 1,
+    "door": 1,
+    "unknown": 2
+   }
+  }
+ }
 }

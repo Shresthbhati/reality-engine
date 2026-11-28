@@ -47,6 +47,12 @@ def _host_id(world: WorldIR, opening) -> Optional[str]:
     for rel in opening.relationships:
         if rel.kind is RelationshipKind.ATTACHED_TO and rel.target_id in world.entities:
             return rel.target_id
+    # the compiler wires a promoted window to its host wall(s) with PART_OF (struct plane and/or layout slab); a door that
+    # is PART_OF a room is not hosted by it, so only a WALL target counts
+    for rel in opening.relationships:
+        tgt = world.entities.get(rel.target_id)
+        if rel.kind is RelationshipKind.PART_OF and tgt is not None and tgt.type is EntityType.WALL:
+            return rel.target_id
     return None
 
 

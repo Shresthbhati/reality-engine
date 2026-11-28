@@ -1066,6 +1066,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # P111: architectural constraints are data, not exceptions -- an error degrades the stage, never fails it.
         from world_ir.constraints import check_architectural_constraints, violations_to_segment_fields
         c_warnings, c_metrics = violations_to_segment_fields(check_architectural_constraints(world_ir))
+        # Room geometry coherence (duplicate walls, open loops, opening hosting, attachments, camera conflicts, topology).
+        # Findings and per-check "unknown"s are recorded on the world (metadata.room_geometry_validation) BEFORE the world is
+        # stored below; a decided hard-invariant violation degrades the stage like the constraints above. Nothing is auto-fixed.
+        from engine.validation.room_geometry import validate_for_stage
+        g_warnings, g_metrics = validate_for_stage(world_ir, prog.camera_poses)
+        c_warnings, c_metrics = [*c_warnings, *g_warnings], {**c_metrics, **g_metrics}
         # the validated world is STORED (content-addressed) and its hash published: an output reference always points at a real artifact
         import json as _json
 

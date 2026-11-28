@@ -17,11 +17,12 @@ def all_test_files(root: Path = Path("tests")) -> list[str]:
     return sorted(p.as_posix() for p in root.rglob("test_*.py"))
 
 
-def shards(files: list[str], n: int) -> list[list[str]]:
-    """Greedy balance by file size (a cheap proxy for run time): biggest first, always onto the lightest shard."""
+def shards(files: list[str], n: int, base: Path = Path(".")) -> list[list[str]]:
+    """Greedy balance by file size (a cheap proxy for run time): biggest first, always onto the lightest shard.
+    ``files`` are posix paths relative to ``base`` (default: the current directory)."""
     if n < 1:
         raise ValueError("need at least one shard")
-    size = {f: max(Path(f).stat().st_size, 1) for f in files}
+    size = {f: max((base / f).stat().st_size, 1) for f in files}
     loads = [0] * n
     out: list[list[str]] = [[] for _ in range(n)]
     for f in sorted(files, key=lambda f: (-size[f], f)):

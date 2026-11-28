@@ -70,7 +70,7 @@ Three kinds of evidence are never mixed, and each box says which it rests on:
 | How to build it: data structures, algorithms, work packages B01–B20 | `docs/BUILD_SPEC.md` |
 | Capability by capability, with test counts | `docs/engineering/capability_matrix.md` |
 | Status ledger | `docs/STATUS.md` (generated from `docs/status.yaml`) |
-| What CI actually runs | `docs/CI_TEST_REGISTRY.md` |
+| What CI actually runs | `docs/engineering/CI_TEST_REGISTRY.md` (generated) |
 | Limits | `docs/KNOWN_LIMITATIONS.md` |
 | Architecture and contracts | `ARCHITECTURE.md`, `docs/blueprint/00`–`18`, `docs/engineering/` |
 | UI target | `docs/blueprint/36_UI_SPEC.md` |

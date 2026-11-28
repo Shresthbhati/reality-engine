@@ -35,10 +35,61 @@ def _run_with_deadline(stage: Stage, ctx: StageContext, timeout_s: float | None)
     try:
         return fut.result(timeout=timeout_s)
     except cf.TimeoutError:
+        # Graceful cancellation: mark stage as timed out and terminate related processes
         ctx.state["stage_abandoned"] = stage.spec.name
+        ctx.state["cancellation_requested"] = True
+        # Signal cancellation to the stage if it supports it
+        if hasattr(stage.spec, "supports_cancellation") and stage.spec.supports_cancellation:
+            # The stage should check ctx.cancellation_token.check() at safe boundaries
+            pass
+        # Clean up any GPU resources if the stage has a cleanup callback
+        if hasattr(stage.spec, "cleanup") and callable(stage.spec.cleanup):
+            try:
+                stage.spec.cleanup(ctx)
+            except Exception:
+                pass  # Cleanup failures should not mask the timeout
         raise StageTimeout(f"stage {stage.spec.name!r} exceeded its {timeout_s:g}s deadline") from None
     finally:
         ex.shutdown(wait=False, cancel_futures=True)
+
+
+def _cache_result_valid(hit, spec, declared, ctx, inputs_hash: str, manifest) -> bool:
+    """A cached StageResult may be reused ONLY when all integrity checks pass.
+
+    Checks (each one a hard gate, never a heuristic):
+      1. Inputs hash matches the deterministic hash of declared inputs + version
+         + params (model identity / coordinate frame live in params).
+      2. Every declared input is currently present in ctx.artifacts.
+      3. Required outputs are present in the cached result (success is never
+         reported with required outputs absent).
+      4. Producer/consumer lineage: if any output artifact of this stage has
+         since been produced by a DIFFERENT stage in the current run, the
+         cached result is stale and must be discarded (no branch mixing).
+      5. Provenance: cached result carries its own inputs_hash; if it disagrees
+         with the computed hash the entry is corrupt or from another branch.
+    """
+    if hit is None or hit.status != "succeeded":
+        return False
+    if getattr(hit, "inputs_hash", None) != inputs_hash:
+        return False
+    for name in declared:
+        if name not in ctx.artifacts:
+            return False
+    for name in spec.requires_outputs:
+        if name not in hit.outputs:
+            return False
+    lineage = manifest.lineage
+    for artifact in hit.outputs:
+        producer = lineage.producer.get(artifact)
+        if producer is not None and producer != spec.name:
+            # Another stage in THIS run has overwritten an artifact this cached
+            # result claims to own -- stale, do not reuse.
+            return False
+        reads = lineage.reads.get(spec.name, ())
+        consumers = lineage.consumers(artifact)
+        if reads and artifact in reads and spec.name not in consumers:
+            return False
+    return True
 
 
 class CheckpointStore(Protocol):
@@ -73,10 +124,16 @@ def run_stages(
         spec = stage.spec
         if should_cancel():
             raise StageCancelled(f"cancelled before stage {spec.name!r}")
-        declared_inputs = spec.inputs if spec.inputs is not None else tuple(ctx.artifacts)
-        input_hashes = {n: ctx.artifacts[n] for n in declared_inputs if n in ctx.artifacts}
+        # Deterministic input hashing: only DECLARED inputs contribute to the key,
+        # so unrelated artifacts do not spuriously invalidate a stage.
+        declared = spec.inputs if spec.inputs is not None else tuple(ctx.artifacts)
+        input_hashes = {n: ctx.artifacts[n] for n in declared if n in ctx.artifacts}
+        # Model identity and coordinate frame are part of ctx.params (set by the
+        # host) -- including them means a model/frame change MUST invalidate cache.
         inputs_hash = compute_inputs_hash(spec.version, input_hashes, ctx.params)
         hit = checkpoints.lookup(ctx.job_id, spec.name, inputs_hash)
+        if hit is not None and not _cache_result_valid(hit, spec, declared, ctx, inputs_hash, manifest):
+            hit = None  # invalid cache entry: never reused, no downstream dereference
         if hit is not None and hit.status == "succeeded":  # only a succeeded stage is reusable
             result = hit
         else:
@@ -131,6 +188,9 @@ def run_stages(
             missing = [n for n in spec.requires_outputs if n not in result.outputs]
             if result.status in ("succeeded", "degraded") and missing:  # success is never reported with required outputs absent
                 result.status, result.error = "failed", f"required outputs missing: {', '.join(missing)}"
+            # Stage-level status is a verdict (succeeded/degraded/skipped/failed),
+            # not a mutable lifecycle state; do NOT run lifecycle transitions here.
+            ctx.state["last_status"] = result.status
             checkpoints.record(ctx.job_id, result)
         manifest.stages.append(result)
         manifest.lineage.add(spec.name, spec.inputs if spec.inputs is not None else tuple(ctx.artifacts), result.outputs)

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import { createSession } from "@/lib/api/sessions";
 import { attachSessionToWorld, listWorlds } from "@/lib/api/worlds";
+import { isApiError } from "@/lib/api/client";
 import type { WorldRow } from "@/lib/types";
 
 export default function CreateSessionPage() {
@@ -13,7 +14,11 @@ export default function CreateSessionPage() {
   const [source, setSource] = useState("Upload");
   const [location, setLocation] = useState("");
   const [worldId, setWorldId] = useState("");
-  const [worlds, setWorlds] = useState<WorldRow[]>([]);
+  // null = not loaded / failed. It must NOT be []: an empty world list is the
+  // exact rendering for "you have no worlds", so a backend outage here would
+  // silently remove the world picker with no error shown.
+  const [worlds, setWorlds] = useState<WorldRow[] | null>(null);
+  const [worldsError, setWorldsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,10 +26,16 @@ export default function CreateSessionPage() {
     let cancelled = false;
     listWorlds()
       .then((res) => {
-        if (!cancelled) setWorlds(res.rows);
+        if (cancelled) return;
+        setWorlds(res.rows);
+        setWorldsError(null);
       })
-      .catch(() => {
-        if (!cancelled) setWorlds([]);
+      .catch((err) => {
+        if (cancelled) return;
+        setWorlds(null);
+        setWorldsError(
+          isApiError(err) ? err.describe() : "Could not load Worlds for this Session.",
+        );
       });
     return () => {
       cancelled = true;
@@ -85,14 +96,20 @@ export default function CreateSessionPage() {
         </Field>
 
         <Field label="World" hint="Optional — this Session can stay standalone.">
-          <select value={worldId} onChange={(e) => setWorldId(e.target.value)} className="input">
-            <option value="">None</option>
-            {worlds.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+          {worldsError ? (
+            <p className="text-xs" style={{ color: "var(--error, #e57373)" }}>
+              Could not load Worlds: {worldsError}
+            </p>
+          ) : (
+            <select value={worldId} onChange={(e) => setWorldId(e.target.value)} className="input">
+              <option value="">None</option>
+              {(worlds ?? []).map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
 
         {error && (

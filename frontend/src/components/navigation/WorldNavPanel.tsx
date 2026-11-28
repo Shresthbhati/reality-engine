@@ -365,8 +365,12 @@ export default function WorldNavPanel({
         .map((lvl, idx) => ({
           index: idx,
           id: String(lvl.level_id),
-          name: lvl.name ? String(lvl.name) : `Level ${idx}`,
-          elevationY: Number(lvl.elevation_m ?? 0),
+          // No synthesized "Level N" name: if the compiler did not name the
+          // storey, the UI shows the id and says it is unnamed, rather than
+          // inventing a level number the reconstruction never produced.
+          name: typeof lvl.name === "string" && lvl.name.length > 0 ? lvl.name : String(lvl.level_id),
+          named: typeof lvl.name === "string" && lvl.name.length > 0,
+          elevationY: typeof lvl.elevation_m === "number" ? lvl.elevation_m : null,
           elementCount:
             ((lvl.room_ids as string[] | undefined) || []).length +
             ((lvl.corridor_ids as string[] | undefined) || []).length,
@@ -379,8 +383,11 @@ export default function WorldNavPanel({
     return explicit.map((lvl, idx) => ({
       index: idx,
       id: lvl.id,
-      name: lvl.name || `Level ${idx}`,
-      elevationY: lvl.transform?.position?.y ?? 0,
+      // Same rule as the space-graph branch: an unnamed storey shows its id and
+      // is flagged `named: false` instead of being given a fabricated number.
+      name: lvl.name || lvl.id,
+      named: Boolean(lvl.name),
+      elevationY: typeof lvl.transform?.position?.y === "number" ? lvl.transform.position.y : null,
       elementCount: entitiesList.filter((e) => {
         const l =
           (e.custom_properties as Record<string, unknown> | undefined)?.level ??
@@ -735,8 +742,12 @@ interface SpatialAnchor {
                           {lvl.name}
                         </span>
                       </div>
+                      {/* An elevation the backend did not record stays unread,
+                          rather than being printed as 0.0 m. */}
                       <span className="text-[10px] text-[#38bdf8] font-mono px-1.5 py-0.2 rounded bg-[#38bdf8]/10">
-                        Elev {lvl.elevationY.toFixed(1)}m
+                        {typeof lvl.elevationY === "number"
+                          ? `Elev ${lvl.elevationY.toFixed(1)}m`
+                          : "Elev unknown"}
                       </span>
                     </div>
 
@@ -1607,17 +1618,23 @@ function HierarchyExplorer({
   const levels: Array<{
     id: string;
     name: string;
-    elevationY?: number;
+    named: boolean;
+    elevationY?: number | null;
     roomIds?: string[];
     corridorIds?: string[];
     entity?: Entity;
   }> = metaLevels.length > 0
     ? metaLevels
         .filter((lvl) => typeof lvl.level_id === "string" && lvl.level_id.length > 0)
-        .map((lvl, idx) => ({
+        .map((lvl) => ({
           id: String(lvl.level_id),
-          name: lvl.name ? String(lvl.name) : `Level ${idx}`,
-          elevationY: Number(lvl.elevation_m ?? 0),
+          // Storey naming is backend truth. When the space graph carries no
+          // name, the id is shown and `named` is false; the UI must not
+          // manufacture "Level 0"/"Level 1" from the array position.
+          name:
+            typeof lvl.name === "string" && lvl.name.length > 0 ? lvl.name : String(lvl.level_id),
+          named: typeof lvl.name === "string" && lvl.name.length > 0,
+          elevationY: typeof lvl.elevation_m === "number" ? lvl.elevation_m : null,
           roomIds: Array.isArray(lvl.room_ids) ? (lvl.room_ids as string[]) : [],
           corridorIds: Array.isArray(lvl.corridor_ids) ? (lvl.corridor_ids as string[]) : [],
           entity: entitiesList.find((e) => e.id === lvl.level_id),
@@ -1625,7 +1642,9 @@ function HierarchyExplorer({
     : levelEntities.map((lvl) => ({
         id: lvl.id,
         name: lvl.name || lvl.id,
-        elevationY: lvl.transform?.position?.y ?? 0,
+        named: Boolean(lvl.name),
+        elevationY:
+          typeof lvl.transform?.position?.y === "number" ? lvl.transform.position.y : null,
         roomIds: [],
         corridorIds: [],
         entity: lvl,
@@ -2419,24 +2438,50 @@ export function BuildingTopologyInspector({
 }) {
   const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set on a FAILED space-graph read. Distinct from an empty graph, which is
+  // the correct rendering for a world that genuinely has no rooms yet.
+  const [graphError, setGraphError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!worldIR?.id) {
       setGraphData(null);
+      setGraphError(null);
       return;
     }
     let isCancelled = false;
     setLoading(true);
+    // Clear the PREVIOUS world's graph immediately. Otherwise world A's
+    // adjacency/room graph stays on screen while world B loads, and if B's
+    // fetch then fails the panel silently keeps showing A's topology as if it
+    // belonged to B.
+    setGraphData(null);
+    setGraphError(null);
 
     fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (!res.ok) {
+          // A failed space-graph read is a failure, not "this world has no
+          // rooms". Record it so the panel can say so instead of quietly
+          // falling back to a partial local derivation.
+          const detail = await res.json().catch(() => null);
+          throw new Error(
+            detail?.detail ?? detail?.error ?? `Space graph request failed (HTTP ${res.status}).`,
+          );
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (!isCancelled && data && data.nodes) {
+        if (!isCancelled && data && Array.isArray(data.nodes)) {
           setGraphData(data as SpaceGraphData);
+        } else if (!isCancelled) {
+          setGraphError("The backend returned no space graph for this world.");
         }
       })
-      .catch(() => {
-        // Fallback to local derivation from entitiesList
+      .catch((err) => {
+        if (isCancelled) return;
+        setGraphError(
+          err instanceof Error ? err.message : "Space graph could not be loaded.",
+        );
       })
       .finally(() => {
         if (!isCancelled) setLoading(false);
@@ -2554,11 +2599,28 @@ export function BuildingTopologyInspector({
         </div>
         <div className="flex items-center gap-2">
           {loading && <span className="text-[10px] text-neutral-500 animate-pulse">Syncing...</span>}
+          {/* A failed space-graph read must be visible: the counts below are
+              locally derived and would otherwise look like real topology. */}
+          {graphError && (
+            <span
+              className="text-[10px] text-[#e57373]"
+              title={graphError}
+            >
+              Topology unavailable
+            </span>
+          )}
           <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30">
             Graph View
           </span>
         </div>
       </div>
+
+      {graphError && (
+        <p className="text-[11px] text-[#e57373] mb-2">
+          The backend space graph could not be loaded ({graphError}). The counts
+          below are derived from WorldIR entities only and may be incomplete.
+        </p>
+      )}
 
       {/* Network Metrics KPIs */}
       <div className="grid grid-cols-4 gap-1.5 text-center">

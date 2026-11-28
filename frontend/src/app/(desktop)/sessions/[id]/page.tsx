@@ -83,7 +83,17 @@ export default async function SessionDetailPage({
           </InfoSection>
 
           <InfoSection title="Evidence">
-            <InfoRow label="Items" value={String(evidenceList.length)} />
+            {/* A failed evidence load must NOT print "0": `evidenceList` is
+                empty on failure, and "0 Items" is indistinguishable from a
+                session that genuinely has none. Report the failure instead. */}
+            <InfoRow
+              label="Items"
+              value={
+                evidenceError
+                  ? "Unavailable"
+                  : `${evidenceList.length}`
+              }
+            />
           </InfoSection>
         </aside>
       </div>

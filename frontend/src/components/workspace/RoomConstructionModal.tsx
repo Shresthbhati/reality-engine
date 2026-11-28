@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   Workflow,
   X,
@@ -13,7 +13,14 @@ import {
   Compass,
   Camera,
   Loader2,
+  Ban,
 } from "lucide-react";
+import {
+  classifyReconstruction,
+  isPersistedSuccess,
+  cancelJob,
+  type CancelJobResult,
+} from "@/lib/api";
 
 /** A session attached to this world, as offered in the selector. */
 export interface ConstructionSessionOption {
@@ -37,22 +44,19 @@ const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60; // ~2 minutes; the backend job is the source of truth
 
 /**
- * The only terminal outcomes a reconstruction job can report
- * (apps/api/jobs.py: `job.status` becomes JOB_SUCCEEDED / JOB_PARTIAL after
- * grading, and a version row is adopted on exactly those paths). There is no
- * "completed" status -- treating one as success was how this modal could
- * announce "WorldIR compiled and persisted to WorldStore" for a run that
- * never committed anything.
+ * The reconstruction outcome is decided by ONE canonical helper,
+ * `classifyReconstruction` in lib/api/reconstruction.ts, so the UI and its
+ * tests can never disagree about what counts as a persisted success.
  */
-interface ReconstructionOutcome {
+type ReconstructionOutcome = {
   status: "succeeded" | "partial";
   versionId: string;
   degraded: string[];
-}
+};
 
 /**
  * Backend job stages (apps/api/jobs.py `job.stage`) mapped onto the modal's
- * progress steps. An unmapped stage is not a failure — the run continues and
+ * progress steps. An unmapped stage is not a failure â€” the run continues and
  * simply shows no step highlight.
  */
 const STAGE_TO_STEP: Record<string, number> = {
@@ -98,6 +102,75 @@ export default function RoomConstructionModal({
   const [activeStage, setActiveStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ReconstructionOutcome | null>(null);
+
+  // --- Cancellation (P0) ------------------------------------------------
+  // `jobIdRef` is the only handle the cancel button needs; `cancelState` is
+  // what the UI renders. Crucially, `cancelState.kind` is NEVER set to
+  // "cancelled" by the click -- only by a poll that actually observed the
+  // backend report it.
+  //
+  // EVERY hook must stay ABOVE the `if (!isOpen) return null` early return.
+  // A `useCallback` placed after it runs only while the modal is open, which
+  // is a React hooks-order violation ("Rendered more hooks than during the
+  // previous render") and crashes the modal exactly when it is opened.
+  const jobIdRef = useRef<string | null>(null);
+  const [cancelState, setCancelState] = useState<
+    | { kind: "idle" }
+    // Request sent, awaiting the backend's answer.
+    | { kind: "requesting" }
+    // 202: the worker was asked to stop and is winding down. NOT cancelled.
+    | { kind: "requested"; detail: string }
+    // 409/404/transport: the request was refused. The job is untouched.
+    | { kind: "refused"; detail: string }
+  >({ kind: "idle" });
+  // Guards against duplicate cancels: a second click while one is in flight,
+  // or after one has been accepted, is a no-op rather than a second request.
+  const cancelInFlightRef = useRef(false);
+
+  /**
+   * Request cancellation of the running job.
+   *
+   * The click NEVER sets a cancelled state. It records that a request is in
+   * flight, and then only "requested" (202/accepted) or "refused" (409/404/
+   * transport) depending on what the backend answered. The modal reaches a
+   * cancelled display solely because the polling loop observed
+   * `status === "cancelled"` from `GET /api/jobs/{id}`.
+   */
+  const handleCancel = useCallback(async () => {
+    const jobId = jobIdRef.current;
+    if (!jobId) return;
+    // Duplicate-request guard: a second click while one is in flight, or
+    // after one was accepted, must not fire another cancel.
+    if (cancelInFlightRef.current) return;
+    if (cancelState.kind === "requesting" || cancelState.kind === "requested") return;
+
+    cancelInFlightRef.current = true;
+    setCancelState({ kind: "requesting" });
+    try {
+      const result: CancelJobResult = await cancelJob(jobId);
+      if (result.outcome === "cancelling") {
+        // 202: the worker was asked to stop. It is NOT cancelled yet.
+        setCancelState({
+          kind: "requested",
+          detail:
+            "Cancellation requested. The job is still running server-side and will " +
+            "stop at its next stage boundary.",
+        });
+      } else if (result.outcome === "cancelled") {
+        // 200: a QUEUED job stops immediately and is already terminal.
+        setCancelState({ kind: "requested", detail: "Cancellation accepted." });
+      } else {
+        // 409 (already finished) / 404 (unknown) / transport failure.
+        // The job is untouched; the poll loop will show the real state.
+        setCancelState({
+          kind: "refused",
+          detail: result.reason ?? "The cancellation request was refused.",
+        });
+      }
+    } finally {
+      cancelInFlightRef.current = false;
+    }
+  }, [cancelState.kind]);
 
   if (!isOpen) return null;
 
@@ -162,7 +235,7 @@ export default function RoomConstructionModal({
 
     try {
       // Enqueue a real RECONSTRUCT_SESSION job for this session. The 200 is
-      // an enqueue acknowledgement, not a result — the job id is polled below.
+      // an enqueue acknowledgement, not a result â€” the job id is polled below.
       const res = await fetch(
         `/api/sessions/${encodeURIComponent(sessionId)}/reconstruct`,
         { method: "POST" }
@@ -181,6 +254,7 @@ export default function RoomConstructionModal({
       if (!jobId) {
         throw new Error("API accepted the request but returned no job id to track.");
       }
+      jobIdRef.current = jobId;
 
       let pollCount = 0;
       let lastStage: string | null = null;
@@ -207,51 +281,47 @@ export default function RoomConstructionModal({
           if (step) setActiveStage(step);
         }
 
-        // Real terminal statuses only. "succeeded" and "partial" are the two
-        // outcomes on which the worker adopts a WorldStore version, and the
-        // job payload carries that version id -- without it there is no
-        // result to report, whatever the status string says.
-        if (job.status === "succeeded" || job.status === "partial") {
-          const payload = (job.payload ?? {}) as {
-            version_id?: unknown;
-            degraded?: unknown;
-          };
-          const versionId = typeof payload.version_id === "string" ? payload.version_id : null;
-          const degraded = Array.isArray(payload.degraded)
-            ? payload.degraded.filter((r): r is string => typeof r === "string")
-            : [];
+        // ONE canonical decision, shared with the tests. A job is a persisted
+        // result only when it is succeeded/partial AND carries the version id
+        // the worker actually committed. A cancelled or failed run is never
+        // promoted, and an unknown status is never read as success.
+        const verdict = classifyReconstruction(job);
 
-          if (!versionId) {
-            setRunning(false);
-            setJobStatus("failed");
-            setActiveStage(null);
-            setError(
-              `Job ${jobId} reported '${job.status}' but carries no committed WorldStore ` +
-                "version id. Nothing was adopted for this world — re-run reconstruction " +
-                "and check the API logs."
-            );
-            return;
-          }
+        if (verdict.kind === "pending") {
+          pollCount++;
+          continue;
+        }
 
+        if (isPersistedSuccess(verdict)) {
           setActiveStage(7);
-          setJobStatus(job.status);
-          setOutcome({ status: job.status, versionId, degraded });
+          setJobStatus(verdict.kind === "partial" ? "partial" : "succeeded");
+          setOutcome({
+            status: verdict.kind === "partial" ? "partial" : "succeeded",
+            versionId: verdict.versionId as string,
+            degraded: verdict.degraded,
+          });
+          setCancelState({ kind: "idle" });
           setRunning(false);
+          jobIdRef.current = null;
           onReconstructionSuccess?.();
           return;
         }
 
-        if (job.status === "failed") {
-          setJobStatus("failed");
-          throw new Error(job.error || "Reconstruction job failed during processing.");
-        }
-
-        if (job.status === "cancelled") {
-          setJobStatus("cancelled");
-          throw new Error("Reconstruction job was cancelled.");
-        }
-
-        pollCount++;
+        // Terminal but not a persisted success: failed, cancelled, or a
+        // terminal status that cannot be proven. `verdict.reason` says which.
+        setJobStatus(job.status === "cancelled" ? "cancelled" : "failed");
+        setActiveStage(null);
+        setRunning(false);
+        jobIdRef.current = null;
+        // The cancel state is only resolved to its terminal form now, because
+        // the BACKEND has now actually reported the terminal status.
+        setCancelState(
+          job.status === "cancelled"
+            ? { kind: "requested", detail: "Cancelled by operator." }
+            : { kind: "idle" },
+        );
+        setError(verdict.reason);
+        return;
       }
 
       // Budget exhausted: the job is still running server-side. Say so instead
@@ -269,6 +339,7 @@ export default function RoomConstructionModal({
       setRunning(false);
       setJobStatus("failed");
       setActiveStage(null);
+      jobIdRef.current = null;
     }
   };
 
@@ -297,6 +368,8 @@ export default function RoomConstructionModal({
                         ? "bg-[#2ecc71]/20 text-[#2ecc71] border-[#2ecc71]/40"
                         : jobStatus === "partial"
                         ? "bg-[#e6a23c]/20 text-[#e6a23c] border-[#e6a23c]/40"
+                        : jobStatus === "cancelled"
+                        ? "bg-neutral-700/40 text-neutral-300 border-neutral-600"
                         : jobStatus === "running"
                         ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40 animate-pulse"
                         : jobStatus === "queued"
@@ -305,14 +378,64 @@ export default function RoomConstructionModal({
                         ? "bg-red-500/20 text-red-400 border-red-500/40"
                         : "bg-neutral-800 text-neutral-400 border-neutral-700"
                     }`}
+                    data-testid="job-status-badge"
                   >
                     {jobStatus}
+                  </span>
+                )}
+
+                {/* Cancel (P0). The label never says "Cancelled" -- that state
+                    is only reachable once the backend reports it via polling. */}
+                {running && cancelState.kind === "idle" && (
+                  <button
+                    type="button"
+                    data-testid="cancel-job-button"
+                    onClick={handleCancel}
+                    className="flex items-center gap-1 text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                  >
+                    <Ban className="w-3 h-3" />
+                    Cancel
+                  </button>
+                )}
+
+                {cancelState.kind === "requesting" && (
+                  <span className="flex items-center gap-1 text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Requestingâ€¦
+                  </span>
+                )}
+
+                {cancelState.kind === "requested" && (
+                  <span
+                    data-testid="cancel-requested-badge"
+                    className="text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400"
+                  >
+                    Cancellation requested
+                  </span>
+                )}
+
+                {cancelState.kind === "refused" && (
+                  <span
+                    data-testid="cancel-refused-badge"
+                    className="text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-red-500/40 bg-red-500/10 text-red-400"
+                    title={cancelState.detail}
+                  >
+                    Cancel refused
                   </span>
                 )}
               </div>
               <p className="text-[11px] font-mono text-neutral-400">
                 Spatial World: <span className="text-[#00e5ff]">{worldId}</span>
               </p>
+              {/* The honest status line for a pending cancellation. */}
+              {cancelState.kind === "requested" && (
+                <p className="text-[11px] text-amber-400 mt-1">{cancelState.detail}</p>
+              )}
+              {cancelState.kind === "refused" && (
+                <p className="text-[11px] text-red-400 mt-1">
+                  {cancelState.detail} The job is unchanged; its actual state is shown above.
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -499,7 +622,7 @@ export default function RoomConstructionModal({
               {jobStatus === "idle" ? "READY" : jobStatus}
             </span>
             {outcome?.versionId && (
-              <span className="text-neutral-400">· {outcome.versionId}</span>
+              <span className="text-neutral-400">Â· {outcome.versionId}</span>
             )}
           </div>
 

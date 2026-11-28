@@ -96,9 +96,33 @@ function retryableForStatus(status: number): boolean {
   return status === 0 || status === 408 || status === 429 || status >= 500;
 }
 
+/**
+ * Error envelopes, and the boundary between them.
+ *
+ * There are exactly two, and the client must read BOTH:
+ *
+ *   { detail: ... }  the BACKEND's envelope. FastAPI's HTTPException renders
+ *                    `{detail}`; that body is proxied through verbatim, so it
+ *                    is the server's own contract, not ours to rename.
+ *   { error: ... }   the FRONTEND proxy's own envelope, for failures the
+ *                    proxy itself produces (a missing required field, a
+ *                    malformed request body, a transport failure) where the
+ *                    backend was never successfully asked.
+ *
+ * All 17 `{error}` sites are of the second kind -- the proxy generated them
+ * before or instead of a backend answer. They are deliberately NOT renamed:
+ * the backend contract is passthrough, and rewriting it would blur which
+ * layer actually failed.
+ *
+ * What matters is that the client can READ both. It previously read only
+ * `detail`, so every proxy-generated failure degraded to a generic
+ * "Request failed with HTTP 503" and the operator lost the real reason.
+ */
 interface ErrorBody {
   detail?: unknown;
   message?: string;
+  /** Frontend-proxy envelope; see the boundary note above. */
+  error?: unknown;
   code?: string;
   entity?: string;
   request_id?: string;
@@ -120,6 +144,10 @@ function messageFromBody(body: ErrorBody | null, fallback: string): string {
     }
   }
   if (detail && typeof detail === "object") return JSON.stringify(detail);
+  // The frontend proxy's own envelope. Without this branch every
+  // proxy-generated failure lost its message.
+  if (typeof body.error === "string" && body.error.trim()) return body.error;
+  if (body.error && typeof body.error === "object") return JSON.stringify(body.error);
   return fallback;
 }
 
@@ -143,6 +171,12 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
   try {
     res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
   } catch (err) {
+    // A caller-driven abort is not a failure and must not be reported as one:
+    // it means a newer request superseded this one. Propagating the original
+    // AbortError lets the hook recognise and drop it.
+    if (options.signal?.aborted || (err as Error)?.name === "AbortError") {
+      throw err;
+    }
     const aborted = (err as Error).name === "AbortError";
     throw new ApiError({
       message: aborted
@@ -178,6 +212,19 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
   }
 
   if (res.status === 204) return undefined as T;
+
+  // Binary artifacts (PLY point clouds, meshes) must bypass JSON parsing.
+  const contentType = res.headers.get("content-type") ?? "";
+  if (
+    typeof ArrayBuffer !== "undefined" &&
+    (contentType.includes("application/octet-stream") ||
+      contentType.includes("application/x-octet-stream") ||
+      contentType.includes("application/ply") ||
+      contentType.includes("binary/"))
+  ) {
+    return (await res.arrayBuffer()) as T;
+  }
+
   const text = await res.text();
   if (!text) return undefined as T;
   try {
@@ -195,6 +242,22 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
 
 export function apiGet<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return perform<T>(path, { method: "GET", headers: { Accept: "application/json" } }, options);
+}
+
+/**
+ * GET a binary artifact (PLY point clouds, meshes) as raw bytes.
+ *
+ * Shares `perform`'s timeout, abort and ApiError mapping, so a 404
+ * ("this world has no geometry") stays distinguishable from a 503
+ * ("the API is down") — which `apiGet` cannot express, because it would
+ * try to JSON-parse a PLY and report a misleading "non-JSON body" error.
+ */
+export function apiGetBinary(path: string, options: RequestOptions = {}): Promise<ArrayBuffer> {
+  return perform<ArrayBuffer>(
+    path,
+    { method: "GET", headers: { Accept: "application/octet-stream" } },
+    { timeoutMs: 60_000, ...options },
+  );
 }
 
 export function apiPost<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
@@ -225,19 +288,43 @@ export function apiDelete<T>(path: string, options: RequestOptions = {}): Promis
   return perform<T>(path, { method: "DELETE", headers: { Accept: "application/json" } }, options);
 }
 
-/** Multipart upload (evidence). Accepts a Blob/File plus extra form fields. */
-export function apiPostForm<T>(
+/**
+ * Multipart upload (evidence). Accepts a Blob/File plus extra form fields.
+ *
+ * A 2xx alone is not proof of ingestion: the API must name the `evidence_id`
+ * row it actually created. Without it there is nothing to show, so the
+ * request is reported as a failure instead of a phantom success.
+ */
+export async function apiPostForm<T>(
   path: string,
   fields: Record<string, string | Blob>,
   options: RequestOptions = {},
 ): Promise<T> {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
-  return perform<T>(
+  const data = await perform<T>(
     path,
     { method: "POST", body: form, headers: { Accept: "application/json" } },
     { timeoutMs: 120_000, ...options },
   );
+
+  const evidenceId =
+    data && typeof data === "object"
+      ? (data as { evidence_id?: unknown }).evidence_id
+      : undefined;
+  if (typeof evidenceId !== "string" || evidenceId.length === 0) {
+    throw new ApiError({
+      message:
+        `The API accepted the upload but returned no evidence id for ${path}; ` +
+        "ingestion could not be confirmed.",
+      status: 502,
+      code: "unknown_error",
+      retryable: true,
+      details: { path },
+    });
+  }
+
+  return data;
 }
 
 /** Query-string helper that drops null/undefined/empty values. */

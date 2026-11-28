@@ -28,7 +28,9 @@ function MobileCameraPageInner() {
   const searchParams = useSearchParams();
   const worldId = searchParams.get("world");
 
-  const [world, setWorld] = useState<WorldRow | null | "loading">(worldId ? "loading" : null);
+  const [world, setWorld] = useState<WorldRow | null | "loading" | "error">(
+    worldId ? "loading" : null,
+  );
   useEffect(() => {
     if (!worldId) return;
     let cancelled = false;
@@ -38,7 +40,10 @@ function MobileCameraPageInner() {
         if (!cancelled) setWorld(r.row);
       })
       .catch(() => {
-        if (!cancelled) setWorld(null);
+        // "error", NOT null: null renders as "None — standalone Session",
+        // which would claim the capture is standalone when in fact the World
+        // simply could not be loaded.
+        if (!cancelled) setWorld("error");
       });
     return () => {
       cancelled = true;
@@ -121,7 +126,9 @@ function MobileCameraPageInner() {
             : undefined,
       };
       const session = await createSession(input);
-      if (world && world !== "loading") {
+      // "error" means the World could not be loaded, so there is no id to
+      // attach to -- it must not be attached as if it were a real World.
+      if (world && world !== "loading" && world !== "error") {
         await attachSessionToWorld(world.id, session.id).catch(() => {
           // Session is created regardless; the World link is best-effort here —
           // the user can attach it from the Session detail screen if this fails.
@@ -209,7 +216,13 @@ function MobileCameraPageInner() {
 
         <Field label="World">
           <div className="mobile-input flex items-center" style={{ color: world && world !== "loading" ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-            {world === "loading" ? "Loading…" : world ? world.name : "None — standalone Session"}
+            {world === "loading"
+            ? "Loading…"
+            : world === "error"
+              ? "Could not load World"
+              : world
+                ? world.name
+                : "None — standalone Session"}
           </div>
         </Field>
 
@@ -291,7 +304,13 @@ function MobileCameraPageInner() {
             className="text-xs font-mono-num px-2 h-6 flex items-center rounded"
             style={{ background: "rgba(8,9,11,0.7)", color: "var(--text-secondary)" }}
           >
-            {world === "loading" ? "Loading World…" : world ? world.name : "No World selected"}
+            {world === "loading"
+            ? "Loading World…"
+            : world === "error"
+              ? "World unavailable"
+              : world
+                ? world.name
+                : "No World selected"}
           </span>
         </div>
 

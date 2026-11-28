@@ -39,7 +39,8 @@ export async function GET(request: NextRequest) {
       signal: AbortSignal.timeout(10000),
     });
 
-    const data = parseJson(await response.text());
+    const text = await response.text();
+    const data = parseJson(text);
 
     if (!response.ok) {
       return NextResponse.json(
@@ -48,7 +49,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(data ?? { items: [] });
+    // A 200 whose body is not valid JSON is a broken or intercepted response,
+    // not an empty session list. Answering `{items: []}` here would render a
+    // total backend malfunction as "this user has no sessions".
+    if (data === null) {
+      return NextResponse.json(
+        {
+          detail: "Session listing returned a non-JSON body; the result is unknown.",
+          available: false,
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(

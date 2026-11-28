@@ -3,10 +3,28 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
 export async function POST(request: NextRequest) {
+  // A malformed body is a client error (400), not a backend outage. Parsing it
+  // inside the transport try would report it as "Failed to connect to
+  // backend" (503) and wrongly suggest the API is down.
+  let body: {
+    dataset_path?: string;
+    output_path?: string;
+    colmap_binary?: string;
+    no_depth?: boolean;
+    no_mesh?: boolean;
+  };
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const { dataset_path, output_path, colmap_binary = "colmap", no_depth = false, no_mesh = false } = body;
-    
+
     if (!dataset_path) {
       return NextResponse.json(
         { error: "Missing required field: dataset_path" },

@@ -16,11 +16,13 @@ import type {
 } from "./types";
 import type { SessionRow } from "@/lib/types";
 
-export async function listSessions(options: { worldId?: string | null } = {}): Promise<{
+export async function listSessions(options: { worldId?: string | null; signal?: AbortSignal } = {}): Promise<{
   rows: SessionRow[];
   dtos: SessionDto[];
 }> {
-  const data = await apiGet<ApiList<SessionDto>>(withQuery("/api/sessions", { world_id: options.worldId }));
+  const data = await apiGet<ApiList<SessionDto>>(withQuery("/api/sessions", { world_id: options.worldId }), {
+    signal: options.signal,
+  });
   return { rows: data.items.map((d) => toSessionRow(d)), dtos: data.items };
 }
 

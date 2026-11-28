@@ -11,14 +11,16 @@ import RoomConstructionModal from "@/components/workspace/RoomConstructionModal"
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
 import WorldMap from "@/components/map/WorldMap";
-import { 
-  useWorlds, 
-  useSessions, 
-  useEvidence, 
-  useWorldIR, 
-  useWorldPoints, 
+import {
+  useWorlds,
+  useSessions,
+  useEvidence,
+  useWorldIR,
+  useWorldPoints,
   useWorldCameras,
   useWorldVersions,
+  isApiError,
+  ApiError,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
@@ -36,6 +38,8 @@ import {
   Search,
   Terminal,
   Download,
+  TriangleAlert,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,20 +68,46 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [activeQuery, setActiveQuery] = useState<SpatialQueryFilter | null>(null);
 
   // API Hooks
-  const { data: rawWorlds } = useWorlds();
+  const { data: rawWorlds, error: worldsError, isLoading: worldsLoading, refetch: refetchWorlds } = useWorlds();
   const worlds = useMemo(() => rawWorlds ?? [], [rawWorlds]);
-  const { data: rawSessions } = useSessions();
+  const { data: rawSessions, error: sessionsError } = useSessions();
   const allSessions = useMemo(() => rawSessions ?? [], [rawSessions]);
-  const { data: rawEvidence } = useEvidence();
+  const { data: rawEvidence, error: evidenceError } = useEvidence();
   const evidence = useMemo(() => rawEvidence ?? [], [rawEvidence]);
 
   // Resolve active world: prop -> first discovered world -> empty string
   const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
 
-  const { data: worldIR, isLoading: isIrLoading, refetch: refetchIr } = useWorldIR(worldId || null);
-  const { data: pointsBuffer } = useWorldPoints(worldId || null);
-  const { data: camerasPayload } = useWorldCameras(worldId || null);
+  // `irAbsent` is the honest "this world has never been reconstructed" case
+  // (backend 404). `irError` is everything else — an outage, a 500, a timeout —
+  // and must be shown, because the alternative is an empty viewport that looks
+  // exactly like a world that legitimately has no geometry yet.
+  const {
+    data: worldIR,
+    isLoading: isIrLoading,
+    error: irError,
+    absent: irAbsent,
+    refetch: refetchIr,
+  } = useWorldIR(worldId || null);
+  const { data: pointsBuffer, error: pointsError } = useWorldPoints(worldId || null);
+  const { data: camerasPayload, error: camerasError } = useWorldCameras(worldId || null);
   const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
+
+  /**
+   * A single, prioritised banner message. Only real failures reach this — a
+   * 404 "not reconstructed" is an expected empty state, not an error.
+   */
+  const workspaceFailure = useMemo(() => {
+    const describe = (e: Error | null) =>
+      isApiError(e as unknown) ? (e as ApiError).describe() : (e?.message ?? "");
+    if (worldsError) return `Worlds could not be loaded. ${describe(worldsError)}`;
+    if (sessionsError) return `Sessions could not be loaded. ${describe(sessionsError)}`;
+    if (evidenceError) return `Evidence could not be loaded. ${describe(evidenceError)}`;
+    if (irError) return `This world's reconstruction could not be loaded. ${describe(irError)}`;
+    if (pointsError) return `This world's point cloud could not be loaded. ${describe(pointsError)}`;
+    if (camerasError) return `This world's camera poses could not be loaded. ${describe(camerasError)}`;
+    return null;
+  }, [worldsError, sessionsError, evidenceError, irError, pointsError, camerasError]);
 
   // Derived 3D artifacts
   const points = useMemo(() => {
@@ -335,8 +365,24 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     };
   }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
 
+  // The Room Construction modal owns long-running job state (jobStatus, the
+  // adopted version, the cancel lifecycle). The full-page WorldIR loading gate
+  // below REPLACES this component's entire returned tree, so if it were entered
+  // again after a successful reconstruction (refetchIr() -> isIrLoading true ->
+  // WorldIR 404) React would unmount the modal, move it to a different position
+  // in the tree, remount it, and wipe the committed success state the user must
+  // see. The gate is therefore only for the FIRST load of a world: once the IR
+  // has settled even once, a background refetch re-renders the existing tree in
+  // place and the modal is never disturbed. The 404 stays honest -- it drives
+  // the viewport's empty state, never the job verdict.
+  const [irHasSettled, setIrHasSettled] = useState(false);
+  useEffect(() => {
+    if (!isIrLoading) setIrHasSettled(true);
+  }, [isIrLoading]);
+  const showInitialIrLoading = isIrLoading && !irHasSettled;
+
   // Loading state
-  if (isIrLoading) {
+  if (showInitialIrLoading) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#08090b] text-[var(--text-primary)] select-none">
         <div className="flex flex-col items-center gap-3">
@@ -539,6 +585,50 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         
         {/* Center Viewport */}
         <div className="flex-1 relative h-full min-w-0 bg-[#08090b] overflow-hidden">
+          {/* Backend-failure banner. Rendered instead of a silently empty
+              viewport, so an outage is never mistaken for a world that simply
+              has no reconstruction yet. */}
+          {workspaceFailure && (
+            <div
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-start gap-2 max-w-lg rounded-md px-3 py-2 text-xs border"
+              style={{
+                background: "rgba(30,14,14,0.95)",
+                border: "rgba(229,115,115,0.4)",
+                color: "var(--error)",
+              }}
+              role="alert"
+            >
+              <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
+              <span className="flex-1">{workspaceFailure}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  refetchWorlds();
+                  refetchIr();
+                }}
+                className="flex items-center gap-1 shrink-0 font-medium"
+              >
+                <RefreshCw className="w-3 h-3" /> Retry
+              </button>
+            </div>
+          )}
+
+          {/* Honest empty state: the backend answered 404, so we KNOW this
+              world has no committed version. This is different from failing. */}
+          {!workspaceFailure && irAbsent && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center px-6">
+                <p className="text-sm text-neutral-300 font-medium">
+                  This world has no reconstruction yet
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  The backend reports no committed WorldStore version for it. Run a
+                  reconstruction to produce one.
+                </p>
+              </div>
+            </div>
+          )}
+
           {viewMode === "3d" ? (
             <World3DViewport
               world={worldIR}

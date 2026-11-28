@@ -3,10 +3,25 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
 export async function POST(request: NextRequest) {
+  // A malformed body is a client error (400), not a backend outage.
+  let body: {
+    bundle_path?: string;
+    output_path?: string;
+    max_tasks?: number;
+    overwrite?: boolean;
+  };
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const { bundle_path, output_path, max_tasks = 12, overwrite = false } = body;
-    
+
     if (!bundle_path || !output_path) {
       return NextResponse.json(
         { error: "Missing required fields: bundle_path, output_path" },

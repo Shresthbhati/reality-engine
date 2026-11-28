@@ -38,7 +38,11 @@ export interface WorldRow {
   lng: number | null;
   coverageKm2: number | null;
   sessionCount: number;
-  evidenceCount: number;
+  /**
+   * `null` when the backend did not report an evidence count. It must never be
+   * defaulted to 0: "0 Evidence" is a claim the API did not make.
+   */
+  evidenceCount: number | null;
   timeRangeStart: string | null;
   timeRangeEnd: string | null;
   currentVersionId?: string | null;

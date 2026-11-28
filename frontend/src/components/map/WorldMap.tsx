@@ -37,7 +37,7 @@ export default function WorldMap({ center = [0, 20], zoom = 1.4, pitch = 0, bear
       zoom,
       pitch,
       bearing,
-      attributionControl: { compact: true },
+      attributionControl: true,
     });
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => onLoad?.(map));

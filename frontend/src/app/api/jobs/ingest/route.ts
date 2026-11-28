@@ -3,10 +3,23 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
 export async function POST(request: NextRequest) {
+  // Parse the request body OUTSIDE the transport try/catch. A malformed body
+  // is a client error (400), not a backend outage: reporting it as
+  // "Failed to connect to backend" (503) tells the operator their API is down
+  // when the request never left the browser.
+  let body: { folder?: string; output?: string; seed?: string };
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const { folder, output, seed = "pkg" } = body;
-    
+
     if (!folder || !output) {
       return NextResponse.json(
         { error: "Missing required fields: folder, output" },

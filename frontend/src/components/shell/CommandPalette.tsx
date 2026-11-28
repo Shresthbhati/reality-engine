@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useWorlds } from "@/lib/api";
+import { useWorlds, isApiError } from "@/lib/api";
 import {
   Search,
   Camera,
@@ -180,6 +180,9 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [searchState, setSearchState] = useState<{ q: string; rows: SearchResult[] }>({ q: "", rows: [] });
+  // Set only on a FAILED search. Kept separate from `rows` so an outage is
+  // never rendered as "no results".
+  const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<Element | null>(null);
@@ -229,15 +232,25 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   // state — only promise callbacks touch state, never the effect body. Rows
   // are tagged with the query they answer; a superseded query's late response
   // is discarded via `cancelled`.
+  //
+  // A failed search sets `error`, NOT `rows: []`. An empty result set is the
+  // correct rendering for "nothing matched", and reusing it for a failure made
+  // a backend outage read as "no matches for your query".
   useEffect(() => {
     if (query.trim() === "") return;
     let cancelled = false;
+    setSearchError(null);
     searchAll(query)
       .then((rows) => {
         if (!cancelled) setSearchState({ q: query, rows });
       })
-      .catch(() => {
-        if (!cancelled) setSearchState({ q: query, rows: [] });
+      .catch((err) => {
+        if (!cancelled) {
+          setSearchState({ q: query, rows: [] });
+          setSearchError(
+            isApiError(err) ? err.describe() : "Search could not be completed.",
+          );
+        }
       });
     return () => {
       cancelled = true;
@@ -390,6 +403,10 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 </button>
               ))}
             </>
+          ) : searchError ? (
+            <p className="px-3 py-6 text-sm text-center" style={{ color: "var(--error, #e57373)" }}>
+              Search failed: {searchError}
+            </p>
           ) : results.length === 0 ? (
             <p className="px-3 py-6 text-sm text-center" style={{ color: "var(--text-tertiary)" }}>
               No results for &quot;{query}&quot;.

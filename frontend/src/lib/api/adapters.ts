@@ -161,7 +161,14 @@ export function toSessionRow(dto: SessionDto, worldName: string | null = null): 
   };
 }
 
-export function toWorldRow(dto: WorldDto, evidenceCount = 0): WorldRow {
+/**
+ * `evidenceCount` is `null` when the backend did not report one. It was
+ * previously a defaulted `0`, and `WorldCard` prints that number verbatim, so
+ * every world whose evidence count the API never computed was labelled "0
+ * Evidence" — a fabricated measurement that reads as authoritative. `null`
+ * renders as an explicit "unknown" instead.
+ */
+export function toWorldRow(dto: WorldDto, evidenceCount: number | null = null): WorldRow {
   const loc: LocationDto | null =
     dto.latitude !== null && dto.longitude !== null
       ? {

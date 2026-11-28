@@ -13,6 +13,15 @@ const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
  * process-local array is not a persisted WorldStore version, and returning
  * `success: true` for it when the API is unreachable is a fabricated result.
  */
+function parseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -40,8 +49,36 @@ export async function POST(
       }
     );
 
-    const text = await response.text();
-    const data = text ? (JSON.parse(text) as unknown) : null;
+    const data = parseJson(await response.text());
+
+    if (!response.ok) {
+      return NextResponse.json(
+        data ?? { detail: `Commit failed with HTTP ${response.status}`, world_id: id },
+        { status: response.status }
+      );
+    }
+
+    // A 2xx that does not name a version is NOT a persisted commit. The
+    // backend always returns `version_id` on success; without it the commit
+    // cannot be shown as applied, and the Inspector would report a correction
+    // that was never stored. Answer 502 so the UI shows a failure with retry.
+    const versionId =
+      data && typeof data === "object" && typeof (data as { version_id?: unknown }).version_id === "string"
+        ? (data as { version_id: string }).version_id
+        : null;
+    if (!versionId) {
+      return NextResponse.json(
+        {
+          detail:
+            "The API reported a commit without a WorldStore version id. The correction " +
+            "cannot be confirmed as persisted.",
+          world_id: id,
+          available: false,
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(data, { status: response.status });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

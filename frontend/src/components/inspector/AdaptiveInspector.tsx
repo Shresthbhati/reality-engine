@@ -1138,7 +1138,16 @@ function EntityDetails({
               <span>Building Envelope</span>
             </span>
             <span className="font-mono text-[10px]">
-              {String((entity.custom_properties?.n_storeys as number | undefined) ?? (entity.custom_properties?.storey_ids as string[] | undefined)?.length ?? "1")} Levels
+              {/* Storey count is a compiler fact. When the backend recorded
+                  neither n_storeys nor storey_ids, the old `?? "1"` fallback
+                  claimed a single-storey building that was never reconstructed. */}
+              {(() => {
+                const n = entity.custom_properties?.n_storeys;
+                if (typeof n === "number" && Number.isFinite(n)) return `${n} Levels`;
+                const ids = entity.custom_properties?.storey_ids;
+                if (Array.isArray(ids)) return `${ids.length} Levels`;
+                return "Levels unknown";
+              })()}
             </span>
           </div>
 

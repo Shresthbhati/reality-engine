@@ -20,8 +20,8 @@ import type {
 } from "./types";
 import type { WorldRow } from "@/lib/types";
 
-export async function listWorlds(): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
-  const data = await apiGet<ApiList<WorldDto>>("/api/worlds");
+export async function listWorlds(options: { signal?: AbortSignal } = {}): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
+  const data = await apiGet<ApiList<WorldDto>>("/api/worlds", { signal: options.signal });
   return { rows: data.items.map((d) => toWorldRow(d)), dtos: data.items };
 }
 

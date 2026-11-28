@@ -29,7 +29,8 @@ export default function WorldCard({ world }: { world: WorldRow }) {
         <div className="flex items-center gap-3 mt-2 text-xs font-mono-num" style={{ color: "var(--text-secondary)" }}>
           {world.coverageKm2 != null && <span>{world.coverageKm2} km²</span>}
           <span>{world.sessionCount} Sessions</span>
-          <span>{world.evidenceCount} Evidence</span>
+          {/* A count the API never computed must read as unknown, not as zero. */}
+          <span>{world.evidenceCount == null ? "Evidence unknown" : `${world.evidenceCount} Evidence`}</span>
         </div>
 
         {world.timeRangeStart && world.timeRangeEnd && (

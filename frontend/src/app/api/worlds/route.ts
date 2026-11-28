@@ -31,7 +31,8 @@ export async function GET() {
       signal: AbortSignal.timeout(10000),
     });
 
-    const data = parseJson(await backendRes.text());
+    const text = await backendRes.text();
+    const data = parseJson(text);
 
     if (!backendRes.ok) {
       return NextResponse.json(
@@ -40,7 +41,20 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json(data ?? { items: [] });
+    // A 200 with an unparseable body is a broken response, not an empty world
+    // list. Defaulting to `{items: []}` would show "No Worlds yet" for a total
+    // backend malfunction.
+    if (data === null) {
+      return NextResponse.json(
+        {
+          detail: "World listing returned a non-JSON body; the result is unknown.",
+          available: false,
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
@@ -69,7 +83,8 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(10000),
     });
 
-    const data = parseJson(await res.text());
+    const text = await res.text();
+    const data = parseJson(text);
 
     if (!res.ok) {
       return NextResponse.json(
@@ -78,7 +93,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(data ?? {}, { status: 201 });
+    // A 2xx that does not name a world is not a created world. Returning 201
+    // with an invented/empty body would navigate the UI to a world that does
+    // not exist, or show a blank created card.
+    const createdId =
+      data && typeof data === "object" && typeof (data as { id?: unknown }).id === "string"
+        ? (data as { id: string }).id
+        : null;
+    if (!createdId) {
+      return NextResponse.json(
+        {
+          detail: "World creation returned no world id; the world was not confirmed as created.",
+          available: false,
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(data, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(

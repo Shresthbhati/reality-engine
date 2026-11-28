@@ -19,7 +19,7 @@ import type {
   WorldIR,
 } from "@/types/worldir";
 import type { SessionRow } from "@/lib/types";
-import { getActivity, type ActivityEvent } from "@/lib/activity";
+import { getActivity, isApiError, type ActivityEvent } from "@/lib/activity";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 
 interface BottomContextBarProps {
@@ -48,8 +48,10 @@ export default function BottomContextBar({
 }: BottomContextBarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomTab>("context");
-  const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  // `null` means "not loaded / failed" and must never be rendered as an empty log.
+  const [activities, setActivities] = useState<ActivityEvent[] | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const meta = world?.metadata || {};
 
@@ -57,6 +59,7 @@ export default function BottomContextBar({
   useEffect(() => {
     let mounted = true;
     setActivityLoading(true);
+    setActivityError(null);
     getActivity()
       .then((events) => {
         if (mounted) {
@@ -64,8 +67,14 @@ export default function BottomContextBar({
           setActivityLoading(false);
         }
       })
-      .catch(() => {
-        if (mounted) setActivityLoading(false);
+      .catch((err) => {
+        if (!mounted) return;
+        // Keep the log null so the tab reports a failure with a retry, rather
+        // than "No activity events recorded for this world yet" — which is
+        // what a total backend outage would otherwise have looked like.
+        setActivities(null);
+        setActivityError(isApiError(err) ? err.describe() : "Could not load the activity log.");
+        setActivityLoading(false);
       });
     return () => {
       mounted = false;
@@ -338,7 +347,11 @@ export default function BottomContextBar({
             <div className="space-y-1.5">
               {activityLoading ? (
                 <p className="text-neutral-500 text-xs font-mono">Loading activity log...</p>
-              ) : activities.length === 0 ? (
+              ) : activityError ? (
+                <div className="flex items-start gap-2 text-xs font-mono text-[#e57373]">
+                  <span className="flex-1">{activityError}</span>
+                </div>
+              ) : activities === null || activities.length === 0 ? (
                 <p className="text-neutral-500 text-xs font-mono">
                   No activity events recorded for this world yet.
                 </p>

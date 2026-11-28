@@ -97,7 +97,13 @@ export default async function MobileWorldDetailPage({
         href={`/worlds/${world.id}`}
         worldName={world.name}
         versionLabel={currentVersionLabel}
-        pendingWork={world.evidenceCount > 0 ? `${world.evidenceCount} Evidence items in this World` : null}
+        pendingWork={
+          world.evidenceCount == null
+            ? null
+            : world.evidenceCount > 0
+              ? `${world.evidenceCount} Evidence items in this World`
+              : null
+        }
       />
     </div>
   );

@@ -7,6 +7,7 @@ import os
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
@@ -212,13 +213,17 @@ async def create_upload(
     digest, stored_path = store_bytes(data)
 
     # Idempotency: an upload of byte-identical content reuses the existing
-    # evidence + artifact instead of storing a second copy and creating a second
-    # evidence row. The artifact is content-addressed (sha256://), so re-uploading
-    # the same bytes is a no-op at the store level; the dedup avoids a duplicate
-    # application record and a duplicate processing job.
-    existing = await db.execute(
-        select(Evidence).where(Evidence.checksum == digest)
-    )
+    # evidence ONLY within the same (team_id, session_id) ownership boundary.
+    # Physical blob storage (store_bytes -> sha256://) remains content-addressed
+    # and shared on disk, while logical Evidence records and IDs are strictly
+    # tenant- and session-scoped so one tenant/session can never discover or
+    # reference another's evidence_id.
+    dedup_filters = [
+        Evidence.team_id == team_id,
+        Evidence.checksum == digest,
+        Evidence.session_id == session_id if session_id is not None else Evidence.session_id.is_(None),
+    ]
+    existing = await db.execute(select(Evidence).where(*dedup_filters))
     existing_ev = existing.scalars().first()
     if existing_ev:
         up = Upload(
@@ -243,7 +248,7 @@ async def create_upload(
                     s.status = "uploaded"
         await db.commit()
         job = jobrunner.enqueue_job(
-            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=existing_ev.team_id
+            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=team_id
         )
         await db.commit()
         return {
@@ -295,9 +300,42 @@ async def create_upload(
             entity_type="evidence",
             entity_id=ev.id,
             summary=f"Evidence '{ev.name}' uploaded",
+            team_id=team_id,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await db.execute(select(Evidence).where(*dedup_filters))
+        existing_ev = existing.scalars().first()
+        if existing_ev is None:
+            raise
+        up_dup = Upload(
+            id=new_id("upl"),
+            team_id=team_id,
+            session_id=session_id,
+            status="completed",
+            filename=_safe_filename(file.filename),
+            mime_type=file.content_type,
+            size=len(data),
+            checksum=digest,
+            artifact_uri=existing_ev.artifact_uri,
+            completed_at=utcnow(),
+        )
+        db.add(up_dup)
+        await db.commit()
+        job = jobrunner.enqueue_job(
+            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=team_id
+        )
+        await db.commit()
+        return {
+            "upload_id": up_dup.id,
+            "evidence_id": existing_ev.id,
+            "job_id": job.id,
+            "checksum": digest,
+            "deduplicated": True,
+        }
     job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=ev.team_id)
     await db.commit()
     return {
@@ -446,6 +484,7 @@ async def resumable_finalize(
             entity_type="evidence",
             entity_id=ev.id,
             summary=f"Evidence '{ev.name}' uploaded (resumable)",
+            team_id=up.team_id,
         )
     )
     await db.commit()

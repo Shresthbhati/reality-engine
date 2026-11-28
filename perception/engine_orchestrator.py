@@ -470,6 +470,8 @@ def merge_engine_outputs(outputs: Sequence[UnifiedEngineOutput]) -> MultiEngineR
     }
 
     total_wall = sum(o.wall_time_s for o in outputs)
+    peaks = [o.peak_vram_mb for o in outputs if o.peak_vram_mb is not None]
+    vram_peak = max(peaks) if peaks else _get_vram_peak_mb()
     return MultiEngineReport(
         run_id=outputs[0].run_id if outputs else "",
         image_count=len({o.source_image_id for o in all_obs}),
@@ -478,7 +480,7 @@ def merge_engine_outputs(outputs: Sequence[UnifiedEngineOutput]) -> MultiEngineR
         observations=all_obs,
         contradictions=all_contradictions,
         unavailable=[],
-        vram_peak_mb=_get_vram_peak_mb(),
+        vram_peak_mb=vram_peak,
         cross_engine_summary=cross_summary,
         duplicate_observations=n_duplicates,
     )
@@ -655,18 +657,27 @@ class MultiEngineOrchestrator:
                                 reason="invalid output"))
                 assert isinstance(result, UnifiedEngineOutput)
                 frame_ids, scale_states, units = _frames_of(result.observations)
+                peak_vram_mb = _get_vram_peak_mb()
+                try:
+                    import gc
+                    gc.collect()
+                    if _cuda_available():
+                        import torch
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
                 stamped = UnifiedEngineOutput(
                     engine_id=result.engine_id or spec.engine_id, run_id=result.run_id,
                     observations=result.observations, status=result.status,
                     error_message=result.error_message, wall_time_s=elapsed,
-                    peak_vram_mb=_get_vram_peak_mb(), summary=result.summary,
+                    peak_vram_mb=peak_vram_mb, summary=result.summary,
                 )
                 return stamped, EngineExecution(
                     engine_id=spec.engine_id, architecture_id=spec.architecture_id,
                     checkpoint_id=spec.checkpoint_id, version=spec.version, license=spec.license,
                     non_commercial=spec.non_commercial, status=result.status,
                     error=result.error_message, device=device, attempts=attempts,
-                    wall_time_s=elapsed, peak_vram_mb=_get_vram_peak_mb(),
+                    wall_time_s=elapsed, peak_vram_mb=peak_vram_mb,
                     n_observations=len(result.observations), frame_ids=frame_ids,
                     scale_states=scale_states, units=units,
                     provenance={"registered_engine_id": spec.engine_id,
@@ -828,6 +839,9 @@ class MultiEngineOrchestrator:
         with self._lock:
             report.engine_executions = list(self._executions)
             report.unavailable = list(self._unavailable)
+        exec_peaks = [e.peak_vram_mb for e in report.engine_executions if e.peak_vram_mb is not None]
+        if exec_peaks:
+            report.vram_peak_mb = max(exec_peaks) if report.vram_peak_mb is None else max(report.vram_peak_mb, *exec_peaks)
         for out in outputs:
             log.info("engine %s: status=%s, n_obs=%d, wall=%.2fs",
                      out.engine_id, out.status, out.n_observations, out.wall_time_s)

@@ -1,0 +1,156 @@
+{
+ "name": "south_building_12",
+ "git_sha": "156f3e36e9cbabe139f529caa20ce6f36a3ce161",
+ "when": "2026-11-28T13:11:16",
+ "n_images": 12,
+ "image_sha256": {
+  "P1180141.JPG": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560",
+  "P1180145.JPG": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81",
+  "P1180149.JPG": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa",
+  "P1180153.JPG": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f",
+  "P1180157.JPG": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a",
+  "P1180161.JPG": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27",
+  "P1180165.JPG": "6347daa83d388bf04611899a3861da73681a3d22e97b6e1ede468d15153c9b35",
+  "P1180169.JPG": "523708e760032167f6dfe03828c719633c9e1b60b942b1247ac97c17aa987ccd",
+  "P1180173.JPG": "477fb522f1702411a5c97faa8df664945e974ab8a119cb72b2d1fc5468f67616",
+  "P1180177.JPG": "9773e3098f2573285d6897f979a684a5b2de256663a57b524fa7771473ea5127",
+  "P1180181.JPG": "c9c2898880a6bb8d5e9e6d7a343db1a5a21436aa4c0dc8d93d28581855b0754e",
+  "P1180185.JPG": "2108609d7b35e0c43ea0323c81f1b34a12c6dc5f136464b97d7e2f5b0341ca8d"
+ },
+ "production_path": "scripts/stage_report.run_pipeline -> progressive.run_progressive -> vertical_slice (all stages enabled)",
+ "independent_ground_truth": false,
+ "reference": "datasets/south_building/sparse (COLMAP SfM model of the same photos; NOT independently measured)",
+ "wall_s": 479.3,
+ "ladder": {
+  "wall_s": 249.69,
+  "peak_rss_mb": 1292.0,
+  "peak_child_colmap_rss_mb": 483.0,
+  "exception": null,
+  "level": 2,
+  "level_name": "sparse photogrammetric reconstruction",
+  "model_state": "PARTIAL",
+  "attempts": [
+   {
+    "level": 2,
+    "name": "sparse photogrammetric reconstruction",
+    "outcome": "succeeded",
+    "elapsed_s": 229.517,
+    "detail": "3/12 cameras registered"
+   },
+   {
+    "level": 3,
+    "name": "dense reconstruction",
+    "outcome": "skipped",
+    "detail": "registration: 3 of 12 photographs registered (25%; needs >= 80%); structure: 77 sparse structure points (needs >= 300)"
+   }
+  ],
+  "degraded": [
+   "registration 'partial': 3/12 cameras"
+  ],
+  "scale_state": "relative",
+  "registered": 3,
+  "inputs": 12,
+  "excluded": [],
+  "entities": 2,
+  "entity_types": {
+   "wall": 1,
+   "window": 1
+  }
+ },
+ "scores": {
+  "registration_rate": {
+   "metric": "registration_rate",
+   "value": 0.25,
+   "n_registered": 3,
+   "n_input": 12
+  },
+  "scale_validity": {
+   "metric": "scale_validity",
+   "value": "relative",
+   "metres_claim_allowed": false,
+   "scale_state": "relative",
+   "calibration_status": "none"
+  },
+  "pose_vs_reference": {
+   "alignment": "sim3_scale_fitted_to_reference",
+   "center_error_units": "reference_units_after_sim3_scale_fit",
+   "residual_is_independent_metric_accuracy": false,
+   "estimated_scale_state": "relative",
+   "refused": false,
+   "common_cameras": 3,
+   "rotation_deg_median": 0.33356482072619525,
+   "rotation_deg_max": 0.5479801268825976,
+   "rotation_deg_mean": 0.38914178049135656,
+   "center_error_median": 0.006005454014580013,
+   "center_error_max": 0.0096474021321368,
+   "center_error_mean": 0.006459203700294933,
+   "scale_ratio": 1.4425160417551952,
+   "outliers": [],
+   "notes": [
+    "estimate is not declared metric: centre errors are scale-fitted residuals and say nothing about metric accuracy"
+   ]
+  },
+  "point_cloud_vs_reference": {
+   "refused": false,
+   "measured_points": 77,
+   "reference_points": 49608,
+   "dist_mean": 0.028317455540595848,
+   "dist_median": 0.02877224560772374,
+   "dist_p90": 0.03165229577957063,
+   "dist_max": 0.05796673606404407,
+   "est_points_total": 77
+  },
+  "point_cloud_completeness": {
+   "metric": "point_cloud_completeness",
+   "value": 0.2855587808417997,
+   "recall": 0.2855587808417997,
+   "precision": 1.0,
+   "f1": 0.44425627998871015,
+   "tau": 1.3583796332780171,
+   "n_est": 77,
+   "n_ref": 49608,
+   "tau_definition": "2% of reference bounding-box diagonal, in reference (gauge) units",
+   "frame_note": "estimate aligned to the reference by a Sim(3) fit (scale fitted): shape agreement only"
+  },
+  "dense": {
+   "status": "skipped",
+   "wall_s": 0.0,
+   "metrics": {},
+   "warnings": [
+    "dense_mvs: disabled (dense MVS is off by default (heavyweight GPU stage); set dense_mvs_enabled=True and name the capture paths to run it)",
+    "plane_sweep: disabled (CPU plane sweep is opt-in (set plane_sweep_enabled=True))",
+    "fusion: skipped (world is not METRIC-scale -- fusing unit-less ranges would silently claim meters)"
+   ],
+   "outputs": {
+    "keys": [
+     "world",
+     "diagnostics",
+     "dense_mvs_facts",
+     "dense_gate_facts",
+     "structure_facts",
+     "plane_sweep_facts",
+     "fusion_facts"
+    ]
+   }
+  },
+  "dense_invoked": false,
+  "dense_points_added": null,
+  "pose_graph_cycle_error": {
+   "value": null,
+   "refused": "absolute poses are cycle-consistent by construction; pairwise-edge cycle residuals are produced by scripts/run_multi_engine_real_capture.py (perception.camera_pose_graph)"
+  },
+  "stage_status": {
+   "pose": "degraded",
+   "scale": "succeeded",
+   "depth": "skipped",
+   "layout": "succeeded",
+   "perception": "skipped",
+   "mesh": "skipped",
+   "dense": "skipped",
+   "detail": "succeeded",
+   "finalize": "succeeded"
+  }
+ },
+ "level_name": "sparse photogrammetric reconstruction",
+ "scale_state": "relative"
+}

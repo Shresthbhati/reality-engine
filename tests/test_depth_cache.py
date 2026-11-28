@@ -17,7 +17,10 @@ SHA = "ab" * 32
 def test_the_key_needs_real_digests_so_unknown_weights_are_never_cached():
     img = "cd" * 32
     assert DepthCache.key("e", None, img) is None and DepthCache.key("e", "not-a-hash", img) is None and DepthCache.key("e", SHA, "short") is None
-    assert DepthCache.key("e", SHA, img) == f"e|{SHA}|{img}"
+    from engine.multiengine.depth_cache import DEPTH_CONVENTION
+    assert DepthCache.key("e", SHA, img) == f"e|{DEPTH_CONVENTION}|{SHA}|{img}"
+    # a cache written under an older output convention must be a miss, never a stale map under the new contract
+    assert DepthCache.key("e", SHA, img) != f"e|v1|{SHA}|{img}" and DepthCache.key("e", SHA, img) != f"e|{SHA}|{img}"
     assert DepthCache.key("e", SHA, img) != DepthCache.key("other-engine", SHA, img) != DepthCache.key("e", "ef" * 32, img)
 
 

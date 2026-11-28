@@ -30,11 +30,7 @@ from typing import Any
 
 import numpy as np
 
-try:  # torch is the optional ``perception`` extra: importing this module must work without it. _maskrcnn_available()
-    import torch  # reports the explicit reason and _maskrcnn_run() honours it, so "unavailable" is never fabricated.
-except ImportError:  # pragma: no cover - exercised in the torch-free CI image
-    torch = None  # type: ignore[assignment]
-
+from perception.detection.ontology_grounding import ground_label
 from perception.engine_evidence import (
     CoordinateFrame,
     ModelIdentity,
@@ -50,7 +46,7 @@ def _maskrcnn_available() -> str | None:
     """Why Mask R-CNN cannot run here, or None when it can."""
     try:
         import torchvision  # noqa: F401
-        from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
+        from torchvision.models.detection import MaskRCNN_ResNet50_FPN_Weights  # noqa: F401
     except ImportError as exc:
         return f"torchvision unavailable: {exc}"
     try:
@@ -72,19 +68,22 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
         return UnifiedEngineOutput(
             engine_id="maskrcnn", run_id=ctx.get("run_id", "maskrcnn_run"), observations=(),
             status="failed", error_message=f"unavailable: {_reason}",
-            wall_time_s=time.perf_counter() - t0 if False else 0.0,
+            wall_time_s=0.0,
         )
 
+    import torch
     import torchvision
-    from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
-    from torchvision.transforms import functional as F
+    from torchvision.models.detection import MaskRCNN_ResNet50_FPN_Weights, maskrcnn_resnet50_fpn
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "maskrcnn_run")
     obs: list[ObservationRecord] = []
     scores_below = 0
     masks_below = 0
+    failed_images: list[str] = []
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats(0)
 
     try:
         weights = MaskRCNN_ResNet50_FPN_Weights.COCO_V1
@@ -104,7 +103,6 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
     _model_version = _model_version if "_model_version" in dir() else f"coco_{torchvision.__version__}"
 
     for img_path in image_paths:
-        pair_t0 = time.perf_counter()
         try:
             from PIL import Image
 
@@ -114,6 +112,7 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
             pred = model([tensor.to(device)])[0]
         except Exception as exc:
             log.warning("Mask R-CNN failed for %s: %s", img_path, exc)
+            failed_images.append(img_path)
             continue
 
         w, h = img.size
@@ -122,8 +121,9 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
             score = float(pred["scores"][j])
             if score < threshold:
                 scores_below += 1
-                break  # scores are sorted descending
+                continue
             label = scores[int(pred["labels"][j])]
+            grounding = ground_label(label)
             box = tuple(float(v) for v in pred["boxes"][j].tolist())
             obs.append(ObservationRecord(
                 evidence_id=f"maskrcnn:{img_path}:det:{len(obs)}",
@@ -136,7 +136,7 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
                     license="COCO_V1 weights: BSD-3 (torchvision); model: MIT",
                     hardware_class=device),
                 label=label,
-                category="object",
+                category=grounding.category,
                 bbox_px=box,
                 confidence=score,
                 calibration_quality="unverified",
@@ -145,6 +145,8 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
                     "model_version": _model_version,
                     "score_threshold": threshold,
                     "box": box,
+                    "raw_label": label,
+                    **grounding.to_metadata(),
                 },
             ))
             n_det += 1
@@ -188,6 +190,8 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
                         hardware_class=device),
                     label=label,
                     category="instance_segmentation",
+                    bbox_px=box,
+                    mask=mask_bool,
                     confidence=score,
                     calibration_quality="unverified",
                     metadata={
@@ -198,21 +202,35 @@ def _maskrcnn_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput
                         "mask_rle": rle,
                         "mask_shape": [int(h), int(w)],
                         "box": box,
+                        "raw_label": label,
+                        **grounding.to_metadata(),
                     },
                 ))
 
+    peak_vram_mb: float | None = None
     try:
+        if device == "cuda" and torch.cuda.is_available():
+            peak_vram_mb = float(torch.cuda.max_memory_allocated(0) / (1024 * 1024))
         del model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except Exception:
         pass
 
+    if not image_paths:
+        status = "succeeded"
+    elif failed_images and not obs:
+        status = "failed"
+    elif failed_images or not obs:
+        status = "partial"
+    else:
+        status = "succeeded"
+
     return UnifiedEngineOutput(
         engine_id="maskrcnn", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if obs else "partial",
+        status=status,
         wall_time_s=time.perf_counter() - t0,
-        peak_vram_mb=None,
+        peak_vram_mb=peak_vram_mb,
         summary={
             "n_images": len(image_paths),
             "n_observations": len(obs),

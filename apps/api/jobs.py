@@ -1345,23 +1345,36 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         )
 
         base_head = world.current_version_id
-        try:
-            store = worldstore_service.get_store()
-            version_row = aw(worldstore_service.commit_version(
-                db,
-                world_id=world.id,
-                world=world_ir,
-                parent=base_head,
-                source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
-                points=points_bytes,
-                cameras=cameras_bytes,
-                report=report,
-                expect_parent=base_head,
-            ))
-        except worldstore_service.ConcurrentModificationError as exc:
-            # Retryable: the next attempt reloads HEAD and either dedups
-            # (identical content) or chains onto the new HEAD.
-            raise RuntimeError(f"reconstruction superseded: {exc}") from exc
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                store = worldstore_service.get_store()
+                version_row = aw(worldstore_service.commit_version(
+                    db,
+                    world_id=world.id,
+                    world=world_ir,
+                    parent=base_head,
+                    source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
+                    points=points_bytes,
+                    cameras=cameras_bytes,
+                    report=report,
+                    expect_parent=base_head,
+                ))
+                break  # committed successfully
+            except worldstore_service.ConcurrentModificationError as exc:
+                # Retryable: HEAD moved under us. Reload it and either dedup
+                # (identical content already adopted) or chain onto the new
+                # base. Never last-writer-wins, never a silent overwrite.
+                last_exc = exc
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"reconstruction superseded after {max_retries} attempts: {exc}"
+                    ) from exc
+                aw(db.refresh(world, attribute_names=["current_version_id"]))
+                base_head = world.current_version_id
+                # Yield briefly so the concurrent job's transaction settles
+                # before we rebuild against the new base.
+                time.sleep(0.05 * attempt)
 
         # Read-back verification: the adopted version must load with clean
         # hashes before anything is called a success. A version that cannot

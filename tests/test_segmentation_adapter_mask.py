@@ -251,9 +251,34 @@ def test_sam2_adapter_skips_image_without_boxes(tmp_path, monkeypatch):
 
     out = _sam2_run([path], run_id="run1")
 
-    # No bboxes -> SAM2 needs prompts -> skips every image honestly.
+    # No bboxes -> SAM2 needs prompts -> skips every image honestly, and says why.
     assert len(out.observations) == 0
     assert out.summary["n_masks"] == 0
+    assert out.summary["skipped_no_prompt"] == 1
+    assert out.status == "failed"
+    assert "no box prompt" in out.error_message
+
+
+def test_skipped_images_report_partial_with_the_count(tmp_path, monkeypatch):
+    """An image without a box prompt makes the run partial, not a clean success.
+
+    reporting ``succeeded`` hid the skip: a caller reading only the status saw a
+    complete run and could not tell 1 of 40 images had been masked.
+    """
+    with_box = _make_png(tmp_path, "with_box.png")
+    without_box = _make_png(tmp_path, "without_box.png")
+    _install_fake_torch(monkeypatch)
+    _install_fake_transformers(monkeypatch, [np.ones((100, 100), bool)])
+
+    out = _sam2_run(
+        [with_box, without_box], run_id="mixed", bboxes={with_box: [(0, 0, 4, 4)]}
+    )
+
+    assert len(out.observations) == 1  # the prompted image was still done
+    assert out.summary["skipped_no_prompt"] == 1
+    assert out.status == "partial", out.error_message
+    # the count is in the message, not only in the summary
+    assert "1 of 2 image(s) had no box prompt" in out.error_message
 
 
 def test_missing_checkpoint_is_unavailable_and_never_downloads(tmp_path, monkeypatch):
@@ -278,6 +303,7 @@ def test_missing_checkpoint_is_unavailable_and_never_downloads(tmp_path, monkeyp
     assert out.observations == ()
     assert _SAM2_MODEL in out.error_message
     assert "huggingface-cli download" in out.error_message  # explicit download path
+    assert "not in the local cache" in out.error_message  # the load error itself survives
     # Every load attempt was local-only: no second, network-enabled retry.
     assert attempted, "the adapter must still try the local cache"
     assert all(call.get("local_files_only") is True for call in attempted), attempted
@@ -327,14 +353,19 @@ def test_peak_vram_is_reset_per_run(tmp_path, monkeypatch):
     assert out.peak_vram_mb == pytest.approx(300.0)
     assert out.observations[0].model_id.hardware_class == "cuda"
 
-    # A CPU run on a CUDA-capable host must not report a VRAM figure at all.
-    cpu_run = _sam2_run(
-        [path], run_id="vram-cpu", bboxes={path: [(0, 0, 4, 4)]}, device="cpu"
-    )
-    assert cpu_run.status == "succeeded", cpu_run.error_message
-    assert cpu_run.peak_vram_mb is None
-    assert cpu_run.observations[0].model_id.hardware_class == "cpu"
-    assert fake_torch.cuda.reset_calls == 1  # no reset for a non-CUDA run
+
+def test_cpu_run_reports_no_vram_and_touches_no_cuda_stats(tmp_path, monkeypatch):
+    """A run that did not execute on CUDA reports no VRAM figure and resets no CUDA stats."""
+    path = _make_png(tmp_path)
+    _install_fake_transformers(monkeypatch, [np.ones((100, 100), bool)])
+    fake_torch = _install_fake_torch(monkeypatch, cuda=False)
+
+    out = _sam2_run([path], run_id="vram-cpu", bboxes={path: [(0, 0, 4, 4)]})
+
+    assert out.status == "succeeded", out.error_message
+    assert out.peak_vram_mb is None
+    assert out.observations[0].model_id.hardware_class == "cpu"
+    assert fake_torch.cuda.reset_calls == 0
 
 
 def test_wrong_sized_mask_is_reported_not_fabricated(tmp_path, monkeypatch):

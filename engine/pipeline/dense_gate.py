@@ -59,7 +59,10 @@ def dense_readiness(result, n_input: int, coverage_deg: Optional[float] = None) 
     fails, it is never assumed).
     """
     poses = list(getattr(result, "camera_poses", None) or [])
-    points = list(getattr(result, "points", None) or [])
+    # Only TRIANGULATED structure counts. Monocular-depth points (one source camera each, appended in place by the depth
+    # stage before this gate runs) would otherwise drag the median track length to 1 and inflate the structure count.
+    from reconstruction.diagnostics import sparse_points
+    points = sparse_points(list(getattr(result, "points", None) or []))
     registered = len(poses)
     fraction = registered / n_input if n_input else 0.0
     needed = min_registered_fraction()

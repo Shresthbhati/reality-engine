@@ -166,6 +166,41 @@ class TestSpatialQuery:
         result = handle.query_region((0.0, 0.0, 0.0), (25.0, 5.0, 5.0))  # tiles A and B
         assert set(result) == {"a", "b"}
 
+    def test_query_region_excludes_entity_in_overlapping_tile_outside_bounds(self, tmp_path):
+        """A query region that overlaps a tile must NOT return entities
+        whose position lies outside the exact requested AABB (#7)."""
+        store = WorldStore(tmp_path)
+        world = _abc_world()
+        # "near" sits inside the query box; "far" shares tile A (0..10)
+        # but is outside the box -> must not be returned.
+        world.entities["near"] = _entity("near", 1.0, 1.0, 1.0)
+        world.entities["far"] = _entity("far", 9.0, 9.0, 9.0)
+        save_version_tiled(store, world, parent=None, version_id="v-1", tile_size=10.0)
+        handle = open_version(store, "v-1")
+        result = handle.query_region((0.0, 0.0, 0.0), (5.0, 5.0, 5.0))
+        assert set(result) == {"near", "a"}  # 'a' at (1,0,0) is inside; 'far' excluded
+        assert "far" not in result
+
+    def test_query_region_keeps_entity_whose_geometry_overlaps_bounds(self, tmp_path):
+        """Canonical rule: an entity whose position is outside the exact
+        box but whose geometry AABB overlaps it is still a hit."""
+        from world_ir.schema_v1 import Geometry, GeometryType, Vector3
+
+        store = WorldStore(tmp_path)
+        world = WorldIR(id="w-geo")
+        geom = Geometry(id="g1", type=GeometryType.BOX,
+                        bounds_min=Vector3(-5, 0, 0), bounds_max=Vector3(15, 1, 1))
+        world.geometries["g1"] = geom
+        # No transform.position; entity placed via geometry centroid (x=5).
+        world.entities["wall"] = Entity(id="wall", type=EntityType.STRUCTURE, geometry_ids=["g1"])
+        save_version_tiled(store, world, parent=None, version_id="v-1", tile_size=10.0)
+        handle = open_version(store, "v-1")
+        # Query box is inside tile (0,0,0)'s cell, overlaps the geometry AABB
+        # near its left edge, but does NOT contain the centroid (x=5): the
+        # canonical geometry-overlap rule must still return the entity.
+        result = handle.query_region((0.0, 0.0, 0.0), (2.0, 2.0, 2.0))
+        assert "wall" in result
+
 
 class TestIncrementalTileReuse:
     def test_a_rebuilt_b_and_c_reused_verbatim(self, tmp_path):

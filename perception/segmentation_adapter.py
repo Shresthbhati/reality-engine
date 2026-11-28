@@ -107,10 +107,9 @@ def _select_best_2d_mask(mask_tensor: Any, iou_scores: Any = None, box_idx: int 
 def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     """Run box-prompted SAM 2.1 over ``image_paths`` and emit one observation per mask.
 
-    ``ctx`` keys: ``run_id``; ``bboxes`` mapping an image path (or basename) to
-    ``[(x1, y1, x2, y2), ...]`` box prompts — SAM 2 needs them and an image with
-    no prompt is skipped rather than guessed; and an optional ``device``
-    override (``"cuda"`` / ``"cpu"``) for hosts that must pin CPU execution.
+    ``ctx`` keys: ``run_id``; and ``bboxes`` mapping an image path (or basename)
+    to ``[(x1, y1, x2, y2), ...]`` box prompts — SAM 2 needs them and an image
+    with no prompt is skipped rather than guessed.
     """
     # Optional extras: importing here (not at module scope) keeps this module
     # importable, and its tests collectable, where torch is not installed.
@@ -125,7 +124,8 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     bboxes = ctx.get("bboxes", {})  # {image_path_or_name: [(x1,y1,x2,y2), ...]}
     errors: list[str] = []
     empty_masks = 0
-    device = ctx.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
+    skipped_no_prompt = 0
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if device == "cuda":
         try:
@@ -159,6 +159,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
             img_w, img_h = image.size
             img_bboxes = _resolve_image_bboxes(bboxes, str(img_path))
             if not img_bboxes:
+                skipped_no_prompt += 1  # counted: a prompt-less run must name why it produced nothing
                 continue
             nested_boxes = [[list(b) for b in img_bboxes]]
             inputs = processor(images=image, input_boxes=nested_boxes, return_tensors="pt")
@@ -217,24 +218,41 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     except Exception:
         pass
 
+    # Every shortfall is named, and an image that produced no mask is never a
+    # clean success: a run that covered only part of its input is ``partial``
+    # with the counts, so a caller cannot mistake 3 of 40 images for coverage.
+    reasons = list(errors)
+    if skipped_no_prompt:
+        reasons.append(f"{skipped_no_prompt} of {len(image_paths)} image(s) had no box prompt")
+    if obs:
+        error_message = "; ".join(reasons) if reasons else None
+        status = "partial" if reasons else "succeeded"
+    else:
+        # A run that produced nothing must say why: an empty result with no
+        # message reads as a silent omission.
+        error_message = "no observation produced: " + (
+            "; ".join(reasons) if reasons else f"{len(image_paths)} image(s) processed, no mask emitted"
+        )
+        status = "failed"
     return UnifiedEngineOutput(
         engine_id="sam2", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if (obs and not errors) else ("partial" if obs else "failed"),
-        error_message="; ".join(errors) if errors else None,
+        status=status,
+        error_message=error_message,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=_get_vram_peak(device),
         summary={
             "n_images": len(image_paths),
             "n_masks": len(obs),
             "empty_masks": empty_masks,
+            "skipped_no_prompt": skipped_no_prompt,
             "errors": len(errors),
         },
     )
 
 
-def _get_vram_peak(device: str | None = None) -> float | None:
+def _get_vram_peak(device: str) -> float | None:
     """Peak VRAM allocated by this run, or ``None`` when it did not run on CUDA."""
-    if device is not None and device != "cuda":
+    if device != "cuda":
         return None
     try:
         import torch

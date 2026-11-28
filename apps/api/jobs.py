@@ -57,13 +57,6 @@ from reconstruction.proc import (
     unregister_worker,
     get_dead_worker_jobs,
 )
-from engine.pipeline.perception_services import (
-    adapt_spatial_inputs_v1,
-    CameraInput,
-    ScaleStateInput,
-    SpatialInputsV1,
-    StructuralInput,
-)
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -516,10 +509,6 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     evidence = await db.get(Evidence, job.entity_id)
     if evidence is None:
         raise RuntimeError(f"Evidence {job.entity_id} not found")
-    if job.team_id is not None and evidence.team_id is not None and job.team_id != evidence.team_id:
-        raise RuntimeError(
-            f"Cross-tenant evidence access refused: job team {job.team_id!r} != evidence team {evidence.team_id!r}"
-        )
     job.stage = "verifying_artifact"
     evidence.processing_state = "processing"
     await db.commit()
@@ -737,16 +726,6 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         world = aw(db.get(World, session.world_id))
         if world is None:
             raise RuntimeError(f"World {session.world_id} not found")
-        if world.team_id is not None and session.team_id is not None and world.team_id != session.team_id:
-            raise RuntimeError(
-                f"Cross-tenant session/world association refused: session {session.id} belongs to "
-                f"{session.team_id!r}, world {world.id} belongs to {world.team_id!r}"
-            )
-        if job.team_id is not None and world.team_id is not None and job.team_id != world.team_id:
-            raise RuntimeError(
-                f"Cross-tenant job execution refused: job {job.id} belongs to {job.team_id!r}, "
-                f"world {world.id} belongs to {world.team_id!r}"
-            )
 
         job.stage = "checking_reconstruction_backend"
         job.heartbeat_at = utcnow()
@@ -811,22 +790,15 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # Progressive refinement: the model is built from ALL photo evidence of
         # every session attached to this world (compile(A+B) IS the definition
         # of V2), never just the newest session's batch.
-        ev_query = (
+        result = aw(db.execute(
             select(Evidence)
             .join(Session, Evidence.session_id == Session.id)
             .where(or_(Session.world_id == world.id, Session.id == session.id), Evidence.type == "photo")
             # Evidence Quality Firewall: an operator-REJECTED photo is not reconstruction input
             .where(Evidence.id.not_in(select(EvidenceDecision.evidence_id).where(EvidenceDecision.decision == "rejected")))
-        )
-        if world.team_id is not None:
-            ev_query = ev_query.where(or_(Evidence.team_id == world.team_id, Evidence.team_id.is_(None)))
-        result = aw(db.execute(ev_query.order_by(Evidence.created_at.asc(), Evidence.id.asc())))
+            .order_by(Evidence.created_at.asc(), Evidence.id.asc())
+        ))
         evidence_rows = list(result.scalars().all())
-        for ev in evidence_rows:
-            if world.team_id is not None and ev.team_id is not None and ev.team_id != world.team_id:
-                raise RuntimeError(
-                    f"Cross-tenant evidence {ev.id} refused for world {world.id}"
-                )
         head_report = aw(_head_report(db, world))
         # F6 / T-4.2: user-verified corrections and decisions from the current version are replayed onto the rebuilt world below.
         # A failure to read the previous version only means no carry-over, never a lost reconstruction.
@@ -1094,6 +1066,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # P111: architectural constraints are data, not exceptions -- an error degrades the stage, never fails it.
         from world_ir.constraints import check_architectural_constraints, violations_to_segment_fields
         c_warnings, c_metrics = violations_to_segment_fields(check_architectural_constraints(world_ir))
+        # Room geometry coherence (duplicate walls, open loops, opening hosting, attachments, camera conflicts, topology).
+        # Findings and per-check "unknown"s are recorded on the world (metadata.room_geometry_validation) BEFORE the world is
+        # stored below; a decided hard-invariant violation degrades the stage like the constraints above. Nothing is auto-fixed.
+        from engine.validation.room_geometry import validate_for_stage
+        g_warnings, g_metrics = validate_for_stage(world_ir, prog.camera_poses)
+        c_warnings, c_metrics = [*c_warnings, *g_warnings], {**c_metrics, **g_metrics}
         # the validated world is STORED (content-addressed) and its hash published: an output reference always points at a real artifact
         import json as _json
 
@@ -1345,36 +1323,23 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         )
 
         base_head = world.current_version_id
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            try:
-                store = worldstore_service.get_store()
-                version_row = aw(worldstore_service.commit_version(
-                    db,
-                    world_id=world.id,
-                    world=world_ir,
-                    parent=base_head,
-                    source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
-                    points=points_bytes,
-                    cameras=cameras_bytes,
-                    report=report,
-                    expect_parent=base_head,
-                ))
-                break  # committed successfully
-            except worldstore_service.ConcurrentModificationError as exc:
-                # Retryable: HEAD moved under us. Reload it and either dedup
-                # (identical content already adopted) or chain onto the new
-                # base. Never last-writer-wins, never a silent overwrite.
-                last_exc = exc
-                if attempt >= max_retries:
-                    raise RuntimeError(
-                        f"reconstruction superseded after {max_retries} attempts: {exc}"
-                    ) from exc
-                aw(db.refresh(world, attribute_names=["current_version_id"]))
-                base_head = world.current_version_id
-                # Yield briefly so the concurrent job's transaction settles
-                # before we rebuild against the new base.
-                time.sleep(0.05 * attempt)
+        try:
+            store = worldstore_service.get_store()
+            version_row = aw(worldstore_service.commit_version(
+                db,
+                world_id=world.id,
+                world=world_ir,
+                parent=base_head,
+                source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
+                points=points_bytes,
+                cameras=cameras_bytes,
+                report=report,
+                expect_parent=base_head,
+            ))
+        except worldstore_service.ConcurrentModificationError as exc:
+            # Retryable: the next attempt reloads HEAD and either dedups
+            # (identical content) or chains onto the new HEAD.
+            raise RuntimeError(f"reconstruction superseded: {exc}") from exc
 
         # Read-back verification: the adopted version must load with clean
         # hashes before anything is called a success. A version that cannot
@@ -1434,118 +1399,19 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     from apps.api.stage_checkpoints import DbCheckpointStore
     from engine.pipeline.stages.base import StageContext
     from engine.hardware.admission import StageAdmission
-    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, SPATIAL_PROFILE_NAME, build_stages
+    from engine.pipeline.stages.registry import PIPELINE_VERSION, PROFILE_NAME, build_stages
     from engine.pipeline.stages.runner import StageCancelled, run_stages
-    from apps.api import spatial_global_stage as _sg
 
-    # opt-in, default OFF: the default profile is untouched unless RE_SPATIAL_GLOBAL is set
-    spatial_enabled = os.environ.get("RE_SPATIAL_GLOBAL", "").strip().lower() in ("1", "true", "yes", "on")
-    profile_name = SPATIAL_PROFILE_NAME if (spatial_enabled or _sg.enabled()) else PROFILE_NAME
-    stages = build_stages(profile_name)
+    stages = build_stages(PROFILE_NAME)
     specs = [stage.spec for stage in stages]
-
-    # Per-job spatial inputs provider. Set up before run_stages so the spatial_global stage can call it
-    # lazily (after seg_reconstruct has populated ctx.state["ladder"] with poses and world). The closure
-    # captures job-scoped data; it is never module-global, so concurrent jobs never leak observations.
-    def _spatial_inputs_provider() -> dict | None:
-        """Build spatial_inputs.v1 from the job's reconstructed evidence and adapt it for the optimizer.
-
-        Reads ctx.state["ladder"] (set by seg_reconstruct) for camera poses and the WorldIR, plus the
-        scale baselines and intrinsics already resolved for this job. Returns None when there is nothing
-        usable -- the stage then skips honestly rather than fabricating geometry or poses.
-        """
-        ladder = ctx.state.get("ladder")
-        if ladder is None:
-            return None
-        prog = getattr(ladder, "prog", None)
-        if prog is None or not getattr(prog, "camera_poses", None):
-            return None
-
-        # Cameras: evidence_id -> (position, quaternion wxyz) from COLMAP registration.
-        cameras: dict[str, CameraInput] = {}
-        for eid, pos, rot in prog.camera_poses:
-            if not (len(pos) == 3 and len(rot) == 4):
-                continue
-            cameras[eid] = CameraInput(
-                camera_id=eid, image_id=eid, source_uri=str(eid),
-                position_m=(float(pos[0]), float(pos[1]), float(pos[2])),
-                orientation_wxyz=(float(rot[0]), float(rot[1]), float(rot[2]), float(rot[3])),
-                intrinsics=None, pose_source="registered",
-            )
-
-        # Structural observations: WorldIR entities whose custom_properties carry a wall_slab dict.
-        world = getattr(prog, "world", None)
-        structural: list[StructuralInput] = []
-        if world is not None:
-            for eid, ent in getattr(world, "entities", {}).items():
-                cp = getattr(ent, "custom_properties", None) or {}
-                slab = cp.get("wall_slab")
-                if not isinstance(slab, dict):
-                    continue
-                start = slab.get("start_xyz_m")
-                end = slab.get("end_xyz_m")
-                sigma = slab.get("measurement_uncertainty_m")
-                if not (isinstance(start, (list, tuple)) and len(start) == 3 and
-                        isinstance(end, (list, tuple)) and len(end) == 3 and
-                        isinstance(sigma, (int, float)) and sigma > 0):
-                    continue
-                structural.append(StructuralInput(
-                    observation_id=eid, kind="wall_slab", label=ent.type.value if hasattr(ent.type, "value") else str(ent.type),
-                    evidence_id=eid, payload=dict(slab),
-                ))
-
-        # Scale state: metric only when we have measured baselines (operator-measured distances).
-        # baselines is a nonlocal set during seg_reconstruct; relative/SFM-gauge is never promoted.
-        is_metric = bool(baselines)
-        si = SpatialInputsV1(
-            run_id=job.id,
-            scale_state=ScaleStateInput(
-                basis="metric_calibrated" if is_metric else "relative_uncalibrated",
-                unit="metres" if is_metric else "relative",
-                is_metric=is_metric,
-            ),
-            cameras=tuple(cameras.values()),
-            observations=(),
-            structural_observations=tuple(structural),
-            cross_view_associations=(), relationships=(), room_hypotheses=(),
-            storey_id=None,
-            provenance={"producer": "reconstruction.job.spatial_inputs_provider", "frame": "world"},
-        )
-        inputs, rejected = adapt_spatial_inputs_v1(si)
-        if rejected:
-            log.info("spatial provider: %d observation(s) rejected for job %s", len(rejected), job.id)
-        return inputs
-
-    def _spatial_store_opener():
-        """Open the spatial-global WorldStore for this job's (team, world). Called lazily by the
-        spatial_global stage so the DB session is available and the world id is known."""
-        from worldstore.store import WorldStore
-        root = os.environ.get("WORLDSTORE_ROOT", "./data/worldstore")
-        session_row = aw(db.get(Session, job.entity_id))
-        if session_row is None or not session_row.world_id:
-            return None
-        w = aw(db.get(World, session_row.world_id))
-        if w is None:
-            return None
-        store = WorldStore(Path(root) / "spatial-global" / w.team_id / w.id)
-        versions = store.list_versions()
-        return store, (versions[-1].version_id if versions else None)
-
     ctx = StageContext(
         job_id=job.id, workdir=Path(tempfile.gettempdir()), artifacts={}, params={"session_id": job.entity_id},
         state={"segments": {
             "evidence_resolve": seg_evidence_resolve, "evidence_quality": seg_evidence_quality,
             "reconstruct": seg_reconstruct, "compile_validate": seg_compile_validate,
             "changeset_commit": seg_changeset_commit,
-        }, "spatial_inputs_provider": _spatial_inputs_provider if spatial_enabled else None,
-        "spatial_store_opener": _spatial_store_opener if spatial_enabled else None, "job_obj": job},
+        }},
     )
-    if profile_name == SPATIAL_PROFILE_NAME:
-        ctx.params["spatial_solver"] = _sg.solver()
-        ctx.state["spatial_inputs"] = _sg.inputs_for_job(job)   # None until a perception producer registers spatial_inputs.v1
-        # opened lazily, when the stage runs: the world is only bound by then (segments load it)
-        ctx.state["spatial_store_opener"] = lambda: _sg.open_store(
-            os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"), world.team_id, world.id)
     ended = [0]
 
     cancel_before = {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate"}
@@ -1568,7 +1434,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                                   versions={s.name: s.version for s in specs}),
                 abandoned),
             should_cancel=should_cancel, on_end=lambda r: ended.__setitem__(0, ended[0] + 1),
-            pipeline_profile=profile_name, pipeline_version=PIPELINE_VERSION,
+            pipeline_profile=PROFILE_NAME, pipeline_version=PIPELINE_VERSION,
             stage_timeouts=_stage_timeouts(),
             admission=StageAdmission.from_env(),  # memory-aware admission + per-stage RSS (RE_MEMORY_ADMISSION=off|record|enforce)
         )
@@ -1577,8 +1443,6 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         manifest = await asyncio.to_thread(drive)
     except StageCancelled:
         raise _JobCancelled(f"job {job.id} cancelled by operator") from None
-    if ctx.state.get("spatial_facts"):
-        holder["spatial_global"] = ctx.state["spatial_facts"]
     if any(r.status == "failed" for r in manifest.stages):
         # the ORIGINAL exception (type, message, failure_kind, retryable) drives process_next_job's grading
         raise ctx.state.get("stage_exc") or RuntimeError(next(r.error for r in manifest.stages if r.status == "failed"))
@@ -1660,8 +1524,6 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "skipped_evidence": skipped_evidence,
         "scene_identity": scene_info,
         **({"evidence_world": holder["evidence_world"]} if holder.get("evidence_world") else {}),
-        **({"spatial_global": ctx.state.get("spatial_facts")} if ctx.state.get("spatial_facts") else {}),
-        **_sg.facts_for_report(holder.get("spatial_global")),
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)

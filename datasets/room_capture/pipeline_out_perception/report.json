@@ -1,0 +1,250 @@
+{
+  "dataset": "C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\datasets\\room_capture",
+  "images_ingested": 28,
+  "scale_references": 27,
+  "stages": {
+    "reconstruction": {
+      "backend": "ColmapReconstructionBackend",
+      "cameras_registered": 25,
+      "cameras_input": 28,
+      "registration_status": "partial",
+      "sparse_points": 121049
+    },
+    "scale": {
+      "state": "metric",
+      "meters_per_unit": 0.24612989515928727,
+      "note": "metric scale from known_camera_baseline: IMG_0000<->IMG_0001 measured 0.4400 m / model 1.7876 units = 0.246130 m/unit"
+    },
+    "depth": {
+      "status": "ran",
+      "model": "MiDaS_small",
+      "maps": 28,
+      "metricized": 25,
+      "metricize_failed": 3,
+      "dense_points": 120000,
+      "stride": 16,
+      "residual_median_m": 1.2981465584980247,
+      "alignments": [
+        {
+          "evidence_id": "IMG_0000",
+          "residual_median_m": 0.738170529103197,
+          "inlier_fraction": 0.5306859205776173,
+          "aligned_pixels": 831,
+          "scale": 6.03607691695151,
+          "note": "relative depth metricized by median inverse-depth alignment against 831 SfM sparse points (residual median 738.2 mm, inlier fraction 0.53); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0001",
+          "residual_median_m": 1.0425317303798654,
+          "inlier_fraction": 0.5653179190751445,
+          "aligned_pixels": 865,
+          "scale": 5.196755241788865,
+          "note": "relative depth metricized by median inverse-depth alignment against 865 SfM sparse points (residual median 1042.5 mm, inlier fraction 0.57); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0002",
+          "residual_median_m": 1.9150414689122717,
+          "inlier_fraction": 0.7863247863247863,
+          "aligned_pixels": 936,
+          "scale": 5.140715062538376,
+          "note": "relative depth metricized by median inverse-depth alignment against 936 SfM sparse points (residual median 1915.0 mm, inlier fraction 0.79); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0003",
+          "residual_median_m": 2.408843361361079,
+          "inlier_fraction": 0.767491926803014,
+          "aligned_pixels": 929,
+          "scale": 4.327850449065009,
+          "note": "relative depth metricized by median inverse-depth alignment against 929 SfM sparse points (residual median 2408.8 mm, inlier fraction 0.77); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0004",
+          "residual_median_m": 0.8951212432205988,
+          "inlier_fraction": 0.5902547065337763,
+          "aligned_pixels": 903,
+          "scale": 4.651593389429165,
+          "note": "relative depth metricized by median inverse-depth alignment against 903 SfM sparse points (residual median 895.1 mm, inlier fraction 0.59); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0005",
+          "residual_median_m": 0.604295828503858,
+          "inlier_fraction": 0.6013904982618772,
+          "aligned_pixels": 863,
+          "scale": 5.324007671543957,
+          "note": "relative depth metricized by median inverse-depth alignment against 863 SfM sparse points (residual median 604.3 mm, inlier fraction 0.60); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0006",
+          "residual_median_m": 0.7253966890263555,
+          "inlier_fraction": 0.6291989664082688,
+          "aligned_pixels": 774,
+          "scale": 5.034237428216558,
+          "note": "relative depth metricized by median inverse-depth alignment against 774 SfM sparse points (residual median 725.4 mm, inlier fraction 0.63); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0007",
+          "residual_median_m": 3.3963033746747855,
+          "inlier_fraction": 0.8669250645994832,
+          "aligned_pixels": 774,
+          "scale": 2.5907202996090115,
+          "note": "relative depth metricized by median inverse-depth alignment against 774 SfM sparse points (residual median 3396.3 mm, inlier fraction 0.87); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0008",
+          "residual_median_m": 3.872978540483761,
+          "inlier_fraction": 0.708171206225681,
+          "aligned_pixels": 771,
+          "scale": 2.693107475019513,
+          "note": "relative depth metricized by median inverse-depth alignment against 771 SfM sparse points (residual median 3873.0 mm, inlier fraction 0.71); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0009",
+          "residual_median_m": 4.875296314605485,
+          "inlier_fraction": 0.7068273092369478,
+          "aligned_pixels": 747,
+          "scale": 2.2683817670995263,
+          "note": "relative depth metricized by median inverse-depth alignment against 747 SfM sparse points (residual median 4875.3 mm, inlier fraction 0.71); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0010",
+          "residual_median_m": 3.509081575811078,
+          "inlier_fraction": 0.6560509554140127,
+          "aligned_pixels": 785,
+          "scale": 3.449048699420953,
+          "note": "relative depth metricized by median inverse-depth alignment against 785 SfM sparse points (residual median 3509.1 mm, inlier fraction 0.66); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0011",
+          "residual_median_m": 3.3021430993328726,
+          "inlier_fraction": 0.920099875156055,
+          "aligned_pixels": 801,
+          "scale": 3.134604357027035,
+          "note": "relative depth metricized by median inverse-depth alignment against 801 SfM sparse points (residual median 3302.1 mm, inlier fraction 0.92); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0012",
+          "residual_median_m": 1.1942668977053508,
+          "inlier_fraction": 0.663594470046083,
+          "aligned_pixels": 651,
+          "scale": 0.8096823790955224,
+          "note": "relative depth metricized by median inverse-depth alignment against 651 SfM sparse points (residual median 1194.3 mm, inlier fraction 0.66); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0013",
+          "residual_median_m": 4.277256981017784,
+          "inlier_fraction": 0.6574500768049155,
+          "aligned_pixels": 651,
+          "scale": 2.56724749364292,
+          "note": "relative depth metricized by median inverse-depth alignment against 651 SfM sparse points (residual median 4277.3 mm, inlier fraction 0.66); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0014",
+          "residual_median_m": 0.403954551996776,
+          "inlier_fraction": 0.6122754491017964,
+          "aligned_pixels": 668,
+          "scale": 0.46340811687526096,
+          "note": "relative depth metricized by median inverse-depth alignment against 668 SfM sparse points (residual median 404.0 mm, inlier fraction 0.61); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0015",
+          "residual_median_m": 0.8915564034542989,
+          "inlier_fraction": 0.6607669616519174,
+          "aligned_pixels": 678,
+          "scale": 0.42823682017994036,
+          "note": "relative depth metricized by median inverse-depth alignment against 678 SfM sparse points (residual median 891.6 mm, inlier fraction 0.66); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0016",
+          "residual_median_m": 2.3129592184218017,
+          "inlier_fraction": 0.6698412698412698,
+          "aligned_pixels": 630,
+          "scale": 3.3681414663557185,
+          "note": "relative depth metricized by median inverse-depth alignment against 630 SfM sparse points (residual median 2313.0 mm, inlier fraction 0.67); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0017",
+          "residual_median_m": 1.0297282087156092,
+          "inlier_fraction": 0.6163522012578616,
+          "aligned_pixels": 636,
+          "scale": 0.4177634847354094,
+          "note": "relative depth metricized by median inverse-depth alignment against 636 SfM sparse points (residual median 1029.7 mm, inlier fraction 0.62); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0018",
+          "residual_median_m": 2.1177250356345727,
+          "inlier_fraction": 0.7626582278481012,
+          "aligned_pixels": 632,
+          "scale": 0.2666349958904635,
+          "note": "relative depth metricized by median inverse-depth alignment against 632 SfM sparse points (residual median 2117.7 mm, inlier fraction 0.76); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0019",
+          "residual_median_m": 1.2981465584980247,
+          "inlier_fraction": 0.6568144499178982,
+          "aligned_pixels": 609,
+          "scale": 0.3149332379618007,
+          "note": "relative depth metricized by median inverse-depth alignment against 609 SfM sparse points (residual median 1298.1 mm, inlier fraction 0.66); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0020",
+          "residual_median_m": 0.7731206666928927,
+          "inlier_fraction": 0.7610169491525424,
+          "aligned_pixels": 590,
+          "scale": 2.432709011006385,
+          "note": "relative depth metricized by median inverse-depth alignment against 590 SfM sparse points (residual median 773.1 mm, inlier fraction 0.76); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0021",
+          "residual_median_m": 0.9616670008219914,
+          "inlier_fraction": 0.7721088435374149,
+          "aligned_pixels": 588,
+          "scale": 2.00468835884537,
+          "note": "relative depth metricized by median inverse-depth alignment against 588 SfM sparse points (residual median 961.7 mm, inlier fraction 0.77); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0022",
+          "residual_median_m": 3.1059102140118204,
+          "inlier_fraction": 0.8169717138103162,
+          "aligned_pixels": 601,
+          "scale": 0.6749103746597396,
+          "note": "relative depth metricized by median inverse-depth alignment against 601 SfM sparse points (residual median 3105.9 mm, inlier fraction 0.82); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0023",
+          "residual_median_m": 1.4858917785004966,
+          "inlier_fraction": 0.7066246056782335,
+          "aligned_pixels": 634,
+          "scale": 0.6397984885171554,
+          "note": "relative depth metricized by median inverse-depth alignment against 634 SfM sparse points (residual median 1485.9 mm, inlier fraction 0.71); correct where the sparse cloud is dense, approximate elsewhere"
+        },
+        {
+          "evidence_id": "IMG_0026",
+          "residual_median_m": 1.295625620449525,
+          "inlier_fraction": 0.7927927927927928,
+          "aligned_pixels": 111,
+          "scale": 0.8196101153048221,
+          "note": "relative depth metricized by median inverse-depth alignment against 111 SfM sparse points (residual median 1295.6 mm, inlier fraction 0.79); correct where the sparse cloud is dense, approximate elsewhere"
+        }
+      ],
+      "note": "relative monocular depth metricized per-view against the SfM sparse cloud (documented approximation, see reconstruction.depth_to_points)"
+    },
+    "perception": {
+      "status": "ran",
+      "model": "maskrcnn",
+      "views_segmented": 28,
+      "masks_considered": 23,
+      "hypotheses_lifted": 23,
+      "candidates_merged": 22,
+      "entities_promoted": 22,
+      "note": "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-alignment, approximate); merged by label+proximity; provenance INFERRED with per-entity evidence ids"
+    },
+    "compile": {
+      "entities": 103,
+      "measurements": 9,
+      "relationships": 0
+    }
+  },
+  "status": "PARTIAL_SUCCESS",
+  "runtime_s": 1091.29,
+  "world_id": "world-compiled-seed42"
+}

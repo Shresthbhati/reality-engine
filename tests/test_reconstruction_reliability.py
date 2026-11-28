@@ -549,7 +549,7 @@ def test_golden_restart_correction_diff(client, tmp_path, monkeypatch):
         # Correction -> V2 through the validated commit path.
         ent_id = sorted(after["entities"])[0]
         r = fresh.post(f"/api/worlds/{wid}/commit", json={
-            "entity_id": ent_id, "changes": {"name": "Corrected"},
+            "entity_id": ent_id, "changes": {"name": "Corrected"}, "parent_version_id": v1,
         })
         assert r.status_code == 200, r.text
         v2 = r.json()["version_id"]
@@ -817,7 +817,7 @@ def test_a_correction_does_not_blind_the_next_rebuild_or_the_status(client, tmp_
     assert status_v1["model"]["images_registered"] >= 2
 
     eid = next(iter(client.get(f"/api/worlds/{wid}/worldir").json()["entities"]))
-    r = client.post(f"/api/worlds/{wid}/commit", json={"entity_id": eid, "changes": {"name": "Corrected"}})
+    r = client.post(f"/api/worlds/{wid}/commit", json={"entity_id": eid, "changes": {"name": "Corrected"}, "parent_version_id": v1})
     assert r.status_code == 200, r.text
     v2 = r.json()["version_id"]
     assert v2 != v1

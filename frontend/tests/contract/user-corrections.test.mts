@@ -32,14 +32,15 @@ describe("User Corrections Model Contract", () => {
   });
 
   it("throws when reclassify parameters are incomplete", () => {
-    assert.throws(() => buildReclassifyPayload({ worldId: "w", entityId: "", newClass: "chair" }));
-    assert.throws(() => buildReclassifyPayload({ worldId: "w", entityId: "e1", newClass: "" }));
+    assert.throws(() => buildReclassifyPayload({ worldId: "w", entityId: "", newClass: "chair", parentVersionId: "v1" }));
+    assert.throws(() => buildReclassifyPayload({ worldId: "w", entityId: "e1", newClass: "", parentVersionId: "v1" }));
   });
 
   it("builds valid split payload with default axis and ratio", () => {
     const params: SplitParams = {
       worldId: "wld_test",
       entityId: "ent_02",
+      parentVersionId: "v_123",
     };
     const payload = buildSplitPayload(params);
     assert.equal(payload.entity_id, "ent_02");
@@ -48,8 +49,8 @@ describe("User Corrections Model Contract", () => {
   });
 
   it("throws when split ratio is out of range", () => {
-    assert.throws(() => buildSplitPayload({ worldId: "w", entityId: "e1", splitRatio: 0.01 }));
-    assert.throws(() => buildSplitPayload({ worldId: "w", entityId: "e1", splitRatio: 0.99 }));
+    assert.throws(() => buildSplitPayload({ worldId: "w", entityId: "e1", splitRatio: 0.01, parentVersionId: "v1" }));
+    assert.throws(() => buildSplitPayload({ worldId: "w", entityId: "e1", splitRatio: 0.99, parentVersionId: "v1" }));
   });
 
   it("builds valid merge payload", () => {
@@ -58,6 +59,7 @@ describe("User Corrections Model Contract", () => {
       primaryEntityId: "ent_primary",
       secondaryEntityIds: ["ent_sec_1", "ent_sec_2"],
       newName: "Combined Sofa",
+      parentVersionId: "v_123",
     };
     const payload = buildMergePayload(params);
     assert.equal(payload.primary_entity_id, "ent_primary");
@@ -66,7 +68,13 @@ describe("User Corrections Model Contract", () => {
   });
 
   it("throws when merge secondary entities list is empty", () => {
-    assert.throws(() => buildMergePayload({ worldId: "w", primaryEntityId: "e1", secondaryEntityIds: [] }));
+    assert.throws(() => buildMergePayload({ worldId: "w", primaryEntityId: "e1", secondaryEntityIds: [], parentVersionId: "v1" }));
+  });
+
+  it("refuses to build any correction payload without a base version", () => {
+    assert.throws(() => buildReclassifyPayload({ worldId: "w", entityId: "e1", newClass: "x/y", parentVersionId: "" }), /parentVersionId is required/);
+    assert.throws(() => buildSplitPayload({ worldId: "w", entityId: "e1", parentVersionId: "" }), /parentVersionId is required/);
+    assert.throws(() => buildMergePayload({ worldId: "w", primaryEntityId: "e1", secondaryEntityIds: ["e2"], parentVersionId: "" }), /parentVersionId is required/);
   });
 
   it("conforms to CorrectionResult contract", () => {

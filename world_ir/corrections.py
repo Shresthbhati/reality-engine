@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from world_ir.measure import DIMENSION_STATES, dimension_from_metadata, scale_state_of
 
@@ -160,6 +160,9 @@ def carry_corrections(world, records: Iterable[dict]) -> dict:
                 continue
             ent, matched = scored[0][1], f"nearest ({scored[0][0]:.2f} m)"
         if apply_correction(world, rec, entity=ent):
+            if ent.id != rec.get("entity_id"):
+                from world_ir.correction_log import add_lineage_edge
+                add_lineage_edge(world, str(rec.get("entity_id")), ent.id, "carried_by_anchor_match")
             report["applied"].append({"entity_id": ent.id, "property": rec.get("property"), "value": rec.get("value"),
                                       "matched_by": matched})
             saved.append(rec)
@@ -212,6 +215,7 @@ def reclassify_entity(
         "timestamp": time.time(),
     }
     cp["user_decision"] = decision
+    cp["lineage"] = {"parent_ids": [entity_id], "relation": "reclassify"}   # same id: identity is stable through a reclassify
     ent.custom_properties = cp
 
     # Update semantic labels
@@ -294,11 +298,13 @@ def split_entity(
     cp1 = dict(ent.custom_properties or {})
     cp1["bounding_box"] = [list(box1[0]), list(box1[1])]
     cp1["split_from"] = entity_id
+    cp1["lineage"] = {"parent_ids": [entity_id], "relation": "split"}
     cp1["decision_basis"] = "user"
 
     cp2 = dict(ent.custom_properties or {})
     cp2["bounding_box"] = [list(box2[0]), list(box2[1])]
     cp2["split_from"] = entity_id
+    cp2["lineage"] = {"parent_ids": [entity_id], "relation": "split"}
     cp2["decision_basis"] = "user"
 
     ent1 = WEntity(
@@ -334,6 +340,9 @@ def split_entity(
     del world.entities[entity_id]
     world.entities[id1] = ent1
     world.entities[id2] = ent2
+    from world_ir.correction_log import add_lineage_edge
+    add_lineage_edge(world, entity_id, id1, "split")
+    add_lineage_edge(world, entity_id, id2, "split")
 
     decision = {
         "kind": "split",
@@ -396,6 +405,7 @@ def merge_entities(
     cp = dict(primary.custom_properties or {})
     cp["bounding_box"] = [[min_x, min_y, min_z], [max_x, max_y, max_z]]
     cp["merged_from"] = [s.id for s in secondaries]
+    cp["lineage"] = {"parent_ids": [primary_entity_id] + [s.id for s in secondaries], "relation": "merge"}
     cp["decision_basis"] = "user"
     primary.custom_properties = cp
 
@@ -424,6 +434,10 @@ def merge_entities(
         for rel in other.relationships:
             if rel.target_id in sec_ids:
                 rel.target_id = primary_entity_id
+
+    from world_ir.correction_log import add_lineage_edge
+    for sec in secondaries:
+        add_lineage_edge(world, sec.id, primary_entity_id, "merge")
 
     # Remove secondaries from world
     for sec in secondaries:
@@ -487,6 +501,8 @@ def carry_decisions(world, decisions: Iterable[dict]) -> dict:
                     saved.append(dec)
                     continue
                 ent, matched = scored[0][1], f"nearest ({scored[0][0]:.2f} m)"
+                from world_ir.correction_log import add_lineage_edge
+                add_lineage_edge(world, str(target_id), ent.id, "carried_by_anchor_match")
 
             clean_class = str(dec.get("new_class") or "").strip()
             if clean_class:

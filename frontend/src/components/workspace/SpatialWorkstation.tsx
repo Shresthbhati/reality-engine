@@ -289,6 +289,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   ) => {
     if (!worldId) return;
     const parentVersionId = versions[0]?.id || "";
+    if (!parentVersionId) throw new Error("This world has no committed version yet, so there is nothing to correct."); // the server requires the base version
     const res = await commitWorldCorrection(worldId, {
       entity_id: entityId,
       changes,

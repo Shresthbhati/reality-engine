@@ -247,11 +247,15 @@ async def calibrate_run_world(
     head = head_version(d)
     if not head:
         raise HTTPException(404, "No persisted world for this run")
-    _require_fresh(head, body.expected_version_id)
     if bool(body.distance_anchors) == bool(body.point_anchors):
         raise HTTPException(422, "send either distance_anchors or point_anchors (exactly one kind), not both and not neither")
     store = WorldStore(d / WORLDSTORE_REL)
     head_cal = (store.load_version(head).metadata or {}).get(CAL_KEY)
+    # The base version is mandatory. The one allowed difference: a RETRY of a calibration that has already landed names the gauge
+    # version it was made against (the calibrated head's recorded parent) -- it is answered by the idempotency check below, never
+    # applied a second time.
+    if not (head_cal and body.expected_version_id and body.expected_version_id == head_cal.get("parent_version")):
+        _require_fresh(head, body.expected_version_id)
     try:
         if body.distance_anchors:
             cal = calibrate_distances([DistanceAnchor(**{**a.model_dump(), "point_a": tuple(a.point_a), "point_b": tuple(a.point_b)}) for a in body.distance_anchors])
@@ -358,10 +362,25 @@ def _refuse_if_calibrated(d: Path, head: str) -> None:
 
 
 def _require_fresh(head: str, expected: str | None) -> None:
-    """A correction made while looking at version X must not silently land on a newer version: when the caller says which version it
-    saw (``expected_version_id``) and HEAD has moved, refuse (409) so the user reloads and re-decides."""
-    if expected and expected != head:
-        raise HTTPException(409, f"stale: this correction was made against version {expected} but the run's HEAD is {head}; reload and retry")
+    """The base version is MANDATORY on every correction: a correction made while looking at version X must not silently land on a newer
+    version, and one that does not say what it saw cannot be checked. Missing -> 428, HEAD moved -> 409 naming both versions, so the user
+    reloads and re-decides."""
+    from world_ir.correction_log import BaseVersionRequired, StaleBaseVersion, require_base_version
+
+    try:
+        require_base_version(expected, head)
+    except BaseVersionRequired as exc:
+        raise HTTPException(428, str(exc)) from exc
+    except StaleBaseVersion as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+def _stamp(base_w, world, *, operation: str, auth, base: str, vid: str, entity_ids: list[str], note: str, lineage: list[dict] | None = None) -> None:
+    """Append the typed correction record (who / what / from which version / old->new / evidence kept / stale artifacts)."""
+    from world_ir.correction_log import stamp_correction
+
+    stamp_correction(base_w, world, operation=operation, actor_id=str(getattr(auth, "user_id", "") or "user"), base_version_id=base,
+                     new_version_id=vid, entity_ids=entity_ids, note=note.strip() or None, lineage=lineage or ())
 
 
 class MergeBody(BaseModel):
@@ -402,6 +421,7 @@ async def merge_entities_route(
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)
+        base_w = store.load_version(head)   # untouched copy: the correction record diffs against it
         ka, kb = f"ent-{entity_id}", f"ent-{body.other_entity_id}"
         ea, eb = world.entities.get(ka), world.entities.get(kb)
         if ea is None or eb is None:
@@ -456,6 +476,8 @@ async def merge_entities_route(
         if errors:
             raise HTTPException(422, f"the merged world would be invalid and was not saved: {errors[:3]}")
         vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        _stamp(base_w, world, operation="merge", auth=auth, base=head, vid=vid, entity_ids=[ka, kb], note=body.note,
+               lineage=[{"from_ids": [kb], "to_id": ka, "relation": "merge"}])
         store.save_version(world, parent=head, version_id=vid)
         problems = store.verify_version(vid)
         if problems or store.load_version(vid).to_dict() != world.to_dict():
@@ -503,6 +525,7 @@ async def split_entity_route(
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)
+        base_w = store.load_version(head)   # untouched copy: the correction record diffs against it
         ka = f"ent-{entity_id}"
         ea = world.entities.get(ka)
         if ea is None:
@@ -558,6 +581,8 @@ async def split_entity_route(
         if errors:
             raise HTTPException(422, f"the split world would be invalid and was not saved: {errors[:3]}")
         vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        _stamp(base_w, world, operation="split", auth=auth, base=head, vid=vid, entity_ids=[ka, kn], note=body.note,
+               lineage=[{"from_ids": [ka], "to_id": kn, "relation": "split"}])
         store.save_version(world, parent=head, version_id=vid)
         problems = store.verify_version(vid)
         if problems or store.load_version(vid).to_dict() != world.to_dict():
@@ -597,6 +622,7 @@ async def reclassify_entity_route(
     store = WorldStore(d / WORLDSTORE_REL)
     try:
         world = store.load_version(head)
+        base_w = store.load_version(head)   # untouched copy: the correction record diffs against it
         eid = f"ent-{entity_id}"
         ent = world.entities.get(eid)
         if ent is None:
@@ -611,6 +637,7 @@ async def reclassify_entity_route(
         if not preserved:  # a correction must never touch the evidence: refuse rather than save a world that lost it
             raise HTTPException(500, "correction would have altered the entity's evidence; nothing was saved")
         vid = "v-" + hashlib.sha256(json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        _stamp(base_w, world, operation="reclassify", auth=auth, base=head, vid=vid, entity_ids=[eid], note=body.note)
         store.save_version(world, parent=head, version_id=vid)
         problems = store.verify_version(vid)
         if problems or store.load_version(vid).to_dict() != world.to_dict():

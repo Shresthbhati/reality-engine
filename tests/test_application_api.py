@@ -644,8 +644,8 @@ def _seed_compiled_world(client, tmp_path, monkeypatch, name="Commit world"):
 
 def _commit(client, wid, entity_id="ent-shed", changes=None, parent=None):
     body = {"entity_id": entity_id, "changes": changes if changes is not None else {}}
-    if parent is not None:
-        body["parent_version_id"] = parent
+    # the base version is mandatory on every correction: default to the version the test is looking at (HEAD)
+    body["parent_version_id"] = parent if parent is not None else client.get(f"/api/worlds/{wid}").json()["current_version_id"]
     return client.post(f"/api/worlds/{wid}/commit", json=body)
 
 

@@ -38,7 +38,7 @@ def _head(client, wid, run):
 def test_concurrent_identical_calibration_requests_produce_exactly_one_new_version(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-f1")
     gauge = _head(client, wid, "run-f1")
-    body = {"distance_anchors": _anchors()}
+    body = {"distance_anchors": _anchors(), "expected_version_id": gauge}
     with ThreadPoolExecutor(max_workers=6) as pool:
         resps = list(pool.map(lambda _: client.post(_url(wid, "run-f1", "calibrate"), json=body, headers=A), range(6)))
     codes = sorted(r.status_code for r in resps)
@@ -67,12 +67,12 @@ def test_a_failed_calibration_persist_is_retried_to_exactly_one_version_with_no_
         return real(self, *a, **k)
 
     monkeypatch.setattr(WorldStore, "save_version", flaky)
-    first = client.post(_url(wid, "run-f2", "calibrate"), json={"distance_anchors": _anchors()}, headers=A)
+    first = client.post(_url(wid, "run-f2", "calibrate"), json={"distance_anchors": _anchors(), "expected_version_id": gauge}, headers=A)
     assert first.status_code == 503 and _head(client, wid, "run-f2") == gauge                         # nothing adopted
     rd = client.get(_url(wid, "run-f2", "readiness"), headers=A).json()
     assert rd["metric_export_ready"] is False and rd["calibration"] is None                                       # export stays gated
     for _ in range(3):                                                                                           # repeated retries after the partial failure
-        assert client.post(_url(wid, "run-f2", "calibrate"), json={"distance_anchors": _anchors()}, headers=A).status_code == 200
+        assert client.post(_url(wid, "run-f2", "calibrate"), json={"distance_anchors": _anchors(), "expected_version_id": gauge}, headers=A).status_code == 200
     versions = _store(tmp_path, wid, "run-f2").list_versions()
     assert len(versions) == 2                                                                                     # exactly one calibrated version
     assert len(_store(tmp_path, wid, "run-f2").load_version(versions[-1].version_id).entities) == n_entities    # no duplicated entities
@@ -81,7 +81,8 @@ def test_a_failed_calibration_persist_is_retried_to_exactly_one_version_with_no_
 
 def test_a_corrupted_world_artifact_is_caught_on_fresh_process_reload_and_blocks_export(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-f3")
-    assert client.post(_url(wid, "run-f3", "calibrate"), json={"distance_anchors": _anchors()}, headers=A).status_code == 200
+    gauge = _head(client, wid, "run-f3")
+    assert client.post(_url(wid, "run-f3", "calibrate"), json={"distance_anchors": _anchors(), "expected_version_id": gauge}, headers=A).status_code == 200
     store = _store(tmp_path, wid, "run-f3")
     head = store.list_versions()[-1].version_id
     digest = store._record(head)["artifact_hash"]

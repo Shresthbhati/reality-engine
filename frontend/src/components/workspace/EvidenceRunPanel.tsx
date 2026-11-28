@@ -311,7 +311,9 @@ export default function EvidenceRunPanel({
                   e.preventDefault();
                   const cls = corrected.trim();
                   if (!cls || !runId || !selectedId) return;
-                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
+                  const baseVersion = headVersion?.runId === runId ? headVersion.version : w?.version_id;
+                  if (!baseVersion) { setNotice("Reload the world first: a correction must name the version it was made against."); return; }
+                  reclassifyEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), cls, "", baseVersion)
                     .then((r) => {
                       setHeadVersion({ runId, version: r.version_id });
                       setNotice(`Saved as version ${r.version_id}. The original evidence is unchanged${r.original_evidence_preserved ? " (verified)" : ""}.`);
@@ -334,10 +336,12 @@ export default function EvidenceRunPanel({
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!runId || !selectedId || !mergeWith) return;
+                  const baseVersion = headVersion?.runId === runId ? headVersion.version : w?.version_id;
+                  if (!baseVersion) { setNotice("Reload the world first: a correction must name the version it was made against."); return; }
                   const me = selectedId.replace(/^ent-/, "");
                   const other = mergeWith.replace(/^ent-/, "");
                   const send = (ack: boolean) =>
-                    mergeEvidenceEntities(worldId, runId, me, other, ack, "", headVersion?.runId === runId ? headVersion.version : w?.version_id).then((r) => {
+                    mergeEvidenceEntities(worldId, runId, me, other, ack, "", baseVersion).then((r) => {
                       setHeadVersion({ runId, version: r.version_id });
                       setNotice(`Merged into one entity from ${r.members} observations (position ${r.position_status}, dimensions ${r.dimensions_status}); saved as version ${r.version_id}. Original evidence unchanged.`);
                     });
@@ -367,7 +371,9 @@ Merge anyway (duplicate detections of one object)?`)) {
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (!runId || !selectedId || splitIds.length === 0) return;
-                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds, "", headVersion?.runId === runId ? headVersion.version : w?.version_id)
+                    const baseVersion = headVersion?.runId === runId ? headVersion.version : w?.version_id;
+                    if (!baseVersion) { setNotice("Reload the world first: a correction must name the version it was made against."); return; }
+                    splitEvidenceEntity(worldId, runId, selectedId.replace(/^ent-/, ""), splitIds, "", baseVersion)
                       .then((r) => {
                         setHeadVersion({ runId, version: r.version_id });
                         setSplitIds([]);

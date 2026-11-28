@@ -32,6 +32,7 @@ from apps.api.models import (
     ActivityEvent,
     CaptureRequest,
     Evidence,
+    ExportRecord,
     Location,
     Session,
     World,
@@ -1398,10 +1399,25 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     validated = _validate_commit_changes(body.changes)
     if body.commit_message is not None and len(body.commit_message) > 500:
         raise HTTPException(422, "commit_message must be at most 500 chars")
+    # The base version is MANDATORY (428 when missing, 409 naming both versions when stale): a correction that does not say which
+    # version it was made against cannot be checked, so it is never applied -- there is no silent "just use HEAD" path.
+    from world_ir.correction_log import BaseVersionRequired, StaleBaseVersion, require_base_version
+    from world_ir.room_connectivity import refresh_topology_metadata
+
+    try:
+        require_base_version(body.parent_version_id, w.current_version_id)
+    except BaseVersionRequired as exc:
+        raise HTTPException(428, str(exc)) from exc
+    except StaleBaseVersion as exc:
+        raise HTTPException(409, str(exc)) from exc
+    base_worldir = await _load_worldir_from_store(w)   # untouched copy of the base: the correction record diffs against it
+    if base_worldir is not None:
+        refresh_topology_metadata(base_worldir)
     # Unify identifiers (same invariant worldstore_service.commit_version
     # enforces): the WorldIR's own id is the application world id, so
     # on-disk versions filter by world and the DB mirror stays truthful.
     worldir.id = w.id
+    refresh_topology_metadata(worldir)   # derived fields are brought up to date BEFORE the snapshot, so a no-op correction is still a duplicate
     base_snapshot = worldir.to_dict()
     for key, value in validated.items():
         if key == "user_correction":
@@ -1601,6 +1617,8 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                         metadata={"derived_from": "corridor_room_connection"},
                     ))
 
+    refresh_topology_metadata(worldir)   # keep the derived door graph / unresolved fields consistent with the corrected entities
+
     # Malformed WorldIR must never be persisted by a correction: validate
     # the corrected world and refuse with the validator's own diagnosis.
     # Only ERRORs block (warnings stay readable, matching the recon path).
@@ -1663,6 +1681,20 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
 
     adoption_id = _wss.begin_adoption(w.id, effective_parent)
     try:
+        # Audit record (who / base -> new version / old->new values / evidence kept / stale derived artifacts), written into
+        # the SAME immutable version it describes. Exports built from the base version are stale from this version on.
+        from sqlalchemy import select as _select
+        from world_ir.correction_log import stamp_correction
+
+        stale_exports = [
+            {"artifact_id": r.id, "kind": f"export:{r.format}", "built_from_version_id": r.version_id}
+            for r in (await db.execute(_select(ExportRecord).where(
+                ExportRecord.world_id == w.id, ExportRecord.version_id == effective_parent))).scalars().all()
+        ]
+        stamp_correction(
+            base_worldir if base_worldir is not None else worldir, worldir,
+            operation="+".join(sorted(validated)) or "commit", actor_id=auth.user_id or "user", base_version_id=effective_parent,
+            new_version_id=adoption_id, entity_ids=[body.entity_id], note=body.commit_message, artifacts=stale_exports)
         stored = store.save_version(
             worldir, parent=effective_parent, version_id=adoption_id,
             source_session_ids=inherit_sessions,
@@ -1749,6 +1781,26 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         "changed_fields": list(validated.keys()),
         "duplicate": False,
     }
+
+
+@worlds.get("/{world_id}/derived-artifacts")
+async def list_derived_artifacts(
+    world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context),
+):
+    """Exports built from this world, each flagged ``stale`` when it was built from a version other than the current one
+    (a correction since then changed the world it describes). The version id each was built from is always reported."""
+    from world_ir.correction_log import classify_artifacts
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    rows = (await db.execute(select(ExportRecord).where(ExportRecord.world_id == w.id).order_by(ExportRecord.created_at))).scalars().all()
+    items = classify_artifacts(
+        [{"artifact_id": r.id, "kind": f"export:{r.format}", "built_from_version_id": r.version_id} for r in rows],
+        w.current_version_id or "")
+    return {"world_id": w.id, "current_version_id": w.current_version_id, "artifacts": items,
+            "stale_count": sum(1 for i in items if i["stale"])}
 
 
 class ReclassifyCorrectionIn(BaseModel):

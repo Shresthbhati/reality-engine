@@ -248,9 +248,15 @@ class WorldStore:
                     "save a new version instead of overwriting observed reality"
                 )
             _atomic_write_text(path, json.dumps(record, indent=2))
-            order: list[str] = self._read_sequence(seq_path)
-            order.append(vid)
-            _atomic_write_text(seq_path, json.dumps(order))
+            try:
+                order: list[str] = self._read_sequence(seq_path)
+                order.append(vid)
+                _atomic_write_text(seq_path, json.dumps(order))
+            except BaseException:
+                # list_versions() appends record files missing from the sequence, so a record left behind by a failed
+                # sequence update would silently become the newest version (HEAD) of a save that raised. Withdraw it.
+                path.unlink(missing_ok=True)
+                raise
         return StoredVersion(**record)
 
     @staticmethod

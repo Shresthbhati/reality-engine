@@ -94,7 +94,8 @@ def test_legacy_route_returns_the_shared_calibration_record_and_applies_it_by_a_
 def test_evidence_route_returns_the_same_record_shape_and_vocabulary(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-p1")
     anchors = [_dist(i, *p) for i, p in enumerate(_PAIRS)]
-    r = client.post(_url(wid, "run-p1", "calibrate"), json={"distance_anchors": anchors}, headers=A)
+    gauge = client.get(_url(wid, "run-p1", "readiness"), headers=A).json()["world"]["version_id"]
+    r = client.post(_url(wid, "run-p1", "calibrate"), json={"distance_anchors": anchors, "expected_version_id": gauge}, headers=A)
     assert r.status_code == 200, r.text
     cal = r.json()["calibration"]
     assert set(cal) == RECORD_KEYS and cal["status"] in STATUSES
@@ -116,7 +117,7 @@ def test_both_routes_refuse_contradicting_references_without_changing_anything(a
 def test_the_evidence_route_refuses_contradicting_anchors_and_changes_nothing(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-p2")
     head = client.get(_url(wid, "run-p2", "readiness"), headers=A).json()["world"]["version_id"]
-    bad = client.post(_url(wid, "run-p2", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0]), _dist(1, *_PAIRS[1], noise=0.5)]}, headers=A)
+    bad = client.post(_url(wid, "run-p2", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0]), _dist(1, *_PAIRS[1], noise=0.5)], "expected_version_id": head}, headers=A)
     assert bad.status_code == 409 and bad.json()["detail"]["calibration"]["status"] == "failed" and set(bad.json()["detail"]["calibration"]) == RECORD_KEYS
     assert client.get(_url(wid, "run-p2", "readiness"), headers=A).json()["world"]["version_id"] == head  # evidence: head untouched
 
@@ -146,6 +147,7 @@ def test_the_evidence_export_labels_units_and_stays_gated_until_calibrated(clien
     assert client.post(_url(wid, "run-p3", "export"), json={"format": "glb"}, headers=A).status_code == 409          # unscaled: refused
     gauge = client.post(_url(wid, "run-p3", "export"), json={"format": "glb", "acknowledge_unscaled": True}, headers=A)
     assert gauge.status_code == 200 and gauge.headers["x-scale-units"] == "model_units"
-    assert client.post(_url(wid, "run-p3", "calibrate"), json={"distance_anchors": [_dist(i, *p) for i, p in enumerate(_PAIRS)]}, headers=A).status_code == 200
+    gauge_v = client.get(_url(wid, "run-p3", "readiness"), headers=A).json()["world"]["version_id"]
+    assert client.post(_url(wid, "run-p3", "calibrate"), json={"distance_anchors": [_dist(i, *p) for i, p in enumerate(_PAIRS)], "expected_version_id": gauge_v}, headers=A).status_code == 200
     metric = client.post(_url(wid, "run-p3", "export"), json={"format": "glb"}, headers=A)
     assert metric.status_code == 200 and metric.headers["x-scale-units"] == "m" and metric.headers["x-scale-calibration"] == "unvalidated"

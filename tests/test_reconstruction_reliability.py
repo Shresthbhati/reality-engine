@@ -618,7 +618,7 @@ def test_same_world_concurrent_completion_single_head(client, tmp_path, monkeypa
     assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
 
 
-def test_different_worlds_concurrent_completion(client, tmp_path, monkeypatch):
+def test_concurrent_distinct_worlds_succeed(client, tmp_path, monkeypatch):
     """Two sessions reconstructing at once: both succeed with distinct
     worlds and versions -- no cross-talk, no shared HEAD."""
     import threading

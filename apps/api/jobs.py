@@ -516,6 +516,10 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     evidence = await db.get(Evidence, job.entity_id)
     if evidence is None:
         raise RuntimeError(f"Evidence {job.entity_id} not found")
+    if job.team_id is not None and evidence.team_id is not None and job.team_id != evidence.team_id:
+        raise RuntimeError(
+            f"Cross-tenant evidence access refused: job team {job.team_id!r} != evidence team {evidence.team_id!r}"
+        )
     job.stage = "verifying_artifact"
     evidence.processing_state = "processing"
     await db.commit()
@@ -733,6 +737,16 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         world = aw(db.get(World, session.world_id))
         if world is None:
             raise RuntimeError(f"World {session.world_id} not found")
+        if world.team_id is not None and session.team_id is not None and world.team_id != session.team_id:
+            raise RuntimeError(
+                f"Cross-tenant session/world association refused: session {session.id} belongs to "
+                f"{session.team_id!r}, world {world.id} belongs to {world.team_id!r}"
+            )
+        if job.team_id is not None and world.team_id is not None and job.team_id != world.team_id:
+            raise RuntimeError(
+                f"Cross-tenant job execution refused: job {job.id} belongs to {job.team_id!r}, "
+                f"world {world.id} belongs to {world.team_id!r}"
+            )
 
         job.stage = "checking_reconstruction_backend"
         job.heartbeat_at = utcnow()
@@ -797,15 +811,22 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # Progressive refinement: the model is built from ALL photo evidence of
         # every session attached to this world (compile(A+B) IS the definition
         # of V2), never just the newest session's batch.
-        result = aw(db.execute(
+        ev_query = (
             select(Evidence)
             .join(Session, Evidence.session_id == Session.id)
             .where(or_(Session.world_id == world.id, Session.id == session.id), Evidence.type == "photo")
             # Evidence Quality Firewall: an operator-REJECTED photo is not reconstruction input
             .where(Evidence.id.not_in(select(EvidenceDecision.evidence_id).where(EvidenceDecision.decision == "rejected")))
-            .order_by(Evidence.created_at.asc(), Evidence.id.asc())
-        ))
+        )
+        if world.team_id is not None:
+            ev_query = ev_query.where(or_(Evidence.team_id == world.team_id, Evidence.team_id.is_(None)))
+        result = aw(db.execute(ev_query.order_by(Evidence.created_at.asc(), Evidence.id.asc())))
         evidence_rows = list(result.scalars().all())
+        for ev in evidence_rows:
+            if world.team_id is not None and ev.team_id is not None and ev.team_id != world.team_id:
+                raise RuntimeError(
+                    f"Cross-tenant evidence {ev.id} refused for world {world.id}"
+                )
         head_report = aw(_head_report(db, world))
         # F6 / T-4.2: user-verified corrections and decisions from the current version are replayed onto the rebuilt world below.
         # A failure to read the previous version only means no carry-over, never a lost reconstruction.

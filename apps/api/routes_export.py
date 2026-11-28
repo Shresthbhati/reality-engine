@@ -12,12 +12,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.tenancy import world_scope
-from apps.api.auth import AuthContext, get_auth_context
+from apps.api.auth import AuthContext, enforce_project_isolation, get_auth_context, is_global_admin
 from apps.api.routes_worlds import _load_world_or_409, _version_row
 from apps.api.models import ExportRecord, World, new_id
 from apps.api.storage import resolve_artifact, store_bytes
@@ -156,7 +157,7 @@ async def export_world(
     """Export the version's WorldIR to a real format via sdk.reality.export().
     422 for an unsupported format (never a silent no-op); the exporter's
     own skip reasons are returned verbatim, never hidden."""
-    row = await _version_row(db, world_id, body.version)
+    row = await _version_row(db, world_id, body.version, auth=auth)
     world = _load_world_or_409(row)
 
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
@@ -221,11 +222,34 @@ async def export_world(
 
 
 @export.get("/{content_hash}/download")
-async def download_export(world_id: str, content_hash: str, format: str) -> FileResponse:
-    """Stream back a previously exported artifact by its content hash."""
+async def download_export(
+    world_id: str,
+    content_hash: str,
+    format: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> FileResponse:
+    """Stream back a previously exported artifact by its content hash,
+    verifying that the export belongs to the authorized world and tenant."""
     from apps.api.routes_misc import _safe_filename
 
-    path = resolve_artifact(f"sha256://{content_hash}")
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    expected_uri = f"sha256://{content_hash}"
+    stmt = select(ExportRecord).where(
+        ExportRecord.world_id == world_id,
+        ExportRecord.artifact_uri == expected_uri,
+    )
+    if not is_global_admin(auth) and w.team_id is not None:
+        stmt = stmt.where((ExportRecord.tenant_id == w.team_id) | (ExportRecord.tenant_id.is_(None)))
+    rec = (await db.execute(stmt)).scalars().first()
+    if rec is None:
+        raise HTTPException(404, "Export artifact not found")
+
+    path = resolve_artifact(expected_uri)
     if path is None:
         raise HTTPException(404, "Export artifact missing from store")
     media_type = _MEDIA_TYPES.get(format, "application/octet-stream")
@@ -246,7 +270,7 @@ async def export_package(
     from apps.api.routes_misc import _safe_filename
     from world_ir.serialization import export_world_package_zip
 
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
 
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
@@ -316,6 +340,20 @@ async def export_options_compare(
 
     digest_a, rep_a, elem_a = _do_export(world_a)
     digest_b, rep_b, elem_b = _do_export(world_b)
+
+    w = await db.get(World, world_id)
+    team_id = (w.team_id if w else None) or (auth.tenant_id if auth.tenant_id != "default" else None)
+    for ver_row, dig in ((row_a, digest_a), (row_b, digest_b)):
+        db.add(ExportRecord(
+            id=new_id("exp"),
+            tenant_id=team_id,
+            world_id=world_id,
+            version_id=ver_row.id,
+            format=body.format,
+            size_bytes=0,
+            artifact_uri=f"sha256://{dig}",
+        ))
+    await db.commit()
 
     return {
         "world_id": world_id,

@@ -1,6 +1,12 @@
 """Segmentation engine adapter for Reality Engine's multi-engine platform.
 
 Wraps SAM 2.1 (or SAM 2.1 Hiera) into the UnifiedEngineOutput contract.
+
+``torch`` and ``transformers`` are optional extras: they are imported inside the
+functions that need them, so this module — and the tests that import it — stay
+importable on installs without them. Model loading is strictly offline:
+reconstruction never downloads weights, and a missing local cache is reported as
+``status="unavailable"`` together with the explicit download command.
 """
 
 from __future__ import annotations
@@ -11,9 +17,10 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-import torch
 
 from perception.engine_evidence import (
+    CoordinateFrame,
+    ModelIdentity,
     ObservationRecord,
     UnifiedEngineOutput,
 )
@@ -21,11 +28,24 @@ from perception.engine_orchestrator import EngineSpec, register_engine
 
 log = logging.getLogger("reality.segmentation_adapter")
 
+_SAM2_MODEL = "facebook/sam2.1-hiera-small"
+_SAM2_DOWNLOAD_HINT = (
+    "reconstruction never downloads weights; fetch them explicitly with "
+    f"`huggingface-cli download {_SAM2_MODEL}`"
+)
+
 
 def _sam2_available() -> str | None:
+    """``None`` when SAM2 can run here, else the precise missing dependency.
+
+    ``torch`` is probed first: it is the optional extra CI does not install, and
+    naming it is more useful than reporting only the transformers failure that
+    follows from it.
+    """
     try:
         from importlib import import_module
 
+        import_module("torch")
         transformers = import_module("transformers")
         getattr(transformers, "Sam2Model")
         getattr(transformers, "Sam2Processor")
@@ -85,29 +105,50 @@ def _select_best_2d_mask(mask_tensor: Any, iou_scores: Any = None, box_idx: int 
 
 
 def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
+    """Run box-prompted SAM 2.1 over ``image_paths`` and emit one observation per mask.
+
+    ``ctx`` keys: ``run_id``; ``bboxes`` mapping an image path (or basename) to
+    ``[(x1, y1, x2, y2), ...]`` box prompts — SAM 2 needs them and an image with
+    no prompt is skipped rather than guessed; and an optional ``device``
+    override (``"cuda"`` / ``"cpu"``) for hosts that must pin CPU execution.
+    """
+    # Optional extras: importing here (not at module scope) keeps this module
+    # importable, and its tests collectable, where torch is not installed.
+    # Same pattern as perception/depth_adapter.py.
+    import torch
     from transformers import Sam2Model, Sam2Processor
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "segmentation_run")
     obs: list[ObservationRecord] = []
-    model_name = "facebook/sam2.1-hiera-small"
+    model_name = _SAM2_MODEL
     bboxes = ctx.get("bboxes", {})  # {image_path_or_name: [(x1,y1,x2,y2), ...]}
     errors: list[str] = []
     empty_masks = 0
+    device = ctx.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
+
+    if device == "cuda":
+        try:
+            # peak_vram_mb must describe THIS run; without the reset the reported
+            # value is the process high-water mark, including earlier engines'
+            # or earlier runs' allocations. Takes a device, not an index: some
+            # torch builds reject an int here with "Invalid device argument".
+            torch.cuda.reset_peak_memory_stats(device)
+        except Exception as exc:
+            # Metrics must never be reported as a model failure.
+            log.warning("could not reset CUDA peak statistics: %s", exc)
 
     try:
-        try:
-            processor = Sam2Processor.from_pretrained(model_name, local_files_only=True)
-            model = Sam2Model.from_pretrained(model_name, local_files_only=True)
-        except Exception:
-            processor = Sam2Processor.from_pretrained(model_name)
-            model = Sam2Model.from_pretrained(model_name)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Offline only. A missing cache is reported below; it is never papered
+        # over by an implicit download during reconstruction.
+        processor = Sam2Processor.from_pretrained(model_name, local_files_only=True)
+        model = Sam2Model.from_pretrained(model_name, local_files_only=True)
         model = model.to(device).eval()
     except Exception as exc:
         return UnifiedEngineOutput(
             engine_id="sam2", run_id=run_id, observations=(),
-            status="failed", error_message=f"model load failed: {exc}",
+            status="unavailable",
+            error_message=f"checkpoint {model_name} unavailable offline: {exc}; {_SAM2_DOWNLOAD_HINT}",
             wall_time_s=time.perf_counter() - t0,
         )
 
@@ -143,7 +184,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
                     obs.append(ObservationRecord(
                         evidence_id=f"sam2:{img_path}:{i}:{j}",
                         source_image_id=str(img_path),
-                        coordinate_frame=__import__("perception.engine_evidence", fromlist=["CoordinateFrame"]).CoordinateFrame(
+                        coordinate_frame=CoordinateFrame(
                             frame_id="image", scale_state="image", units="pixels"),
                         model_id=ModelIdentity(
                             engine_id="segmentation", architecture_id="sam2", checkpoint_id=model_name,
@@ -181,7 +222,7 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
         status="succeeded" if (obs and not errors) else ("partial" if obs else "failed"),
         error_message="; ".join(errors) if errors else None,
         wall_time_s=time.perf_counter() - t0,
-        peak_vram_mb=_get_vram_peak(),
+        peak_vram_mb=_get_vram_peak(device),
         summary={
             "n_images": len(image_paths),
             "n_masks": len(obs),
@@ -191,8 +232,13 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     )
 
 
-def _get_vram_peak() -> float | None:
+def _get_vram_peak(device: str | None = None) -> float | None:
+    """Peak VRAM allocated by this run, or ``None`` when it did not run on CUDA."""
+    if device is not None and device != "cuda":
+        return None
     try:
+        import torch
+
         if torch.cuda.is_available():
             return torch.cuda.max_memory_allocated(0) / (1024.0 * 1024.0)
     except Exception:

@@ -35,8 +35,8 @@ Everything here is deterministic and testable without a GPU or model weights.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 from perception.ontology import FALLBACK_PATH, get_default_ontology
 
@@ -346,19 +346,35 @@ def nms(
     boxes: Sequence[Sequence[float]],
     scores: Sequence[float],
     iou_threshold: float = 0.5,
+    labels: Sequence[str] | None = None,
 ) -> list[int]:
     """Greedy non-maximum suppression; returns kept indices, highest score first.
 
-    Used to collapse the duplicate boxes that tiled inference produces where
-    tiles overlap. Class-agnostic on purpose: a genuine class disagreement over
-    the same pixels is left to the multi-engine fusion layer, which reports it as
-    a competing hypothesis rather than silently dropping one side here.
+    When ``labels`` is provided, suppression is **class-aware** (only boxes
+    sharing the same normalized label suppress each other), so distinct
+    neighboring classes (e.g. a switch next to a socket or a door handle on a
+    door) are preserved while overlapping tile-boundary duplicates of the same
+    class are merged. When ``labels`` is ``None``, falls back to class-agnostic
+    suppression for backwards compatibility.
     """
     order = sorted(range(len(boxes)), key=lambda i: float(scores[i]), reverse=True)
+    norm_labels = (
+        [" ".join(str(lbl).strip().lower().split()) for lbl in labels]
+        if labels is not None
+        else None
+    )
     kept: list[int] = []
     for i in order:
-        if all(_iou(boxes[i], boxes[j]) <= iou_threshold for j in kept):
-            kept.append(i)
+        if norm_labels is None:
+            if all(_iou(boxes[i], boxes[j]) <= iou_threshold for j in kept):
+                kept.append(i)
+        else:
+            li = norm_labels[i]
+            if all(
+                (li != norm_labels[j]) or (_iou(boxes[i], boxes[j]) <= iou_threshold)
+                for j in kept
+            ):
+                kept.append(i)
     return kept
 
 

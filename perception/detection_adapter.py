@@ -87,12 +87,8 @@ def _load_detector(model_name: str = DEFAULT_MODEL) -> tuple[Any, Any, str]:
     """
     from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
-    try:
-        processor = AutoProcessor.from_pretrained(model_name, local_files_only=True)
-        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name, local_files_only=True)
-    except Exception:
-        processor = AutoProcessor.from_pretrained(model_name)
-        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
+    processor = AutoProcessor.from_pretrained(model_name, local_files_only=True)
+    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name, local_files_only=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device).eval()
     return processor, model, device
@@ -176,15 +172,24 @@ def _detect_tiled(
     if not merged:
         return [], len(windows)
 
-    keep = nms(
-        [m[0] for m in merged],
-        [m[1] if m[1] is not None else 0.0 for m in merged],
-    )
+    import inspect
+
+    boxes_arg = [m[0] for m in merged]
+    scores_arg = [m[1] if m[1] is not None else 0.0 for m in merged]
+    if "labels" in inspect.signature(nms).parameters:
+        keep = nms(boxes_arg, scores_arg, labels=[m[2] for m in merged])
+    else:
+        keep = nms(boxes_arg, scores_arg)
     return [merged[i] for i in keep], len(windows)
 
 
 def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     t0 = time.perf_counter()
+    if torch is not None and torch.cuda.is_available():
+        try:
+            torch.cuda.reset_peak_memory_stats(0)
+        except Exception:
+            pass
     run_id = ctx.get("run_id", "detection_run")
     obs: list[ObservationRecord] = []
     model_name = str(ctx.get("model_name") or DEFAULT_MODEL)
@@ -218,6 +223,7 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
         )
 
     skipped_blank: list[str] = []
+    failed_images: list[dict[str, str]] = []
     n_unresolved = 0
     tiles_total = 0
     for img_path in image_paths:
@@ -253,7 +259,7 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
                     model_id=ModelIdentity(
                         engine_id="detection", architecture_id="grounding_dino",
                         checkpoint_id=model_name, license="Apache-2.0",
-                        hardware_class="gpu"),
+                        hardware_class=device),
                     label=label,
                     category=grounding.category,
                     bbox_px=box,
@@ -272,6 +278,7 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
                 ))
         except Exception as exc:
             log.warning("Grounding DINO failed for %s: %s", img_path, exc)
+            failed_images.append({"image": str(img_path), "error": f"{type(exc).__name__}: {exc}"})
 
     try:
         del model
@@ -281,9 +288,17 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
         pass
 
     n_small = sum(1 for o in obs if bool(o.metadata.get("is_small")))
+    if failed_images and not obs:
+        status = "failed"
+    elif failed_images or (not obs and skipped_blank):
+        status = "partial"
+    elif obs:
+        status = "succeeded"
+    else:
+        status = "partial"
     return UnifiedEngineOutput(
         engine_id="grounding_dino", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if (obs or skipped_blank) else "partial",
+        status=status,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=_get_vram_peak(),
         summary={
@@ -292,6 +307,7 @@ def _grounding_dino_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngine
             "n_small_detections": n_small,
             "n_unresolved_labels": n_unresolved,
             "skipped_blank_images": skipped_blank,
+            "failed_images": failed_images,
             "n_queries": len(queries),
             "query_source": query_source,
             "domain": domain,

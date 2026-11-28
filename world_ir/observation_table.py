@@ -88,7 +88,7 @@ class ObservationTable:
         t = cls.empty(len(obs))
         for i, o in enumerate(obs):
             t.obs_id[i], t.image_id[i], t.class_path[i], t.model[i] = o.observation_id, o.image_id, o.label, o.model
-            t.world_pos[i], t.sigma_m[i], t.score[i] = o.world_pos, o.sigma_m, o.confidence
+            t.world_pos[i], t.sigma_m[i], t.score[i] = o.world_pos, o.sigma_m, (o.confidence if o.confidence is not None else float("nan"))
             if o.bbox_px:
                 t.bbox_px[i] = o.bbox_px
             if o.visibility is not None:
@@ -103,7 +103,7 @@ class ObservationTable:
             out.append(Observation(
                 observation_id=str(self.obs_id[i]), image_id=str(self.image_id[i]), label=str(self.class_path[i]),
                 world_pos=tuple(float(x) for x in self.world_pos[i]), sigma_m=float(self.sigma_m[i]),
-                depth_source=DepthSource.RELATIVE, model=str(self.model[i]), confidence=float(self.score[i]),
+                depth_source=DepthSource.RELATIVE, model=str(self.model[i]), confidence=(None if self.score[i] != self.score[i] else float(self.score[i])),
                 bbox_px=tuple(float(x) for x in self.bbox_px[i]), visibility=_VIS_INV.get(v),
             ))
         return out

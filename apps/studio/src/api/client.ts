@@ -46,8 +46,50 @@ export class RealityStudioClient {
     return (await resp.json()) as T;
   }
 
-  listWorlds(): Promise<WorldSummary[]> {
-    return this.request<WorldSummary[]>('/worlds');
+  signup(
+    email: string,
+    password: string,
+    tenantName: string,
+    fullName = 'Studio Operator',
+  ): Promise<{ token: string; user: { email: string } }> {
+    return this.request('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, tenant_name: tenantName, full_name: fullName }),
+    });
+  }
+
+  login(email: string, password: string): Promise<{ token: string; user: { email: string } }> {
+    return this.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  createSession(name: string): Promise<{ id: string; name?: string }> {
+    return this.request('/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  uploadImage(sessionId: string, file: File): Promise<{ id: string; filename?: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.request(`/uploads?session_id=${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+      body: form,
+    });
+  }
+
+  attachSession(worldId: string, sessionId: string): Promise<Record<string, unknown>> {
+    return this.request(`/worlds/${encodeURIComponent(worldId)}/attach/${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+    });
+  }
+
+  async listWorlds(): Promise<WorldSummary[]> {
+    const res = await this.request<WorldSummary[] | { items: WorldSummary[] }>('/worlds');
+    return Array.isArray(res) ? res : (res.items ?? []);
   }
 
   createWorld(name: string): Promise<WorldSummary> {
@@ -57,10 +99,9 @@ export class RealityStudioClient {
     });
   }
 
-  triggerReconstruction(worldId: string, sessionId: string): Promise<{ job_id: string; status: string }> {
-    return this.request('/reconstructions', {
+  triggerReconstruction(sessionId: string): Promise<{ job_id: string; status: string }> {
+    return this.request(`/sessions/${encodeURIComponent(sessionId)}/reconstruct`, {
       method: 'POST',
-      body: JSON.stringify({ world_id: worldId, session_id: sessionId }),
     });
   }
 
@@ -73,8 +114,11 @@ export class RealityStudioClient {
     return this.request<WorldIRPayload>(`/worlds/${encodeURIComponent(worldId)}/worldir${q}`);
   }
 
-  getVersions(worldId: string): Promise<WorldVersionInfo[]> {
-    return this.request<WorldVersionInfo[]>(`/worlds/${encodeURIComponent(worldId)}/versions`);
+  async getVersions(worldId: string): Promise<WorldVersionInfo[]> {
+    const res = await this.request<WorldVersionInfo[] | { items?: WorldVersionInfo[]; versions?: WorldVersionInfo[] }>(
+      `/worlds/${encodeURIComponent(worldId)}/versions`,
+    );
+    return Array.isArray(res) ? res : (res.items ?? res.versions ?? []);
   }
 
   getPoints(worldId: string): Promise<PointCloudResponse> {

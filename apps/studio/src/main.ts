@@ -20,33 +20,44 @@ const STAGES: Array<{ id: WorkflowStage; label: string }> = [
   { id: 'export', label: '7. Export' },
 ];
 
+const TOKEN_KEY = 'reality_studio_token';
+
 const client = new RealityStudioClient(
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? '/api',
+  () => localStorage.getItem(TOKEN_KEY),
 );
 
 const state: {
   stage: WorkflowStage;
+  userEmail: string | null;
   worlds: WorldSummary[];
   worldId: string;
+  sessionId: string;
   world: WorldIRPayload | null;
   versions: WorldVersionInfo[];
   selectedEntityId: string | null;
   provenance: EntityProvenanceResponse | null;
   confidence: EntityConfidenceResponse | null;
   diff: WorldDiffResponse | null;
+  loading: boolean;
+  errorMessage: string | null;
   statusMessage: string;
   layers: LayerVisibility;
 } = {
   stage: 'project',
+  userEmail: null,
   worlds: [],
   worldId: '',
+  sessionId: '',
   world: null,
   versions: [],
   selectedEntityId: null,
   provenance: null,
   confidence: null,
   diff: null,
-  statusMessage: 'Connect to Reality Engine API and select a world.',
+  loading: false,
+  errorMessage: null,
+  statusMessage: 'Sign in or create a project to begin.',
   layers: {
     geometry: true,
     pointCloud: true,
@@ -69,11 +80,18 @@ function formatConfidence(val: number | null | undefined): string {
   return val == null ? 'Not measured' : `${(val * 100).toFixed(1)}%`;
 }
 
+function setError(err: unknown): void {
+  state.errorMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+}
+
 async function selectEntity(entityId: string | null): Promise<void> {
   state.selectedEntityId = entityId;
   state.provenance = null;
   state.confidence = null;
+  state.errorMessage = null;
   if (entityId && state.worldId) {
+    state.loading = true;
+    renderSidebar();
     try {
       const [prov, conf] = await Promise.all([
         client.getEntityProvenance(state.worldId, entityId),
@@ -82,7 +100,9 @@ async function selectEntity(entityId: string | null): Promise<void> {
       state.provenance = prov;
       state.confidence = conf;
     } catch (err) {
-      state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+      setError(err);
+    } finally {
+      state.loading = false;
     }
   }
   renderSidebar();
@@ -91,23 +111,45 @@ async function selectEntity(entityId: string | null): Promise<void> {
 async function loadWorld(worldId: string): Promise<void> {
   state.worldId = worldId;
   state.selectedEntityId = null;
+  state.errorMessage = null;
+  state.loading = true;
+  renderSidebar();
   try {
-    const [world, versions] = await Promise.all([
-      client.getWorldIR(worldId),
-      client.getVersions(worldId),
-    ]);
-    state.world = world;
+    const versions = await client.getVersions(worldId);
     state.versions = versions;
-    scene3d?.setWorld(world, state.layers.uncertaintyColoring);
-    scene3d?.setLayerVisibility(state.layers);
+    if (versions.length === 0) {
+      state.world = null;
+      state.statusMessage = `World ${worldId} has 0 versions yet — upload images and reconstruct.`;
+    } else {
+      const world = await client.getWorldIR(worldId);
+      state.world = world;
+      scene3d?.setWorld(world, state.layers.uncertaintyColoring);
+      scene3d?.setLayerVisibility(state.layers);
 
-    // Optional point cloud and camera overlays
-    client.getPoints(worldId).then((pts) => scene3d?.setPointCloud(pts)).catch(() => {});
-    client.getCameras(worldId).then((cams) => scene3d?.setCameras(cams.cameras ?? [])).catch(() => {});
+      client.getPoints(worldId).then((pts) => scene3d?.setPointCloud(pts)).catch(() => {});
+      client.getCameras(worldId).then((cams) => scene3d?.setCameras(cams.cameras ?? [])).catch(() => {});
 
-    state.statusMessage = `Loaded ${Object.keys(world.entities ?? {}).length} entities (${versions.length} versions).`;
+      state.statusMessage = `Loaded ${Object.keys(world.entities ?? {}).length} entities (${versions.length} versions).`;
+    }
   } catch (err) {
-    state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+    setError(err);
+  } finally {
+    state.loading = false;
+  }
+  renderSidebar();
+}
+
+async function refreshWorlds(): Promise<void> {
+  state.loading = true;
+  state.errorMessage = null;
+  renderSidebar();
+  try {
+    state.worlds = await client.listWorlds();
+    state.statusMessage = `Found ${state.worlds.length} worlds.`;
+  } catch (err) {
+    setError(err);
+  } finally {
+    state.loading = false;
   }
   renderSidebar();
 }
@@ -131,14 +173,33 @@ function renderWorkflowBar(): void {
 function renderSidebar(): void {
   const panel = document.getElementById('side-panel');
   const statusEl = document.getElementById('status-bar');
-  if (statusEl) statusEl.textContent = state.statusMessage;
+  if (statusEl) {
+    statusEl.textContent = state.loading ? `Loading... ${state.statusMessage}` : state.statusMessage;
+    statusEl.setAttribute('data-loading', String(state.loading));
+  }
   if (!panel) return;
 
   const entity = state.selectedEntityId && state.world ? state.world.entities[state.selectedEntityId] : null;
+  const entityIds = Object.keys(state.world?.entities ?? {});
 
   panel.innerHTML = `
+    ${state.errorMessage ? `<div class="card error-banner" data-error="true">${esc(state.errorMessage)}</div>` : ''}
+
     <section class="card">
-      <h3>Stage: ${esc(state.stage.toUpperCase())}</h3>
+      <h3>1. Account &amp; Project</h3>
+      <div class="muted">${state.userEmail ? `Signed in: ${esc(state.userEmail)}` : 'Not signed in'}</div>
+      <div class="row">
+        <input id="auth-email" placeholder="Email" />
+        <input id="auth-pass" type="password" placeholder="Password" />
+      </div>
+      <div class="row">
+        <button id="login-btn">Log In</button>
+        <button id="signup-btn">Sign Up</button>
+      </div>
+      <div class="row">
+        <input id="new-world-name" placeholder="New project/world name" />
+        <button id="create-world-btn">Create World</button>
+      </div>
       <div class="row">
         <select id="world-select">
           <option value="">-- Select World --</option>
@@ -146,16 +207,35 @@ function renderSidebar(): void {
         </select>
         <button id="refresh-worlds-btn">Refresh</button>
       </div>
+    </section>
+
+    <section class="card">
+      <h3>2 &amp; 3. Upload &amp; Reconstruct</h3>
+      <div class="muted">Session: <code>${esc(state.sessionId || 'none')}</code></div>
+      <div class="row">
+        <input id="upload-files" type="file" accept="image/*" multiple />
+        <button id="upload-btn" ${state.worldId ? '' : 'disabled'}>Upload</button>
+      </div>
+      <div class="row">
+        <button id="reconstruct-btn" ${state.worldId && state.sessionId ? '' : 'disabled'}>Reconstruct</button>
+        <button id="status-btn" ${state.worldId ? '' : 'disabled'}>Check Status</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>4. 3D Layers &amp; Evidence</h3>
       <div class="row layers">
         <label><input type="checkbox" id="lyr-geo" ${state.layers.geometry ? 'checked' : ''}/> Geometry</label>
         <label><input type="checkbox" id="lyr-pts" ${state.layers.pointCloud ? 'checked' : ''}/> Points</label>
         <label><input type="checkbox" id="lyr-cam" ${state.layers.cameras ? 'checked' : ''}/> Cameras</label>
         <label><input type="checkbox" id="lyr-unc" ${state.layers.uncertaintyColoring ? 'checked' : ''}/> Confidence</label>
       </div>
-    </section>
-
-    <section class="card">
-      <h3>Evidence &amp; Transparency</h3>
+      <div class="row">
+        <select id="entity-select">
+          <option value="">-- Inspect Entity (${entityIds.length}) --</option>
+          ${entityIds.map((eid) => `<option value="${esc(eid)}" ${eid === state.selectedEntityId ? 'selected' : ''}>${esc(state.world?.entities[eid]?.name || eid)} (${esc(eid)})</option>`).join('')}
+        </select>
+      </div>
       ${
         entity
           ? `
@@ -167,34 +247,35 @@ function renderSidebar(): void {
         <div>Source sessions: ${state.provenance?.source_sessions?.length ?? 0}</div>
         <div>Relationships: ${entity.relationships?.length ?? 0}</div>
         `
-          : '<div class="muted">Click any 3D entity in the viewport to inspect supporting observations, engines, and uncertainty.</div>'
+          : '<div class="muted">Select or click an entity to inspect provenance, observations, and uncertainty.</div>'
       }
     </section>
 
     <section class="card">
-      <h3>Corrections (Auditable Version)</h3>
+      <h3>5. Corrections</h3>
       <div class="row">
         <input id="reclass-input" placeholder="New ontology class (e.g. architecture/door)" />
         <button id="reclass-btn" ${entity ? '' : 'disabled'}>Reclassify</button>
       </div>
+      <div class="row">
+        <button id="split-btn" ${entity ? '' : 'disabled'}>Split X (0.5)</button>
+      </div>
     </section>
 
     <section class="card">
-      <h3>Version Diff</h3>
-      <button id="diff-btn" ${state.worldId ? '' : 'disabled'}>Compare Latest vs Parent</button>
+      <h3>6 &amp; 7. Compare &amp; Export</h3>
+      <div class="row">
+        <button id="diff-btn" ${state.worldId ? '' : 'disabled'}>Compare Versions</button>
+      </div>
       ${
         state.diff
-          ? `<div class="diff-box">
+          ? `<div class="diff-box" data-diff="true">
               <div>Added: ${state.diff.added_entities.length}</div>
               <div>Removed: ${state.diff.removed_entities.length}</div>
               <div>Changed: ${state.diff.changed_entities.length}</div>
             </div>`
-          : '<div class="muted">Run diff to inspect added, removed, and changed entities.</div>'
+          : ''
       }
-    </section>
-
-    <section class="card">
-      <h3>Export</h3>
       <div class="row">
         <select id="export-fmt">
           <option value="gltf">glTF (.gltf)</option>
@@ -206,14 +287,131 @@ function renderSidebar(): void {
     </section>
   `;
 
+  const loginBtn = document.getElementById('login-btn');
+  if (loginBtn) {
+    loginBtn.onclick = async () => {
+      const email = (document.getElementById('auth-email') as HTMLInputElement)?.value.trim();
+      const pass = (document.getElementById('auth-pass') as HTMLInputElement)?.value;
+      if (!email || !pass) return;
+      try {
+        const res = await client.login(email, pass);
+        localStorage.setItem(TOKEN_KEY, res.token);
+        state.userEmail = res.user.email;
+        state.statusMessage = `Signed in as ${res.user.email}`;
+        await refreshWorlds();
+      } catch (err) {
+        setError(err);
+        renderSidebar();
+      }
+    };
+  }
+
+  const signupBtn = document.getElementById('signup-btn');
+  if (signupBtn) {
+    signupBtn.onclick = async () => {
+      const email = (document.getElementById('auth-email') as HTMLInputElement)?.value.trim();
+      const pass = (document.getElementById('auth-pass') as HTMLInputElement)?.value;
+      if (!email || !pass) return;
+      try {
+        const res = await client.signup(email, pass, 'Reality Studio Org');
+        localStorage.setItem(TOKEN_KEY, res.token);
+        state.userEmail = res.user.email;
+        state.statusMessage = `Registered & signed in as ${res.user.email}`;
+        await refreshWorlds();
+      } catch (err) {
+        setError(err);
+        renderSidebar();
+      }
+    };
+  }
+
+  const createWorldBtn = document.getElementById('create-world-btn');
+  if (createWorldBtn) {
+    createWorldBtn.onclick = async () => {
+      const name = (document.getElementById('new-world-name') as HTMLInputElement)?.value.trim();
+      if (!name) return;
+      try {
+        const w = await client.createWorld(name);
+        state.worlds = [w, ...state.worlds];
+        state.statusMessage = `Created world ${w.name} (${w.id})`;
+        await loadWorld(w.id);
+      } catch (err) {
+        setError(err);
+        renderSidebar();
+      }
+    };
+  }
+
   const worldSel = document.getElementById('world-select') as HTMLSelectElement | null;
   if (worldSel) {
     worldSel.onchange = () => {
       if (worldSel.value) void loadWorld(worldSel.value);
     };
   }
+
+  const entitySel = document.getElementById('entity-select') as HTMLSelectElement | null;
+  if (entitySel) {
+    entitySel.onchange = () => {
+      void selectEntity(entitySel.value || null);
+    };
+  }
+
   const refreshBtn = document.getElementById('refresh-worlds-btn');
   if (refreshBtn) refreshBtn.onclick = () => void refreshWorlds();
+
+  const uploadBtn = document.getElementById('upload-btn');
+  if (uploadBtn && state.worldId) {
+    uploadBtn.onclick = async () => {
+      const fileInput = document.getElementById('upload-files') as HTMLInputElement | null;
+      const files = Array.from(fileInput?.files ?? []);
+      if (!files.length) return;
+      state.loading = true;
+      state.errorMessage = null;
+      renderSidebar();
+      try {
+        if (!state.sessionId) {
+          const sess = await client.createSession(`studio-${Date.now()}`);
+          state.sessionId = sess.id;
+          await client.attachSession(state.worldId, sess.id);
+        }
+        for (const f of files) {
+          await client.uploadImage(state.sessionId, f);
+        }
+        state.statusMessage = `Uploaded ${files.length} image(s) to session ${state.sessionId}.`;
+      } catch (err) {
+        setError(err);
+      } finally {
+        state.loading = false;
+      }
+      renderSidebar();
+    };
+  }
+
+  const reconBtn = document.getElementById('reconstruct-btn');
+  if (reconBtn && state.worldId && state.sessionId) {
+    reconBtn.onclick = async () => {
+      try {
+        const res = await client.triggerReconstruction(state.sessionId);
+        state.statusMessage = `Reconstruction ${res.status} (job ${res.job_id})`;
+      } catch (err) {
+        setError(err);
+      }
+      renderSidebar();
+    };
+  }
+
+  const statusBtn = document.getElementById('status-btn');
+  if (statusBtn && state.worldId) {
+    statusBtn.onclick = async () => {
+      try {
+        const res = await client.getReconstructionStatus(state.worldId);
+        state.statusMessage = `Reconstruction status: ${res.status}`;
+      } catch (err) {
+        setError(err);
+      }
+      renderSidebar();
+    };
+  }
 
   (['geo', 'pts', 'cam', 'unc'] as const).forEach((k) => {
     const el = document.getElementById(`lyr-${k}`) as HTMLInputElement | null;
@@ -233,15 +431,28 @@ function renderSidebar(): void {
   const reclassBtn = document.getElementById('reclass-btn');
   if (reclassBtn && entity) {
     reclassBtn.onclick = async () => {
-      const inp = document.getElementById('reclass-input') as HTMLInputElement | null;
-      const newClass = inp?.value.trim();
+      const newClass = (document.getElementById('reclass-input') as HTMLInputElement | null)?.value.trim();
       if (!newClass) return;
       try {
         await client.reclassifyEntity(state.worldId, entity.id, newClass, 'Studio correction');
         state.statusMessage = `Reclassified ${entity.id} -> ${newClass}`;
         await loadWorld(state.worldId);
       } catch (err) {
-        state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+        setError(err);
+        renderSidebar();
+      }
+    };
+  }
+
+  const splitBtn = document.getElementById('split-btn');
+  if (splitBtn && entity) {
+    splitBtn.onclick = async () => {
+      try {
+        await client.splitEntity(state.worldId, entity.id, 'x', 0.5, 'Studio split');
+        state.statusMessage = `Split ${entity.id} along X`;
+        await loadWorld(state.worldId);
+      } catch (err) {
+        setError(err);
         renderSidebar();
       }
     };
@@ -254,7 +465,7 @@ function renderSidebar(): void {
         state.diff = await client.getDiff(state.worldId);
         state.statusMessage = 'Loaded version diff.';
       } catch (err) {
-        state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+        setError(err);
       }
       renderSidebar();
     };
@@ -268,21 +479,11 @@ function renderSidebar(): void {
         const res = await client.exportWorld(state.worldId, fmt);
         state.statusMessage = `Exported ${fmt}: ${res.content_hash}`;
       } catch (err) {
-        state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
+        setError(err);
       }
       renderSidebar();
     };
   }
-}
-
-async function refreshWorlds(): Promise<void> {
-  try {
-    state.worlds = await client.listWorlds();
-    state.statusMessage = `Found ${state.worlds.length} worlds.`;
-  } catch (err) {
-    state.statusMessage = err instanceof StudioApiError ? `API ${err.status}: ${err.message}` : String(err);
-  }
-  renderSidebar();
 }
 
 function mount(): void {
@@ -308,7 +509,6 @@ function mount(): void {
   }
   renderWorkflowBar();
   renderSidebar();
-  void refreshWorlds();
 }
 
 mount();

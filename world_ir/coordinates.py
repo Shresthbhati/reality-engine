@@ -215,5 +215,5 @@ def make_rigid_transform(
         source_frame=source_frame,
         target_frame=target_frame,
         matrix=matrix,
-        uncertainty=uncertainty or Uncertainty(confidence=1.0),
+        uncertainty=uncertainty if uncertainty is not None else Uncertainty(),
     )

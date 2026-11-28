@@ -72,7 +72,7 @@ class Observation:
     normal: Optional[Vec] = None
     bounds_min: Optional[Vec] = None
     bounds_max: Optional[Vec] = None
-    confidence: float = 0.5
+    confidence: Optional[float] = None  # None = not measured; never a fabricated 0.5
     #: 2D evidence the lift came from (doc 11): a stored mask artifact URI and/or a pixel box (x0, y0, x1, y1).
     mask_uri: Optional[str] = None
     bbox_px: Optional[Tuple[float, float, float, float]] = None
@@ -112,7 +112,7 @@ class Observation:
             world_pos=vec(d["world_pos"]), sigma_m=float(d["sigma_m"]), depth_source=DepthSource(d["depth_source"]),
             model=d.get("model", "unknown@unknown"), license=d.get("license", "unknown"),
             normal=vec(d.get("normal")), bounds_min=vec(d.get("bounds_min")), bounds_max=vec(d.get("bounds_max")),
-            confidence=d.get("confidence", 0.5), mask_uri=d.get("mask_uri"), bbox_px=vec(d.get("bbox_px")),
+            confidence=d.get("confidence"), mask_uri=d.get("mask_uri"), bbox_px=vec(d.get("bbox_px")),
             visibility=Visibility(vis) if vis else None, embedding_ref=d.get("embedding_ref"),
             session_id=d.get("session_id"), created_at=d.get("created_at"),
         )

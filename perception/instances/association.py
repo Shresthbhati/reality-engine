@@ -191,7 +191,7 @@ def _new_entity(
         bounds_max=None if o.bounds_max is None else np.asarray(o.bounds_max, dtype=float),
         observation_ids=[o.observation_id],
         image_ids={o.image_id},
-        confidence=o.confidence,
+        confidence=o.confidence if o.confidence is not None else 0.0,
         ambiguous_with=ambiguous_with,
         appearance_embedding=appearance_embedding,
     )
@@ -234,7 +234,8 @@ def _fuse(
 
     e.observation_ids.append(o.observation_id)
     e.image_ids.add(o.image_id)
-    e.confidence = max(e.confidence, 1.0 - (1.0 - e.confidence) * (1.0 - o.confidence))
+    if o.confidence is not None:
+        e.confidence = max(e.confidence, 1.0 - (1.0 - e.confidence) * (1.0 - o.confidence))
 
 
 def _compute_appearance_sim(

@@ -26,7 +26,72 @@ rules:
   do_not_reimplement_without_reason: true
   disaster_is_not_core: true
 
+# --- KiloCode session 2026-11-26 (independent production engineering + verification) ---
+# Branch: feat/day4-real-geometry-measurements @ 2e15cd44 (PR #395 MERGED per gh; branch ref confirms)
+# Completed (committed):
+#   - 5a51204a refactor(multiengine): real Unit/Provenance imports in evidence_fusion.py (+ test sync); 811->765 lines
+#   - 36050335 feat(spatial): KiloCode object occlusion reasoning module perception/spatial_intelligence/occlusion.py (407 lines)
+#   - 55f78109 test(spatial): tests/test_spatial_occlusion.py (262 lines, 13 tests)
+#   - 59ca5a39 / 8aa06d06 docs(recovery): KILOCODE_200K_ENGINEERING_REPORT.md + KILOCODE_DELIVERY_LEDGER.yaml
+#   - 2e15cd44 feat(api): upload dedup in create_upload (stash@{6} port) + test_upload_deduplicates_byte_identical_content
+# Comparison verdicts (this session): BA consolidation §4.3 — untracked bundle_adjustment.py is superior algorithm
+#   (true sparse-LM BA) vs committed BundleAdjustmentOptimizer (point refiner); NOT committed, decision deferred Option A/B/C.
+#   Ops stash §4.1 — CONFLICTING; _run_reconstruct_session rewrite NOT ported; upload dedup ported; do NOT drop stash.
+# Verification (this session): fusion 19/19 (8 previously failing now fixed); occlusion 13/13; upload dedup 1/1;
+# focused regression suite 138 passed, 0 failed.
+# Defects found+fixed (independent verification): duplicate Provenance/Unit stub; write_fused_back link-before-store;
+# _fuse_bboxes cross-source drop; _fuse_scalar_quantity None confidence.
+# No new external dependencies. Docs/engineering plan/backlog/state docs NOT recreated (AGENTS.md §51).
+# Persistent memory: .agent/EXECUTION_STATE.md + .agent/TASKS.yaml.
+# -----------------------------------------------------------------------------
+
 tasks:
+
+  # ================= 52-WEEK MASTER ENGINEERING PROGRAMME =================
+  # Governing queue for the one-year Reality Engine engineering mandate.
+  # This entry is the programme; the week-by-week scope lives in the mandate
+  # (Assembly은 RED. Do not recreate deleted docs/engineering plan/backlog/state
+  # documents per AGENTS.md §51. Persistent memory = this file + EXECUTION_STATE.md.
+  # Status is advanced only with evidence, in the same change (docs/status.yaml).
+  # Priority within the programme follows the mandate §13 task-selection order:
+  # broken production functionality → missing producer-consumer integrations →
+  # core reconstruction accuracy blockers → missing generalized evidence fusion →
+  # missing camera/depth/geometry → architectural/object intelligence → WorldIR/persistence
+  # → video/temporal → advanced representations → application workflows → performance →
+  # technology expansion → documentation/maintenance.
+  # The mandate is the WHAT; the current source state (reconciled this session) is the
+  # starting point; EXECUTION_STATE.md records where implementation actually resumes.
+  - id: P-52W-00
+    name: 52-week master engineering programme (governing queue)
+    status: NOW
+    evidence: >
+      Mandate received this session. Reconciled against current source: branch
+      feat/day4-real-geometry-measurements @ 156f3e36 (clean tree, PR #395 open), all
+      named production wiring present and connected (engine_orchestrator, engine_adapters,
+      engine_matrix_bridge, evidence_matrix, depth_to_points, evidence_world_stage, WorldIR,
+      WorldStore), and the three Day-6 depth defects already implemented/committed/pushed
+      (156f3e36 + 0e78c2db + fba6a486). No docs/engineering IMPLEMENTATION_LEDGER/
+      IMPLEMENTATION_BACKLOG/24_7_EXECUTION_STATE/NEXT_ACTION/52_WEEK_MASTER_PROGRAMME
+      created — AGENTS.md §51 forbids recreating deleted plan/backlog/state docs; memory
+      goes into .agent/EXECUTION_STATE.md + .agent/TASKS.yaml.
+    scope: >
+      Implement the 52-week master programme as one continuous engineering effort, starting
+      from the reconciled current state. Do not stop at the first working pipeline; do not
+      confuse integration with accuracy; do not claim completion without evidence; do not
+      recreate deleted plan documents. Advance status items in docs/status.yaml only with
+      evidence, in the same change.
+    verification:
+      - "session-start reconciliation done: source inspected, state recorded in EXECUTION_STATE.md, governing task added to TASKS.yaml"
+      - "next implementation work package selected from current state + mandate priority order, not from a recreated backlog"
+    next_action: >
+      Choose the next implementation work package from the mandate §13 priority order applied
+      to the reconciled current state. First candidate family: Quarter 1 generalized evidence
+      normalization + task-specific fusion (mandate §2, Weeks 1–12) — scope an explicit
+      task-specific fusion implementation (reliability/uncertainty/consistency-weighted, no
+      blind averaging) that consumes existing Evidence Matrix observations and writes fused
+      evidence back, since the unified contract + orchestrator + matrix bridge + evidence flow
+      already exist. Record the chosen work package and its verification in EXECUTION_STATE.md
+      before editing production code.
 
   # ================= PHASE 0 — ARCHITECTURAL RESET =================
 
@@ -1918,3 +1983,5 @@ tasks:
     remaining:
       - "Phase 1 reopens if the user supplies the original geometries symptom"
       - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"
+
+# 1M wave-1 recorded; see docs/engineering/OPENCODE_DELIVERY_LEDGER.yaml wave_1m_backend_infra

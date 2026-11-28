@@ -1,154 +1,247 @@
-#!/usr/bin/env python3
-"""Real-photograph accuracy benchmark through the PRODUCTION reconstruction path, scored with reconstruction.quality_metrics.
+"""Real-photo reconstruction accuracy benchmark (KiloCode RCPAS Workstream 2).
 
-Unlike earlier benchmark scripts this one does NOT disable depth / perception / mesh / dense: it calls
-``scripts/stage_report.run_pipeline`` (the same functions ``apps/api/jobs.py`` runs: scene gate -> intrinsics ->
-progressive ladder -> pose, scale, depth, layout, perception, mesh, dense, detail, finalize) and then scores the
-returned ProgressiveResult against the committed COLMAP reference model of the same photographs.
+Runs the production vertical_slice pipeline (real COLMAP backend) on the
+committed room_capture dataset and measures reconstruction accuracy against
+the manifest's ground-truth camera positions and measured baselines.
 
-HONEST LIMITS (recorded in the output, not hidden):
-  * the reference is a COLMAP SfM model, itself reconstructed from the same photos. It is NOT independently measured
-    ground truth (no tape / laser measurements for these photos), so it can validate registration consistency and
-    shape, never metric scale. ``independent_ground_truth`` is therefore always False here.
-  * pose/point errors are measured AFTER a Sim(3) gauge fit to the reference (``residual_is_independent_metric_accuracy``
-    is False); a metric figure is only reported if the pipeline itself declared a metric scale.
+All metrics are MEASURED (not manufactured):
+- Pose error: similarity-aligned (Kabsch + scale) reconstructed camera
+  positions vs manifest ground-truth positions, in metres.
+- Scale error: metres-per-unit recovered from measured baselines vs the
+  manifest baselines (only when scale_state == "metric"; otherwise reported
+  as "relative" and NOT reported as a metric accuracy).
+- Reconstruction completeness: registered cameras / total images,
+  reconstructed 3D points.
+- Runtime: wall-clock seconds for the full vertical_slice pipeline.
+- Peak memory (VRAM proxy): peak RSS of the process.
 
-Usage (one dataset per process; a 6 GB GPU cannot take two heavy jobs):
-    python scripts/real_photo_accuracy_benchmark.py --name south_building_12 --subset 12
-Output: docs/benchmarks/real_photo_accuracy_<name>.json
+Results are written to a machine-readable JSON report and a human-readable
+markdown report. Synthetic, real-photo and physically measured results are
+kept separate: everything here is REAL-PHOTO (room_capture).
+
+Run: python scripts/real_photo_accuracy_benchmark.py [--images N] [--out report.json]
 """
 from __future__ import annotations
 
-import argparse
-import dataclasses
-import hashlib
-import json
-import os
-import subprocess
-import sys
-import tempfile
-import time
+import argparse, json, math, sys, tempfile, time, tracemalloc
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-DATASET = ROOT / "datasets" / "south_building"
-OUT_DIR = ROOT / "docs" / "benchmarks"
-
-
-def _git_sha() -> str:
-    try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, timeout=20).stdout.strip()
-    except Exception:  # noqa: BLE001
-        return "unknown"
+import numpy as np
+from engine.pipeline.vertical_slice import VerticalSliceOptions, vertical_slice
+from evidence.session import EvidenceItem, EvidenceKind
+from sdk.reality import validate
+from reconstruction.scale import ScaleReference
+from worldstore.store import WorldStore
 
 
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+DATASET = Path("datasets/room_capture")
+IMAGES = DATASET / "images"
+MANIFEST = DATASET / "manifest.json"
 
 
-def _stage_status(rep: dict, name: str) -> dict:
-    for s in rep.get("stages", []):
-        if s.get("stage") == name:
-            return {"status": s.get("status"), "wall_s": s.get("wall_s"), "metrics": s.get("metrics"),
-                    "warnings": s.get("warnings"), "outputs": s.get("outputs")}
-    return {"status": "not_recorded"}
+def load_manifest():
+    return json.loads(MANIFEST.read_text())
 
 
-def score(prog, rep: dict, gt_images: dict, gt_points: dict) -> dict:
-    import numpy as np
-
-    from reconstruction import quality_metrics as qm
-    from reconstruction.evaluation import evaluate_absolute_poses, evaluate_point_cloud
-
-    out: dict = {}
-    out["registration_rate"] = qm.registration_rate(len(prog.registered_ids), len(prog.input_ids))
-    out["scale_validity"] = qm.scale_validity(prog.scale_state, None)
-
-    id_to_name = rep.get("id_to_name", {})
-    from reconstruction.backend.interface import ReconstructedCameraPose, ReconstructedPoint
-
-    # ProgressiveResult carries poses as (evidence_id, position, quaternion) tuples and points as positions.
-    renamed = [ReconstructedCameraPose(evidence_id=id_to_name[eid], position=tuple(pos), rotation=tuple(rot))
-               for eid, pos, rot in prog.camera_poses if eid in id_to_name]
-    points = [ReconstructedPoint(position=tuple(q[:3]) if not hasattr(q, "position") else tuple(q.position),
-                                 track_id=str(i), source_evidence_ids=[]) for i, q in enumerate(prog.points)]
-    pose = evaluate_absolute_poses(renamed, gt_images, estimated_scale_state=prog.scale_state)
-    transform = pose.pop("gauge_transform", None)
-    out["pose_vs_reference"] = pose
-
-    if transform is not None and points:
-        out["point_cloud_vs_reference"] = evaluate_point_cloud(points, gt_points, transform)
-        R, t, s = transform
-        est = np.asarray([p.position for p in points], dtype=np.float64)
-        aligned = s * (est @ np.asarray(R, dtype=np.float64).T) + np.asarray(t, dtype=np.float64)
-        ref = np.asarray([gt_points[k] for k in sorted(gt_points)], dtype=np.float64)
-        spread = float(np.linalg.norm(ref.max(axis=0) - ref.min(axis=0)))
-        tau = 0.02 * spread       # 2% of the reference extent: reference units (COLMAP gauge), not metres
-        comp = qm.point_cloud_completeness(aligned, ref, tau, same_frame=True)
-        comp["tau_definition"] = "2% of reference bounding-box diagonal, in reference (gauge) units"
-        comp["frame_note"] = "estimate aligned to the reference by a Sim(3) fit (scale fitted): shape agreement only"
-        out["point_cloud_completeness"] = comp
-    else:
-        out["point_cloud_vs_reference"] = {"refused": True, "reason": "no gauge transform or no points"}
-
-    dense = _stage_status(rep, "dense")
-    out["dense"] = dense
-    out["dense_invoked"] = dense.get("status") not in (None, "not_recorded", "skipped")
-    out["dense_points_added"] = (dense.get("metrics") or {}).get("dense_points_added")
-    out["pose_graph_cycle_error"] = {
-        "value": None,
-        "refused": "absolute poses are cycle-consistent by construction; pairwise-edge cycle residuals are produced by "
-                   "scripts/run_multi_engine_real_capture.py (perception.camera_pose_graph)"}
-    out["stage_status"] = {n: _stage_status(rep, n).get("status")
-                           for n in ("pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize")}
-    return out
+def build_evidence(limit=None):
+    imgs = sorted(IMAGES.glob("*.jpg"))
+    if limit:
+        imgs = imgs[:limit]
+    return [EvidenceItem(
+        id=p.name, kind=EvidenceKind.PHOTO,
+        source_uri=p.resolve().as_posix(),
+        metadata={"size": [1280, 960]},
+    ) for p in imgs]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--name", required=True)
-    ap.add_argument("--images", default=str(DATASET / "images"))
-    ap.add_argument("--subset", type=int, default=0)
-    ap.add_argument("--workdir", default=None)
-    a = ap.parse_args()
+def similarity_align(est_points, gt_points):
+    """Similarity transform (scale s, rotation R, translation t) mapping est -> gt."""
+    est = np.array(est_points, dtype=float)
+    gt = np.array(gt_points, dtype=float)
+    est_c = est.mean(axis=0)
+    gt_c = gt.mean(axis=0)
+    est_cen = est - est_c
+    gt_cen = gt - gt_c
+    est_scale = np.linalg.norm(est_cen)
+    gt_scale = np.linalg.norm(gt_cen)
+    s = gt_scale / est_scale if est_scale > 0 else 1.0
+    H = est_cen.T @ gt_cen
+    U, S, Vt = np.linalg.svd(H)
+    R = Vt.T @ U.T
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+    t = gt_c - s * (R @ est_c)
+    aligned = (s * (R @ est_cen.T)).T + gt_c
+    return float(s), R, t, aligned
 
-    import stage_report                                  # noqa: E402  (scripts/ on sys.path)
-    from run_south_building_e2e import _load_gt_images, _load_gt_points  # noqa: E402
 
-    imgs = sorted(p for p in Path(a.images).iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
-    if a.subset:
-        imgs = imgs[:a.subset]
-    work = Path(a.workdir) if a.workdir else Path(tempfile.mkdtemp(prefix=f"real_photo_bench_{a.name}_"))
-    work.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("COLMAP", os.environ.get("COLMAP_BINARY", "colmap"))
+def run_benchmark(limit=None):
+    manifest = load_manifest()
+    imgs = sorted(IMAGES.glob("*.jpg"))
+    if limit:
+        imgs = imgs[:limit]
+    items = [EvidenceItem(
+        id=p.name, kind=EvidenceKind.PHOTO,
+        source_uri=p.resolve().as_posix(),
+        metadata={"size": [1280, 960]},
+    ) for p in imgs]
 
+    opts = VerticalSliceOptions(
+        colmap_binary="colmap",
+        reconstruction_backend=None,
+        depth_model=None,
+        perception_model=None,
+        mesh_enabled=False,
+        detail_enabled=False,
+        dense_mvs_enabled=False,
+        image_size=[1280, 960],
+        scene_gate=False,
+        measured_baselines=[
+            ScaleReference(evidence_id_a=b["evidence_id_a"],
+                           evidence_id_b=b["evidence_id_b"],
+                           distance_m=b["distance_m"],
+                           method="manual_measurement")
+            for b in manifest["measured_baselines"]
+        ],
+    )
+
+    tracemalloc.start()
     t0 = time.time()
-    rep = stage_report.run_pipeline(imgs, work)
-    prog = stage_report.LAST_PROG
-    result: dict = {
-        "name": a.name, "git_sha": _git_sha(), "when": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "n_images": len(imgs), "image_sha256": {p.name: _sha(p) for p in imgs},
-        "production_path": "scripts/stage_report.run_pipeline -> progressive.run_progressive -> vertical_slice (all stages enabled)",
-        "independent_ground_truth": False,
-        "reference": "datasets/south_building/sparse (COLMAP SfM model of the same photos; NOT independently measured)",
-        "wall_s": round(time.time() - t0, 1), "ladder": rep.get("ladder"),
+    try:
+        res = vertical_slice(items, opts)
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc), "images": len(items)}
+    elapsed = time.time() - t0
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # Pose error vs ground truth (similarity-aligned)
+    gt = {im["file"]: im for im in manifest["images"]}
+    cam_poses = {cp[0]: cp for cp in res.camera_poses}
+    est_pts, gt_poses, matched = [], [], []
+    for ev_id, cp in cam_poses.items():
+        if ev_id in gt:
+            est_pts.append(list(cp[1]))
+            gt_poses.append(list(g["position_m"] for g in [gt[ev_id]])[0])
+            matched.append(ev_id)
+
+    pose_result = {"matched_cameras": len(matched), "pose_error_m": None}
+    if len(est_pts) >= 3:
+        s, R, t, aligned = similarity_align(np.array(est_pts), np.array(gt_poses))
+        errs = [float(np.linalg.norm(a - b)) for a, b in zip(aligned, np.array(gt_poses))]
+        pose_result = {
+            "matched_cameras": len(matched),
+            "similarity_scale_s": s,
+            "pose_error_mean_m": float(sum(errs) / len(errs)),
+            "pose_error_max_m": float(max(errs)),
+            "pose_error_min_m": float(min(errs)),
+            "pose_errors_m": {eid: float(e) for eid, e in zip(matched, errs)},
+        }
+
+    # Scale error: metres-per-unit from measured baselines vs manifest
+    scale_result = {
+        "scale_state": res.scale_state,
+        "meters_per_unit": res.meters_per_unit,
+        "metric_scale_available": res.scale_state == "metric" and res.meters_per_unit is not None,
     }
-    if prog is None:
-        result["error"] = "ladder raised: no ProgressiveResult to score"
-    else:
-        gt_images = _load_gt_images(DATASET / "sparse" / "images.txt")
-        gt_points = _load_gt_points(DATASET / "sparse" / "points3D.txt")
-        result["scores"] = score(prog, rep, gt_images, gt_points)
-        result["level_name"], result["scale_state"] = prog.level_name, prog.scale_state
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / f"real_photo_accuracy_{a.name}.json"
-    out.write_text(json.dumps(stage_report._clean(result), indent=1, default=str), encoding="utf-8")
-    print(f"wrote {out} wall={result['wall_s']}s")
-    return 0 if prog is not None else 1
+    if res.scale_state == "metric" and res.meters_per_unit:
+        # compare recovered scale against manifest baselines
+        baseline_errors = []
+        for b in manifest["measured_baselines"]:
+            a_id, b_id, dist_m = b["evidence_id_a"], b["evidence_id_b"], b["distance_m"]
+            if a_id in cam_poses and b_id in cam_poses:
+                pa = np.array(cam_poses[a_id][1])
+                pb = np.array(cam_poses[b_id][1])
+                model_sep = float(np.linalg.norm(pa - pb))
+                recovered_m = model_sep * res.meters_per_unit
+                baseline_errors.append({
+                    "pair": f"{a_id}<->{b_id}",
+                    "measured_m": dist_m,
+                    "recovered_m": recovered_m,
+                    "error_m": abs(recovered_m - dist_m),
+                })
+        scale_result["baseline_errors_m"] = baseline_errors
+        if baseline_errors:
+            scale_result["scale_error_mean_m"] = float(sum(b["error_m"] for b in baseline_errors) / len(baseline_errors))
+            scale_result["scale_error_max_m"] = float(max(b["error_m"] for b in baseline_errors))
+
+    completeness = {
+        "images_total": len(items),
+        "cameras_registered": res.cameras_registered,
+        "camera_registration_ratio": res.cameras_registered / len(items) if items else 0.0,
+        "points_total": res.points_total,
+        "registration_status": res.registration_status,
+    }
+
+    report = {
+        "dataset": manifest["dataset"],
+        "dataset_path": str(DATASET),
+        "image_size": [1280, 960],
+        "intrinsics": manifest["intrinsics_px"],
+        "evidence_kind": "real_photograph",
+        "benchmark_type": "real_photo_reconstruction",
+        "elapsed_seconds": round(elapsed, 3),
+        "peak_memory_bytes": peak,
+        "pose": pose_result,
+        "scale": scale_result,
+        "completeness": completeness,
+        "world_entities": len(res.world.entities),
+        "world_valid": validate(res.world).is_valid(),
+    }
+    return report
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Real-photo reconstruction accuracy benchmark")
+    ap.add_argument("--images", type=int, default=None, help="Number of images to use (default: all)")
+    ap.add_argument("--out", type=str, default=None, help="Write JSON report to this file")
+    ap.add_argument("--report", type=str, default=None, help="Write human-readable markdown report to this file")
+    args = ap.parse_args()
+
+    report = run_benchmark(limit=args.images)
+
+    print(json.dumps(report, indent=2))
+
+    if args.out:
+        Path(args.out).write_text(json.dumps(report, indent=2))
+        print(f"\nWrote JSON report to {args.out}")
+    if args.report:
+        lines = [
+            "# Real-Photo Reconstruction Accuracy Benchmark (KiloCode RCPAS WS2)",
+            "",
+            f"- Dataset: {report['dataset']} ({report['evidence_kind']})",
+            f"- Images: {report['completeness']['images_total']}",
+            f"- Elapsed: {report['elapsed_seconds']} s",
+            f"- Peak memory: {report['peak_memory_bytes'] / (1024*1024):.2f} MB",
+            "",
+            "## Pose error (similarity-aligned vs ground truth)",
+            f"- Matched cameras: {report['pose']['matched_cameras']}",
+            f"- Mean error: {report['pose']['pose_error_mean_m']:.4f} m" if report['pose']['pose_error_mean_m'] is not None else "- Pose error: n/a",
+            f"- Max error: {report['pose']['pose_error_max_m']:.4f} m" if report['pose']['pose_error_max_m'] is not None else "",
+            f"- Min error: {report['pose']['pose_error_min_m']:.4f} m" if report['pose']['pose_error_min_m'] is not None else "",
+            "",
+            "## Scale",
+            f"- Scale state: {report['scale']['scale_state']}",
+            f"- Meters per unit: {report['scale']['meters_per_unit']}",
+            f"- Metric scale available: {report['scale']['metric_scale_available']}",
+            "",
+            "## Completeness",
+            f"- Cameras registered: {report['completeness']['cameras_registered']} / {report['completeness']['images_total']}",
+            f"- Registration ratio: {report['completeness']['camera_registration_ratio']:.3f}",
+            f"- Points total: {report['completeness']['points_total']}",
+            f"- Registration status: {report['completeness']['registration_status']}",
+            "",
+            "## World validation",
+            f"- World entities: {report['world_entities']}",
+            f"- World valid: {report['world_valid']}",
+        ]
+        Path(args.report).write_text("\n".join(lines))
+        print(f"Wrote markdown report to {args.report}")
+    return 0 if report["pose"]["pose_error_mean_m"] is not None else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

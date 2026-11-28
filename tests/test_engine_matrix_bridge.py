@@ -168,7 +168,10 @@ def test_lineage_block_is_small_and_carries_no_metric_claim(tmp_path):
 
 
 def test_lineage_file_round_trips_and_absent_or_corrupt_is_none(tmp_path):
-    from apps.api.evidence_world_stage import read_multi_engine_evidence, write_multi_engine_evidence
+    from apps.api.evidence_world_stage import (
+        read_multi_engine_evidence,
+        write_multi_engine_evidence,
+    )
 
     assert read_multi_engine_evidence(tmp_path) is None
     assert write_multi_engine_evidence(tmp_path, {"status": "imported", "n_observations_imported": 2}) is True

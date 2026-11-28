@@ -18,6 +18,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.auth import (
     AuthContext,
     Role,
@@ -54,7 +55,7 @@ def _worldstore_root() -> Path:
     return Path(os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"))
 
 
-worlds = APIRouter(prefix="/api/worlds", tags=["worlds"])
+worlds = APIRouter(prefix="/api/worlds", tags=["worlds"], dependencies=[Depends(world_scope)])
 
 WORLD_STATUSES = ("active", "archived", "trashed")
 
@@ -94,6 +95,7 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: 
             entity_type="world",
             entity_id=w.id,
             summary=f"World '{w.name}' created",
+            team_id=w.team_id,
         )
     )
     await db.commit()
@@ -152,6 +154,7 @@ async def import_world_package(
             entity_type="world",
             entity_id=w.id,
             summary=f"World '{w.name}' imported from package archive",
+            team_id=w.team_id,
         )
     )
     await db.commit()
@@ -711,7 +714,7 @@ async def entity_provenance(
     A PROCEDURAL entity (e.g. a generated room) has no source sessions at
     all -- trace_level is "none", never a fabricated session guess.
     """
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
     entity = world.entities.get(entity_id)
     if entity is None:
@@ -859,7 +862,7 @@ async def entity_confidence(
     """Retrieve multi-dimensional ConfidenceVector for an entity (Blueprint Task 7.1)."""
     w = await _world_or_404(db, world_id, auth)
     enforce_project_isolation(w, auth)
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
     entity = world.entities.get(entity_id)
     if entity is None:
@@ -877,11 +880,14 @@ async def entity_confidence(
 
 @worlds.get("/{world_id}/report")
 async def world_report(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """The version's compile-pipeline report (current version unless
     ?version=) -- the real report.json stages, never fabricated."""
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     if row.report is None:
         raise HTTPException(404, f"No pipeline report recorded for version '{row.id}'")
     return row.report
@@ -889,7 +895,10 @@ async def world_report(
 
 @worlds.get("/{world_id}/review/coco")
 async def world_review_coco(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """The pipeline's own 2D detections for this version as COCO 1.0, ready to upload to CVAT (or convert for Label Studio / FiftyOne
     with scripts/export_annotation_review.py). A human corrects the boxes, and `benchmarks.annotation_review.score` turns the corrected
@@ -899,7 +908,7 @@ async def world_review_coco(
     from benchmarks import annotation_review
     from engine.core.image_io import open_oriented
 
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     detections = (((row.report or {}).get("stages") or {}).get("perception") or {}).get("detections_2d")
     if not detections:
         raise HTTPException(404, f"Version '{row.id}' recorded no 2D detections (the perception stage did not run, or found nothing)")
@@ -919,11 +928,14 @@ async def world_review_coco(
 
 @worlds.get("/{world_id}/points")
 async def world_points(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> Response:
     """The version's reconstruction points as one PLY stream, rendered from
     the geometries' own artifact bytes (real data only)."""
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
     ply = _render_points_ply(world)
     if ply is None:
@@ -1065,12 +1077,15 @@ def _keep_registered_cameras(cameras: list, world) -> list:
 
 @worlds.get("/{world_id}/cameras")
 async def world_cameras(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Registered camera poses for the version, in the field shape the
     Studio's camera layer consumes (position_m / rotation_wxyz, world
     frame, +Y up, camera-to-world quaternions)."""
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
 
     cameras = []
@@ -1142,20 +1157,25 @@ async def get_world_diff(world_id: str, base: str | None = None, head: str | Non
     head_version = head or w.current_version_id
     if not head_version:
         raise HTTPException(404, "No current version to diff")
-    
+
+    head_row = await _version_row(db, world_id, head_version, auth=auth)
     # Default to parent of head as base
     if base is None:
-        head_record = store._record(head_version)
-        base = head_record.get("parent")
-    
+        base = head_row.parent_version_id
+        if not base:
+            head_record = store._record(head_row.id)
+            base = head_record.get("parent")
+
     if not base:
         raise HTTPException(404, "No base version available for diff")
-    
+
+    base_row = await _version_row(db, world_id, base, auth=auth)
+
     try:
-        before = store.load_version(base)
-        after = store.load_version(head_version)
-    except Exception as e:
-        raise HTTPException(404, f"Version not found: {e}")
+        before = store.load_version(base_row.id)
+        after = store.load_version(head_row.id)
+    except (WorldStoreError, FileNotFoundError) as exc:
+        raise HTTPException(409, f"Version artifact unreadable: {exc}") from exc
     
     world_diff = diff_worlds(before, after)
     return world_diff.to_dict()
@@ -1951,15 +1971,8 @@ async def get_world_space_graph(
     auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Retrieve the authoritative InteriorSpaceGraph for a world."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    worldir = await _load_worldir_from_store(w, version_id)
-    if worldir is None:
-        raise HTTPException(404, "WorldIR not available for this world/version")
-
+    row = await _version_row(db, world_id, version_id, auth=auth)
+    worldir = _load_world_or_409(row)
     return _get_worldir_space_graph(worldir)
 
 
@@ -1979,14 +1992,8 @@ async def query_world_spaces(
     auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Query topological connectivity and spatial metrics within a world."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    worldir = await _load_worldir_from_store(w, version_id)
-    if worldir is None:
-        raise HTTPException(404, "WorldIR not available for this world/version")
+    row = await _version_row(db, world_id, version_id, auth=auth)
+    worldir = _load_world_or_409(row)
 
     graph_dict = _get_worldir_space_graph(worldir)
     from engine.pipeline.facade import create_interior_space_graph
@@ -2115,7 +2122,11 @@ def _suggestion_key(sug) -> str:
 
 
 @worlds.get("/{world_id}/scale/suggestion")
-async def get_scale_suggestion(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_scale_suggestion(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
     """A typical-size scale suggestion from a detected standard object (a door), for a RELATIVE world.
 
     Nothing is applied. ``suggestion`` is null -- never a default -- when the world is already metric or no
@@ -2123,7 +2134,7 @@ async def get_scale_suggestion(world_id: str, db: AsyncSession = Depends(get_db)
     POST /scale/suggestion/reject."""
     from apps.api import worldstore_service as wss
 
-    row = await _version_row(db, world_id, None)
+    row = await _version_row(db, world_id, None, auth=auth)
     world = _load_world_or_409(row)
     meta = (world.metadata or {}).get("scale") or {}
     state = meta.get("state") or "relative"
@@ -2145,12 +2156,17 @@ class RejectIn(BaseModel):
 
 
 @worlds.post("/{world_id}/scale/suggestion/reject")
-async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def reject_scale_suggestion(
+    world_id: str,
+    body: RejectIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
     """Decline the current suggestion. Changes nothing about the world: it stays RELATIVE."""
     from apps.api import worldstore_service as wss
     from engine.pipeline.facade import suggest_scale_for_world
 
-    row = await _version_row(db, world_id, None)
+    row = await _version_row(db, world_id, None, auth=auth)
     sug = suggest_scale_for_world(_load_world_or_409(row))
     if sug is None or sug.source_entity_id != body.source_entity_id:
         raise HTTPException(409, "that suggestion is no longer current")
@@ -2207,7 +2223,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
     a, b = body.evidence_id_a, body.evidence_id_b
     distance_m = body.distance_m
     if model_space:
-        row = await _version_row(db, world_id, None)
+        row = await _version_row(db, world_id, None, auth=auth)
         scale, mpu, ca, cb, csep = _head_scale_context(row)
         if ca is None:
             raise HTTPException(422, "this world has no registered camera pair to tie the length to")
@@ -2340,12 +2356,15 @@ async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession 
 
 @worlds.get("/{world_id}/quality")
 async def world_quality(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Per-entity quality bands plus the place-level summary the viewer's quality card shows (B-07)."""
     from apps.api import place_summary
 
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world_row = await db.get(World, world_id)
     world = _load_world_or_409(row)
     card = (await place_summary.summaries(db, [world_row]))[world_id]
@@ -2356,10 +2375,13 @@ async def world_quality(
 
 @worlds.get("/{world_id}/spatial-intelligence")
 async def get_world_spatial_intelligence(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Consolidated spatial intelligence endpoint: coordinate frame, georeference, style, envelope, plausibility, lighting."""
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
 
     from engine.pipeline.facade import validate_world_plausibility, analyze_world_style

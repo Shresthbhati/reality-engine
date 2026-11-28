@@ -30,11 +30,12 @@ What is deliberately NOT done here:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any
 
-from perception.engine_evidence import ObservationRecord, UnifiedEngineOutput
+from perception.engine_evidence import ObservationRecord, UnifiedEngineOutput, _mask_descriptor
 
 log = logging.getLogger("reality.engine_matrix_bridge")
 
@@ -75,7 +76,7 @@ def _draft_for(obs: ObservationRecord):
     """One observation as a matrix draft, preserving frame, units and provenance."""
     from engine.multiengine.observation import ObservationDraft
 
-    predicted: Dict[str, Any] = {
+    predicted: dict[str, Any] = {
         "label": obs.label,
         "category": obs.category,
         "scale_state": obs.coordinate_frame.scale_state,
@@ -92,9 +93,15 @@ def _draft_for(obs: ObservationRecord):
         "source_evidence_id": obs.evidence_id,
         "depth_map_ref": obs.depth_map_ref,
         "raw_output_ref": obs.raw_output_ref,
+        # Segmentation mask provenance: the row index into the run's MaskStore
+        # and the compact descriptor of the in-memory mask. Previously the
+        # bridge dropped both, so mask pixels reached no persistent consumer
+        # (found by independent review of PR #397).
+        "mask_ref": obs.mask_ref,
+        "mask": _mask_descriptor(obs.mask) if hasattr(obs, "mask") else None,
         **{k: v for k, v in dict(obs.metadata).items() if k not in ("bbox_px", "world_pos")},
     }
-    uncertainty: Optional[Dict[str, Any]] = None
+    uncertainty: dict[str, Any] | None = None
     if obs.sigma_m is not None:
         uncertainty = {"sigma_m": obs.sigma_m, "basis": "reported by the engine; not calibrated against ground truth"}
     return ObservationDraft(
@@ -163,8 +170,8 @@ def import_multi_engine_report(
     report: Any,
     *,
     matrix_root: Path | str,
-    processed_at: Optional[str] = None,
-) -> Dict[str, Any]:
+    processed_at: str | None = None,
+) -> dict[str, Any]:
     """Write a ``MultiEngineReport`` into the run's Evidence Matrix.
 
     Returns a JSON-serialisable summary: what was imported, per-engine
@@ -180,19 +187,19 @@ def import_multi_engine_report(
     if not run_id:
         return {"status": "refused", "reason": "the multi-engine report has no run id; evidence without a run cannot be attributed"}
 
-    added: List[str] = []
+    added: list[str] = []
     reused = 0
-    rejected: List[Dict[str, Any]] = []
-    by_engine: Dict[str, List[str]] = {}
+    rejected: list[dict[str, Any]] = []
+    by_engine: dict[str, list[str]] = {}
     # Content keys already in the store, so re-importing the same evidence is a
     # no-op instead of creating a second observation for one engine output.
-    seen: Dict[str, str] = {_content_key(o): o.observation_id for o in matrix.store.query()}
+    seen: dict[str, str] = {_content_key(o): o.observation_id for o in matrix.store.query()}
     # Deterministic content ids for the world's lineage block: derived from the
     # evidence content only, so re-running the same job reproduces the same world
     # version (the recorded processed_at of a run must not change what the world IS).
     import hashlib as _hashlib
 
-    stable: Dict[str, List[str]] = {}
+    stable: dict[str, list[str]] = {}
 
     for obs in getattr(report, "observations", []) or []:
         try:
@@ -236,7 +243,7 @@ def import_multi_engine_report(
                              "reason": f"{type(exc).__name__}: {exc}"})
 
     runs_written = 0
-    run_statuses: Dict[str, str] = {}
+    run_statuses: dict[str, str] = {}
     for record in _execution_rows(report):
         try:
             matrix.record_run(record)
@@ -248,7 +255,7 @@ def import_multi_engine_report(
     # Reload from disk through a NEW reader: the evidence must be recoverable by a
     # fresh process, not merely present in this object's memory.
     reloaded = _matrix(matrix_root)
-    missing: List[str] = []
+    missing: list[str] = []
     for oid in added:
         try:
             reloaded.store.get(oid)
@@ -268,6 +275,10 @@ def import_multi_engine_report(
         "engine_statuses": dict(sorted(run_statuses.items())),
         "reload": {"checked": len(added), "missing": missing[:20]},
         "calibrated_confidence": "none: every imported observation is uncalibrated by construction",
+        # Content-addressed URI of the run's RLE mask store (if masks were
+        # produced); carried into world lineage so a fresh process can recover
+        # mask pixels via mask_ref + this artifact.
+        "mask_store_uri": getattr(report, "mask_store_uri", None),
     }
 
 
@@ -276,8 +287,8 @@ def import_engine_outputs(
     *,
     matrix_root: Path | str,
     run_id: str,
-    processed_at: Optional[str] = None,
-) -> Dict[str, Any]:
+    processed_at: str | None = None,
+) -> dict[str, Any]:
     """Convenience wrapper: merge raw outputs and import the resulting report."""
     from perception.engine_orchestrator import merge_engine_outputs
 
@@ -287,7 +298,7 @@ def import_engine_outputs(
     return import_multi_engine_report(report, matrix_root=matrix_root, processed_at=processed_at)
 
 
-def world_lineage_block(summary: Mapping[str, Any]) -> Dict[str, Any]:
+def world_lineage_block(summary: Mapping[str, Any]) -> dict[str, Any]:
     """The world-metadata digest of an import: which engines contributed which
     observation ids, and what did not run. Small, stable, and safe to persist."""
     return {
@@ -300,6 +311,7 @@ def world_lineage_block(summary: Mapping[str, Any]) -> Dict[str, Any]:
         "observation_content_ids_by_engine": dict(summary.get("observation_content_ids_by_engine") or {}),
         "engine_statuses": dict(summary.get("engine_statuses") or {}),
         "calibrated_confidence": summary.get("calibrated_confidence"),
+        "mask_store_uri": summary.get("mask_store_uri"),
     }
 
 

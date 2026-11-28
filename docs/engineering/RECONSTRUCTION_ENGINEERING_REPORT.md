@@ -12,7 +12,7 @@ Branch `claude/reconstruction-accuracy-engineering-d0cf62`. Scope: make existing
 | B4 | Disconnected / wide-baseline sets | **Not changed.** Observed: 25/32 registered; unregistered images are reported, not placed. Relative placement of components remains unknown. |
 | B5 | Single image assumes camera / level | Verified already disclosed (`assumed` camera, 60 deg HFOV, level, confidence ceiling, recorded in metadata). Gravity not estimated. |
 | B6 | Dense MVS not in canonical path | `dense_auto` is on in the job path; **found a real defect in its gate** (below). Dense genuinely ran in the 32-image benchmark. |
-| B7 | Benchmarks disabled depth/perception/mesh/dense | New `scripts/real_photo_accuracy_benchmark.py` runs the production path with all stages enabled. |
+| B7 | Benchmarks disabled depth/perception/mesh/dense | New `scripts/real_photo_production_benchmark.py` runs the production path with all stages enabled. |
 | B8 | No independent ground truth | **Unfixable here.** Reference is a COLMAP model of the same photos; `independent_ground_truth: false` recorded. |
 | B9 | Scale-state vocabulary inconsistent | **Not unified.** At least four vocabularies coexist (`metric3d.ScaleState`, `depth_scale_alignment` strings, `metric_lifting` states, `world_scale.scale_kind`). Needs an owner decision. |
 | B10 | Timeout/cache invalid outcomes | COLMAP timeouts already raise a typed `ReconstructionStepError`. **Found stale-cache defect:** depth cache key ignored output convention, so pre-`156f3e36` maps would be served as inverse-depth. Fixed with `DEPTH_CONVENTION`. |
@@ -22,7 +22,7 @@ Branch `claude/reconstruction-accuracy-engineering-d0cf62`. Scope: make existing
 `reconstruction/quality_metrics.py`: 10 metrics (registration rate, reprojection error, pose-graph cycle error, scale validity, point-cloud completeness, depth consistency with occlusion exclusion, mesh integrity incl. duplicate triangles and winding, surface coverage, uncertainty calibration, cross-view consistency). Each has formula, inputs, limitations in `METRICS` and a test; uncomputable inputs return `value: None` + reason. Reference-based metrics refuse unless `same_frame=True`.
 
 ## Real-photo results (South Building, 1024x768, COLMAP 4.2.0 CUDA, RTX 4050)
-Files: `docs/benchmarks/real_photo_accuracy_south_building_{12,32,32_dense}.json`.
+Files: `docs/benchmarks/real_photo_production_south_building_{12,32,32_dense}.json`.
 
 | Run | Registered | Dense | Points | Completeness / precision* |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@ Depth ran in the 32 runs; perception and mesh stages were `skipped` (reasons not
 | `engine/multiengine/depth_cache.py` | `DEPTH_CONVENTION` in key |
 | `engine/pipeline/dense_gate.py` | count triangulated points only |
 | `scripts/stage_report.py` | exposes `LAST_PROG` |
-| `scripts/real_photo_accuracy_benchmark.py` (new) | production-path benchmark + scoring |
+| `scripts/real_photo_production_benchmark.py` (new) | production-path benchmark + scoring |
 | tests: `test_multi_view_scale_units`, `test_pose_evaluation_honesty`, `test_reconstruction_quality_metrics`, `test_depth_cache`, `test_dense_gate` | regressions |
 
 ## Remaining defects

@@ -156,4 +156,6 @@ def test_identical_images_are_verified_but_a_far_pair_is_measured_not_assumed():
         assert out.observations[0].metadata["inliers"] >= 8
     else:
         assert out.summary["n_unverified_pairs"] == 1
-        assert out.summary["unverified"][0]["reason"]
+        assert (
+            out.summary["unverified"][0]["reason"]
+        )

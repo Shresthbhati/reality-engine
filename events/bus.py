@@ -49,6 +49,20 @@ class EventBus:
     def subscribe(self, event_type: str, handler: Handler) -> None:
         self._subscribers.setdefault(event_type, []).append(handler)
 
+    def restore(self, event: Event) -> Event:
+        """Append an already-built Event unchanged (no re-id) and dispatch it.
+
+        Additive: used by events.replay to rebuild a log into a fresh bus
+        reproducibly. Existing emit()/subscribe() behavior is untouched.
+        Keeps the internal sequence counter ahead of any restored ids.
+        """
+        self._events.append(event)
+        for handler in self._subscribers.get(event.type, ()):
+            handler(event)
+        for handler in self._subscribers.get(WILDCARD, ()):
+            handler(event)
+        return event
+
     @property
     def events(self) -> list[Event]:
         return list(self._events)

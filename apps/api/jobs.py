@@ -737,7 +737,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
 
     points_bytes = await asyncio.to_thread(_render_points_ply, prog.points)
     cameras_bytes = await asyncio.to_thread(
-        _render_cameras_json, prog.camera_poses, prog.scale_state, options.image_size
+        _render_cameras_json, prog.camera_poses, prog.scale_state, _uniform_image_size([ev for ev, _ in resolved])
     )
 
     base_head = world.current_version_id
@@ -895,6 +895,21 @@ def _render_points_ply(points) -> bytes:
     return header + bytes(body)
 
 
+def _uniform_image_size(evidence_rows) -> tuple[int, int] | None:
+    """The (width, height) every photo shares, from the sizes recorded at ingest -- or None when they differ or none was
+    recorded. The camera artifact used to carry the engine's fixed 1280x960 option instead, which drew every camera
+    frustum with a 4:3 aspect no matter what was photographed (a 16:9 video, a portrait phone photo)."""
+    sizes = set()
+    for ev in evidence_rows:
+        facts = ((ev.metadata_json or {}).get("image_facts") or {})
+        w, h = facts.get("width"), facts.get("height")
+        if isinstance(w, int) and isinstance(h, int) and w > 0 and h > 0:
+            sizes.add((w, h))
+        else:
+            return None
+    return next(iter(sizes)) if len(sizes) == 1 else None
+
+
 def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
     """Same JSON shape engine.pipeline.artifacts.write_cameras_json
     writes -- kept in sync with that module, in-memory."""
@@ -904,7 +919,7 @@ def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
         "frame": "world (meters, +Y up after frame canonicalization)",
         "scale_state": scale_state,
         "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
-        "image_size": list(image_size),
+        "image_size": list(image_size) if image_size else None,
         "cameras": [
             {"evidence_id": eid, "position_m": list(pos), "rotation_wxyz": list(rot)}
             for eid, pos, rot in camera_poses

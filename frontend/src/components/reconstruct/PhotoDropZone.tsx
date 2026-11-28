@@ -4,15 +4,18 @@ import React, { useCallback, useRef, useState } from "react";
 import { Camera, FolderUp, ImagePlus, Loader2, UploadCloud } from "lucide-react";
 import {
   createReconstruction,
+  createReconstructionFromPath,
   isApiError,
   type CreateReconstructionResult,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|heic|heif|tiff?|bmp)$/i;
+const VIDEO_EXT = /\.(mp4|mov|m4v|avi|mkv|webm)$/i;
 
-function isImage(file: File): boolean {
-  return file.type.startsWith("image/") || IMAGE_EXT.test(file.name);
+/** A photograph or a video (the engine samples frames from videos itself). */
+function isMedia(file: File): boolean {
+  return file.type.startsWith("image/") || file.type.startsWith("video/") || IMAGE_EXT.test(file.name) || VIDEO_EXT.test(file.name);
 }
 
 /** Read dropped files, descending into dropped folders where the browser exposes them. */
@@ -70,10 +73,38 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [evidenceClass, setEvidenceClass] = useState<string>("");
+  const [localPath, setLocalPath] = useState("");
+
+  /** Desktop path: the API (on this PC) reads the folder / video itself -- nothing goes through the browser. */
+  const importFromPath = useCallback(async () => {
+    const path = localPath.trim();
+    if (!path) {
+      setError("Enter the full path of a folder of photos, or of a video, on this computer.");
+      return;
+    }
+    setError(null);
+    setNotes([]);
+    setBusy("Reading files from this computer…");
+    try {
+      const result = await createReconstructionFromPath(path, { worldId: worldId ?? null, evidenceClass: evidenceClass || null });
+      if (result.rejected.length > 0) setNotes(result.rejected.map((r) => `${r.name}: ${r.reason}`));
+      onCreated(result);
+    } catch (err) {
+      if (isApiError(err) && err.details && typeof err.details === "object") {
+        const d = err.details as { message?: string; rejected?: { name: string; reason: string }[] };
+        setError(d.message ?? err.message);
+        if (d.rejected?.length) setNotes(d.rejected.map((r) => `${r.name}: ${r.reason}`));
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setBusy(null);
+    }
+  }, [localPath, worldId, evidenceClass, onCreated]);
 
   const submit = useCallback(
     async (picked: File[]) => {
-      const images = picked.filter(isImage);
+      const images = picked.filter(isMedia);
       const skipped = picked.length - images.length;
       setError(null);
       setNotes([]);
@@ -81,11 +112,11 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
         setError(
           picked.length === 0
             ? "No files were selected."
-            : "None of those files look like images. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF).",
+            : "None of those files look like photos or video. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF) or a video (MP4, MOV, MKV, WebM).",
         );
         return;
       }
-      setBusy(`Uploading ${images.length} photo${images.length === 1 ? "" : "s"}…`);
+      setBusy(`Uploading ${images.length} file${images.length === 1 ? "" : "s"}…`);
       try {
         const result = await createReconstruction(images, {
           worldId: worldId ?? null,
@@ -168,7 +199,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
             {!compact && (
               <p className="mx-auto mt-1 max-w-md text-xs text-neutral-400">
                 One photograph gives a rough model. More views from different positions make it better.
-                You never need to set anything up first.
+                A walk-around video works too. You never need to set anything up first.
               </p>
             )}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -177,7 +208,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
                 onClick={() => photosRef.current?.click()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--primary-hover)]"
               >
-                <ImagePlus className="h-4 w-4" aria-hidden /> Select photos
+                <ImagePlus className="h-4 w-4" aria-hidden /> Select photos or video
               </button>
               <button
                 type="button"
@@ -194,6 +225,36 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
                 <Camera className="h-4 w-4" aria-hidden /> Take photo
               </button>
             </div>
+            <details className="mx-auto mt-4 max-w-md text-left text-[11px] text-neutral-400" data-testid="local-path-import">
+              <summary className="cursor-pointer select-none text-center hover:text-neutral-200">
+                Import a folder or video from this computer
+              </summary>
+              <form
+                className="mt-2 flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void importFromPath();
+                }}
+              >
+                <label className="sr-only" htmlFor="local-path-input">Folder or video path on this computer</label>
+                <input
+                  id="local-path-input"
+                  data-testid="local-path-input"
+                  value={localPath}
+                  onChange={(e) => setLocalPath(e.target.value)}
+                  placeholder="C:\Users\you\Videos\room.mp4  or  D:\photos\kitchen"
+                  className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1 text-xs text-neutral-200"
+                />
+                <button
+                  type="submit"
+                  data-testid="local-path-submit"
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+                >
+                  Import
+                </button>
+              </form>
+              <p className="mt-1">Read directly from disk by the engine on this machine; subfolders are included.</p>
+            </details>
             {!compact && (
               <details className="mx-auto mt-4 max-w-xs text-left text-[11px] text-neutral-400">
                 <summary className="cursor-pointer select-none text-center hover:text-neutral-200">
@@ -222,7 +283,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
         )}
       </div>
 
-      <input ref={photosRef} type="file" accept="image/*" multiple hidden onChange={onPick} data-testid="photo-input" />
+      <input ref={photosRef} type="file" accept="image/*,video/*" multiple hidden onChange={onPick} data-testid="photo-input" />
       <input
         ref={folderRef}
         type="file"

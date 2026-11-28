@@ -26,6 +26,7 @@ Honesty rules (same discipline as colmap_backend / meshing.surface):
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -75,13 +76,25 @@ class DenseMVSRun:
         }
 
 
+_ERROR_LINE = re.compile(r"(^F\d{8}|check failed|error|out of memory|CUDA.*(fail|error)|cannot|could not|exception)", re.I)
+
+
+def error_excerpt(log: str, max_chars: int = 800) -> str:
+    """The part of a COLMAP log that says WHY it failed. COLMAP prints hundreds of progress lines (``Sweep 3: 0.78s``)
+    and the actual fatal line is somewhere before them, so a plain tail shows only noise: prefer fatal/error lines and
+    fall back to the tail when there are none."""
+    lines = [ln.rstrip() for ln in log.splitlines() if ln.strip()]
+    hits = [ln for ln in lines if _ERROR_LINE.search(ln)]
+    picked = hits[-8:] if hits else lines[-8:]
+    return " | ".join(picked)[-max_chars:]
+
+
 def _find_colmap(binary: str) -> str:
-    resolved = shutil.which(binary)
+    from reconstruction.backend import locate
+
+    resolved = locate.which(binary)
     if resolved is None:
-        raise DenseMVSUnavailableError(
-            f"COLMAP binary {binary!r} not found on PATH -- dense MVS "
-            "unavailable (set colmap_binary or install COLMAP)"
-        )
+        raise DenseMVSUnavailableError("dense MVS unavailable: " + locate.not_found_message(binary))
     return resolved
 
 
@@ -182,9 +195,9 @@ def run_dense_mvs(
                 f"COLMAP {step} timed out after {timeout_s}s"
             ) from exc
         if proc.returncode != 0:
-            stderr = (proc.stderr or "")[-800:]
             raise DenseMVSRunError(
-                f"COLMAP {step} failed (exit {proc.returncode}): {stderr}"
+                f"COLMAP {step} failed (exit {proc.returncode}): "
+                f"{error_excerpt((proc.stderr or '') + chr(10) + (proc.stdout or ''))}"
             )
 
     stage_durations: Dict[str, float] = {}

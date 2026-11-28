@@ -57,3 +57,14 @@ def require_json_size(value: object, label: str, limit: int = MAX_JSON_BLOB_BYTE
     if size > limit:
         raise HTTPException(413, f"{label} exceeds {limit} bytes")
     return value
+
+
+_LOCAL_CLIENT_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+
+
+def is_local_client(request) -> bool:
+    """True when the caller is on the machine the API runs on. Used to gate routes that read local files or change
+    which executable the engine runs. No client address at all (a unix-socket peer, an in-process test client) is
+    local by construction; any other address -- LAN included -- is not."""
+    client = getattr(request, "client", None)
+    return client is None or client.host in _LOCAL_CLIENT_HOSTS

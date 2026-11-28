@@ -99,9 +99,13 @@ def build_guidance(
         return names.get(eid, eid)
 
     # ---- single-view (bootstrap) advice, from what was measured in the frame ----
+    tool_missing = any(a.get("outcome") == "failed" and "COLMAP" in (a.get("detail") or "")
+                       and "was not found" in (a.get("detail") or "") for a in attempts)
     if level == 0:
         n_fused = int((bootstrap_facts or {}).get("fused_views") or 0)
-        if n_fused > 1:
+        if n_fused > 1 and tool_missing:
+            pass  # the engine_unavailable note below says why the photos were not joined; the photos are not at fault
+        elif n_fused > 1:
             out.append({
                 "kind": "add_overlap",
                 "message": (f"We built a rough model from each of your {n_fused} photos, but could not place "
@@ -200,7 +204,17 @@ def build_guidance(
 
     # ---- what the engine tried and could not do ----
     for a in attempts:
-        if a.get("outcome") == "failed" and a.get("level", 0) >= 1:
+        detail = a.get("detail") or ""
+        if a.get("outcome") == "failed" and a.get("level", 0) >= 1 and "was not found" in detail and "COLMAP" in detail:
+            # the TOOL is missing: blaming the photos (overlap, baseline) would send the user to re-shoot for nothing
+            out.append({
+                "kind": "engine_unavailable",
+                "message": ("Your photos were not the problem: COLMAP, the program that places photos in 3D, "
+                            "was not found on this computer, so only rough single-photo models could be built. "
+                            "Install COLMAP or set its location in Settings, then press Try again."),
+                "basis": f"attempt at level {a['level']} ({a.get('name')}): {detail}"[:500],
+            })
+        elif a.get("outcome") == "failed" and a.get("level", 0) >= 1:
             out.append({
                 "kind": "engine_note",
                 "message": ("We couldn't establish reliable multi-view geometry from these photos, usually "

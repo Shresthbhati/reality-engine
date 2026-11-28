@@ -39,12 +39,11 @@ class MeshingError(RuntimeError):
 
 
 def _find_colmap(binary: str) -> str:
-    resolved = shutil.which(binary)
+    from reconstruction.backend import locate
+
+    resolved = locate.which(binary)
     if resolved is None:
-        raise MeshingUnavailableError(
-            f"COLMAP binary {binary!r} not found on PATH -- surface "
-            "reconstruction unavailable (set colmap_binary or install COLMAP)"
-        )
+        raise MeshingUnavailableError("surface reconstruction unavailable: " + locate.not_found_message(binary))
     return resolved
 
 

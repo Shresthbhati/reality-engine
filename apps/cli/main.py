@@ -96,6 +96,77 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _http_json(method: str, url: str, body: Optional[dict] = None, timeout: float = 60.0) -> dict:
+    """One JSON request to the Reality Engine API; an HTTP error becomes RuntimeError carrying the server's reason."""
+    import urllib.error
+    import urllib.request
+
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 -- user-supplied API base
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except ValueError:
+            pass
+        raise RuntimeError(f"{exc.code} from {url}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"cannot reach the Reality Engine API at {url}: {exc.reason} -- is it running (launch_ui.bat)?") from exc
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Hand a folder of photos / a video on THIS machine to the running API: create (or extend) a world, wait for the
+    reconstruction, and print the honest outcome. Exit 0 only when a model exists and the run did not fail."""
+    api = args.api.rstrip("/")
+    try:
+        body = {"path": str(Path(args.path).expanduser().resolve()), "world_id": args.world, "name": args.name}
+        res = _http_json("POST", f"{api}/api/reconstructions/from-path", body)
+    except RuntimeError as exc:
+        _eprint(f"import failed: {exc}")
+        return 1
+    wid = res["world_id"]
+    print(f"imported {res['imported_from']['files']} file(s) -> world {wid} (job {res['job_id']})")
+    for rej in res.get("rejected", []):
+        _eprint(f"  rejected: {rej['name']}: {rej['reason']}")
+    if not args.wait:
+        print(f"follow progress: {api}/api/worlds/{wid}/status")
+        return 0
+    deadline = time.time() + args.timeout
+    stage = None
+    st: dict = {}
+    while time.time() < deadline:
+        try:
+            st = _http_json("GET", f"{api}/api/worlds/{wid}/status")
+        except RuntimeError as exc:
+            _eprint(f"status failed: {exc}")
+            return 1
+        now = (st.get("job") or {}).get("stage")
+        if now and now != stage:
+            stage = now
+            print(f"  stage: {now}")
+        if not st.get("in_progress"):
+            break
+        time.sleep(2.0)
+    else:
+        _eprint(f"gave up waiting after {args.timeout:.0f}s; the job is still running in the API")
+        return 2
+    model = st.get("model") or {}
+    print(f"state: {st.get('state_label')} ({st.get('state')})")
+    if model:
+        print(f"model: {model.get('level_name')} / {model.get('model_state')}; "
+              f"{model.get('images_registered')}/{model.get('images_used')} images registered; "
+              f"scale: {(model.get('scale') or {}).get('state')}")
+        for a in model.get("attempts", []):
+            if a.get("outcome") != "succeeded":
+                _eprint(f"  {a.get('name')} {a.get('outcome')}: {a.get('detail')}")
+    if st.get("failure"):
+        _eprint(f"failure: {st['failure'].get('message')}")
+    return 0 if model and not st.get("failure") and st.get("state") != "FAILED" else 1
+
+
 def _session_path(session_dir: str) -> Path:
     return Path(session_dir) / "session.json"
 
@@ -849,6 +920,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--seed", default="pkg", help="deterministic id seed (default: pkg)")
     p_ingest.add_argument("--package-id", default="", help="explicit package id (default: pkg-<seed>)")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_import = sub.add_parser("import", help="photos folder / video on this PC -> reconstruction in the running API (new or existing world)")
+    p_import.add_argument("path", help="a folder of photos, a single photo, or a video file on this computer")
+    p_import.add_argument("--api", default=os.environ.get("REALITY_API", "http://127.0.0.1:8100"), help="API base URL (default %(default)s)")
+    p_import.add_argument("--world", default=None, help="add to this existing world instead of creating one")
+    p_import.add_argument("--name", default=None, help="name for a new world")
+    p_import.add_argument("--wait", action="store_true", help="wait for the reconstruction and print the outcome")
+    p_import.add_argument("--timeout", type=float, default=3600.0, help="seconds to wait with --wait (default %(default)s)")
+    p_import.set_defaults(func=cmd_import)
 
     p_session = sub.add_parser("session", help="multi-source ingestion session: create/add-source/list/export")
     session_sub = p_session.add_subparsers(dest="session_command", required=True)

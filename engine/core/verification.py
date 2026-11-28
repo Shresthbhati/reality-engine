@@ -184,9 +184,11 @@ def runtime_availability() -> List[Availability]:
     """Probe-only: what this machine can run now. 3DCityDB reports AVAILABLE only when the ``citydb`` CLI starts; the
     database behind it is not contacted (it is known only at export time)."""
     out: List[Availability] = []
-    colmap = shutil.which("colmap")
+    from reconstruction.backend import locate
+
+    colmap = locate.which("colmap")
     out.append(Availability("colmap", "AVAILABLE" if colmap else "UNAVAILABLE",
-                            colmap or "`colmap` is not on PATH"))
+                            colmap or locate.not_found_message("colmap")))
     out.append(_module("ifcopenshell", "ifcopenshell (IFC export)"))
     out.append(_module("torch", "torch (MiDaS / Mask R-CNN)"))
     try:

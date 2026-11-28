@@ -25,6 +25,8 @@ import numpy as np
 
 from provenance import Uncertainty
 
+from reconstruction.backend import locate as _locate
+
 from evidence.session import EvidenceItem, EvidenceKind
 from .interface import (
     IReconstructionBackend,
@@ -303,7 +305,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
                  robust_sift: bool = True, guided_matching: bool = False,
                  dense_mvs: bool = False, artifact_store=None, session=None):
-        self._colmap_binary = colmap_binary
+        # resolved through env / settings / PATH / common install dirs (reconstruction.backend.locate); an
+        # unresolvable name is kept so the 'not found' error can say what was looked for
+        self._colmap_binary = _locate.which(colmap_binary) or colmap_binary
         #: Optional reconstruction.colmap_session.ColmapSession. When set, the workspace
         #: PERSISTS between runs and new photographs are registered into the previous sparse
         #: model with `image_registrator` (see _reconstruct_in_session); when None the backend
@@ -359,13 +363,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
     # it via a caught ReconstructionBackendUnavailableError. Same check the
     # reconstruct() path performs, factored so both use one truth.
     def _colmap_available(self):
-        colmap_path = shutil.which(self._colmap_binary)
+        colmap_path = _locate.which(self._colmap_binary)
         if colmap_path is None:
-            return False, (
-                f"'{self._colmap_binary}' not found on PATH -- COLMAP must be "
-                "installed to run real reconstruction "
-                "(see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
-            )
+            return False, _locate.not_found_message(self._colmap_binary)
         return True, f"colmap binary found: {colmap_path}"
 
     availability_probe = _colmap_available
@@ -391,12 +391,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         if len(image_evidence) < 2:
             return ReconstructionResult(points=[], camera_poses=[], registration_status="failed")
 
-        colmap_path = shutil.which(self._colmap_binary)
+        colmap_path = _locate.which(self._colmap_binary)
         if colmap_path is None:
-            raise ReconstructionBackendUnavailableError(
-                f"'{self._colmap_binary}' not found on PATH -- COLMAP must be installed "
-                "to run real reconstruction (see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
-            )
+            raise ReconstructionBackendUnavailableError(_locate.not_found_message(self._colmap_binary))
         env = _subprocess_env(colmap_path)
         gpu_flag = "1" if self._use_gpu else "0"
 

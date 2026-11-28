@@ -22,6 +22,7 @@ import shutil
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Tuple
 
+from reconstruction.backend import locate
 from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 from reconstruction.backend.interface import IReconstructionBackend
 
@@ -65,7 +66,7 @@ DEFAULT_REGISTRY: Tuple[BackendDescriptor, ...] = (
 def _resolve(descriptor: BackendDescriptor) -> str:
     """First matching binary's resolved path, or "" if none found."""
     for candidate in descriptor.binary_names:
-        found = shutil.which(candidate)
+        found = locate.which(candidate)
         if found:
             return found
     return ""

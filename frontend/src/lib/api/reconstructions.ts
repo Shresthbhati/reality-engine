@@ -219,6 +219,21 @@ export function createReconstruction(
   return apiPostFiles<CreateReconstructionResult>("/api/reconstructions", "files", files, fields);
 }
 
+/**
+ * Import photos/videos from a path on THIS machine (a file or a folder). The API reads them itself, so nothing
+ * is uploaded through the browser; the API refuses clients that are not on the same machine.
+ */
+export function createReconstructionFromPath(
+  path: string,
+  opts: { worldId?: string | null; evidenceClass?: string | null } = {},
+): Promise<CreateReconstructionResult & { imported_from: { path: string; files: number } }> {
+  return apiPost("/api/reconstructions/from-path", {
+    path,
+    world_id: opts.worldId ?? null,
+    evidence_class: opts.evidenceClass ?? null,
+  });
+}
+
 /** Ask the engine to stop a running reconstruction (takes effect at the next stage boundary). */
 export function cancelReconstruction(jobId: string): Promise<{ id: string; status: string }> {
   return apiPost<{ id: string; status: string }>(`/api/jobs/${encodeURIComponent(jobId)}/cancel`);

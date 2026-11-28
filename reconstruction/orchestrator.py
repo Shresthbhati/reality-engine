@@ -388,7 +388,8 @@ class ReconstructionOrchestrator:
 
         # Nothing succeeded.
         raise ReconstructionOrchestrationError(
-            "all candidate backends failed or declined: " + (last_failure or "no attempts made"),
+            "all candidate backends failed or declined: "
+            + (last_failure or "; ".join(f"{a.backend_name} {a.outcome}: {a.detail}" for a in attempts) or "no backend configured"),
             attempts=attempts,
         )
 

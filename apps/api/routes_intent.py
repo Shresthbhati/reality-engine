@@ -98,6 +98,12 @@ def _field(value, basis: str, kind: str, **extra) -> dict:
     return {"value": value, "basis": basis, "kind": kind, **extra}
 
 
+def _colmap_found() -> bool:
+    from reconstruction.backend import locate
+
+    return locate.which("colmap") is not None
+
+
 def detect_hardware() -> dict:
     """What this machine reports right now. CUDA: torch's own answer when torch is importable, else the presence of
     ``nvidia-smi`` (a driver is installed; it does not prove a usable GPU, so the basis says which one answered)."""
@@ -120,7 +126,7 @@ def detect_hardware() -> dict:
     except Exception:  # noqa: BLE001
         if hasattr(os, "sysconf") and "SC_PHYS_PAGES" in getattr(os, "sysconf_names", {}):
             ram = int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"))
-    return {"cuda_gpu": cuda, "cuda_basis": cuda_basis, "colmap": shutil.which("colmap") is not None, "ram_bytes": ram}
+    return {"cuda_gpu": cuda, "cuda_basis": cuda_basis, "colmap": _colmap_found(), "ram_bytes": ram}
 
 
 def _warnings(scale: str, capabilities: list[str], files: int, hw: dict) -> list[str]:
@@ -132,7 +138,7 @@ def _warnings(scale: str, capabilities: list[str], files: int, hw: dict) -> list
             "street-sized area (heuristic ceiling, not a measured limit)."
         )
     if not hw["colmap"]:
-        out.append("COLMAP was not found on PATH, so photo reconstruction cannot run on this machine.")
+        out.append("COLMAP was not found (PATH, REALITY_COLMAP_PATH, Settings, common install folders), so photo reconstruction cannot run on this machine.")
     if "high_precision" in capabilities and not hw["cuda_gpu"]:
         out.append("High precision was requested but no CUDA GPU was detected; expect slower or reduced-quality runs.")
     return out
@@ -143,7 +149,7 @@ def build_estimate(scale: str, capabilities: list[str], file_count: int, total_b
     """Pure: the profile for given inputs, hardware facts and historical samples (seconds per image)."""
     images = max(file_count - video_count, 0) + video_count * _FRAMES_PER_VIDEO
     compute = _field({"cuda_gpu": hw["cuda_gpu"], "colmap": hw["colmap"]},
-                     f"detected on this machine; CUDA: {hw['cuda_basis']}; COLMAP: PATH lookup", "detected")
+                     f"detected on this machine; CUDA: {hw['cuda_basis']}; COLMAP: env / settings / PATH / common install dirs", "detected")
     memory = (_field(hw["ram_bytes"], "installed RAM on this machine (the requirement itself is not estimated)",
                      "detected") if hw["ram_bytes"] else
               _field(None, "RAM could not be read on this machine", "unknown", reason="host RAM unavailable"))

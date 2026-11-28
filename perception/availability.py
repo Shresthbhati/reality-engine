@@ -237,19 +237,20 @@ def _report_mask_rcnn() -> ModelAvailability:
 
 def _report_colmap() -> ModelAvailability:
     spec = REAL_MODEL_SPECS["colmap"]
-    path = shutil.which("colmap")
+    from reconstruction.backend import locate
+
+    path = locate.which("colmap")
     if path is None:
         return ModelAvailability(
             name="colmap", status="blocked", adapter=spec["adapter"],
             task=spec["task"],
-            reason="binary not found on PATH; COLMAPBackend's availability "
-                   "probe would report unavailable",
-            remediation="install COLMAP (CUDA build for GPU MVS) and ensure "
-                        "'colmap' is on PATH",
+            reason=locate.not_found_message("colmap"),
+            remediation="install COLMAP (CUDA build for GPU MVS), then put it on PATH or set "
+                        "REALITY_COLMAP_PATH to colmap.exe",
         )
     return ModelAvailability(
         name="colmap", status="available", adapter=spec["adapter"],
-        task=spec["task"], reason=f"binary found on PATH ({path})",
+        task=spec["task"], reason=f"binary found ({path}; via {locate.locate_colmap().source})",
     )
 
 

@@ -15,7 +15,8 @@ import asyncio
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -224,6 +225,74 @@ async def create_reconstruction(
         "evidence": ev_out, "rejected": rejected, "coalesced": coalesced,
         "created_world": world_id is None,
     }
+
+
+class FromPathIn(BaseModel):
+    path: str
+    world_id: str | None = None
+    name: str | None = None
+    evidence_class: str | None = None
+
+
+_IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", ".heic", ".heif")
+
+
+def local_media_files(path: str) -> list:
+    """The photo/video files a local ``path`` names: the file itself, or the media files directly inside (and below)
+    the folder, sorted by name. Raises HTTPException with the exact reason when nothing usable is there."""
+    from pathlib import Path
+
+    p = Path(path).expanduser()
+    try:
+        p = p.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(404, f"path does not exist on this machine: {path}") from None
+    exts = _IMAGE_EXT + _VIDEO_EXT
+    if p.is_file():
+        found = [p] if p.suffix.lower() in exts else []
+    elif p.is_dir():
+        found = sorted(f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in exts)
+    else:
+        raise HTTPException(422, f"{path} is neither a file nor a folder")
+    if not found:
+        raise HTTPException(422, f"no photos or videos ({', '.join(sorted(exts))}) found at {path}")
+    if len(found) > MAX_FILES_PER_REQUEST:
+        raise HTTPException(413, f"{len(found)} files found; at most {MAX_FILES_PER_REQUEST} per import -- point at a smaller folder")
+    return found
+
+
+@reconstructions.post("/from-path", status_code=202)
+async def create_reconstruction_from_path(
+    body: FromPathIn, request: Request, db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Same as ``POST /api/reconstructions`` but the server reads the photos/video from a path on THIS machine
+    (the desktop/offline workflow: no browser upload of gigabytes). Only a client on this machine may use it -- the
+    route reads arbitrary local files, so a remote caller is refused, never trusted."""
+    import mimetypes
+    from starlette.datastructures import Headers
+
+    from apps.api.validation import is_local_client
+
+    if not is_local_client(request):
+        raise HTTPException(403, "importing from a local path is only available to a client on the same machine as the API")
+    if body.evidence_class is not None and body.evidence_class not in DECLARABLE_CLASSES:
+        raise HTTPException(422, f"evidence_class must be one of {sorted(DECLARABLE_CLASSES)}")
+    found = local_media_files(body.path)
+    handles, uploads_ = [], []
+    try:
+        for f in found:
+            fh = open(f, "rb")
+            handles.append(fh)
+            ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+            uploads_.append(UploadFile(file=fh, filename=f.name, headers=Headers({"content-type": ctype})))
+        out = await create_reconstruction(
+            files=uploads_, world_id=body.world_id, name=body.name or (found[0].parent.name if len(found) > 1 else found[0].stem),
+            evidence_class=body.evidence_class, latitude=None, longitude=None, db=db)
+    finally:
+        for fh in handles:
+            fh.close()
+    out["imported_from"] = {"path": body.path, "files": len(found)}
+    return out
 
 
 def _dense_state(attempts: list) -> dict:

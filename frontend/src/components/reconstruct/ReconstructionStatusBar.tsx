@@ -508,6 +508,25 @@ export default function ReconstructionStatusBar({
               {status.has_model ? " The previous model is still shown." : ""}
             </div>
           )}
+          {/* a stage that did not succeed says so, with the engine's own reason (e.g. COLMAP not found) -- never a silent downgrade */}
+          {!status.in_progress && model && model.attempts.some((x) => x.outcome !== "succeeded") && (
+            <div
+              role="status"
+              data-testid="stage-attempts"
+              className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200"
+            >
+              Some reconstruction stages did not run to completion:
+              <ul className="mt-1 space-y-0.5 text-amber-300/90">
+                {model.attempts
+                  .filter((x) => x.outcome !== "succeeded")
+                  .map((x) => (
+                    <li key={`${x.level}-${x.outcome}`}>
+                      • {x.name} ({x.outcome}): {x.detail}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* evidence quality */}

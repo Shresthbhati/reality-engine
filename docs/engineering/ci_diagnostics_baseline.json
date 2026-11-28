@@ -1,0 +1,1700 @@
+{
+ "inputs": [
+  {
+   "counts": {
+    "failed": 8,
+    "passed": 809,
+    "skipped": 7,
+    "total": 824
+   },
+   "skip_reasons": [
+    {
+     "count": 2,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 2,
+     "reason": "could not import 'pxr.Usd': No module named 'pxr'"
+    },
+    {
+     "count": 1,
+     "reason": "SAM2 or south_building image unavailable"
+    },
+    {
+     "count": 1,
+     "reason": "could not import 'open3d': No module named 'open3d'"
+    },
+    {
+     "count": 1,
+     "reason": "imageio not installed; install with: pip install imageio"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_application_api.py",
+     "seconds": 179.45
+    },
+    {
+     "file": "tests/test_reconstruction_lifecycle_semantics.py",
+     "seconds": 37.93
+    },
+    {
+     "file": "tests/test_synthetic_vio.py",
+     "seconds": 28.41
+    },
+    {
+     "file": "tests/test_apartment_grammar.py",
+     "seconds": 25.69
+    },
+    {
+     "file": "tests/test_place_api.py",
+     "seconds": 22.37
+    },
+    {
+     "file": "tests/test_job_progress.py",
+     "seconds": 22.12
+    },
+    {
+     "file": "tests/test_api_sites.py",
+     "seconds": 13.9
+    },
+    {
+     "file": "tests/test_dead_worker_recovery.py",
+     "seconds": 13.45
+    },
+    {
+     "file": "tests/test_furniture_commands_and_undo.py",
+     "seconds": 13.01
+    },
+    {
+     "file": "tests/test_confidence_defaults.py",
+     "seconds": 12.65
+    },
+    {
+     "file": "tests/test_measured_room_accuracy_report.py",
+     "seconds": 12.14
+    },
+    {
+     "file": "tests/test_adoption_transaction.py",
+     "seconds": 11.55
+    },
+    {
+     "file": "tests/test_stage_artifacts.py",
+     "seconds": 10.22
+    },
+    {
+     "file": "tests/test_colour_survival.py",
+     "seconds": 9.13
+    },
+    {
+     "file": "tests/test_multistorey_matrix.py",
+     "seconds": 8.34
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 12.65,
+     "test": "tests/test_confidence_defaults.py::test_every_producer_states_its_confidence"
+    },
+    {
+     "seconds": 11.79,
+     "test": "tests/test_application_api.py::test_reconstruct_partial_on_skipped_evidence"
+    },
+    {
+     "seconds": 11.05,
+     "test": "tests/test_reconstruction_lifecycle_semantics.py::test_timeout_can_never_grade_success"
+    },
+    {
+     "seconds": 9.63,
+     "test": "tests/test_job_progress.py::test_failed_job_is_not_100_percent_and_has_failed_stage"
+    },
+    {
+     "seconds": 9.39,
+     "test": "tests/test_application_api.py::test_apartment_hub_brief_without_aspect_max_solves_and_commits"
+    },
+    {
+     "seconds": 8.28,
+     "test": "tests/test_application_api.py::test_apartment_put_and_delete"
+    },
+    {
+     "seconds": 6.28,
+     "test": "tests/test_apartment_grammar.py::test_every_room_reachable_from_entrance"
+    },
+    {
+     "seconds": 6.12,
+     "test": "tests/test_job_progress.py::test_reads_stay_fast_while_a_job_blocks"
+    },
+    {
+     "seconds": 6.08,
+     "test": "tests/test_place_api.py::test_summary_shows_the_running_build"
+    },
+    {
+     "seconds": 5.68,
+     "test": "tests/test_application_api.py::test_cancel_running_job"
+    },
+    {
+     "seconds": 5.65,
+     "test": "tests/test_furniture_commands_and_undo.py::test_cross_world_undo_isolation"
+    },
+    {
+     "seconds": 5.65,
+     "test": "tests/test_application_api.py::test_timed_out_job_adopts_nothing"
+    },
+    {
+     "seconds": 5.34,
+     "test": "tests/test_room_surfaces.py::test_surfaces_come_from_the_solid_slabs_not_the_evidence_planes"
+    },
+    {
+     "seconds": 5.3,
+     "test": "tests/test_application_api.py::test_apartment_hub_brief_solve_then_commit"
+    },
+    {
+     "seconds": 4.9,
+     "test": "tests/test_application_api.py::test_cancel_terminal_job_409"
+    },
+    {
+     "seconds": 4.86,
+     "test": "tests/test_colour_survival.py::test_photo_sampled_colour_reaches_every_wall_floor_ceiling_and_the_room"
+    },
+    {
+     "seconds": 4.61,
+     "test": "tests/test_application_api.py::test_create_building_with_floor_layout_201_then_duplicate_409"
+    },
+    {
+     "seconds": 4.43,
+     "test": "tests/test_application_api.py::test_failed_job_exhausts_retries"
+    },
+    {
+     "seconds": 4.35,
+     "test": "tests/test_measured_room_accuracy_report.py::test_cli_execution_synthetic_fixture"
+    },
+    {
+     "seconds": 4.33,
+     "test": "tests/test_application_api.py::test_apartment_commit_lands_rooms_and_doors_and_409_on_duplicate"
+    },
+    {
+     "seconds": 4.22,
+     "test": "tests/test_colour_survival.py::test_unmeasured_colour_is_absent_never_a_default"
+    },
+    {
+     "seconds": 4.02,
+     "test": "tests/test_reconstruction_lifecycle_semantics.py::test_degraded_run_is_partial_and_carries_reasons"
+    },
+    {
+     "seconds": 4.0,
+     "test": "tests/test_measured_room_accuracy_report.py::test_evaluate_measured_room_accuracy_on_synthetic_fixture"
+    },
+    {
+     "seconds": 3.91,
+     "test": "tests/test_reconstruction_lifecycle_semantics.py::test_duplicate_enqueue_is_rejected_not_fabricated"
+    },
+    {
+     "seconds": 3.85,
+     "test": "tests/test_application_api.py::test_apartment_commit_revalidates_posted_rects"
+    }
+   ],
+   "source": "junit1.xml",
+   "sum_test_seconds": 480.66,
+   "wall_seconds": 685.2
+  },
+  {
+   "counts": {
+    "failed": 2,
+    "passed": 899,
+    "skipped": 21,
+    "total": 922
+   },
+   "skip_reasons": [
+    {
+     "count": 13,
+     "reason": "real pipeline worldir not generated locally: C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\.claude\\worktrees\\laughing-colden-c781cf\\d"
+    },
+    {
+     "count": 5,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 1,
+     "reason": "real evidence package fixture not generated locally: C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\.claude\\worktrees\\laughing-colden-"
+    },
+    {
+     "count": 1,
+     "reason": "huggingface_hub is not installed (optional extra)"
+    },
+    {
+     "count": 1,
+     "reason": "opt-in: needs the real photos + tape measurements and COLMAP (datasets/README.md)"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_interior_scene_e2e.py",
+     "seconds": 39.68
+    },
+    {
+     "file": "tests/test_technologies_honesty.py",
+     "seconds": 20.04
+    },
+    {
+     "file": "tests/test_compaction_policy.py",
+     "seconds": 17.15
+    },
+    {
+     "file": "tests/test_spatial_compiler.py",
+     "seconds": 13.8
+    },
+    {
+     "file": "tests/test_depth_cache.py",
+     "seconds": 13.76
+    },
+    {
+     "file": "tests/test_body_id_tenancy.py",
+     "seconds": 12.55
+    },
+    {
+     "file": "tests/test_design_options_finish_layer.py",
+     "seconds": 9.86
+    },
+    {
+     "file": "tests/test_room_fidelity_report.py",
+     "seconds": 9.59
+    },
+    {
+     "file": "tests/test_meshing_pipeline.py",
+     "seconds": 9.07
+    },
+    {
+     "file": "tests/test_dimension_gates.py",
+     "seconds": 6.7
+    },
+    {
+     "file": "tests/test_parametric_fits.py",
+     "seconds": 5.01
+    },
+    {
+     "file": "tests/test_security_dast.py",
+     "seconds": 4.93
+    },
+    {
+     "file": "tests/test_hardware_aware_execution_rule10.py",
+     "seconds": 4.93
+    },
+    {
+     "file": "tests/test_room_schedule_csv.py",
+     "seconds": 4.1
+    },
+    {
+     "file": "tests/test_evidence_world_failure_semantics.py",
+     "seconds": 3.69
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 19.77,
+     "test": "tests/test_interior_scene_e2e.py::test_deterministic"
+    },
+    {
+     "seconds": 16.78,
+     "test": "tests/test_technologies_honesty.py::test_report_has_no_unconditional_verification_claim"
+    },
+    {
+     "seconds": 12.09,
+     "test": "tests/test_spatial_compiler.py::test_compiler_beats_both_baselines_on_duplicates_and_association_in_a_small_sweep"
+    },
+    {
+     "seconds": 10.69,
+     "test": "tests/test_interior_scene_e2e.py::test_full_interior_chain"
+    },
+    {
+     "seconds": 9.22,
+     "test": "tests/test_interior_scene_e2e.py::test_save_reload_same_structure"
+    },
+    {
+     "seconds": 8.6,
+     "test": "tests/test_meshing_pipeline.py::test_unknown_scale_skips"
+    },
+    {
+     "seconds": 7.11,
+     "test": "tests/test_depth_cache.py::test_a_second_job_on_the_same_images_and_weights_never_loads_the_model_and_gets_identical_depth"
+    },
+    {
+     "seconds": 6.78,
+     "test": "tests/test_compaction_policy.py::test_large_manifest_compaction"
+    },
+    {
+     "seconds": 6.38,
+     "test": "tests/test_design_options_finish_layer.py::test_as_built_export_unchanged_after_surface_finish_edits"
+    },
+    {
+     "seconds": 5.19,
+     "test": "tests/test_compaction_policy.py::test_large_chain_compaction"
+    },
+    {
+     "seconds": 4.9,
+     "test": "tests/test_room_fidelity_report.py::test_report_matches_committed_baseline_and_gate_passes"
+    },
+    {
+     "seconds": 4.66,
+     "test": "tests/test_dimension_gates.py::test_fixture_world_reconciles_cleanly_and_records_net_wall_area"
+    },
+    {
+     "seconds": 4.6,
+     "test": "tests/test_room_fidelity_report.py::test_unavailable_metrics_are_never_numbers"
+    },
+    {
+     "seconds": 4.42,
+     "test": "tests/test_hardware_aware_execution_rule10.py::test_spatial_point_cloud_tiling"
+    },
+    {
+     "seconds": 3.47,
+     "test": "tests/test_design_options_finish_layer.py::test_named_design_options_lifecycle_and_side_by_side_export"
+    },
+    {
+     "seconds": 3.47,
+     "test": "tests/test_depth_cache.py::test_without_a_checkpoint_hash_nothing_is_cached_and_the_report_says_why"
+    },
+    {
+     "seconds": 3.19,
+     "test": "tests/test_technologies_honesty.py::test_simulated_never_passes_or_recommended"
+    },
+    {
+     "seconds": 3.11,
+     "test": "tests/test_depth_cache.py::test_a_changed_image_is_a_miss_even_with_the_same_weights"
+    },
+    {
+     "seconds": 2.43,
+     "test": "tests/test_body_id_tenancy.py::test_no_body_id_route_succeeds_for_another_tenant[b-admin]"
+    },
+    {
+     "seconds": 2.38,
+     "test": "tests/test_body_id_tenancy.py::test_no_body_id_route_succeeds_for_another_tenant[b]"
+    },
+    {
+     "seconds": 2.35,
+     "test": "tests/test_compaction_policy.py::test_failed_compaction_never_invalidates_the_previous_valid_version"
+    },
+    {
+     "seconds": 2.29,
+     "test": "tests/test_apartment_ui_templates.py::test_ui_templates_solve_with_prefilled_adjacency"
+    },
+    {
+     "seconds": 2.05,
+     "test": "tests/test_universal_expansion_e2e.py::test_e2e_multi_format_exports_and_copilot_assistant"
+    },
+    {
+     "seconds": 2.03,
+     "test": "tests/test_dimension_gates.py::test_synthetic_l_room_compiles_without_a_dimensional_inconsistency_warning"
+    },
+    {
+     "seconds": 1.36,
+     "test": "tests/test_trajectory_backend.py::test_hung_binary_times_out_explicitly"
+    }
+   ],
+   "source": "junit2.xml",
+   "sum_test_seconds": 196.55,
+   "wall_seconds": 295.89
+  },
+  {
+   "counts": {
+    "passed": 883,
+    "skipped": 22,
+    "total": 905
+   },
+   "skip_reasons": [
+    {
+     "count": 6,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 4,
+     "reason": "real dense-MVS capture not present at datasets\\room_capture_mvs\\dense\\fused.ply (gitignored artifact of the 2026-09-15 GPU COLMAP run) -- in"
+    },
+    {
+     "count": 4,
+     "reason": "torch is not installed (optional extra)"
+    },
+    {
+     "count": 1,
+     "reason": "not covered: needs a single-image corner observation fed through a confidence model; association.associate() has no confidence output to ass"
+    },
+    {
+     "count": 1,
+     "reason": "not covered: needs real wide-baseline photos through real COLMAP (slow journey: tests/integration/test_progressive_product_journey.py HARD w"
+    },
+    {
+     "count": 1,
+     "reason": "not covered: needs a mirror-bearing capture (real photos or a reflective synthetic scene) and a reflection detector; none exists in syntheti"
+    },
+    {
+     "count": 1,
+     "reason": "not covered: needs textureless-wall photos reconstructed end to end (real COLMAP) and an assertion that no features/points are invented"
+    },
+    {
+     "count": 1,
+     "reason": "not covered: needs a contradictory-geometry fixture producing a CONFLICT record with both hypotheses retained (conflicts are only produced i"
+    },
+    {
+     "count": 1,
+     "reason": "COLMAP photo fixture wld_841c36c182db not present"
+    },
+    {
+     "count": 1,
+     "reason": "COLMAP photo fixture not present"
+    },
+    {
+     "count": 1,
+     "reason": "depth_anything_metric checkpoint not cached"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_room_refine.py",
+     "seconds": 123.54
+    },
+    {
+     "file": "tests/test_upload_integrity_contract.py",
+     "seconds": 98.98
+    },
+    {
+     "file": "tests/test_tenant_adversarial.py",
+     "seconds": 44.55
+    },
+    {
+     "file": "tests/test_spatial_global_stage.py",
+     "seconds": 37.63
+    },
+    {
+     "file": "tests/test_world_lifecycle.py",
+     "seconds": 26.82
+    },
+    {
+     "file": "tests/test_pose_graph.py",
+     "seconds": 18.34
+    },
+    {
+     "file": "tests/test_50_technologies_catalog.py",
+     "seconds": 11.22
+    },
+    {
+     "file": "tests/test_arch_benchmark.py",
+     "seconds": 11.06
+    },
+    {
+     "file": "tests/test_measurements.py",
+     "seconds": 7.36
+    },
+    {
+     "file": "tests/test_backup_lifecycle.py",
+     "seconds": 6.59
+    },
+    {
+     "file": "tests/test_api_dense_cpu.py",
+     "seconds": 4.18
+    },
+    {
+     "file": "tests/test_proc_ownership.py",
+     "seconds": 4.1
+    },
+    {
+     "file": "tests/test_dense_cloud_fusion.py",
+     "seconds": 3.48
+    },
+    {
+     "file": "tests/test_run_manifest.py",
+     "seconds": 3.21
+    },
+    {
+     "file": "tests/test_activity_ownership.py",
+     "seconds": 2.75
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 68.54,
+     "test": "tests/test_room_refine.py::test_L_shape_never_materially_worse_and_median_better"
+    },
+    {
+     "seconds": 31.7,
+     "test": "tests/test_room_refine.py::test_box_rooms_improve_over_30_seeds"
+    },
+    {
+     "seconds": 14.84,
+     "test": "tests/test_room_refine.py::test_skewed_room_keeps_its_skew"
+    },
+    {
+     "seconds": 12.45,
+     "test": "tests/test_spatial_global_stage.py::test_production_job_path_with_flag_records_the_skipped_stage"
+    },
+    {
+     "seconds": 12.19,
+     "test": "tests/test_spatial_global_stage.py::test_production_job_path_runs_the_optimizer_when_a_producer_supplies_inputs"
+    },
+    {
+     "seconds": 11.98,
+     "test": "tests/test_spatial_global_stage.py::test_without_the_flag_the_default_job_has_no_spatial_stage"
+    },
+    {
+     "seconds": 10.46,
+     "test": "tests/test_50_technologies_catalog.py::test_benchmark_harness_comprehensive_evaluation"
+    },
+    {
+     "seconds": 9.73,
+     "test": "tests/test_tenant_adversarial.py::test_tenant_a_data_is_not_changed_by_the_failed_attacks"
+    },
+    {
+     "seconds": 8.98,
+     "test": "tests/test_pose_graph.py::test_gross_outlier_loop_is_rejected_and_reported"
+    },
+    {
+     "seconds": 8.35,
+     "test": "tests/test_tenant_adversarial.py::test_no_route_taking_a_tenant_resource_id_succeeds_for_another_tenant[b]"
+    },
+    {
+     "seconds": 8.27,
+     "test": "tests/test_tenant_adversarial.py::test_no_route_taking_a_tenant_resource_id_succeeds_for_another_tenant[b-admin]"
+    },
+    {
+     "seconds": 6.13,
+     "test": "tests/test_tenant_adversarial.py::test_no_route_taking_a_tenant_resource_id_succeeds_for_another_tenant[anon]"
+    },
+    {
+     "seconds": 5.9,
+     "test": "tests/test_backup_lifecycle.py::test_backup_restore_restart_edit_export_lifecycle"
+    },
+    {
+     "seconds": 4.32,
+     "test": "tests/test_tenant_adversarial.py::test_list_endpoints_do_not_reveal_another_tenants_ids[b]"
+    },
+    {
+     "seconds": 4.04,
+     "test": "tests/test_upload_integrity_contract.py::test_supported_formats_are_accepted_and_classified_by_their_bytes[jpeg]"
+    },
+    {
+     "seconds": 3.98,
+     "test": "tests/test_tenant_adversarial.py::test_positive_controls_tenant_a_reaches_its_own_resources"
+    },
+    {
+     "seconds": 3.96,
+     "test": "tests/test_room_refine.py::test_scale_and_frame_independence"
+    },
+    {
+     "seconds": 3.92,
+     "test": "tests/test_arch_benchmark.py::test_deterministic_report"
+    },
+    {
+     "seconds": 3.91,
+     "test": "tests/test_upload_integrity_contract.py::test_original_bytes_are_stored_unchanged"
+    },
+    {
+     "seconds": 3.87,
+     "test": "tests/test_upload_integrity_contract.py::test_supported_formats_are_accepted_and_classified_by_their_bytes[png]"
+    },
+    {
+     "seconds": 3.87,
+     "test": "tests/test_upload_integrity_contract.py::test_supported_formats_are_accepted_and_classified_by_their_bytes[webp]"
+    },
+    {
+     "seconds": 3.83,
+     "test": "tests/test_upload_integrity_contract.py::test_exif_and_original_filename_are_retrievable"
+    },
+    {
+     "seconds": 3.81,
+     "test": "tests/test_upload_integrity_contract.py::test_oversize_upload_is_refused_with_413"
+    },
+    {
+     "seconds": 3.8,
+     "test": "tests/test_upload_integrity_contract.py::test_hostile_filename_cannot_escape_storage_root"
+    },
+    {
+     "seconds": 3.79,
+     "test": "tests/test_tenant_adversarial.py::test_list_endpoints_do_not_reveal_another_tenants_ids[b-admin]"
+    }
+   ],
+   "source": "junit3.xml",
+   "sum_test_seconds": 432.7,
+   "wall_seconds": 523.61
+  },
+  {
+   "counts": {
+    "errors": 2,
+    "failed": 12,
+    "passed": 905,
+    "skipped": 13,
+    "total": 932
+   },
+   "skip_reasons": [
+    {
+     "count": 1,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 1,
+     "reason": "real OWL-ViT checkpoint and the South Building photos are not present"
+    },
+    {
+     "count": 1,
+     "reason": "torch is not installed (optional extra)"
+    },
+    {
+     "count": 1,
+     "reason": "Real cached models unavailable"
+    },
+    {
+     "count": 1,
+     "reason": "torch is not installed (optional extra); MASt3R's probe needs it even in mock mode"
+    },
+    {
+     "count": 1,
+     "reason": "torch is not installed (optional extra); the DINOv2 probe needs it"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_dxf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_svg cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "multisheet_floorplan_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "room_report_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "room_schedule_csv cannot export this synthetic world even with numeric confidences: ValueError"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_engine_reachability_and_wired_engines.py",
+     "seconds": 27.85
+    },
+    {
+     "file": "tests/test_job_stage_runs_pipeline.py",
+     "seconds": 17.86
+    },
+    {
+     "file": "tests/test_api_inheritance_and_camera_model.py",
+     "seconds": 12.47
+    },
+    {
+     "file": "tests/test_layout_solver.py",
+     "seconds": 11.91
+    },
+    {
+     "file": "tests/test_real_perception_benchmark.py",
+     "seconds": 10.7
+    },
+    {
+     "file": "tests/test_job_lease_recovery.py",
+     "seconds": 9.85
+    },
+    {
+     "file": "tests/test_import_boundaries.py",
+     "seconds": 7.95
+    },
+    {
+     "file": "tests/test_frontend_no_fake_state.py",
+     "seconds": 7.85
+    },
+    {
+     "file": "tests/test_scale_route_parity.py",
+     "seconds": 7.63
+    },
+    {
+     "file": "tests/test_colmap_backend_dense.py",
+     "seconds": 6.66
+    },
+    {
+     "file": "tests/test_proposals_api.py",
+     "seconds": 5.05
+    },
+    {
+     "file": "tests/test_progressive_layout.py",
+     "seconds": 3.93
+    },
+    {
+     "file": "tests/test_blob_gc.py",
+     "seconds": 3.14
+    },
+    {
+     "file": "tests/test_room_inference.py",
+     "seconds": 2.76
+    },
+    {
+     "file": "tests/test_job_authorization.py",
+     "seconds": 2.64
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 20.75,
+     "test": "tests/test_engine_reachability_and_wired_engines.py::test_measurement_runs_and_is_self_consistent"
+    },
+    {
+     "seconds": 7.19,
+     "test": "tests/test_frontend_no_fake_state.py::test_production_sources_reference_no_fabricated_identifiers"
+    },
+    {
+     "seconds": 7.06,
+     "test": "tests/test_engine_reachability_and_wired_engines.py::test_measurement_names_the_part_b_targets"
+    },
+    {
+     "seconds": 5.32,
+     "test": "tests/test_real_perception_benchmark.py::test_real_perception_benchmark_end_to_end"
+    },
+    {
+     "seconds": 5.07,
+     "test": "tests/test_job_stage_runs_pipeline.py::test_unchanged_run_keeps_its_payload_and_grades_succeeded"
+    },
+    {
+     "seconds": 4.97,
+     "test": "tests/test_job_stage_runs_pipeline.py::test_rejected_candidate_grades_partial_through_the_manifest"
+    },
+    {
+     "seconds": 4.18,
+     "test": "tests/test_import_boundaries.py::test_no_new_boundary_violations"
+    },
+    {
+     "seconds": 4.11,
+     "test": "tests/test_api_inheritance_and_camera_model.py::test_correction_commit_inherits_sessions_cameras_and_report"
+    },
+    {
+     "seconds": 3.76,
+     "test": "tests/test_import_boundaries.py::test_known_violations_not_stale"
+    },
+    {
+     "seconds": 3.41,
+     "test": "tests/test_real_perception_benchmark.py::test_benchmark_split_dev_and_test_separation"
+    },
+    {
+     "seconds": 3.02,
+     "test": "tests/test_job_stage_runs_pipeline.py::test_successful_reconstruct_records_the_fine_stages_in_order"
+    },
+    {
+     "seconds": 2.75,
+     "test": "tests/test_api_inheritance_and_camera_model.py::test_provenance_returns_the_entitys_own_supporting_evidence"
+    },
+    {
+     "seconds": 2.73,
+     "test": "tests/test_job_stage_runs_pipeline.py::test_single_image_fallback_skips_the_fine_stages_and_grades_partial_not_failed"
+    },
+    {
+     "seconds": 2.68,
+     "test": "tests/test_api_inheritance_and_camera_model.py::test_stale_parent_commit_is_a_409"
+    },
+    {
+     "seconds": 2.51,
+     "test": "tests/test_api_inheritance_and_camera_model.py::test_provenance_session_fallback_is_labelled"
+    },
+    {
+     "seconds": 2.42,
+     "test": "tests/test_scale_route_parity.py::test_the_evidence_route_refuses_contradicting_anchors_and_changes_nothing"
+    },
+    {
+     "seconds": 2.07,
+     "test": "tests/test_job_stage_runs_pipeline.py::test_failing_required_stage_fails_the_job_with_the_stage_error"
+    },
+    {
+     "seconds": 1.9,
+     "test": "tests/test_colmap_backend_dense.py::test_dense_stage_failure_raises_never_sparse_success"
+    },
+    {
+     "seconds": 1.83,
+     "test": "tests/test_scale_route_parity.py::test_evidence_route_returns_the_same_record_shape_and_vocabulary"
+    },
+    {
+     "seconds": 1.81,
+     "test": "tests/test_real_perception_benchmark.py::test_load_ground_truth_dataset"
+    },
+    {
+     "seconds": 1.77,
+     "test": "tests/test_scale_route_parity.py::test_the_evidence_export_labels_units_and_stays_gated_until_calibrated"
+    },
+    {
+     "seconds": 1.73,
+     "test": "tests/test_colmap_backend_dense.py::test_dense_without_store_records_honest_no_artifact"
+    },
+    {
+     "seconds": 1.63,
+     "test": "tests/test_colmap_backend_dense.py::test_dense_mvs_attaches_fused_points_and_report"
+    },
+    {
+     "seconds": 1.57,
+     "test": "tests/test_progressive_layout.py::test_the_ladder_registers_and_fuses_the_photos_by_itself"
+    },
+    {
+     "seconds": 1.53,
+     "test": "tests/test_layout_solver.py::test_alternatives_are_distinct_and_capped"
+    }
+   ],
+   "source": "junit4.xml",
+   "sum_test_seconds": 165.23,
+   "wall_seconds": 215.23
+  },
+  {
+   "counts": {
+    "failed": 3,
+    "passed": 912,
+    "skipped": 14,
+    "total": 929
+   },
+   "skip_reasons": [
+    {
+     "count": 7,
+     "reason": "torch and transformers are not installed (optional extras)"
+    },
+    {
+     "count": 1,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 1,
+     "reason": "could not import 'open3d': No module named 'open3d'"
+    },
+    {
+     "count": 1,
+     "reason": "KNOWN LIMIT (P7-03): detect_stairs requires a regular rise between consecutive observed bands, so a flight whose middle treads were never ob"
+    },
+    {
+     "count": 1,
+     "reason": "KNOWN LIMIT (P7-03): detect_stairs bins all z values into level bands, so the riser faces of a real flight (continuous in z) merge the tread"
+    },
+    {
+     "count": 1,
+     "reason": "KNOWN LIMIT (P7-03): rooms joined by doorways over one coplanar floor are merged into ONE room (measured: corridor + 2 rooms -> 1 room of 40"
+    },
+    {
+     "count": 1,
+     "reason": "KNOWN LIMIT (P7-03): stairs are not wired into interior assembly -- the flight is measured by perception.architecture.stairs.detect_stairs b"
+    },
+    {
+     "count": 1,
+     "reason": "KNOWN LIMIT (P7-03): under realistic depth noise (sigma ~1.6 cm at 5 m, 2% dropout) the opening scanner reports phantom openings from covera"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_reconstruction_reliability.py",
+     "seconds": 93.59
+    },
+    {
+     "file": "tests/test_synthetic_indoor.py",
+     "seconds": 73.98
+    },
+    {
+     "file": "tests/test_commit_validation_contract.py",
+     "seconds": 36.91
+    },
+    {
+     "file": "tests/test_golden_datasets.py",
+     "seconds": 26.12
+    },
+    {
+     "file": "tests/test_evidence_world_job.py",
+     "seconds": 19.52
+    },
+    {
+     "file": "tests/test_edit_preservation_reprocess.py",
+     "seconds": 11.16
+    },
+    {
+     "file": "tests/test_golden_path_api_to_glb.py",
+     "seconds": 11.04
+    },
+    {
+     "file": "tests/test_scale_suggestion.py",
+     "seconds": 10.15
+    },
+    {
+     "file": "tests/test_corrections.py",
+     "seconds": 8.92
+    },
+    {
+     "file": "tests/test_lift_stage_e2e.py",
+     "seconds": 8.62
+    },
+    {
+     "file": "tests/test_task_13_2_dedup_and_session_grouping.py",
+     "seconds": 6.56
+    },
+    {
+     "file": "tests/test_camera_views_and_renders.py",
+     "seconds": 6.28
+    },
+    {
+     "file": "tests/test_client_share_link.py",
+     "seconds": 5.58
+    },
+    {
+     "file": "tests/test_observability_job_logs.py",
+     "seconds": 5.21
+    },
+    {
+     "file": "tests/test_plane_sweep.py",
+     "seconds": 4.98
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 13.74,
+     "test": "tests/test_reconstruction_reliability.py::test_refinement_chains_and_failed_refinement_preserves_head"
+    },
+    {
+     "seconds": 11.69,
+     "test": "tests/test_synthetic_indoor.py::test_two_storeys_keep_their_own_floors_ceilings_and_rooms_with_a_stairwell_between"
+    },
+    {
+     "seconds": 8.78,
+     "test": "tests/test_synthetic_indoor.py::test_three_disconnected_storeys_stay_three"
+    },
+    {
+     "seconds": 8.57,
+     "test": "tests/test_reconstruction_reliability.py::test_injected_worldstore_failure_persists_nothing"
+    },
+    {
+     "seconds": 8.49,
+     "test": "tests/test_golden_datasets.py::test_golden_dataset_category_passes[multiple_floors]"
+    },
+    {
+     "seconds": 7.41,
+     "test": "tests/test_reconstruction_reliability.py::test_injected_db_failure_persists_nothing"
+    },
+    {
+     "seconds": 7.33,
+     "test": "tests/test_reconstruction_reliability.py::test_same_world_concurrent_completion_single_head"
+    },
+    {
+     "seconds": 6.9,
+     "test": "tests/test_reconstruction_reliability.py::test_concurrent_distinct_worlds_succeed"
+    },
+    {
+     "seconds": 6.89,
+     "test": "tests/test_evidence_world_job.py::test_flag_on_records_the_stage_without_changing_the_job_grade"
+    },
+    {
+     "seconds": 6.74,
+     "test": "tests/test_reconstruction_reliability.py::test_injected_validation_failure_persists_nothing"
+    },
+    {
+     "seconds": 6.33,
+     "test": "tests/test_synthetic_indoor.py::test_realistic_depth_noise_keeps_floor_ceiling_and_room_extent"
+    },
+    {
+     "seconds": 6.31,
+     "test": "tests/test_reconstruction_reliability.py::test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched"
+    },
+    {
+     "seconds": 6.12,
+     "test": "tests/test_synthetic_indoor.py::test_assembly_is_deterministic"
+    },
+    {
+     "seconds": 6.08,
+     "test": "tests/test_edit_preservation_reprocess.py::test_api_reprocess_preserves_accepted_manual_edits"
+    },
+    {
+     "seconds": 5.92,
+     "test": "tests/test_evidence_world_job.py::test_operator_cancel_during_the_stage_stops_the_job_before_adoption_and_keeps_finished_evidence"
+    },
+    {
+     "seconds": 5.81,
+     "test": "tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from"
+    },
+    {
+     "seconds": 5.38,
+     "test": "tests/test_synthetic_indoor.py::test_a_table_hides_the_floor_beneath_it_and_glass_returns_no_depth"
+    },
+    {
+     "seconds": 5.07,
+     "test": "tests/test_camera_views_and_renders.py::test_render_endpoint_returns_png_for_saved_view"
+    },
+    {
+     "seconds": 4.98,
+     "test": "tests/test_synthetic_indoor.py::test_observation_is_deterministic"
+    },
+    {
+     "seconds": 4.81,
+     "test": "tests/test_synthetic_indoor.py::test_ramp_room_under_noise_reports_only_the_real_door"
+    },
+    {
+     "seconds": 4.46,
+     "test": "tests/test_verification_model_rule2.py::test_benchmark_result_contains_all_rule_2_fields"
+    },
+    {
+     "seconds": 4.45,
+     "test": "tests/test_golden_datasets.py::test_golden_dataset_category_passes[furnished_interior]"
+    },
+    {
+     "seconds": 4.3,
+     "test": "tests/test_reconstruction_reliability.py::test_golden_restart_correction_diff"
+    },
+    {
+     "seconds": 4.27,
+     "test": "tests/test_reconstruction_reliability.py::test_unregistrable_input_fails_without_output"
+    },
+    {
+     "seconds": 4.02,
+     "test": "tests/test_reconstruction_reliability.py::test_cancel_after_persistence_adopts_but_grades_cancelled"
+    }
+   ],
+   "source": "junit5.xml",
+   "sum_test_seconds": 380.19,
+   "wall_seconds": 449.53
+  },
+  {
+   "counts": {
+    "failed": 3,
+    "passed": 777,
+    "skipped": 17,
+    "total": 797
+   },
+   "skip_reasons": [
+    {
+     "count": 7,
+     "reason": "torch and transformers are not installed (optional extras)"
+    },
+    {
+     "count": 3,
+     "reason": "torch and kornia are not installed (optional extras)"
+    },
+    {
+     "count": 2,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 2,
+     "reason": "could not import 'pycolmap': No module named 'pycolmap'"
+    },
+    {
+     "count": 2,
+     "reason": "could not import 'pxr.Usd': No module named 'pxr'"
+    },
+    {
+     "count": 1,
+     "reason": "BLOCKED: needs a real 3DCityDB v5 + citydb-tool (CITYDB_TOOL, CITYDB_TEST_HOST, CITYDB_TEST_DB, CITYDB_TEST_USER, CITYDB_PASSWORD) -- not av"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_evidence_world_api.py",
+     "seconds": 78.95
+    },
+    {
+     "file": "tests/test_interior_invariants.py",
+     "seconds": 33.95
+    },
+    {
+     "file": "tests/test_job_progress.py",
+     "seconds": 26.58
+    },
+    {
+     "file": "tests/test_evidence_world_job.py",
+     "seconds": 18.83
+    },
+    {
+     "file": "tests/test_edit_preservation_reprocess.py",
+     "seconds": 17.73
+    },
+    {
+     "file": "tests/test_world_adoption_api.py",
+     "seconds": 15.21
+    },
+    {
+     "file": "tests/test_multiview_layout.py",
+     "seconds": 10.75
+    },
+    {
+     "file": "tests/test_stage_artifacts.py",
+     "seconds": 10.38
+    },
+    {
+     "file": "tests/test_multistorey_plane_support.py",
+     "seconds": 9.05
+    },
+    {
+     "file": "tests/test_compile_appearance.py",
+     "seconds": 8.98
+    },
+    {
+     "file": "tests/test_plane_detection_scale.py",
+     "seconds": 7.96
+    },
+    {
+     "file": "tests/test_synthetic_rgbd.py",
+     "seconds": 7.47
+    },
+    {
+     "file": "tests/test_hardware_aware_execution_rule10.py",
+     "seconds": 7.44
+    },
+    {
+     "file": "tests/test_structure_points.py",
+     "seconds": 6.41
+    },
+    {
+     "file": "tests/test_usage_metering.py",
+     "seconds": 6.38
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 17.78,
+     "test": "tests/test_interior_invariants.py::test_real_capture_is_deterministic"
+    },
+    {
+     "seconds": 10.7,
+     "test": "tests/test_job_progress.py::test_failed_job_is_not_100_percent_and_has_failed_stage"
+    },
+    {
+     "seconds": 7.73,
+     "test": "tests/test_edit_preservation_reprocess.py::test_api_reprocess_preserves_accepted_manual_edits"
+    },
+    {
+     "seconds": 7.48,
+     "test": "tests/test_job_progress.py::test_reads_stay_fast_while_a_job_blocks"
+    },
+    {
+     "seconds": 7.23,
+     "test": "tests/test_evidence_world_job.py::test_flag_on_records_the_stage_without_changing_the_job_grade"
+    },
+    {
+     "seconds": 7.03,
+     "test": "tests/test_world_adoption_api.py::test_reject_adoption_flow"
+    },
+    {
+     "seconds": 6.61,
+     "test": "tests/test_hardware_aware_execution_rule10.py::test_spatial_point_cloud_tiling"
+    },
+    {
+     "seconds": 6.4,
+     "test": "tests/test_edit_preservation_reprocess.py::test_carry_decisions_reclassify_by_exact_id"
+    },
+    {
+     "seconds": 6.3,
+     "test": "tests/test_evidence_world_api.py::test_gauge_scale_geometry_exports_only_after_an_explicit_acknowledgement_and_says_it_is_not_metres"
+    },
+    {
+     "seconds": 6.02,
+     "test": "tests/test_interior_invariants.py::test_real_building_statistics_and_correction_loop"
+    },
+    {
+     "seconds": 5.23,
+     "test": "tests/test_interior_invariants.py::test_real_capture_compiles_to_a_clean_validated_world"
+    },
+    {
+     "seconds": 5.03,
+     "test": "tests/test_evidence_world_api.py::test_a_persisted_world_is_served_verified_and_reflected_in_readiness"
+    },
+    {
+     "seconds": 4.98,
+     "test": "tests/test_compile_appearance.py::test_compiler_measures_colour_only_where_a_photo_saw_the_surface"
+    },
+    {
+     "seconds": 4.85,
+     "test": "tests/test_evidence_world_api.py::test_a_merge_correction_rebuilds_the_entity_from_the_raw_evidence_and_keeps_the_original_layer"
+    },
+    {
+     "seconds": 4.67,
+     "test": "tests/test_evidence_world_api.py::test_merging_entities_from_one_photograph_is_refused_unless_acknowledged_and_conflicting_classes_are_kept"
+    },
+    {
+     "seconds": 4.64,
+     "test": "tests/test_no_fake_backend_in_production.py::test_test_backend_refused_outside_test_env"
+    },
+    {
+     "seconds": 4.52,
+     "test": "tests/test_evidence_world_job.py::test_operator_cancel_during_the_stage_stops_the_job_before_adoption_and_keeps_finished_evidence"
+    },
+    {
+     "seconds": 4.52,
+     "test": "tests/test_vram_rtx4050_profile.py::test_rtx4050_hardware_profile_bounds_and_prevented_oom"
+    },
+    {
+     "seconds": 4.43,
+     "test": "tests/test_evidence_world_api.py::test_export_is_refused_when_nothing_is_positioned"
+    },
+    {
+     "seconds": 4.29,
+     "test": "tests/test_evidence_world_api.py::test_merge_validation_and_tenancy"
+    },
+    {
+     "seconds": 4.18,
+     "test": "tests/test_world_adoption_api.py::test_refuse_low_confidence_adoption_with_422"
+    },
+    {
+     "seconds": 4.14,
+     "test": "tests/test_evidence_world_api.py::test_the_manifest_route_returns_the_manifest_with_a_fresh_verification_and_is_tenant_scoped"
+    },
+    {
+     "seconds": 4.0,
+     "test": "tests/test_compile_appearance.py::test_no_photo_means_no_surface_gets_a_colour"
+    },
+    {
+     "seconds": 4.0,
+     "test": "tests/test_world_adoption_api.py::test_propose_and_commit_world_adoption_lifecycle"
+    },
+    {
+     "seconds": 3.97,
+     "test": "tests/test_evidence_world_api.py::test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_once_and_cannot_be_applied_twice"
+    }
+   ],
+   "source": "junit6.xml",
+   "sum_test_seconds": 325.48,
+   "wall_seconds": 485.9
+  },
+  {
+   "counts": {
+    "failed": 6,
+    "passed": 871,
+    "skipped": 14,
+    "total": 891
+   },
+   "skip_reasons": [
+    {
+     "count": 7,
+     "reason": "torch and transformers are not installed (optional extras)"
+    },
+    {
+     "count": 4,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 1,
+     "reason": "huggingface_hub is not installed (optional extra)"
+    },
+    {
+     "count": 1,
+     "reason": "could not import 'open3d': No module named 'open3d'"
+    },
+    {
+     "count": 1,
+     "reason": "this schema version does not flag the cycle"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_technologies_honesty.py",
+     "seconds": 25.2
+    },
+    {
+     "file": "tests/test_spatial_association_cache.py",
+     "seconds": 24.82
+    },
+    {
+     "file": "tests/test_assistant_tools.py",
+     "seconds": 23.5
+    },
+    {
+     "file": "tests/test_edit_preservation_reprocess.py",
+     "seconds": 20.4
+    },
+    {
+     "file": "tests/test_evidence_world_job.py",
+     "seconds": 19.11
+    },
+    {
+     "file": "tests/test_artifact_integrity.py",
+     "seconds": 13.82
+    },
+    {
+     "file": "tests/test_room_fidelity_report.py",
+     "seconds": 13.08
+    },
+    {
+     "file": "tests/test_uncertainty_propagation.py",
+     "seconds": 12.37
+    },
+    {
+     "file": "tests/test_scale_lifecycle.py",
+     "seconds": 11.93
+    },
+    {
+     "file": "tests/test_world_adoption_api.py",
+     "seconds": 11.21
+    },
+    {
+     "file": "tests/test_mobile_bridge.py",
+     "seconds": 9.66
+    },
+    {
+     "file": "tests/test_surface_appearance.py",
+     "seconds": 9.42
+    },
+    {
+     "file": "tests/test_progressive_units.py",
+     "seconds": 7.75
+    },
+    {
+     "file": "tests/test_depth_cache.py",
+     "seconds": 7.1
+    },
+    {
+     "file": "tests/test_room_schedule_csv.py",
+     "seconds": 5.03
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 23.45,
+     "test": "tests/test_technologies_honesty.py::test_report_has_no_unconditional_verification_claim"
+    },
+    {
+     "seconds": 20.02,
+     "test": "tests/test_spatial_association_cache.py::test_the_96_view_case_that_stalled_with_lsmr_now_converges_to_the_dense_optimum"
+    },
+    {
+     "seconds": 12.27,
+     "test": "tests/test_uncertainty_propagation.py::test_composition_matches_monte_carlo"
+    },
+    {
+     "seconds": 9.65,
+     "test": "tests/test_edit_preservation_reprocess.py::test_api_reprocess_preserves_accepted_manual_edits"
+    },
+    {
+     "seconds": 7.58,
+     "test": "tests/test_edit_preservation_reprocess.py::test_carry_decisions_reclassify_by_exact_id"
+    },
+    {
+     "seconds": 7.52,
+     "test": "tests/test_mobile_bridge.py::test_200_frame_bundle_roundtrip_without_loss"
+    },
+    {
+     "seconds": 6.95,
+     "test": "tests/test_scale_lifecycle.py::test_calibration_is_a_new_version_the_parent_hash_is_unchanged_and_a_fresh_process_reloads_and_exports_it"
+    },
+    {
+     "seconds": 6.93,
+     "test": "tests/test_evidence_world_job.py::test_flag_on_records_the_stage_without_changing_the_job_grade"
+    },
+    {
+     "seconds": 6.92,
+     "test": "tests/test_room_fidelity_report.py::test_report_matches_committed_baseline_and_gate_passes"
+    },
+    {
+     "seconds": 6.03,
+     "test": "tests/test_room_fidelity_report.py::test_unavailable_metrics_are_never_numbers"
+    },
+    {
+     "seconds": 4.9,
+     "test": "tests/test_world_adoption_api.py::test_propose_and_commit_world_adoption_lifecycle"
+    },
+    {
+     "seconds": 4.16,
+     "test": "tests/test_evidence_world_job.py::test_a_failing_flow_never_fails_the_job_and_the_failure_is_recorded"
+    },
+    {
+     "seconds": 4.05,
+     "test": "tests/test_evidence_world_job.py::test_operator_cancel_during_the_stage_stops_the_job_before_adoption_and_keeps_finished_evidence"
+    },
+    {
+     "seconds": 3.94,
+     "test": "tests/test_evidence_world_job.py::test_flag_off_leaves_the_production_job_exactly_as_before"
+    },
+    {
+     "seconds": 3.16,
+     "test": "tests/test_world_adoption_api.py::test_reject_adoption_flow"
+    },
+    {
+     "seconds": 3.15,
+     "test": "tests/test_world_adoption_api.py::test_refuse_low_confidence_adoption_with_422"
+    },
+    {
+     "seconds": 2.87,
+     "test": "tests/test_apartment_ui_templates.py::test_ui_templates_solve_with_prefilled_adjacency"
+    },
+    {
+     "seconds": 2.52,
+     "test": "tests/test_depth_cache.py::test_a_second_job_on_the_same_images_and_weights_never_loads_the_model_and_gets_identical_depth"
+    },
+    {
+     "seconds": 2.45,
+     "test": "tests/test_surface_appearance.py::test_exposure_and_white_balance_are_normalised_across_views"
+    },
+    {
+     "seconds": 2.44,
+     "test": "tests/test_artifact_integrity.py::test_create_world_rejects_bad_input"
+    },
+    {
+     "seconds": 2.3,
+     "test": "tests/test_depth_cache.py::test_a_changed_image_is_a_miss_even_with_the_same_weights"
+    },
+    {
+     "seconds": 2.19,
+     "test": "tests/test_depth_cache.py::test_without_a_checkpoint_hash_nothing_is_cached_and_the_report_says_why"
+    },
+    {
+     "seconds": 2.13,
+     "test": "tests/test_assistant_tools.py::test_assistant_stale_plan_is_409_and_stays_stale"
+    },
+    {
+     "seconds": 2.09,
+     "test": "tests/test_verification_status.py::test_api_reports_the_registry_and_a_runtime_probe"
+    },
+    {
+     "seconds": 1.87,
+     "test": "tests/test_progressive_units.py::test_contribution_labels_duplicate_new_view_and_unrelated"
+    }
+   ],
+   "source": "junit7.xml",
+   "sum_test_seconds": 257.27,
+   "wall_seconds": 500.58
+  },
+  {
+   "counts": {
+    "failed": 5,
+    "passed": 744,
+    "skipped": 23,
+    "total": 772
+   },
+   "skip_reasons": [
+    {
+     "count": 7,
+     "reason": "torch and transformers are not installed (optional extras)"
+    },
+    {
+     "count": 4,
+     "reason": "collection skipped"
+    },
+    {
+     "count": 1,
+     "reason": "opt-in: needs the real photos + tape measurements and COLMAP (datasets/README.md)"
+    },
+    {
+     "count": 1,
+     "reason": "Perception dependencies (torch/torchvision/numpy) not installed"
+    },
+    {
+     "count": 1,
+     "reason": "torch is not installed (optional extra); Florence-2 needs it"
+    },
+    {
+     "count": 1,
+     "reason": "COLMAP photo fixture directory not present"
+    },
+    {
+     "count": 1,
+     "reason": "could not import 'open3d': No module named 'open3d'"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_dxf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "floorplan_svg cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "multisheet_floorplan_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    },
+    {
+     "count": 1,
+     "reason": "room_report_pdf cannot export this synthetic world even with numeric confidences: ValueError"
+    }
+   ],
+   "slowest_files": [
+    {
+     "file": "tests/test_job_progress.py",
+     "seconds": 45.95
+    },
+    {
+     "file": "tests/test_failure_modes_colmap.py",
+     "seconds": 32.97
+    },
+    {
+     "file": "tests/test_corrections.py",
+     "seconds": 25.1
+    },
+    {
+     "file": "tests/test_api_world_artifacts.py",
+     "seconds": 18.71
+    },
+    {
+     "file": "tests/test_tenant_isolation.py",
+     "seconds": 15.6
+    },
+    {
+     "file": "tests/test_confidence_defaults.py",
+     "seconds": 15.03
+    },
+    {
+     "file": "tests/test_tenant_evidence_world_security.py",
+     "seconds": 14.61
+    },
+    {
+     "file": "tests/test_billing_stripe_task7_2.py",
+     "seconds": 11.37
+    },
+    {
+     "file": "tests/test_api_site_compose.py",
+     "seconds": 7.98
+    },
+    {
+     "file": "tests/test_living_room_acceptance_12_steps.py",
+     "seconds": 7.04
+    },
+    {
+     "file": "tests/test_multistorey_plane_support.py",
+     "seconds": 6.46
+    },
+    {
+     "file": "tests/test_colmap_deterministic_b12.py",
+     "seconds": 6.12
+    },
+    {
+     "file": "tests/test_run_manifest.py",
+     "seconds": 6.01
+    },
+    {
+     "file": "tests/test_sequential_maximum_fidelity.py",
+     "seconds": 5.44
+    },
+    {
+     "file": "tests/test_observability_job_logs.py",
+     "seconds": 5.18
+    }
+   ],
+   "slowest_tests": [
+    {
+     "seconds": 21.02,
+     "test": "tests/test_job_progress.py::test_reads_stay_fast_while_a_job_blocks"
+    },
+    {
+     "seconds": 15.02,
+     "test": "tests/test_confidence_defaults.py::test_every_producer_states_its_confidence"
+    },
+    {
+     "seconds": 11.65,
+     "test": "tests/test_job_progress.py::test_failed_job_is_not_100_percent_and_has_failed_stage"
+    },
+    {
+     "seconds": 7.78,
+     "test": "tests/test_job_progress.py::test_progress_is_monotonic_and_settles_truthfully"
+    },
+    {
+     "seconds": 7.37,
+     "test": "tests/test_corrections.py::test_correction_becomes_verified_and_is_registered"
+    },
+    {
+     "seconds": 7.04,
+     "test": "tests/test_living_room_acceptance_12_steps.py::test_living_room_acceptance_all_12_vision_steps"
+    },
+    {
+     "seconds": 7.0,
+     "test": "tests/test_tenant_evidence_world_security.py::test_world_and_export_endpoints_enforce_tenant_isolation_and_persist_across_restart"
+    },
+    {
+     "seconds": 6.11,
+     "test": "tests/test_colmap_deterministic_b12.py::test_colmap_version_query"
+    },
+    {
+     "seconds": 5.72,
+     "test": "tests/test_corrections.py::test_correction_survives_a_rebuild_by_id_and_by_anchor"
+    },
+    {
+     "seconds": 4.87,
+     "test": "tests/test_failure_modes_colmap.py::test_a_timeout_inside_the_incremental_chain_falls_back_to_a_full_rebuild_and_is_recorded[image_registrator]"
+    },
+    {
+     "seconds": 4.72,
+     "test": "tests/test_tenant_evidence_world_security.py::test_background_worker_refuses_cross_tenant_session_world_mismatch"
+    },
+    {
+     "seconds": 4.36,
+     "test": "tests/test_job_progress.py::test_events_stream_ends_on_terminal_event"
+    },
+    {
+     "seconds": 4.13,
+     "test": "tests/test_failure_modes_colmap.py::test_a_timeout_before_the_incremental_step_surfaces_the_step_and_leaves_the_committed_model_intact[feature_extractor]"
+    },
+    {
+     "seconds": 3.19,
+     "test": "tests/test_dimension_gates.py::test_synthetic_l_room_compiles_without_a_dimensional_inconsistency_warning"
+    },
+    {
+     "seconds": 3.17,
+     "test": "tests/test_failure_modes_colmap.py::test_disk_full_mid_run_surfaces_enospc_and_leaves_the_committed_model_intact[copying a new photograph into the workspace]"
+    },
+    {
+     "seconds": 3.05,
+     "test": "tests/test_tenant_isolation.py::test_tenant_b_cannot_reach_tenant_a_sessions_evidence_uploads_jobs_sites"
+    },
+    {
+     "seconds": 2.98,
+     "test": "tests/test_kiss_icp.py::test_kiss_icp_converges_to_known_rigid_transform"
+    },
+    {
+     "seconds": 2.89,
+     "test": "tests/test_failure_modes_colmap.py::test_a_timeout_inside_the_incremental_chain_falls_back_to_a_full_rebuild_and_is_recorded[point_triangulator]"
+    },
+    {
+     "seconds": 2.85,
+     "test": "tests/test_corrections.py::test_carry_never_applies_to_a_distant_or_different_type_surface"
+    },
+    {
+     "seconds": 2.69,
+     "test": "tests/test_failure_modes_colmap.py::test_a_fault_inside_the_session_commit_never_loses_the_committed_model[fault0]"
+    },
+    {
+     "seconds": 2.65,
+     "test": "tests/test_tenant_isolation.py::test_tenant_b_cannot_reach_tenant_a_worlds_on_any_world_scoped_module"
+    },
+    {
+     "seconds": 2.54,
+     "test": "tests/test_worldir_optional_confidence.py::test_every_exporter_survives_none_confidence[ifc]"
+    },
+    {
+     "seconds": 2.52,
+     "test": "tests/test_task_13_2_dedup_and_session_grouping.py::test_reconstruction_with_filter_duplicates_flag"
+    },
+    {
+     "seconds": 2.47,
+     "test": "tests/test_sequential_maximum_fidelity.py::test_api_routes_engines_endpoints"
+    },
+    {
+     "seconds": 2.44,
+     "test": "tests/test_run_manifest.py::test_verify_detects_a_missing_manifest_and_a_damaged_world"
+    }
+   ],
+   "source": "junit8.xml",
+   "sum_test_seconds": 272.54,
+   "wall_seconds": 387.84
+  }
+ ],
+ "shard_balance": {
+  "max": 685.2,
+  "max_over_mean": 1.55,
+  "max_over_min": 3.18,
+  "min": 215.23,
+  "wall_seconds": [
+   685.2,
+   295.89,
+   523.61,
+   215.23,
+   449.53,
+   485.9,
+   500.58,
+   387.84
+  ]
+ },
+ "total_wall_seconds": 3543.78,
+ "totals": {
+  "errors": 2,
+  "failed": 39,
+  "passed": 6800,
+  "skipped": 131,
+  "total": 6972
+ }
+}

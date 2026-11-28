@@ -181,10 +181,10 @@ def test_resolvable_mesh_geometry_emits_a_real_triangles_mesh_not_the_cube():
     assert floats == (0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0)
 
 
-def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
-    """A MESH-typed geometry is exportable, but without a resolvable
-    artifact it must not fabricate a mesh -- shared placeholder cube,
-    exactly like BOX/PLANE."""
+def test_mesh_geometry_with_unresolvable_payload_is_skipped_and_named_not_drawn_as_a_cube():
+    """A MESH geometry whose data_uri names a payload the store cannot resolve must not be drawn as a fabricated
+    placeholder cube (that would put a box where the reconstructed surface belongs). The entity is skipped and the
+    unresolved payload is named. (A geometry with NO data_uri -- an abstract BOX/PLANE -- still gets the cube proxy.)"""
     store = MemoryArtifactStore()  # empty store: data_uri won't resolve
     world = WorldIR()
     geom = Geometry(id="geom-mesh", type=GeometryType.MESH, data_uri="artifact://" + "0" * 64)
@@ -198,9 +198,13 @@ def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
     world.geometries[geom.id] = geom
     world.entities[entity.id] = entity
 
-    gltf = export_to_gltf(world, artifact_store=store)
-    assert len(gltf["meshes"]) == 1  # only the shared placeholder cube
-    assert gltf["nodes"][0]["mesh"] == 0
+    unresolved: list = []
+    gltf = export_to_gltf(world, artifact_store=store, _unresolved=unresolved)
+    assert gltf["nodes"] == [], "an unresolvable payload must not become a fabricated placeholder node"
+    assert gltf["scenes"][0]["nodes"] == []
+    assert len(unresolved) == 1
+    assert unresolved[0]["entity_id"] == "ent-mesh" and unresolved[0]["geometry_id"] == "geom-mesh"
+    assert "could not be resolved" in unresolved[0]["reason"]
 
 
 def test_gltf_hierarchy_preservation():

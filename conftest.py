@@ -55,3 +55,38 @@ PHYSICS_TEST_MODULES = [
 ]
 
 collect_ignore_glob = [f"tests/{name}" for name in PHYSICS_TEST_MODULES]
+
+
+# ---------------------------------------------------------------------------
+# Declared requirements: @pytest.mark.requires("torch", "colmap", "cuda", "dataset:south_building", "hf_cache:org/repo")
+# See tests/_capabilities.py. Missing capability -> visible skip; under RE_STRICT_REQUIREMENTS=1 -> failure.
+# ---------------------------------------------------------------------------
+import pytest  # noqa: E402
+
+from tests import _capabilities  # noqa: E402
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "requires(*capabilities): declared requirements (module name, 'colmap', 'cuda', 'dataset:<name>', "
+        "'hf_cache:<org/repo>'). Missing -> skip with the reason; fails instead when RE_STRICT_REQUIREMENTS=1.",
+    )
+
+
+def pytest_report_header(config):
+    caps = ("torch", "transformers", "kornia", "pycolmap", "open3d", "colmap", "cuda", "dataset:south_building")
+    state = ", ".join(f"{c}={'yes' if _capabilities.probe(c)[0] else 'NO'}" for c in caps)
+    return [f"reality-engine capabilities: {state}", f"strict requirements: {_capabilities.strict()}"]
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    declared = tuple(a for m in item.iter_markers("requires") for a in m.args)
+    missing = _capabilities.unmet(declared)
+    if not missing:
+        return
+    message = "requires: " + "; ".join(missing)
+    if _capabilities.strict():
+        pytest.fail(f"{message} (RE_STRICT_REQUIREMENTS=1: a missing requirement is a failure, not a skip)", pytrace=False)
+    pytest.skip(message)

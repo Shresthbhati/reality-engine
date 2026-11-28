@@ -338,15 +338,32 @@ def test_export_download_filename_safe(client):
     from apps.api.storage import store_bytes
 
     digest, _ = store_bytes(b"export-bytes")
-    r = client.get(f"/api/worlds/wld_ok/export/{digest}/download?format=gltf")
-    assert r.status_code == 200
-    assert "wld_ok.gltf" in r.headers.get("content-disposition", "")
+    # Since the tenant-isolation hardening (#415) a download is served only for an export RECORDED against that exact
+    # world, so seed a world and its ExportRecord instead of bare bytes.
+    wid = client.post("/api/worlds", json={"name": "Export world"}).json()["id"]   # a real id (ids are validated)
+
+    async def _seed():
+        import apps.api.db as db_mod
+        from apps.api.models import ExportRecord
+
+        async with db_mod.get_sessionmaker()() as db:
+            db.add(ExportRecord(id="exp_0", world_id=wid, format="gltf", size_bytes=12,
+                                artifact_uri=f"sha256://{digest}"))
+            await db.commit()
+
+    asyncio.run(_seed())
+    r = client.get(f"/api/worlds/{wid}/export/{digest}/download?format=gltf")
+    assert r.status_code == 200, r.text
+    assert f"{wid}.gltf" in r.headers.get("content-disposition", "")
     # Request-controlled segments must never reach headers raw: quotes,
     # CR/LF and traversal survive only as inert text, if at all.
-    r = client.get(
-        "/api/worlds/wld_x%22%0D%0A_y/export/" + digest + "/download?format=gl%22t%0Af"
-    )
+    r = client.get(f"/api/worlds/{wid}/export/{digest}/download?format=gl%22t%0Af")   # hostile, request-controlled format
     assert r.status_code == 200, r.text
+    # ...and an export NOT recorded against a world is not served for it (the isolation contract itself).
+    assert client.get(f"/api/worlds/wld_other/export/{digest}/download?format=gltf").status_code == 404
+    # a hostile WORLD id can never name a world (malformed ids are rejected before any lookup), so nothing is reflected
+    hostile = client.get("/api/worlds/wld_x%22%0D%0A_y/export/" + digest + "/download?format=gltf")
+    assert hostile.status_code == 404 and "\r" not in hostile.headers.get("content-disposition", "")
     disposition = r.headers.get("content-disposition", "")
     assert "\r" not in disposition and "\n" not in disposition
     # At most the two RFC delimiters around the filename: nothing

@@ -198,6 +198,7 @@ def test_experiment_b_and_c_indoor_honesty_and_multiview_scene(tmp_path: Path) -
     assert any(p["outcome"] == "confirmed_match" for p in exp_c["pairwise_outcomes"])
 
 
+@pytest.mark.requires("torch", "transformers", "dataset:south_building")
 def test_18_real_photo_experiment_a_south_building_pipeline(tmp_path: Path) -> None:
     imgs = [
         Path("datasets/south_building/images/P1180141.JPG"),

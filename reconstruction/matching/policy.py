@@ -111,7 +111,9 @@ def benchmarked_here() -> Dict[str, bool]:
     benchmarked = set(data.keys())
     out: Dict[str, bool] = {}
     for name, status in report.items():
-        out[name] = name in benchmarked
+        # Honest in both directions (see the docstring): a recorded result for a matcher that cannot run in THIS
+        # environment is not a benchmark "here", so it is reported as not benchmarked rather than as available evidence.
+        out[name] = name in benchmarked and status == "available"
     return out
 
 

@@ -31,18 +31,26 @@ from reconstruction.matching.policy import (
 )
 
 
+# torch + kornia are an optional extra (``pip install -e ".[perception]"``); the default CI image has neither. The policy
+# must pick LightGlue when it can run and degrade to the classical matcher when it cannot -- both are asserted below.
+_LIGHTGLUE = matcher_report().get("lightglue@aliked") == "available"
+
+
 class TestMatcherSelectionPolicy:
     def test_default_reproduces_previous_behaviour(self) -> None:
         """With no criteria, the policy picks LightGlue-ALIKED when available,
-        exactly as the old ``_load_matcher`` did -- no regression."""
+        exactly as the old ``_load_matcher`` did -- no regression. Without torch+kornia it must pick the classical
+        SIFT matcher, never an unavailable learned one."""
         name = select_matcher()
-        # LightGlue-ALIKED is available here (torch + kornia present).
-        assert name == "lightglue@aliked", f"default picked {name}, expected lightglue@aliked"
+        expected = "lightglue@aliked" if _LIGHTGLUE else "sift"
+        assert name == expected, f"default picked {name}, expected {expected} (lightglue available: {_LIGHTGLUE})"
 
     def test_high_accuracy_prefers_lightglue_or_dedode(self) -> None:
         name = select_matcher(accuracy_priority="high")
-        # Among available high-accuracy candidates, lightglue@aliked is first.
-        assert name in ("lightglue@aliked", "lightglue@disk", "dedode@kornia-L-upright+B-upright")
+        # Among available high-accuracy candidates, lightglue@aliked is first; with none available, classical SIFT.
+        allowed = (("lightglue@aliked", "lightglue@disk", "dedode@kornia-L-upright+B-upright") if _LIGHTGLUE
+                   else ("sift",))
+        assert name in allowed, f"high-accuracy picked {name}; allowed here: {allowed}"
 
     def test_fast_priority_prefers_fast_candidates(self) -> None:
         name = select_matcher(accuracy_priority="fast", prefer_fast=True)
@@ -102,7 +110,9 @@ class TestMatcherSelectionPolicy:
         }
         matcher = select_and_load_matcher(paths)
         assert matcher is not None
-        assert matcher.name in ("lightglue@aliked", "lightglue@disk", "sift", "orb")
+        assert matcher.name in ("lightglue@aliked", "lightglue@disk", "sift", "sift@opencv", "orb", "orb@opencv")
+        if not _LIGHTGLUE:
+            assert matcher.name.startswith(("sift", "orb")), "no learned matcher may be returned when it cannot run"
         mr = matcher.match("a", "b")
         assert mr.matcher  # provenance: the model that produced the matches
         assert mr.inlier_ratio >= 0.0
@@ -184,7 +194,7 @@ class TestMatcherSelectionPolicy:
             )
 
         # The specific benchmarked matchers expected in this environment.
-        expected_benchmarked = {"sift", "orb", "lightglue@disk", "lightglue@aliked"}
+        expected_benchmarked = {"sift", "orb"} | ({"lightglue@disk", "lightglue@aliked"} if _LIGHTGLUE else set())
         assert benchmarked_keys == expected_benchmarked, (
             f"benchmarked set {benchmarked_keys} differs from expected {expected_benchmarked}"
         )

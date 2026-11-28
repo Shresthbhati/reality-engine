@@ -25,8 +25,12 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-import torch
 from PIL import Image
+
+try:  # torch is the optional ``perception`` extra: importing this module must work without it. Every code path that
+    import torch  # needs it is behind _load_detector(), which fails with an explicit "unavailable" error, never a fake result.
+except ImportError:  # pragma: no cover - exercised in the torch-free CI image
+    torch = None  # type: ignore[assignment]
 
 from perception.detection.ontology_grounding import (
     FALLBACK_QUERIES,

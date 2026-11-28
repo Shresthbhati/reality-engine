@@ -126,8 +126,10 @@ class TestEngineReachabilityMeasurement:
         # is why the test verifies structure + consistency, not a frozen literal.
         assert per["perception"]["implemented"] >= 160
         assert per["engine"]["implemented"] >= 200
-        assert per["reconstruction"]["implemented"] == 89
-        assert per["reconstruction"]["unreachable"] == 80
+        # Lower bounds, not frozen literals (the module count grows with every new reconstruction module, as the
+        # comment above says; it was ``== 89`` / ``== 80`` and broke the first time main added a module).
+        assert per["reconstruction"]["implemented"] >= 89
+        assert per["reconstruction"]["unreachable"] >= 80
 
         # The reconstruction unreachable set is the actionable one: implemented
         # backend modules not consumed by the production job path.
@@ -164,6 +166,7 @@ class TestEngineReachabilityMeasurement:
 class TestMaskRcnnAdapter:
     """maskrcnn_resnet50_fpn -- invocation + actual output + consumer + error handling."""
 
+    @pytest.mark.requires("torch", "torchvision")
     def test_maskrcnn_invokes_and_produces_observations_on_real_images(
         self, benchmark_pair: tuple[Path, Path],
     ) -> None:
@@ -211,6 +214,7 @@ class TestMaskRcnnAdapter:
         assert summ["score_threshold"] == 0.3
         assert summ["min_mask_pixels"] == 64
 
+    @pytest.mark.requires("torch", "torchvision")
     def test_maskrcnn_consumer_is_the_orchestrator(self, benchmark_pair: tuple[Path, Path]) -> None:
         """The consumer is the orchestrator: run_wave(engine_ids=[maskrcnn]) runs the
         engine and produces a UnifiedEngineOutput whose observations are the
@@ -305,6 +309,7 @@ class TestMaskRcnnAdapter:
 class TestMidasAdapter:
     """midas_dpt_hybrid -- invocation + actual output + consumer + error handling."""
 
+    @pytest.mark.requires("torch")
     def test_midas_invokes_and_produces_depth_on_real_images(
         self, benchmark_pair: tuple[Path, Path],
     ) -> None:
@@ -334,6 +339,7 @@ class TestMidasAdapter:
         assert isinstance(meta["shape"], list) and len(meta["shape"]) == 2
         assert meta["depth_min"] <= meta["depth_max"]
 
+    @pytest.mark.requires("torch")
     def test_midas_consumer_is_the_orchestrator(self, benchmark_pair: tuple[Path, Path]) -> None:
         from perception.engine_orchestrator import (
             MultiEngineOrchestrator,
@@ -425,6 +431,7 @@ class TestWiredEnginesInProductionJob:
     orchestrator runs them on real images (they are available here: torchvision +
     torch.hub present)."""
 
+    @pytest.mark.requires("torch", "torchvision")
     def test_all_wired_engines_run_on_real_pair(self, benchmark_pair: tuple[Path, Path]) -> None:
         from perception.engine_orchestrator import (
             MultiEngineOrchestrator,

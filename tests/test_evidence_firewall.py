@@ -141,9 +141,16 @@ def test_quality_list_reports_real_checks_and_counts(client):
 
 def test_duplicate_upload_is_flagged_against_the_earlier_copy(client):
     sid = client.post("/api/sessions", json={"name": "D"}).json()["id"]
+    other = client.post("/api/sessions", json={"name": "D2"}).json()["id"]
     data = _png(7)
     first = _upload_png(client, sid, "a.png", data)
-    second = _upload_png(client, sid, "b.png", data)
+    # Within one session, byte-identical content is deduplicated (tenant+session-scoped idempotency, #415): the same
+    # Evidence row comes back, never a second copy racing into the table.
+    again = client.post(f"/api/uploads?session_id={sid}", files={"file": ("a-again.png", data, "image/png")})
+    assert again.status_code == 201 and again.json()["evidence_id"] == first and again.json()["deduplicated"] is True
+    # A copy arriving through ANOTHER session is a distinct Evidence row, and the firewall flags it against the earlier one.
+    second = _upload_png(client, other, "b.png", data)
+    assert second != first
     items = {i["id"]: i for i in client.get("/api/evidence/quality").json()["items"]}
     assert items[first]["result"] == "accepted_with_warning"
     assert items[second]["result"] == "rejected"

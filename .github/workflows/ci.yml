@@ -15,6 +15,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false   # was the default (true): one red Python version CANCELLED the other two, hiding their results
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
@@ -156,8 +157,10 @@ jobs:
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────
+      # Was `pytest tests/ --collect-only -q 2>&1 | tail -20`: the pipeline's exit status was tail's, so a collection
+      # ERROR could never fail this step. No pipe: pytest's own status decides (exit 2 = collection errors).
       - name: Verify no collection errors in core suite
-        run: pytest tests/ --collect-only -q 2>&1 | tail -20
+        run: pytest tests/ --collect-only -q -p no:cacheprovider > collect.txt || { tail -40 collect.txt; exit 1; }
 
       # ── Wheel build ────────────────────────────────────────────────────────
       - name: Build wheel
@@ -219,11 +222,51 @@ jobs:
           python scripts/ci_shard_tests.py --shard ${{ matrix.shard }} --of 8 > shard_files.txt
           echo "shard ${{ matrix.shard }}: $(wc -l < shard_files.txt) test files"
           # faulthandler_timeout: if any single test runs past 5 minutes, every thread's stack is dumped into the log, so a
-          # hang names the test instead of leaving "runner lost communication"
-          pytest $(cat shard_files.txt) -m "not slow" -ra --tb=short --junitxml=junit.xml -o faulthandler_timeout=300 -v
+          # hang names the test instead of leaving "runner lost communication". --timeout (pytest-timeout, thread
+          # method) then KILLS the whole process at 10 minutes for a single test: the shard fails with a named test
+          # instead of burning the job's wall clock. The manifest must also be exactly this shard's slice of tests/.
+          python scripts/ci_shard_tests.py --of 8 --check
+          pytest $(cat shard_files.txt) -m "not slow" -ra --tb=short --junitxml=junit.xml -o faulthandler_timeout=300 \
+            --timeout=600 --timeout-method=thread -v
       - name: Skip report (skips are not passes)
         if: always()
         run: python scripts/ci_skip_report.py junit.xml --max-skip-share 0.30
+      - name: CI diagnostics (slowest tests, skip reasons, shard timing)
+        if: always()
+        run: python scripts/ci_diagnostics.py junit.xml --out ci_diagnostics_${{ matrix.shard }}.json
+      - name: Upload shard artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}-diagnostics
+          path: |
+            junit.xml
+            ci_diagnostics_${{ matrix.shard }}.json
+            shard_files.txt
+
+  # The test infrastructure verifies ITSELF: nothing can be silently dropped from collection, the registry is generated
+  # from discovery, dependencies match pyproject, the declared-requirements marker and the crash classifier work.
+  ci-integrity:
+    name: CI Integrity (registry, collection, dependency contract)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install package (editable, dev extra only - no torch, no GPU libraries)
+        run: pip install -e ".[dev]"
+      - name: Shard manifests partition tests/ exactly
+        run: python scripts/ci_shard_tests.py --of 8 --check
+      - name: Test registry is current
+        run: python scripts/ci_test_registry.py --check
+      - name: Registry equals what pytest collects (no file silently dropped, no collection error)
+        run: python scripts/ci_test_registry.py --verify-collection
+      - name: Dependency contract and CI tooling tests
+        run: pytest tests/test_dependency_contract.py tests/test_ci_tooling.py tests/test_ci_test_registry.py tests/test_ci_full_coverage.py -q --timeout=600 --timeout-method=thread
 
   fidelity-gate:
     name: Room Fidelity Gate

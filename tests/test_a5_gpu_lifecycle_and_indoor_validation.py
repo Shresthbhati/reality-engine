@@ -75,7 +75,7 @@ def test_11_multi_engine_disagreement_preserves_competing_hypotheses() -> None:
     assert len(decisions[0].detector_disagreements) >= 1
 
 
-def test_13_gpu_memory_exhaustion_triggers_cpu_oom_fallback_and_blocks_concurrent_claims() -> None:
+def test_13_gpu_memory_exhaustion_triggers_cpu_oom_fallback_and_blocks_concurrent_claims(monkeypatch) -> None:
     mgr = ModelLifecycleManager()
     # Constrained 6 GB consumer GPU must NEVER claim concurrent multi-model execution
     constrained_hw = HardwareProfile(
@@ -88,6 +88,10 @@ def test_13_gpu_memory_exhaustion_triggers_cpu_oom_fallback_and_blocks_concurren
     )
     mgr.hw = constrained_hw
     mgr.vram_ceiling_mb = 5540.0
+    # run_stage re-probes the REAL hardware; pin it to the simulated 6 GB GPU so the OOM-then-CPU path is exercised the
+    # same way on a CPU-only CI runner as on a CUDA workstation (otherwise the first call already runs on "cpu" and the
+    # simulated CUDA OOM has no CPU fallback left to take).
+    monkeypatch.setattr("perception.intelligence.gpu_lifecycle.probe_hardware_profile", lambda: constrained_hw)
     assert mgr.can_run_concurrently([3000.0, 3000.0]) is False
 
     batch, res, dev = select_adaptive_batch_and_resolution(8, 3000.0, constrained_hw)

@@ -665,6 +665,57 @@ def test_concurrent_distinct_worlds_succeed(client, tmp_path, monkeypatch):
         assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
 
 
+def test_concurrent_commit_stale_head_retries_and_converges(client, tmp_path, monkeypatch):
+    """HEAD moves between read and commit (concurrent same-world job):
+    the job reloads HEAD, retries commit_version, and either dedups
+    (identical content) or chains onto the new base. Never last-writer-wins,
+    never a silent overwrite. Job SUCCEEDED after the retry."""
+    from apps.api import worldstore_service as ws_svc
+
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    orig_commit = ws_svc.commit_version
+    calls = {"n": 0}
+
+    async def _raise_then_commit(db, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ws_svc.ConcurrentModificationError(
+                expected_parent="old_head", current_head="new_head",
+                orphan_version_id="orphan_vid",
+            )
+        return await orig_commit(db, **kwargs)
+
+    monkeypatch.setattr(ws_svc, "commit_version", _raise_then_commit)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=120.0)
+    assert job["status"] == "succeeded", job
+    assert calls["n"] == 2  # first attempt saw stale HEAD, second succeeded
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is not None
+
+
+def test_concurrent_commit_always_stale_fails_honestly(client, tmp_path, monkeypatch):
+    """HEAD always moves: retries exhausted, job FAILED with a reason,
+    HEAD untouched, no silent overwrite."""
+    from apps.api import worldstore_service as ws_svc
+
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+
+    async def _always_stale(db, **kwargs):
+        raise ws_svc.ConcurrentModificationError(
+            expected_parent="old_head", current_head="new_head",
+            orphan_version_id="orphan_vid",
+        )
+
+    monkeypatch.setattr(ws_svc, "commit_version", _always_stale)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=120.0)
+    assert job["status"] == "failed", job
+    assert job.get("error"), "failed job must carry its reason"
+    assert "superseded" in (job.get("error") or "")
+    # HEAD was never adopted: nothing points at a version that was never committed.
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
+
+
 def test_crash_restart_recovers_stale_job(client, tmp_path, monkeypatch):
     """A worker that dies mid-job leaves a stale 'running' row. A fresh
     process (new client over the same DB file) reaps and settles it --

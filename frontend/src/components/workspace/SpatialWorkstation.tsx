@@ -31,6 +31,7 @@ import {
   type CreateReconstructionResult,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
+import { downloadArtifact, type ExportResult, exportWorld } from "@/lib/api/export";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 import type { PlaceRow, WorldVersionRow } from "@/lib/types";
@@ -71,6 +72,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [isolateSpaceId, setIsolateSpaceId] = useState<string | null>(null);
@@ -259,39 +261,18 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
   // Export artifact handler
   const handleExport = useCallback(async (format: "worldir" | "ply" | "cameras" | "report") => {
-    let url = "";
-    let filename = "";
+    let worldirResult: ExportResult | null = null;
 
     if (format === "worldir") {
-      url = `/api/worlds/${worldId}/worldir`;
-      filename = `worldir-${worldId}.json`;
     } else if (format === "ply") {
-      url = `/api/worlds/${worldId}/points`;
-      filename = `points-${worldId}.ply`;
     } else if (format === "cameras") {
-      url = `/api/worlds/${worldId}/cameras`;
-      filename = `cameras-${worldId}.json`;
     } else if (format === "report") {
-      url = `/api/worlds/${worldId}/report`;
-      filename = `report-${worldId}.json`;
     }
 
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-      console.error("Export error", e);
+    if (worldirResult) {
+      await downloadArtifact(worldirResult, setError);
     }
-  }, [worldId]);
+  }, [worldId, setError]);
 
   // Reset transient workspace selection & filters whenever active world changes
   const [resetForWorldId, setResetForWorldId] = useState(worldId);

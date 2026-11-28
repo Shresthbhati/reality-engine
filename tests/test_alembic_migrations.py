@@ -48,6 +48,12 @@ def _old_style_db(db: Path) -> None:
     eng.dispose()
     con = sqlite3.connect(db)
     con.execute("DROP TABLE capture_requests")
+    for idx in (
+        "ix_uploads_team_session_checksum",
+        "ix_evidence_team_session_checksum",
+        "uq_evidence_team_session_checksum",
+    ):
+        con.execute(f"DROP INDEX IF EXISTS {idx}")
     for table, cols in NEW_COLUMNS.items():
         for col in cols:
             con.execute(f"ALTER TABLE {table} DROP COLUMN {col}")

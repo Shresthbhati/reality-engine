@@ -7,6 +7,7 @@ import os
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
@@ -34,6 +35,8 @@ from apps.api.storage import (
     assemble_staged,
     clear_staging,
     staging_root,
+    staging_path,
+    validate_staging_id,
 )
 
 
@@ -207,7 +210,55 @@ async def create_upload(
             raise HTTPException(
                 413, f"session already holds {stored} uploads (limit {limit}); raise UPLOAD_MAX_FILES_PER_SESSION"
             )
-    digest, _path = store_bytes(data)
+    digest, stored_path = store_bytes(data)
+
+    # Idempotency: an upload of byte-identical content reuses the existing
+    # evidence ONLY within the same (team_id, session_id) ownership boundary.
+    # Physical blob storage (store_bytes -> sha256://) remains content-addressed
+    # and shared on disk, while logical Evidence records and IDs are strictly
+    # tenant- and session-scoped so one tenant/session can never discover or
+    # reference another's evidence_id.
+    dedup_filters = [
+        Evidence.team_id == team_id,
+        Evidence.checksum == digest,
+        Evidence.session_id == session_id if session_id is not None else Evidence.session_id.is_(None),
+    ]
+    existing = await db.execute(select(Evidence).where(*dedup_filters))
+    existing_ev = existing.scalars().first()
+    if existing_ev:
+        up = Upload(
+            id=new_id("upl"),
+            team_id=team_id,
+            session_id=session_id,
+            status="completed",
+            filename=_safe_filename(file.filename),
+            mime_type=file.content_type,
+            size=len(data),
+            checksum=digest,
+            artifact_uri=existing_ev.artifact_uri,
+            completed_at=utcnow(),
+        )
+        db.add(up)
+        await db.flush()
+        if session_id:
+            s = await db.get(Session, session_id)
+            if s is not None:
+                s.uploaded_at = utcnow()
+                if s.status == "created":
+                    s.status = "uploaded"
+        await db.commit()
+        job = jobrunner.enqueue_job(
+            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=team_id
+        )
+        await db.commit()
+        return {
+            "upload_id": up.id,
+            "evidence_id": existing_ev.id,
+            "job_id": job.id,
+            "checksum": digest,
+            "deduplicated": True,
+        }
+
     up = Upload(
         id=new_id("upl"),
         team_id=team_id,
@@ -249,12 +300,51 @@ async def create_upload(
             entity_type="evidence",
             entity_id=ev.id,
             summary=f"Evidence '{ev.name}' uploaded",
+            team_id=team_id,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await db.execute(select(Evidence).where(*dedup_filters))
+        existing_ev = existing.scalars().first()
+        if existing_ev is None:
+            raise
+        up_dup = Upload(
+            id=new_id("upl"),
+            team_id=team_id,
+            session_id=session_id,
+            status="completed",
+            filename=_safe_filename(file.filename),
+            mime_type=file.content_type,
+            size=len(data),
+            checksum=digest,
+            artifact_uri=existing_ev.artifact_uri,
+            completed_at=utcnow(),
+        )
+        db.add(up_dup)
+        await db.commit()
+        job = jobrunner.enqueue_job(
+            db, jobrunner.PROCESS_EVIDENCE, "evidence", existing_ev.id, team_id=team_id
+        )
+        await db.commit()
+        return {
+            "upload_id": up_dup.id,
+            "evidence_id": existing_ev.id,
+            "job_id": job.id,
+            "checksum": digest,
+            "deduplicated": True,
+        }
     job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=ev.team_id)
     await db.commit()
-    return {"upload_id": up.id, "evidence_id": ev.id, "job_id": job.id, "checksum": digest}
+    return {
+        "upload_id": up.id,
+        "evidence_id": ev.id,
+        "job_id": job.id,
+        "checksum": digest,
+        "deduplicated": False,
+    }
 
 
 @uploads.post("/resumable/start", status_code=201)
@@ -329,16 +419,26 @@ async def resumable_chunk(
 
 @uploads.post("/resumable/{upload_id}/finalize", status_code=201)
 async def resumable_finalize(
-    upload_id: str, db: AsyncSession = Depends(get_db)
+    upload_id: str, db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Finish a staged resumable upload: hash the staged bytes, store them
     content-addressed, complete the Upload row, and create Evidence + job."""
+    # Explicit visibility check for the path id. The uploads router already
+    # installs upload_scope as a router-level dependency (which calls
+    # assert_visible for this same path param), so this is defense in depth,
+    # not a new authorization boundary -- verified by independent review.
+    await assert_visible(db, Upload, upload_id, auth)
+    try:
+        validate_staging_id(upload_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     up = await db.get(Upload, upload_id)
     if up is None:
         raise HTTPException(404, "Upload not found")
     if up.status != "pending":
         raise HTTPException(409, f"Upload {upload_id} is already {up.status}")
-    stage = staging_root() / f"{upload_id}.partial"
+    stage = staging_path(upload_id)
     if not stage.exists():
         raise HTTPException(409, f"Upload {upload_id} has no staged chunks")
     data = stage.read_bytes()
@@ -384,6 +484,7 @@ async def resumable_finalize(
             entity_type="evidence",
             entity_id=ev.id,
             summary=f"Evidence '{ev.name}' uploaded (resumable)",
+            team_id=up.team_id,
         )
     )
     await db.commit()

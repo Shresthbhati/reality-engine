@@ -57,7 +57,9 @@ class MultiViewEntityObservation:
     dimensions: tuple[float, float, float]  # (w, d, h) in meters or SfM units
     orientation: tuple[float, float, float, float] | None = None  # (w, x, y, z)
     confidence: float | None = None  # raw model detector confidence (None if unmeasured)
-    scale_units: str = "METRES"  # "METRES", "COLMAP_SFM_UNITS", "RELATIVE_DISPARITY"
+    # "UNSPECIFIED" is the safe default: an observation never claims metres unless its producer says so.
+    # "METRES", "COLMAP_SFM_UNITS", "SYNTHETIC_METRES", "RELATIVE_DISPARITY", "UNSPECIFIED"
+    scale_units: str = "UNSPECIFIED"
     is_physically_metric: bool = False
     position_uncertainty: tuple[float, float, float] | None = None  # (std_x, std_y, std_z)
     appearance_features: Sequence[float] | None = None  # Normalized color histogram or embedding
@@ -309,23 +311,37 @@ def compute_cross_view_pair_score(
     p_b = np.array(obs_b.position, dtype=np.float64)
     dist_3d = float(np.linalg.norm(p_a - p_b))
 
+    # Two observations are only comparable when they live in the same coordinate scale. Positions in
+    # SfM gauge units and positions in metres differ by an unknown factor, so a distance between them
+    # is meaningless -- refuse rather than compare.
+    if obs_a.scale_units != obs_b.scale_units:
+        return PairScore(
+            a=obs_a.observation_id,
+            b=obs_b.observation_id,
+            score=0.0,
+            basis={"reason": "mixed_scale_units", "units_a": obs_a.scale_units, "units_b": obs_b.scale_units},
+        )
+    # Absolute metre constants (0.35 m, 0.40 m ...) are meaningful ONLY in physical metres.
+    in_metres = obs_a.scale_units == "METRES"
+
     # Unit-aware and extent-aware 3D distance threshold
     dim_a = np.array(obs_a.dimensions, dtype=np.float64)
     dim_b = np.array(obs_b.dimensions, dtype=np.float64)
     extent_a = float(np.linalg.norm(dim_a)) if len(dim_a) == 3 else 1.0
     extent_b = float(np.linalg.norm(dim_b)) if len(dim_b) == 3 else 1.0
-    mean_extent = max(0.1, 0.5 * (extent_a + extent_b))
+    raw_extent = 0.5 * (extent_a + extent_b)
+    mean_extent = max(0.1, raw_extent) if in_metres else max(1e-9, raw_extent)
 
     if max_distance_3d is not None:
         tol_3d = max_distance_3d
-    elif obs_a.scale_units == "METRES" and obs_b.scale_units == "METRES":
+    elif in_metres:
         # Physical meters: distance tolerance bounded by physical object extent
         tol_3d = max(0.35, min(2.5, 1.2 * mean_extent))
     else:
-        # COLMAP SfM gauge units: adaptive tolerance derived from reconstructed bounding extent
-        tol_3d = max(0.5, 1.5 * mean_extent)
+        # Gauge / unspecified units: tolerance is purely relative to the reconstructed extent
+        tol_3d = 1.5 * mean_extent
 
-    sigma_3d = max(0.1, tol_3d / 2.5)
+    sigma_3d = max(0.1, tol_3d / 2.5) if in_metres else tol_3d / 2.5
 
     # Uncertainty-aware geometric compatibility (Mahalanobis distance)
     if obs_a.position_uncertainty is not None and obs_b.position_uncertainty is not None:
@@ -354,13 +370,13 @@ def compute_cross_view_pair_score(
         orig_a, dir_a = _camera_ray_for_box(obs_a.camera, obs_a.box_2d)
         orig_b, dir_b = _camera_ray_for_box(obs_b.camera, obs_b.box_2d)
         r_dist, s_c, t_c, p_a_r, p_b_r = _compute_ray_cpa(orig_a, dir_a, orig_b, dir_b)
-        ray_tol = max(0.40, min(1.2, 0.35 * mean_extent))
+        ray_tol = max(0.40, min(1.2, 0.35 * mean_extent)) if in_metres else 0.35 * mean_extent
         if s_c > 0.1 and t_c > 0.1 and r_dist <= ray_tol:
             p_tri = 0.5 * (p_a_r + p_b_r)
             if _verify_ray_reprojection(p_tri, obs_a, obs_b, max_reproj_err_px):
                 ray_triangulated = True
                 dist_3d = r_dist
-                sigma_3d = max(0.1, ray_tol / 2.5)
+                sigma_3d = max(0.1, ray_tol / 2.5) if in_metres else ray_tol / 2.5
                 p_a = p_tri
                 p_b = p_tri
                 w_a = obs_a.box_2d[2] - obs_a.box_2d[0]

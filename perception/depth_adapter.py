@@ -7,11 +7,8 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence
-
-import cv2
-import numpy as np
+from collections.abc import Sequence
+from typing import Any
 
 from perception.engine_evidence import (
     CoordinateFrame,
@@ -24,12 +21,16 @@ from perception.engine_orchestrator import EngineSpec, register_engine
 log = logging.getLogger("reality.depth_adapter")
 
 
-def _depth_available() -> Optional[str]:
+def _depth_available() -> str | None:
     try:
-        import torch
-        from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+        from importlib import import_module
+
+        import_module("torch")
+        transformers = import_module("transformers")
+        getattr(transformers, "AutoImageProcessor")
+        getattr(transformers, "AutoModelForDepthEstimation")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
@@ -39,13 +40,15 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
 
     t0 = time.perf_counter()
     run_id = ctx.get("run_id", "depth_run")
-    obs: List[ObservationRecord] = []
+    obs: list[ObservationRecord] = []
     model_name = ctx.get("depth_model", "depth-anything/Depth-Anything-V2-Small-hf")
 
     try:
-        processor = AutoImageProcessor.from_pretrained(model_name)
-        model = AutoModelForDepthEstimation.from_pretrained(model_name)
+        processor = AutoImageProcessor.from_pretrained(model_name, local_files_only=True)
+        model = AutoModelForDepthEstimation.from_pretrained(model_name, local_files_only=True)
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device == "cuda":
+            torch.cuda.reset_peak_memory_stats(0)
         model = model.to(device).eval()
     except Exception as exc:
         return UnifiedEngineOutput(
@@ -54,29 +57,31 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
             wall_time_s=time.perf_counter() - t0,
         )
 
+    skipped_blank: list[str] = []
+    failed_images: list[str] = []
     for img_path in image_paths:
         try:
+            import numpy as np
             import PIL.Image as PILImage
             img = PILImage.open(img_path).convert("RGB")
+            arr = np.asarray(img)
+            if arr.size == 0 or float(np.std(arr, axis=(0, 1)).max()) < 2.0:
+                skipped_blank.append(img_path)
+                continue
             inputs = processor(images=img, return_tensors="pt")
             inputs = {k: v.to(device) for k, v in inputs.items()}
             with torch.no_grad():
                 outputs = model(**inputs)
                 predicted_depth = outputs.predicted_depth
             depth = predicted_depth.squeeze().cpu().numpy()
-            # Normalize to [0,1] for relative depth
             d_min, d_max = depth.min(), depth.max()
-            if d_max - d_min > 1e-6:
-                depth_norm = (depth - d_min) / (d_max - d_min)
-            else:
-                depth_norm = depth
 
             obs.append(ObservationRecord(
                 evidence_id=f"depth:{img_path}",
                 source_image_id=img_path,
                 coordinate_frame=CoordinateFrame(frame_id="image", scale_state="relative", units="relative"),
                 model_id=ModelIdentity(engine_id="depth", architecture_id="depth_anything_v2",
-                                       checkpoint_id=model_name, license="Apache-2.0", hardware_class="gpu"),
+                                       checkpoint_id=model_name, license="Apache-2.0", hardware_class=device),
                 label="depth_map",
                 category="depth",
                 confidence=None,  # monocular depth has no calibrated confidence
@@ -91,6 +96,7 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
             ))
         except Exception as exc:
             log.warning("Depth failed for %s: %s", img_path, exc)
+            failed_images.append(img_path)
 
     # Unload model to free VRAM
     try:
@@ -100,16 +106,29 @@ def _depth_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     except Exception:
         pass
 
+    if not image_paths:
+        status = "succeeded"
+    elif failed_images and not obs:
+        status = "failed"
+    elif failed_images or skipped_blank or not obs:
+        status = "partial"
+    else:
+        status = "succeeded"
     return UnifiedEngineOutput(
         engine_id="depth_anything", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if obs else "partial",
+        status=status,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=_get_vram_peak(),
-        summary={"n_images": len(image_paths), "n_depth_maps": len(obs)},
+        summary={
+            "n_images": len(image_paths),
+            "n_depth_maps": len(obs),
+            "failed_images": failed_images,
+            "skipped_blank": skipped_blank,
+        },
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         import torch
         if torch.cuda.is_available():

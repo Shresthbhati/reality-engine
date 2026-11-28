@@ -133,7 +133,7 @@ Total: 1
 
 ## unlisted
 
-Total: 624
+Total: 638
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -211,6 +211,7 @@ Total: 624
 - `tests/test_camera_calibration.py`
 - `tests/test_camera_calibration_integrity.py`
 - `tests/test_camera_coordinate_conventions.py`
+- `tests/test_camera_pose_graph.py`
 - `tests/test_candidate_selection.py`
 - `tests/test_canonical_covariance_propagation.py`
 - `tests/test_canonical_interior.py`
@@ -306,6 +307,7 @@ Total: 624
 - `tests/test_doctor.py`
 - `tests/test_embedding_store.py`
 - `tests/test_engine_failure_detector.py`
+- `tests/test_engine_matrix_bridge.py`
 - `tests/test_entity_evidence_provenance_task3_5.py`
 - `tests/test_entity_perception.py`
 - `tests/test_entity_reid.py`
@@ -318,6 +320,7 @@ Total: 624
 - `tests/test_evidence_quality.py`
 - `tests/test_evidence_sources.py`
 - `tests/test_evidence_world_api.py`
+- `tests/test_evidence_world_bridge_golden.py`
 - `tests/test_evidence_world_failure_semantics.py`
 - `tests/test_evidence_world_gate.py`
 - `tests/test_evidence_world_job.py`
@@ -474,6 +477,7 @@ Total: 624
 - `tests/test_multiview_layout.py`
 - `tests/test_mvs_point_cloud_ops.py`
 - `tests/test_non_manhattan_rooms.py`
+- `tests/test_normalized_detection_contracts.py`
 - `tests/test_object_level_3d_reconstruction.py`
 - `tests/test_object_measurement.py`
 - `tests/test_object_pipeline_e2e.py`
@@ -489,6 +493,7 @@ Total: 624
 - `tests/test_open_source_registry.py`
 - `tests/test_open_vocab_detector_task8_2.py`
 - `tests/test_open_vocab_furniture.py`
+- `tests/test_open_vocab_real_photo_benchmark.py`
 - `tests/test_openings_host.py`
 - `tests/test_openvdb_sdf.py`
 - `tests/test_orchestrator_consistency.py`
@@ -505,6 +510,8 @@ Total: 624
 - `tests/test_partitioned_persistence.py`
 - `tests/test_pbr_material_classification.py`
 - `tests/test_pcl_core.py`
+- `tests/test_perception_mega_sprint.py`
+- `tests/test_perception_programme_adversarial.py`
 - `tests/test_perception_sprint10_p0_counterexamples.py`
 - `tests/test_perception_sprint10_production_handoff.py`
 - `tests/test_perception_sprint5_completion.py`
@@ -560,6 +567,7 @@ Total: 624
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
 - `tests/test_real_data_recovery_pipeline.py`
+- `tests/test_real_image_integration.py`
 - `tests/test_real_model_availability.py`
 - `tests/test_real_perception_benchmark.py`
 - `tests/test_reality_benchmark.py`
@@ -610,6 +618,7 @@ Total: 624
 - `tests/test_scene_complete_scorer.py`
 - `tests/test_scene_graph.py`
 - `tests/test_scene_identity.py`
+- `tests/test_scene_intelligence_e2e.py`
 - `tests/test_scene_scale.py`
 - `tests/test_scene_type_gate.py`
 - `tests/test_sdk_external_consumer.py`
@@ -629,6 +638,7 @@ Total: 624
 - `tests/test_small_object_benchmark.py`
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
+- `tests/test_spatial_adapter_adversarial.py`
 - `tests/test_spatial_association_cache.py`
 - `tests/test_spatial_compiler.py`
 - `tests/test_spatial_continuity.py`
@@ -638,9 +648,11 @@ Total: 624
 - `tests/test_spatial_index.py`
 - `tests/test_spatial_index_benchmark.py`
 - `tests/test_spatial_index_grid_correctness.py`
+- `tests/test_spatial_inputs_v1.py`
 - `tests/test_spatial_intelligence.py`
 - `tests/test_spatial_multiview.py`
 - `tests/test_spatial_reasoning.py`
+- `tests/test_spatial_reasoning_benchmark.py`
 - `tests/test_spatial_reasoning_rule8.py`
 - `tests/test_spatial_relations.py`
 - `tests/test_spatial_relationships_task8_4.py`
@@ -695,8 +707,10 @@ Total: 624
 - `tests/test_trajectory_diagnostics.py`
 - `tests/test_trim_dense_to_scene.py`
 - `tests/test_true_localized_incremental_acceptance.py`
+- `tests/test_two_view_geometry.py`
 - `tests/test_uncertainty_calibration.py`
 - `tests/test_uncertainty_propagation.py`
+- `tests/test_unified_engine_orchestration.py`
 - `tests/test_units.py`
 - `tests/test_universal_expansion_e2e.py`
 - `tests/test_universal_fusion_14_stages.py`

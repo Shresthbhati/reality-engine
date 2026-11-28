@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -38,7 +39,7 @@ class ModelIdentity:
     non_commercial: bool = False
     hardware_class: str = "gpu"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "engine_id": self.engine_id,
             "architecture_id": self.architecture_id,
@@ -63,7 +64,7 @@ class CoordinateFrame:
     scale_state: str = "relative"  # "metric" | "sfm_gauge" | "relative" | "image"
     units: str = "relative"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"frame_id": self.frame_id, "scale_state": self.scale_state, "units": self.units}
 
 
@@ -77,24 +78,31 @@ class ObservationRecord:
     label: str
     category: str
     # Geometry (various projections, all from the SAME source image)
-    bbox_px: Optional[Tuple[float, float, float, float]] = None
-    world_pos: Optional[Tuple[float, float, float]] = None
-    depth_map_ref: Optional[str] = None
-    point_samples: Optional[Tuple[Tuple[float, float, float], ...]] = None
+    bbox_px: tuple[float, float, float, float] | None = None
+    world_pos: tuple[float, float, float] | None = None
+    depth_map_ref: str | None = None
+    point_samples: tuple[tuple[float, float, float], ...] | None = None
+    # Segmentation mask: image-plane bool array at source-image resolution.
+    # Persisted separately via world_ir.mask_store.MaskStore; mask_ref is the
+    # persisted row index once stored (None until then). The in-memory array is
+    # kept so downstream consumers (association, fusion, lifting) can use it
+    # without re-decoding from the store.
+    mask: np.ndarray | None = None
+    mask_ref: int | None = None
     # Attributes
-    material_hypothesis: Optional[str] = None
-    color_rgb: Optional[Tuple[int, int, int]] = None
-    surface_normal: Optional[Tuple[float, float, float]] = None
+    material_hypothesis: str | None = None
+    color_rgb: tuple[int, int, int] | None = None
+    surface_normal: tuple[float, float, float] | None = None
     # Uncertainty
-    confidence: Optional[float] = None
-    sigma_m: Optional[float] = None
+    confidence: float | None = None
+    sigma_m: float | None = None
     calibration_quality: str = "unverified"
     # Provenance
-    timestamp_s: Optional[float] = None
-    raw_output_ref: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp_s: float | None = None
+    raw_output_ref: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "evidence_id": self.evidence_id,
             "source_image_id": self.source_image_id,
@@ -106,6 +114,10 @@ class ObservationRecord:
             "world_pos": list(self.world_pos) if self.world_pos else None,
             "depth_map_ref": self.depth_map_ref,
             "point_samples": [list(p) for p in self.point_samples] if self.point_samples else None,
+            # Mask: compact descriptor (the full bool array is persisted via
+            # MaskStore and referenced by mask_ref; it is not dumped into JSON).
+            "mask": _mask_descriptor(self.mask),
+            "mask_ref": self.mask_ref,
             "material_hypothesis": self.material_hypothesis,
             "color_rgb": list(self.color_rgb) if self.color_rgb else None,
             "surface_normal": list(self.surface_normal) if self.surface_normal else None,
@@ -127,21 +139,21 @@ class UnifiedEngineOutput:
     """
     engine_id: str
     run_id: str
-    observations: Tuple[ObservationRecord, ...]
+    observations: tuple[ObservationRecord, ...]
     status: str               # "succeeded" | "partial" | "failed" | "unavailable"
     error_message: str = ""
     wall_time_s: float = 0.0
-    peak_vram_mb: Optional[float] = None
-    summary: Dict[str, Any] = field(default_factory=dict)
+    peak_vram_mb: float | None = None
+    summary: dict[str, Any] = field(default_factory=dict)
     # Cross-engine contradiction slots: populated by the orchestrator's
     # IntelligenceMerger (engine_intelligence.py)
-    contradictions: Tuple[Dict[str, Any], ...] = ()
+    contradictions: tuple[dict[str, Any], ...] = ()
 
     @property
     def n_observations(self) -> int:
         return len(self.observations)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "engine_id": self.engine_id,
             "run_id": self.run_id,
@@ -172,7 +184,24 @@ _POSITION_TOLERANCE = {"metric": 0.1, "sfm_gauge": 0.1}
 _UNIT_LABEL = {"metric": "m", "sfm_gauge": "gauge units"}
 
 
-def bbox_iou(a: Optional[Sequence[float]], b: Optional[Sequence[float]]) -> float:
+def _mask_descriptor(mask: np.ndarray | None) -> dict[str, Any] | None:
+    """Compact JSON-safe descriptor of an in-memory mask.
+
+    The full bool array lives in memory (and is persisted via MaskStore); this
+    descriptor is what goes into ``to_dict`` / dedup hashing so large masks are
+    never dumped into JSON.
+    """
+    if mask is None:
+        return None
+    arr = np.asarray(mask, dtype=bool)
+    return {
+        "shape": [int(d) for d in arr.shape],
+        "present": True,
+        "coverage": round(float(arr.mean()), 4) if arr.size else 0.0,
+    }
+
+
+def bbox_iou(a: Sequence[float] | None, b: Sequence[float] | None) -> float:
     """Intersection-over-union of two ``(x0, y0, x1, y1)`` boxes; 0.0 when either is absent or degenerate."""
     if a is None or b is None or len(a) != 4 or len(b) != 4:
         return 0.0
@@ -189,7 +218,7 @@ def bbox_iou(a: Optional[Sequence[float]], b: Optional[Sequence[float]]) -> floa
     return 0.0 if union <= 0.0 else float(inter / union)
 
 
-def compare_observations(obs_a: ObservationRecord, obs_b: ObservationRecord) -> List[str]:
+def compare_observations(obs_a: ObservationRecord, obs_b: ObservationRecord) -> list[str]:
     """List of disagreements between two observations that may be the same target.
 
     Geometry is only compared when it is comparable: the same coordinate frame id
@@ -198,7 +227,7 @@ def compare_observations(obs_a: ObservationRecord, obs_b: ObservationRecord) -> 
     instead of a position contradiction -- calling a difference of relative-depth
     values a distance in metres would be an invented measurement.
     """
-    issues: List[str] = []
+    issues: list[str] = []
     if obs_a.label != obs_b.label and obs_a.label != "unknown" and obs_b.label != "unknown":
         issues.append(f"label_mismatch: {obs_a.label!r} vs {obs_b.label!r}")
 

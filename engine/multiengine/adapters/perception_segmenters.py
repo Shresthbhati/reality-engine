@@ -37,17 +37,27 @@ def probe_sam() -> Availability:
 
 
 def probe_sam2() -> Availability:
-    """Honest availability probe for SAM 2."""
-    if importlib.util.find_spec("sam2") is None:
+    """Honest availability probe for SAM 2 (native sam2 package or Hugging Face Sam2Model)."""
+    if importlib.util.find_spec("sam2") is not None:
         return Availability(
-            AvailabilityStatus.BLOCKED,
-            "sam2 package is not installed in current environment",
-            "install sam2 package from official repository",
+            AvailabilityStatus.AVAILABLE,
+            "sam2 package importable",
+            evidence=("sam2 importable",),
         )
+    try:
+        from perception.availability import real_models_by_name
+
+        m = real_models_by_name().get("sam2_hf")
+        if m is not None and m.status == "available":
+            return Availability(AvailabilityStatus.AVAILABLE, m.reason, evidence=(m.reason,))
+        if m is not None:
+            return Availability(AvailabilityStatus.BLOCKED, m.reason, m.remediation)
+    except Exception:
+        pass
     return Availability(
-        AvailabilityStatus.AVAILABLE,
-        "sam2 package importable",
-        evidence=("sam2 importable",),
+        AvailabilityStatus.BLOCKED,
+        "sam2 package is not installed in current environment",
+        "install sam2 package or cache facebook/sam2.1-hiera-small",
     )
 
 
@@ -188,15 +198,65 @@ class SamEngineAdapter(BaseModelEngineAdapter):
         return drafts
 
 
-class Sam2EngineAdapter(SamEngineAdapter):
-    """Adapter for SAM 2 multi-view mask propagation."""
+class _Sam2HFPredictor:
+    """Predictor wrapper around HF Sam2Model matching SamPredictor's set_image/predict interface."""
 
-    DEFAULT_CHECKPOINT = "checkpoints/sam2_hiera_small.pt"
+    def __init__(self, model: Any, processor: Any, device: str) -> None:
+        self._model = model
+        self._processor = processor
+        self._device = device
+        self._image = None
+
+    def set_image(self, image_rgb: np.ndarray) -> None:
+        from PIL import Image
+
+        self._image = Image.fromarray(np.ascontiguousarray(image_rgb))
+
+    def predict(self, box: np.ndarray, multimask_output: bool = False):
+        import torch
+
+        if self._image is None:
+            raise RuntimeError("set_image() must be called before predict()")
+        b = [float(v) for v in np.asarray(box).reshape(-1)[:4]]
+        inputs = self._processor(
+            images=self._image, input_boxes=[[b]], return_tensors="pt"
+        ).to(self._device)
+        with torch.no_grad():
+            out = self._model(**inputs, multimask_output=multimask_output)
+        masks = self._processor.post_process_masks(
+            out.pred_masks.cpu(), inputs["original_sizes"].cpu(), binarize=True
+        )[0]
+        mask_np = np.asarray(masks[0, 0].numpy(), dtype=bool)
+        iou_scores = getattr(out, "iou_scores", None)
+        score = float(iou_scores.reshape(-1)[0].item()) if iou_scores is not None else 0.9
+        return mask_np[None], np.array([score], dtype=float), None
+
+
+class Sam2EngineAdapter(SamEngineAdapter):
+    """Adapter for SAM 2 multi-view mask propagation (supports sam2 package or HF Sam2Model)."""
+
+    DEFAULT_CHECKPOINT = "facebook/sam2.1-hiera-small"
 
     def __init__(self, spec: EngineSpec) -> None:
         super().__init__(spec, checkpoint=self.DEFAULT_CHECKPOINT)
 
     def _load_model_weights(self, device: Device) -> None:
+        dev_str = "cuda:0" if device.kind == "cuda" else "cpu"
+        if importlib.util.find_spec("transformers") is not None:
+            try:
+                from transformers import Sam2Model, Sam2Processor
+
+                processor = Sam2Processor.from_pretrained(self.checkpoint, local_files_only=True)
+                model = Sam2Model.from_pretrained(self.checkpoint, local_files_only=True).to(dev_str).eval()
+                self._model = model
+                self._predictor = _Sam2HFPredictor(model, processor, dev_str)
+                return
+            except Exception as exc:
+                if importlib.util.find_spec("sam2") is None:
+                    raise EngineError(
+                        EngineErrorKind.MISSING_CHECKPOINT,
+                        f"Failed to load HF SAM 2 weights {self.checkpoint}: {exc}",
+                    ) from exc
         if importlib.util.find_spec("sam2") is None:
             raise EngineError(EngineErrorKind.UNAVAILABLE, "sam2 package is not installed.")
         import sam2  # type: ignore

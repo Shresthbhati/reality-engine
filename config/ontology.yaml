@@ -868,6 +868,7 @@ classes:
   - light switch
   - wall switch
   geometry: proxy_box
+  small: true
   mobility: fixed
   min_pixels: 100
   typical_dims_m:
@@ -916,6 +917,7 @@ classes:
   - power outlet
   - wall socket
   geometry: proxy_box
+  small: true
   mobility: fixed
   min_pixels: 100
   typical_dims_m:
@@ -3246,3 +3248,254 @@ classes:
   attributes: {}
   aliases:
   - misc/unknown
+- path: opening.structural
+  label: Structural opening
+  domain: architecture
+  category: opening
+  parent: null
+  world_type: opening
+  geometry: parametric
+  size_m: [0.4, 4.0]
+  small: false
+  prompts: ["structural opening", "wall opening"]
+  capability_status: partially_supported
+  required_evidence: ["rgb_multi_view", "wall_plane"]
+  aliases: ["structural opening"]
+- path: architecture/entrance
+  label: Entrance
+  domain: architecture
+  category: architecture
+  parent: null
+  world_type: opening
+  geometry: parametric
+  size_m: [0.9, 4.0]
+  small: false
+  prompts: ["entrance", "building entrance", "doorway entrance"]
+  capability_status: not_implemented
+  required_evidence: ["rgb_multi_view", "facade_or_wall"]
+  aliases: ["entrance"]
+- path: furniture/counter
+  label: Counter
+  domain: furniture_interior
+  category: furniture
+  parent: furniture
+  world_type: furniture
+  geometry: proxy_box
+  size_m: [0.6, 4.0]
+  small: false
+  prompts: ["counter", "kitchen counter", "bar counter"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["rgb_multi_view"]
+  aliases: ["counter"]
+- path: furniture/appliance
+  label: Appliance
+  domain: furniture_interior
+  category: furniture
+  parent: furniture
+  world_type: furniture
+  geometry: proxy_box
+  size_m: [0.3, 2.0]
+  small: false
+  prompts: ["appliance", "kitchen appliance", "home appliance"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["rgb_multi_view"]
+  aliases: ["appliance"]
+- path: furniture/storage_unit
+  label: Storage unit
+  domain: furniture_interior
+  category: furniture
+  parent: furniture
+  world_type: furniture
+  geometry: proxy_box
+  size_m: [0.4, 3.0]
+  small: false
+  prompts: ["storage unit", "shelving unit", "storage cabinet"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["rgb_multi_view"]
+  aliases: ["storage unit"]
+- path: electrical.distribution_panel
+  label: Distribution panel
+  domain: electrical_mechanical
+  category: electrical
+  parent: electrical.switchboard
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.2, 1.2]
+  small: true
+  prompts: ["distribution panel", "breaker panel", "electrical panel"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["high_res_tile", "wall_mount"]
+  can_be_part_of: ["architecture/wall"]
+  aliases: ["distribution panel"]
+- path: fixtures/lighting/light_fixture
+  label: Light fixture
+  domain: electrical_mechanical
+  category: fixtures
+  parent: null
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.05, 1.5]
+  small: true
+  prompts: ["light fixture", "ceiling lamp", "light fitting"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["rgb_multi_view"]
+  can_be_part_of: ["architecture/ceiling", "architecture/wall"]
+  aliases: ["light fixture"]
+- path: plumbing.fixture
+  label: Plumbing fixture
+  domain: electrical_mechanical
+  category: plumbing
+  parent: null
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.05, 1.5]
+  small: true
+  prompts: ["plumbing fixture", "faucet", "valve"]
+  capability_status: implemented_unvalidated
+  required_evidence: ["high_res_tile"]
+  aliases: ["plumbing fixture"]
+- path: fixtures/safety/smoke_detector
+  label: Smoke detector
+  domain: electrical_mechanical
+  category: fixtures
+  parent: null
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.08, 0.2]
+  small: true
+  prompts: ["smoke detector", "smoke alarm"]
+  capability_status: not_implemented
+  required_evidence: ["high_res_tile", "ceiling_mount"]
+  can_be_part_of: ["architecture/ceiling"]
+  aliases: ["smoke detector"]
+- path: fixtures/safety/fire_alarm
+  label: Fire alarm
+  domain: electrical_mechanical
+  category: fixtures
+  parent: null
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.08, 0.25]
+  small: true
+  prompts: ["fire alarm", "fire alarm pull station"]
+  capability_status: not_implemented
+  required_evidence: ["high_res_tile"]
+  can_be_part_of: ["architecture/wall"]
+  aliases: ["fire alarm"]
+- path: envelope.molding
+  label: Molding
+  domain: fine_architectural
+  category: envelope
+  parent: architecture/wall
+  world_type: structure
+  geometry: extruded_profile
+  size_m: [0.02, 5.0]
+  small: true
+  prompts: ["molding", "crown molding", "wall molding"]
+  capability_status: not_implemented
+  required_evidence: ["high_res_tile", "wall_plane"]
+  can_be_part_of: ["architecture/wall", "architecture/ceiling"]
+  aliases: ["molding"]
+- path: envelope.trim
+  label: Trim
+  domain: fine_architectural
+  category: envelope
+  parent: architecture/wall
+  world_type: structure
+  geometry: extruded_profile
+  size_m: [0.02, 4.0]
+  small: true
+  prompts: ["trim", "architectural trim", "door trim"]
+  capability_status: not_implemented
+  required_evidence: ["high_res_tile"]
+  can_be_part_of: ["architecture/wall", "architecture/door", "architecture/window"]
+  aliases: ["trim"]
+- path: hardware.fastener
+  label: Fastener
+  domain: fine_architectural
+  category: fixtures
+  parent: null
+  world_type: fixture
+  geometry: proxy_box
+  size_m: [0.01, 0.15]
+  small: true
+  prompts: ["fastener", "bracket", "screw"]
+  capability_status: not_implemented
+  instance_identity_matters: false
+  required_evidence: ["macro_crop"]
+  aliases: ["fastener"]
+- path: vegetation.tree.branch
+  label: Branch
+  domain: outdoor_landscape
+  category: vegetation
+  parent: vegetation.tree
+  world_type: structure
+  geometry: pointcloud
+  size_m: [0.05, 8.0]
+  small: false
+  prompts: ["tree branch", "branch"]
+  capability_status: not_implemented
+  can_be_part_of: ["vegetation.tree"]
+  aliases: ["branch"]
+- path: vegetation.grass
+  label: Grass
+  domain: outdoor_landscape
+  category: vegetation
+  parent: null
+  world_type: terrain
+  geometry: surface
+  size_m: [0.2, 500.0]
+  small: false
+  prompts: ["grass", "lawn", "turf"]
+  capability_status: not_implemented
+  instance_identity_matters: false
+  aliases: ["grass"]
+- path: exterior.soil
+  label: Soil
+  domain: outdoor_landscape
+  category: exterior
+  parent: exterior.terrain
+  world_type: terrain
+  geometry: surface
+  size_m: [0.2, 500.0]
+  small: false
+  prompts: ["soil", "dirt", "bare ground"]
+  capability_status: not_implemented
+  instance_identity_matters: false
+  aliases: ["soil"]
+- path: circulation.stair_assembly
+  label: Stair assembly
+  domain: building_infrastructure
+  category: circulation
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m: [1.0, 15.0]
+  small: false
+  prompts: ["staircase assembly", "stair assembly"]
+  capability_status: not_implemented
+  aliases: ["stair assembly"]
+- path: utility.drainage_component
+  label: Drainage component
+  domain: building_infrastructure
+  category: utility
+  parent: null
+  world_type: structure
+  geometry: proxy_box
+  size_m: [0.1, 3.0]
+  small: true
+  prompts: ["drainage component", "storm drain", "gutter"]
+  capability_status: not_implemented
+  aliases: ["drainage component"]
+- path: street.lighting_infrastructure
+  label: Lighting infrastructure
+  domain: building_infrastructure
+  category: street
+  parent: null
+  world_type: structure
+  geometry: proxy_box
+  size_m: [1.0, 15.0]
+  small: false
+  prompts: ["street lighting", "lighting infrastructure"]
+  capability_status: not_implemented
+  aliases: ["lighting infrastructure"]

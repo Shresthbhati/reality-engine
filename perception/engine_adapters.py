@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -50,7 +51,7 @@ def _model(engine_id: str, arch: str, checkpoint: str = "none", license: str = "
 # Two-view geometric verification (measured statistics, never invented ones)
 # ---------------------------------------------------------------------------
 
-def _camera_matrix(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]:
+def _camera_matrix(image_path: str, ctx: dict[str, Any]) -> np.ndarray | None:
     """The 3x3 intrinsic matrix of an image from the run context, or None if unknown.
 
     Context layout: ``ctx["intrinsics"] = {path: {"fx": .., "fy": .., "cx": .., "cy": ..}}``.
@@ -74,7 +75,7 @@ def _camera_matrix(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]
     return None
 
 
-def _camera_distortion(image_path: str, ctx: Dict[str, Any]) -> Optional[np.ndarray]:
+def _camera_distortion(image_path: str, ctx: dict[str, Any]) -> np.ndarray | None:
     """The camera's distortion coefficients from the run context, or None.
 
     A missing distortion model is not treated as "no distortion": the pair records
@@ -115,9 +116,9 @@ def _sampson_distances(F: np.ndarray, p1: np.ndarray, p2: np.ndarray) -> np.ndar
 
 
 def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
-                            K1: Optional[np.ndarray], K2: Optional[np.ndarray],
-                            dist1: Optional[np.ndarray] = None,
-                            dist2: Optional[np.ndarray] = None) -> Dict[str, Any]:
+                            K1: np.ndarray | None, K2: np.ndarray | None,
+                            dist1: np.ndarray | None = None,
+                            dist2: np.ndarray | None = None) -> dict[str, Any]:
     """Measured two-view geometry for a putative correspondence set.
 
     Everything returned is measured from the matches: RANSAC inlier count and ratio, the
@@ -132,7 +133,7 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
 
     p1 = np.asarray(p1, dtype=np.float64).reshape(-1, 2)
     p2 = np.asarray(p2, dtype=np.float64).reshape(-1, 2)
-    out: Dict[str, Any] = {"putative_matches": int(len(p1)), "verified": False}
+    out: dict[str, Any] = {"putative_matches": int(len(p1)), "verified": False}
     if len(p1) < 8 or len(p2) < 8:
         out["reason"] = "fewer than 8 putative matches"
         return out
@@ -151,8 +152,8 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
     if out["verified"] and K1 is not None and K2 is not None:
         # Normalised coordinates, then a shared camera matrix of identity: the correct
         # essential-matrix form when the two cameras have different intrinsics.
-        n1 = cv2.undistortPoints(p1.reshape(-1, 1, 2), K1, dist1).reshape(-1, 2)
-        n2 = cv2.undistortPoints(p2.reshape(-1, 1, 2), K2, dist2).reshape(-1, 2)
+        n1 = cv2.undistortPoints(p1[inlier_mask].reshape(-1, 1, 2), K1, dist1).reshape(-1, 2)
+        n2 = cv2.undistortPoints(p2[inlier_mask].reshape(-1, 1, 2), K2, dist2).reshape(-1, 2)
         E, _mask_e = cv2.findEssentialMat(n1, n2, np.eye(3), method=cv2.RANSAC,
                                           prob=0.999, threshold=1e-3)
         if E is not None and np.asarray(E).shape == (3, 3):
@@ -176,7 +177,7 @@ def _geometric_verification(p1: np.ndarray, p2: np.ndarray,
 # SIFT Matcher Adapter
 # ---------------------------------------------------------------------------
 
-def _sift_available() -> Optional[str]:
+def _sift_available() -> str | None:
     try:
         import cv2
         cv2.SIFT_create()
@@ -186,13 +187,14 @@ def _sift_available() -> Optional[str]:
 
 
 def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
-    import cv2
     import time as _t
+
+    import cv2
 
     t0 = _t.perf_counter()
     run_id = ctx.get("run_id", "sift_run")
-    obs: List[ObservationRecord] = []
-    unverified: List[Dict[str, Any]] = []
+    obs: list[ObservationRecord] = []
+    unverified: list[dict[str, Any]] = []
     pairs = ctx.get("pairs", [])
     if not pairs and len(image_paths) >= 2:
         pairs = [(image_paths[i], image_paths[i + 1]) for i in range(len(image_paths) - 1)]
@@ -200,7 +202,7 @@ def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     # One detector for the whole run: creating it per pair wasted time and gave every
     # image new keypoints. Feature extraction is cached per image across pairs.
     sift = cv2.SIFT_create(nfeatures=4000)
-    cache: Dict[str, Tuple[Optional[List[Any]], Optional[np.ndarray], int]] = {}
+    cache: dict[str, tuple[list[Any] | None, np.ndarray | None, int]] = {}
 
     def _features(path: str):
         if path not in cache:
@@ -267,27 +269,36 @@ def _sift_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
 # LightGlue-ALIKED Adapter
 # ---------------------------------------------------------------------------
 
-def _lightglue_aliked_available() -> Optional[str]:
+def _lightglue_aliked_available() -> str | None:
     try:
-        import torch
-        import kornia.feature as kf
+        from importlib import import_module
+
+        import_module("kornia.feature")
+        import_module("torch")
         return None
-    except ImportError as exc:
+    except (ImportError, AttributeError) as exc:
         return str(exc)
 
 
 def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
-    import cv2
-    import torch
-    import kornia.feature as kf
     import time as _t
+
+    import cv2
+    import kornia.feature as kf
+    import torch
     from kornia.feature import LightGlue
 
     t0 = _t.perf_counter()
     run_id = ctx.get("run_id", "lightglue_run")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    obs: List[ObservationRecord] = []
-    unverified: List[Dict[str, Any]] = []
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.reset_peak_memory_stats(0)
+        except Exception:
+            pass
+    max_long_edge_px = int(ctx.get("max_long_edge_px", 1600) or 1600)
+    obs: list[ObservationRecord] = []
+    unverified: list[dict[str, Any]] = []
     pairs = ctx.get("pairs", [])
     if not pairs and len(image_paths) >= 2:
         pairs = [(image_paths[i], image_paths[i + 1]) for i in range(len(image_paths) - 1)]
@@ -298,7 +309,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     try:
         aliked = kf.ALIKED.from_pretrained("aliked-n16")
         aliked = aliked.to(device).eval()
-    except Exception as exc:
+    except Exception:
         try:
             aliked = kf.ALIKED()
             aliked = aliked.to(device).eval()
@@ -306,24 +317,34 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
             return UnifiedEngineOutput(engine_id="lightglue_aliked", run_id=run_id, observations=(),
                                       status="failed", error_message=str(exc2), wall_time_s=time.perf_counter() - t0)
     lg = LightGlue(features="aliked").to(device).eval()
-    peak: Optional[float] = None
+    peak: float | None = None
 
     def _feats(path: str):
         img = cv2.imread(path)
         if img is None:
-            return None, None
+            return None, None, 1.0, 1.0
+        oh, ow = img.shape[:2]
+        scale_x = 1.0
+        scale_y = 1.0
+        if max_long_edge_px > 0 and max(oh, ow) > max_long_edge_px:
+            ratio = max_long_edge_px / float(max(oh, ow))
+            nw = max(16, int(round(ow * ratio)))
+            nh = max(16, int(round(oh * ratio)))
+            img = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+            scale_x = ow / float(nw)
+            scale_y = oh / float(nh)
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().div(255.0).unsqueeze(0).to(device)
         with torch.no_grad():
             f = aliked(tensor)[0]
-        return f, tensor
+        return f, tensor, scale_x, scale_y
 
     try:
         for a_path, b_path in pairs:
             pair_t0 = _t.perf_counter()
             try:
-                feats_a, tensor_a = _feats(a_path)
-                feats_b, tensor_b = _feats(b_path)
+                feats_a, tensor_a, sx_a, sy_a = _feats(a_path)
+                feats_b, tensor_b, sx_b, sy_b = _feats(b_path)
                 if feats_a is None or feats_b is None:
                     unverified.append({"a_path": a_path, "b_path": b_path, "reason": "unreadable image"})
                     continue
@@ -356,12 +377,16 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                     continue
                 kp_a = feats_a.keypoints.detach().cpu().reshape(-1, 2).numpy()
                 kp_b = feats_b.keypoints.detach().cpu().reshape(-1, 2).numpy()
+                if sx_a != 1.0 or sy_a != 1.0:
+                    kp_a = kp_a * np.array([sx_a, sy_a], dtype=kp_a.dtype)
+                if sx_b != 1.0 or sy_b != 1.0:
+                    kp_b = kp_b * np.array([sx_b, sy_b], dtype=kp_b.dtype)
                 p1 = kp_a[mt[:, 0].numpy()]
                 p2 = kp_b[mt[:, 1].numpy()]
                 # Confidence is LightGlue's OWN per-match score, never a constant. When the
                 # matcher does not return scores there is no measured confidence at all, and
                 # the record says so (None) instead of claiming certainty.
-                mean_score: Optional[float] = None
+                mean_score: float | None = None
                 scores_tensor = matches.get("scores")
                 if isinstance(scores_tensor, (list, tuple)):
                     scores_tensor = scores_tensor[0] if scores_tensor else None
@@ -380,7 +405,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
                     evidence_id=f"lg_aliked:{a_path}->{b_path}",
                     source_image_id=a_path,
                     coordinate_frame=CoordinateFrame(frame_id="image", scale_state="image", units="pixels"),
-                    model_id=_model("matching", "lightglue_aliked", "aliked", "Apache-2.0", False, "gpu"),
+                    model_id=_model("matching", "lightglue_aliked", "aliked", "Apache-2.0", False, device),
                     label="feature_match",
                     category="correspondence",
                     confidence=mean_score,
@@ -407,9 +432,18 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
         except Exception:
             pass
 
+    if unverified and not obs:
+        lg_status = "failed"
+    elif unverified and obs:
+        lg_status = "partial"
+    elif obs:
+        lg_status = "succeeded"
+    else:
+        lg_status = "partial"
+
     return UnifiedEngineOutput(
         engine_id="lightglue_aliked", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if obs else "partial",
+        status=lg_status,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=peak,
         summary={"n_pairs": len(pairs), "n_verified_pairs": len(obs), "n_unverified_pairs": len(unverified),
@@ -417,7 +451,7 @@ def _lightglue_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutpu
     )
 
 
-def _get_vram_peak() -> Optional[float]:
+def _get_vram_peak() -> float | None:
     try:
         import torch  # imported here: this module must import without torch installed
 
@@ -432,7 +466,7 @@ def _get_vram_peak() -> Optional[float]:
 # Registration — register all available engines
 # ---------------------------------------------------------------------------
 
-def register_all_engines() -> List[str]:
+def register_all_engines() -> list[str]:
     """Register all available engines with the MultiEngineOrchestrator."""
     registered = []
 
@@ -477,6 +511,27 @@ def register_all_engines() -> List[str]:
         registered.append("depth_anything")
     except Exception as exc:
         log.warning("Depth engine not registered: %s", exc)
+
+    # Depth (MiDaS DPT_Hybrid) -- a second, implemented depth backend that was not
+    # wired. Register it so the production job runs it as a first-class depth engine.
+    # Depth is relative inverse depth (MiDaS convention), not metric.
+    try:
+        from perception.midas_adapter import register_midas_engine
+        register_midas_engine()
+        registered.append("midas")
+    except Exception as exc:
+        log.warning("MiDaS depth engine not registered: %s", exc)
+
+    # Detection + instance segmentation (Mask R-CNN, torchvision COCO-pretrained) --
+    # a second detection engine (boxes + instance masks) that was implemented but not
+    # wired. Register it so the production job runs it; its observations feed the
+    # orchestrator -> matrix/evidence consumer.
+    try:
+        from perception.maskrcnn_adapter import register_maskrcnn_engine
+        register_maskrcnn_engine()
+        registered.append("maskrcnn")
+    except Exception as exc:
+        log.warning("Mask R-CNN engine not registered: %s", exc)
 
     log.info("registered %d engines: %s", len(registered), registered)
     return registered

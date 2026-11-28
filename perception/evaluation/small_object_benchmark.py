@@ -264,14 +264,21 @@ class SmallObjectBenchmarkHarness:
 
         tiled_nms = self.tiler.apply_nms(all_tiled_candidates)
 
-        # 3. Score against ground truth
+        # 3. Score against ground truth (class-aware IoU matching)
+        def _norm_lbl(v: str | None) -> str:
+            return " ".join(str(v or "").strip().lower().replace("_", " ").split())
+
         def evaluate_matches(preds: Sequence[SmallObjectDetection], iou_th: float = 0.40):
-            matched_gt = set()
+            matched_gt: set[int] = set()
             true_positives = 0
             for p in preds:
                 pb = p.box_xyxy_global
+                p_lbl = _norm_lbl(getattr(p, "label", None))
                 for gt_idx, gt in enumerate(ground_truth):
                     if gt_idx in matched_gt:
+                        continue
+                    gt_lbl = _norm_lbl(gt.get("label") or gt.get("class") or gt.get("category"))
+                    if gt_lbl and p_lbl and p_lbl != gt_lbl:
                         continue
                     gb = gt["box_xyxy"]
                     # Calculate IoU
@@ -288,25 +295,29 @@ class SmallObjectBenchmarkHarness:
                         matched_gt.add(gt_idx)
                         true_positives += 1
                         break
-            return len(matched_gt), true_positives
+            return matched_gt, true_positives
 
         n_gt = len(ground_truth)
         matched_naive, _ = evaluate_matches(naive_dets)
-        matched_tiled, tp_tiled = evaluate_matches(tiled_nms)
+        matched_tiled_set, tp_tiled = evaluate_matches(tiled_nms)
 
-        recall_naive = matched_naive / max(1, n_gt)
-        recall_tiled = matched_tiled / max(1, n_gt)
+        recall_naive = len(matched_naive) / max(1, n_gt)
+        recall_tiled = len(matched_tiled_set) / max(1, n_gt)
         prec_tiled = tp_tiled / max(1, len(tiled_nms))
         f1_tiled = (2 * prec_tiled * recall_tiled) / max(1e-8, prec_tiled + recall_tiled)
 
         gain = ((recall_tiled - recall_naive) / max(1e-4, recall_naive)) * 100.0
 
-        # Category breakdown
+        # Category breakdown (per-class GT count, detected count, and recall)
         category_stats: dict[str, dict[str, float]] = {}
-        for gt in ground_truth:
+        for gt_idx, gt in enumerate(ground_truth):
             cat = gt.get("category", "hardware")
             category_stats.setdefault(cat, {"count": 0, "detected": 0})
             category_stats[cat]["count"] += 1
+            if gt_idx in matched_tiled_set:
+                category_stats[cat]["detected"] += 1
+        for cat, st in category_stats.items():
+            st["recall"] = round(st["detected"] / max(1, st["count"]), 4)
 
         return SmallObjectBenchmarkReport(
             total_ground_truth_items=n_gt,

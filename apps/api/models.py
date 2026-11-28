@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -192,6 +193,9 @@ class Upload(Base):
     """An artifact upload. Content-addressed on completion."""
 
     __tablename__ = "uploads"
+    __table_args__ = (
+        Index("ix_uploads_team_session_checksum", "team_id", "session_id", "checksum"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     session_id: Mapped[str | None] = mapped_column(
@@ -213,6 +217,18 @@ class Evidence(Base):
     """Evidence linked to the real evidence/ingestion system."""
 
     __tablename__ = "evidence"
+    __table_args__ = (
+        Index("ix_evidence_team_session_checksum", "team_id", "session_id", "checksum"),
+        Index(
+            "uq_evidence_team_session_checksum",
+            "team_id",
+            "session_id",
+            "checksum",
+            unique=True,
+            sqlite_where=text("session_id IS NOT NULL AND checksum IS NOT NULL"),
+            postgresql_where=text("session_id IS NOT NULL AND checksum IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(300))

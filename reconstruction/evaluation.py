@@ -280,12 +280,22 @@ def evaluate_absolute_poses(
     poses: List[ReconstructedCameraPose],
     gt_images: Dict[str, Sequence[float]],
     min_cameras: int = 3,
+    estimated_scale_state: str = "unknown",
 ) -> dict:
     """Evaluate estimated absolute poses against a reference model.
 
     Returns a dict with `refused` set when evaluation is not possible
     (too few common cameras, degenerate geometry); the measured report
     otherwise. Never fabricates a score for an unalignable model.
+
+    HONESTY CONTRACT (defect B2): the ``center_error_*`` numbers are residuals
+    AFTER a Sim(3) fit whose scale is estimated FROM the reference, so they
+    measure shape/gauge consistency only and are NEVER independent metric
+    accuracy. The report says so explicitly (``residual_is_independent_metric_accuracy``
+    is always False). Only when the caller declares ``estimated_scale_state="metric"``
+    (the estimate itself claims metres) are the ``metric_*`` keys added: the
+    scale error ``|scale_ratio - 1|`` and the centre errors under a RIGID
+    (scale fixed to 1) alignment.
     """
     if not gt_images or not poses:
         return {"refused": True, "reason": "no poses or no reference poses"}
@@ -414,11 +424,38 @@ def evaluate_absolute_poses(
             )
 
     scale_ratio = 1.0 / s
+    metric_block: dict = {}
+    if str(estimated_scale_state).lower() in ("metric", "metric_anchored"):
+        # Rigid-only alignment: scale is NOT fitted, so a wrong scale shows up as error.
+        em = np.mean(np.asarray(est_centers, dtype=np.float64), axis=0)
+        gm = np.mean(np.asarray(gt_centers, dtype=np.float64), axis=0)
+        R_arr = np.asarray(R_align, dtype=np.float64)
+        t_rigid = gm - R_arr @ em
+        rigid = sorted(
+            float(np.linalg.norm(R_arr @ np.asarray(est_centers[i], dtype=np.float64) + t_rigid
+                                 - np.asarray(gt_centers[i], dtype=np.float64)))
+            for i in all_idx
+        )
+        metric_block = {
+            "metric_scale_error_pct": abs(scale_ratio - 1.0) * 100.0,
+            "metric_center_error_median": rigid[len(rigid) // 2],
+            "metric_center_error_max": rigid[-1],
+            "metric_center_error_mean": sum(rigid) / len(rigid),
+        }
+    else:
+        notes.append(
+            "estimate is not declared metric: centre errors are scale-fitted residuals and say nothing about metric accuracy"
+        )
     rot_errors.sort()
     cen_errors.sort()
     n = len(rot_errors)
 
     return {
+        **metric_block,
+        "alignment": "sim3_scale_fitted_to_reference",
+        "center_error_units": "reference_units_after_sim3_scale_fit",
+        "residual_is_independent_metric_accuracy": False,
+        "estimated_scale_state": str(estimated_scale_state),
         "refused": False,
         "common_cameras": n,
         "rotation_deg_median": rot_errors[n // 2],

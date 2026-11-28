@@ -57,8 +57,8 @@ from reconstruction.proc import (
     unregister_worker,
     get_dead_worker_jobs,
 )
-from perception.spatial_adapter import adapt_spatial_inputs_v1
-from perception.spatial_inputs import (
+from engine.pipeline.perception_services import (
+    adapt_spatial_inputs_v1,
     CameraInput,
     ScaleStateInput,
     SpatialInputsV1,
@@ -516,6 +516,10 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     evidence = await db.get(Evidence, job.entity_id)
     if evidence is None:
         raise RuntimeError(f"Evidence {job.entity_id} not found")
+    if job.team_id is not None and evidence.team_id is not None and job.team_id != evidence.team_id:
+        raise RuntimeError(
+            f"Cross-tenant evidence access refused: job team {job.team_id!r} != evidence team {evidence.team_id!r}"
+        )
     job.stage = "verifying_artifact"
     evidence.processing_state = "processing"
     await db.commit()
@@ -733,6 +737,16 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         world = aw(db.get(World, session.world_id))
         if world is None:
             raise RuntimeError(f"World {session.world_id} not found")
+        if world.team_id is not None and session.team_id is not None and world.team_id != session.team_id:
+            raise RuntimeError(
+                f"Cross-tenant session/world association refused: session {session.id} belongs to "
+                f"{session.team_id!r}, world {world.id} belongs to {world.team_id!r}"
+            )
+        if job.team_id is not None and world.team_id is not None and job.team_id != world.team_id:
+            raise RuntimeError(
+                f"Cross-tenant job execution refused: job {job.id} belongs to {job.team_id!r}, "
+                f"world {world.id} belongs to {world.team_id!r}"
+            )
 
         job.stage = "checking_reconstruction_backend"
         job.heartbeat_at = utcnow()
@@ -797,15 +811,22 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # Progressive refinement: the model is built from ALL photo evidence of
         # every session attached to this world (compile(A+B) IS the definition
         # of V2), never just the newest session's batch.
-        result = aw(db.execute(
+        ev_query = (
             select(Evidence)
             .join(Session, Evidence.session_id == Session.id)
             .where(or_(Session.world_id == world.id, Session.id == session.id), Evidence.type == "photo")
             # Evidence Quality Firewall: an operator-REJECTED photo is not reconstruction input
             .where(Evidence.id.not_in(select(EvidenceDecision.evidence_id).where(EvidenceDecision.decision == "rejected")))
-            .order_by(Evidence.created_at.asc(), Evidence.id.asc())
-        ))
+        )
+        if world.team_id is not None:
+            ev_query = ev_query.where(or_(Evidence.team_id == world.team_id, Evidence.team_id.is_(None)))
+        result = aw(db.execute(ev_query.order_by(Evidence.created_at.asc(), Evidence.id.asc())))
         evidence_rows = list(result.scalars().all())
+        for ev in evidence_rows:
+            if world.team_id is not None and ev.team_id is not None and ev.team_id != world.team_id:
+                raise RuntimeError(
+                    f"Cross-tenant evidence {ev.id} refused for world {world.id}"
+                )
         head_report = aw(_head_report(db, world))
         # F6 / T-4.2: user-verified corrections and decisions from the current version are replayed onto the rebuilt world below.
         # A failure to read the previous version only means no carry-over, never a lost reconstruction.
@@ -1324,23 +1345,36 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         )
 
         base_head = world.current_version_id
-        try:
-            store = worldstore_service.get_store()
-            version_row = aw(worldstore_service.commit_version(
-                db,
-                world_id=world.id,
-                world=world_ir,
-                parent=base_head,
-                source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
-                points=points_bytes,
-                cameras=cameras_bytes,
-                report=report,
-                expect_parent=base_head,
-            ))
-        except worldstore_service.ConcurrentModificationError as exc:
-            # Retryable: the next attempt reloads HEAD and either dedups
-            # (identical content) or chains onto the new HEAD.
-            raise RuntimeError(f"reconstruction superseded: {exc}") from exc
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                store = worldstore_service.get_store()
+                version_row = aw(worldstore_service.commit_version(
+                    db,
+                    world_id=world.id,
+                    world=world_ir,
+                    parent=base_head,
+                    source_session_ids=aw(_contributing_session_ids(db, world.id, session.id)),
+                    points=points_bytes,
+                    cameras=cameras_bytes,
+                    report=report,
+                    expect_parent=base_head,
+                ))
+                break  # committed successfully
+            except worldstore_service.ConcurrentModificationError as exc:
+                # Retryable: HEAD moved under us. Reload it and either dedup
+                # (identical content already adopted) or chain onto the new
+                # base. Never last-writer-wins, never a silent overwrite.
+                last_exc = exc
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"reconstruction superseded after {max_retries} attempts: {exc}"
+                    ) from exc
+                aw(db.refresh(world, attribute_names=["current_version_id"]))
+                base_head = world.current_version_id
+                # Yield briefly so the concurrent job's transaction settles
+                # before we rebuild against the new base.
+                time.sleep(0.05 * attempt)
 
         # Read-back verification: the adopted version must load with clean
         # hashes before anything is called a success. A version that cannot
@@ -1448,7 +1482,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 slab = cp.get("wall_slab")
                 if not isinstance(slab, dict):
                     continue
-                start = slab.get("start_xyz_m"); end = slab.get("end_xyz_m")
+                start = slab.get("start_xyz_m")
+                end = slab.get("end_xyz_m")
                 sigma = slab.get("measurement_uncertainty_m")
                 if not (isinstance(start, (list, tuple)) and len(start) == 3 and
                         isinstance(end, (list, tuple)) and len(end) == 3 and

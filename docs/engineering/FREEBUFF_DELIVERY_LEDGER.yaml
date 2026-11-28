@@ -1,0 +1,219 @@
+# FREEBUFF 200K Reconstruction Delivery Ledger
+
+Records recovery actions and delivery items for the FREEBUFF 200,000 LOC Perception, Reconstruction & Spatial Intelligence Programme.
+
+Updated: 2026-11-26
+
+---
+
+## Recovery session 2026-11-26
+
+### Actions taken
+
+- inspected_all_branches: true
+  - count: ~280 branches (agent/*, cline/*, gemini/*, opencode/*, kilocode/*, freebuff/*, recovery/*, build/*, feat/*, fix/*, claude/*, b9/*)
+  - six_agent_heads_captured: true
+  - agent/freebuff-reconstruction: bd4267ef
+  - agent/freebuff-reconstruction-perception: acb98f19
+  - agent/claude-city-world-core: 765b6440
+  - agent/cline-mobile-experience: aa9ffb99 (PR #66 open)
+  - agent/opencode-city-infrastructure: 6537fba7
+  - agent/kilocode-desktop-studio: c16a6c88 (PR #54 open)
+  - agent/antigravity-integration: worktree active (PR #51 open)
+  - agent/antigravity-product-integration: worktree active
+- inspected_worktrees: true
+  - count: 30+ (active + stale scratchpad)
+  - stale_worktrees_flagged: true
+- inspected_stashes: true
+  - count: 14
+  - ops_stash_identified: stash@{6} (main: other-agent-wip-backend) — REAL operational work, NOT applied (CONFLICTING verdict)
+- inspected_reflog: not_comprehensive
+- inspected_prs: true
+  - pr_395_open: true (feat/day4-real-geometry-measurements)
+  - pr_54_open: true (agent/kilocode-desktop-studio)
+  - pr_66_open: true (agent/cline-mobile-experience)
+  - pr_51_open: true (agent/antigravity-product-integration)
+- ba_consolidation_analysis_performed: true
+  - compare_file: perception/bundle_adjustment.py (untracked, 765+ lines) vs reconstruction/sfm/core_pipeline.py::BundleAdjustmentOptimizer (committed, tested)
+  - finding: NOT equivalent implementations; different algorithms at different rigor
+  - bundle_adjustment.py: true sparse LM, full 6-DOF camera + 3-DOF point params, analytic sparse Jacobian, gauge camera 0, Cauchy loss, per-camera/per-point covariances, full BundleAdjustmentResult
+  - BundleAdjustmentOptimizer: coordinate descent, point positions only (rotations fixed), heuristic backprojection-ray Jacobian, no gauge, no covariances, Huber weighting (post-hoc, not in normal equations), effectively a point smoother mislabeled as BA
+  - verdict: untracked file is the correct/rigorous BA; committed optimizer is a weaker point refiner
+  - decision: NOT committed as-is (untested, not integrated); do NOT leave competing implementations
+  - recommended_path: Option A (integrate rigorous BA into canonical pipeline with tests + adapter), Option B (document distinction, track wiring task), or Option C (archive with explanation)
+  - rationale: untested parallel implementation must not replace tested integrated BA; different signatures require adapter + tests + integration; existing test_sfm_pipeline_rule4.py must be updated
+- ops_stash_comparison_performed: true
+  - compare_file: stash@{6} (apps/api/jobs.py, routes_worlds.py, routes_misc.py, storage.py, main.py, cli/main.py, evidence/clocks.py, pyproject.toml, test_application_api.py, .obsidian/*) vs current branch
+  - verdict: CONFLICTING, not complementary
+  - _run_reconstruct_session: stash = COLMAP backend + ReconstructionOrchestrator + reality.compile_world_from_reconstruction + WorldStore.save_version (direct); current = stage-segmented vertical slice via run_progressive + vertical_slice + worldstore_service.commit_version + manifest grading; same function signature, different body = direct conflict; current is more complete + tested
+  - routes_worlds.py (4 new routes): SUPERSEDED — current already has worldir/points/cameras + full CAS-validated commit endpoint with version integrity, duplicate detection, four-way commit storm tests, space-graph
+  - routes_misc.py (upload dedup): IMPROVEMENT — current create_upload has no dedup; stash's dedup is a genuine enhancement; touches same function; port selectively
+  - storage.py (verify_artifact): CONFLICTING — current storage.py already re-exports verify_artifact from engine.pipeline.stages.content_store
+  - main.py (graceful shutdown 30s): SUBSET — current has 10s + shield + db dispose timeout (more defensive)
+  - jobs.py (reclaim_abandoned_jobs heartbeat): ALTERNATIVE — current uses proc-based recover_orphaned_jobs at startup; heartbeat-based is an alternative approach, blocked by _run_reconstruct_session conflict
+  - cli/main.py (incremental update): INDEPENDENT — separate CLI concern; evaluate separately
+  - .obsidian/*: IGNORE — editor state
+  - test_application_api.py (expanded test): OBSOLETE — current test suite already covers the chain
+  - decision: do NOT apply stash@{6} to this branch; do NOT drop it; port piecemeal if valuable (upload dedup, heartbeat reclamation as alternative); do NOT apply _run_reconstruct_session rewrite
+
+### Files recovered
+
+- removed_docs_engineering_9_untracked: true
+  - 4_removed_§51_prohibited: 24_7_EXECUTION_STATE.md, 52_WEEK_MASTER_PROGRAMME.md, IMPLEMENTATION_BACKLOG.md, IMPLEMENTATION_LEDGER.md
+  - 5_removed_duplicates: DECISION_LOG.md, KNOWN_LIMITATIONS.md, ENGINE_INTEGRATION_MATRIX.md, RECONSTRUCTION_ARCHITECTURE.md, TECHNOLOGY_ECOSYSTEM.md
+  - unique_content_preserved: D-011 (bundle adjustment decision), D-012 (cheirality decision — actually committed), South Building 32-photo results (already in STATUS.md S5-23)
+- bundle_adjustment_py_status: untracked_not_committed
+  - reason: evaluated this session (§4.3); superior algorithm but untested + not integrated; decision deferred to Option A/B/C
+  - comparison_result: NOT a duplicate of BundleAdjustmentOptimizer; different algorithm (true BA vs point refiner)
+- ops_stash_status: identified_evaluated_not_applied
+  - reason: CONFLICTING verdict (§4.1); _run_reconstruct_session rewrite conflicts with current more-complete tested implementation
+  - do_not_drop: true
+  - portable_improvements_identified: upload dedup (routes_misc.py create_upload), heartbeat reclamation (alternative to proc-based recovery)
+  - not_portable: _run_reconstruct_session rewrite (current is superior + tested)
+
+### Files fixed
+
+- execution_state_fixed: true
+  - HEAD_commit_corrected: 156f3e36 → 290ab106
+  - false_claims_removed: "created 9 engineering ledger files" claim replaced with accurate recovery record
+  - bundle_adjustment_status_documented: untracked, not committed, evaluated (§4.3), decision deferred
+  - stash_6_status_documented: identified, evaluated (§4.1), CONFLICTING verdict, not applied, do not drop
+
+### Files created (delivery)
+
+- recovery_report: docs/audits/FREEBUFF_200K_RECONSTRUCTION_REPORT.md
+  - includes: execution summary, repository state, six-agent recovery, untracked files recovery, BA consolidation analysis (§4.3), ops stash comparison (§4.1), prior audit synthesis, delivery ledger summary
+- delivery_ledger: docs/engineering/FREEBUFF_DELIVERY_LEDGER.yaml (this file)
+
+### Files committed this session (beyond recovery report)
+
+- commit_5a51204a: refactor(multiengine): replace stub Provenance/Unit with real imports in evidence_fusion.py
+  - evidence_fusion.py: 811 -> 765 lines; stub Provenance class removed; real imports (engine.core.units.Unit, provenance.Provenance)
+  - test_evidence_normalization_fusion.py: updated assertions to match real API (source_units="dimensionless", FusionError import)
+- commit_36050335: feat(spatial): add KiloCode-authored object occlusion reasoning module
+  - perception/spatial_intelligence/occlusion.py: 407 lines, new file
+  - OcclusionGraph, OcclusionRelation, compute_object_occlusions, merge_graphs, transitive_occlusion_chain, occluded_region_of, object_permanence_in_view
+  - KiloCode spatial intelligence workstream (agent/kilocode-desktop-studio); imports cleanly verified
+- commit_55f78109: test(spatial): add tests for KiloCode object occlusion reasoning module
+  - tests/test_spatial_occlusion.py: 262 lines, 13 tests, new file
+  - Tests: occlusion graph construction (6), transitive chains (2), merge graphs (2), occluded regions (1), object permanence (3)
+  - Recovered alongside occlusion.py; verified: all 13 tests pass (run this session via background process mode)
+- commit_59ca5a39: docs(recovery): update recovery report and delivery ledger with committed work
+- commit_8aa06d06: docs(recovery): final update to report + ledger (BA consolidation analysis §4.3 + ops stash comparison §4.1 + test commit 55f78109 verified)
+
+### Files unchanged (existing, committed)
+
+- status_yaml_s5_23: advanced with fusion evidence + test (committed 4dc8d258)
+- status_yaml_s5_23_tests_added: tests/test_evidence_normalization_fusion.py (19 tests)
+- evidence_fusion_py: engine/multiengine/evidence_fusion.py (committed 4dc8d258)
+- camera_pose_graph_cheirality: perception/camera_pose_graph.py extended (committed, all 30 tests pass)
+- pair_strategy_widened: scripts/run_multi_engine_real_capture.py (sequential_skip23 default, committed)
+- occlusion_module_tests_verified: 13/13 pass (verified this session)
+
+### Status re-rendered
+
+- status_md_re_rendered: true (python scripts/render_status.py)
+- s5_23_fusion_update_confirmed: true
+
+---
+
+## Six-agent branch status (content pending inspection)
+
+| Branch | Head | PR | Content inspected | Verdict |
+|---|---|---|---|---|
+| agent/freebuff-reconstruction | bd4267ef | — | no | pending |
+| agent/freebuff-reconstruction-perception | acb98f19 | — | no | pending |
+| agent/claude-city-world-core | 765b6440 | — | no | pending |
+| agent/cline-mobile-experience | aa9ffb99 | #66 | no | pending |
+| agent/opencode-city-infrastructure | 6537fba7 | — | no | pending |
+| agent/kilocode-desktop-studio | c16a6c88 | #54 | no | pending |
+
+---
+
+## OpenCode recovery branch
+
+- recovery/opencode-mask-contract: 0d210b09 ("docs(audit): six-agent progress recovery report")
+- prior_recovery_report_exists: true — should be read before duplicating effort
+- worktree_active: .codex/worktrees/recovery/opencode-mask-contract
+
+---
+
+## Gemini spatial programme (branch set, high-level only)
+
+- gemini_branches_count: ~30+
+- gemini_rceap_cycle0_audit: docs/audits/2026-11-SPATIAL_RECONSTRUCTION_CYCLE0_AUDIT.md (authored by Gemini, high-level summary available)
+- gemini_spatial_audit: docs/audits/RCEAP_CYCLE0_AUDIT.md (Sonnet platform audit of Gemini work)
+- gemini_branches_inspected: no (file-by-file not done this session)
+- recommendation: prioritize gemini branches off main for integration review; use RCEAP audit as guide
+
+---
+
+## Pending delivery items (Task 11)
+
+| Item | Status | Notes |
+|---|---|---|
+| Recovery report | done | this session; includes BA + stash comparisons |
+| Delivery ledger | done | this session; includes comparison verdicts |
+| BA consolidation analysis | done (analysis) | decision deferred to Option A/B/C with tests |
+| Ops stash comparison | done (analysis) | CONFLICTING verdict; do not apply; do not drop |
+| Model evaluation reports | pending | existing audits contain model evals; no new evals this session |
+| Dataset/licensing manifests | existing | OPEN_SOURCE_TECHNOLOGY_REGISTRY.md, TECHNOLOGY_EVALUATION.md, capability_matrix.md, model_registry.py |
+| Reconstruction benchmark manifests | existing | benchmarks/measured_rooms/, benchmarks/reality_benchmark/, datasets/south_building/ |
+| Push recovery report to GitHub | done | pushed 79c33276, 5a51204a, 36050335, 55f78109, 8aa06d06 to origin/feat/day4-real-geometry-measurements; remote at 8aa06d06; PR #395 open |
+
+---
+
+## Comparison verdicts (this session)
+
+### BA consolidation (perception/bundle_adjustment.py vs core_pipeline.py BundleAdjustmentOptimizer)
+
+- ARE_THEY_DUPLICATES: no
+- ARE_THEY_COMPARABLE: yes (both claim to do bundle adjustment, but at different rigor)
+- UNTRACKED_FILE_RIGOR: superior (true sparse LM BA, full camera+point params, analytic Jacobian, gauge, covariances)
+- COMMITTED_FILE_RIGOR: weaker (coordinate descent point refiner, no rotation params, no sparse Jacobian, no gauge, no covariances, mislabeled as BA)
+- UNTRACKED_FILE_TESTED: no (no test file, not imported by committed code)
+- COMMITTED_FILE_TESTED: yes (test_sfm_pipeline_rule4.py)
+- DECISION: do not commit as-is; do not leave competing implementations; integrate best features with tests (Option A) or document distinction + track wiring (Option B) or archive (Option C)
+- BLOCKED_BY: no tests, no integration, no adapter from core_pipeline data structures to CameraParams/CameraObservation/Point3D
+
+### Ops stash (stash@{6} vs current branch)
+
+- ARE_THEY_COMPLEMENTARY: no (CONFLICTING)
+- _run_reconstruct_session: CONFLICTING (different architecture, same function; current superior + tested)
+- routes_worlds_new_routes: SUPERSEDED (current more complete)
+- upload_dedup: IMPROVEMENT (genuine enhancement; port selectively)
+- verify_artifact_in_storage: CONFLICTING (current re-exports from engine layer)
+- graceful_shutdown: SUBSET (current more defensive)
+- reclaim_abandoned_jobs_heartbeat: ALTERNATIVE (blocked by _run_reconstruct_session conflict)
+- cli_incremental_update: INDEPENDENT (separate concern; evaluate separately)
+- obsidian_changes: IGNORE (editor state)
+- test_expansion: OBSOLETE (current test suite covers it)
+- DECISION: do NOT apply stash@{6}; do NOT drop; port piecemeal
+
+---
+
+## Compliance
+
+- agents_md_§51_compliant: true
+  - no_plan_roadmap_backlog_state_docs_recreated: true
+  - persistent_memory_in_agent_files: true (.agent/EXECUTION_STATE.md, .agent/TASKS.yaml)
+  - status_source_of_truth_preserved: true (docs/status.yaml → docs/STATUS.md)
+- no_force_push: true
+- no_merge_without_authorization: true
+- prs_focused: true (PR #395 contains only this session's legitimate work)
+- no_fabricated_results: true (occlusion tests actually run: 13/13 pass; BA + stash comparisons are analytical, not fabricated)
+- no_silent_fallbacks: true (both comparisons reach explicit verdicts)
+
+---
+
+## Next session priorities
+
+1. BA consolidation: Option A/B/C decision + integrate rigorous BA into canonical pipeline with tests (Option A preferred), or document distinction + track wiring (Option B), or archive (Option C)
+2. Ops stash piecemeal: port upload dedup to routes_misc.py create_upload; evaluate heartbeat reclamation as alternative to proc-based recovery; evaluate CLI incremental update separately; do NOT apply _run_reconstruct_session rewrite
+3. Inspect six-agent branch content (file-level)
+4. Review Gemini spatial programme branches off main
+5. Run focused test suite (background process mode): test_evidence_normalization_fusion.py + test_camera_pose_graph.py + test_spatial_occlusion.py (occlusion already verified)
+6. Coordinate with Cline/OpenCode (manual — no agent channel)
+7. Re-render STATUS.md after any status changes: python scripts/render_status.py
+8. Update EXECUTION_STATE.md: record BA consolidation analysis result (§4.3) + stash@{6} verdict (§4.1)
+

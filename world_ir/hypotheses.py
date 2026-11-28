@@ -282,3 +282,44 @@ def get_competing_hypotheses(entity: Entity, domain: str) -> List[CompetingHypot
         return []
     hyp_set = HypothesisSet.from_dict(hyp_dict)
     return list(hyp_set.hypotheses)
+
+
+# -----------------------------------------------------------------------------
+# World-level surfacing (persisted, never invented)
+# -----------------------------------------------------------------------------
+
+_NEEDS_GEOMETRY = {"room", "wall", "floor", "ceiling", "door", "window", "opening", "corridor", "stairs"}
+
+
+def surface_unresolved(world: Any) -> Dict[str, Any]:
+    """Write ``world.metadata['competing_hypotheses']`` and ``['unresolved_geometry']`` and return them.
+
+    * competing_hypotheses: every (entity, domain) that still holds more than one candidate, with the active one, the losers and
+      whether the conflict is flagged -- the losing hypotheses were never deleted, this just makes them visible.
+    * unresolved_geometry: fields the world has NO evidence for (a room without boundary elements, a wall/opening without any
+      geometry or bounds). Reported as unknown; nothing is filled in.
+    Deterministic and idempotent."""
+    competing: List[Dict[str, Any]] = []
+    unresolved: List[Dict[str, Any]] = []
+    for eid in sorted(world.entities or {}):
+        ent = world.entities[eid]
+        cp = ent.custom_properties or {}
+        for domain, raw in sorted((cp.get("hypotheses") or {}).items()):
+            hs = HypothesisSet.from_dict(raw)
+            if len(hs.hypotheses) > 1:
+                active = [h.hypothesis_id for h in hs.hypotheses if h.is_active]
+                competing.append({
+                    "entity_id": eid, "domain": domain, "active_hypothesis_id": active[0] if active else None,
+                    "candidates": [{"hypothesis_id": h.hypothesis_id, "producer": h.producer, "statement": h.statement,
+                                    "confidence": h.confidence} for h in hs.hypotheses],
+                    "conflict_detected": hs.conflict_detected, "conflict_note": hs.conflict_note})
+        t = str(getattr(ent.type, "value", ent.type))
+        if t in _NEEDS_GEOMETRY and not ent.geometry_ids and not any(
+                cp.get(k) for k in ("bounding_box", "bounds_min", "footprint_polygon_xyz_m", "wall_slab", "boundary_element_ids")):
+            unresolved.append({"entity_id": eid, "field": "geometry", "reason": "no geometry or bounds evidenced"})
+        if t == "room" and not cp.get("boundary_element_ids"):
+            unresolved.append({"entity_id": eid, "field": "boundary_element_ids",
+                               "reason": "no wall/floor/ceiling is evidenced as bounding this room"})
+    world.metadata["competing_hypotheses"] = competing
+    world.metadata["unresolved_geometry"] = unresolved
+    return {"competing_hypotheses": competing, "unresolved_geometry": unresolved}

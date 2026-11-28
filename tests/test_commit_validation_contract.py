@@ -57,6 +57,8 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _commit(c, wid, body, *, raw=False):
     if raw:
         return c.post(f"/api/worlds/{wid}/commit", content=body, headers={"content-type": "application/json"})
+    if "parent_version_id" not in body:   # the base version is mandatory: say which version these tests are looking at
+        body = {**body, "parent_version_id": _head(c, wid)}
     return c.post(f"/api/worlds/{wid}/commit", json=body)
 
 

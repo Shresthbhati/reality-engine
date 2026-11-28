@@ -142,6 +142,7 @@ def test_api_reprocess_preserves_accepted_manual_edits(client, tmp_path, monkeyp
         f"/api/worlds/{wid}/commit",
         json={
             "entity_id": eid,
+            "parent_version_id": client.get(f"/api/worlds/{wid}").json()["current_version_id"],
             "changes": {
                 "reclassify": {
                     "new_class": "feature_column",

@@ -52,6 +52,11 @@ def _seed(tmp_path, team, world_id, run_id="run-1", fail=()):
     return run_evidence_flow(root, run_id, SOURCES, registry=reg, adapters=adapters, stages=[StageSpec(Task.DETECTION)])
 
 
+def _ev(client, wid, run="run-c"):
+    """The version the user is looking at (every correction must name it)."""
+    return client.get(_url(wid, run, "world"), headers=A).json()["version_id"]
+
+
 def _url(wid, *parts):
     return "/".join([f"/api/worlds/{wid}/evidence-world", *parts])
 
@@ -211,7 +216,7 @@ def test_a_correction_is_a_new_version_that_keeps_every_piece_of_original_eviden
     _persisted_run(client, tmp_path, wid)
     before = client.get(_url(wid, "run-c", "world"), headers=A).json()
     chair = next(e for e in client.get(_url(wid, "run-c", "entities"), headers=A).json()["entities"] if e["ontology_path"].endswith("chair"))
-    r = client.post(_url(wid, "run-c", "entities", chair["entity_id"], "reclassify"), json={"new_class": "furniture/seating/sofa", "note": "it is a sofa"}, headers=A)
+    r = client.post(_url(wid, "run-c", "entities", chair["entity_id"], "reclassify"), json={"new_class": "furniture/seating/sofa", "note": "it is a sofa", "expected_version_id": before["version_id"]}, headers=A)
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["parent_version_id"] == before["version_id"] and out["version_id"] != before["version_id"] and out["original_evidence_preserved"]
@@ -231,7 +236,8 @@ def test_a_correction_is_validated_tenant_scoped_and_404s_without_a_world_or_ent
     _persisted_run(client, tmp_path, wid)
     ents = client.get(_url(wid, "run-c", "entities"), headers=A).json()["entities"]
     eid = ents[0]["entity_id"]
-    assert client.post(_url(wid, "run-c", "entities", "nope", "reclassify"), json={"new_class": "x"}, headers=A).status_code == 404
+    v = client.get(_url(wid, "run-c", "world"), headers=A).json()["version_id"]
+    assert client.post(_url(wid, "run-c", "entities", "nope", "reclassify"), json={"new_class": "x", "expected_version_id": v}, headers=A).status_code == 404
     assert client.post(_url(wid, "run-c", "entities", eid, "reclassify"), json={"new_class": ""}, headers=A).status_code == 422
     assert client.post(_url(wid, "run-c", "entities", eid, "reclassify"), json={"new_class": "x/y"}, headers=B).status_code in (403, 404)
     assert client.post(_url(wid, "no-run", "entities", eid, "reclassify"), json={"new_class": "x/y"}, headers=A).status_code == 404
@@ -303,7 +309,7 @@ def test_a_merge_correction_rebuilds_the_entity_from_the_raw_evidence_and_keeps_
     assert len(chairs) == 2
     a, b = chairs[0]["entity_id"], chairs[1]["entity_id"]
     before = client.get(_url(wid, "run-c", "world"), headers=A).json()
-    r = client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b, "note": "same chair, two photos"}, headers=A)
+    r = client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b, "note": "same chair, two photos", "expected_version_id": _ev(client, wid)}, headers=A)
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["rebuilt_from_evidence"] and out["members"] == len(set(chairs[0]["members"]) | set(chairs[1]["members"])) and out["parent_version_id"] == before["version_id"]
@@ -325,12 +331,12 @@ def test_merging_entities_from_one_photograph_is_refused_unless_acknowledged_and
     chair = next(e for e in ents if e["ontology_path"].endswith("chair"))
     socket = next(e for e in ents if "socket" in e["ontology_path"])
     url = _url(wid, "run-c", "entities", chair["entity_id"], "merge")
-    refused = client.post(url, json={"other_entity_id": socket["entity_id"]}, headers=A)
+    refused = client.post(url, json={"other_entity_id": socket["entity_id"], "expected_version_id": _ev(client, wid)}, headers=A)
     chair_src = {o["observation"]["source_id"] for o in client.get(_url(wid, "run-c", "entities", chair["entity_id"]), headers=A).json()["observations"]}
     socket_src = {o["observation"]["source_id"] for o in client.get(_url(wid, "run-c", "entities", socket["entity_id"]), headers=A).json()["observations"]}
     if chair_src & socket_src:
         assert refused.status_code == 422 and "same photograph" in refused.json()["detail"]
-        ok = client.post(url, json={"other_entity_id": socket["entity_id"], "acknowledge_same_image": True}, headers=A)
+        ok = client.post(url, json={"other_entity_id": socket["entity_id"], "acknowledge_same_image": True, "expected_version_id": _ev(client, wid)}, headers=A)
         assert ok.status_code == 200 and ok.json()["decision"]["acknowledged_same_image"] is True
         merged = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"][f"ent-{chair['entity_id']}"]
         assert merged["custom_properties"]["evidence"]["class_status"] in ("conflict", "resolved")  # a class disagreement is kept, never silently resolved
@@ -343,9 +349,9 @@ def test_merge_validation_and_tenancy(client, tmp_path):
     _persisted_run(client, tmp_path, wid)
     e = _ents(client, wid)[0]["entity_id"]
     url = _url(wid, "run-c", "entities", e, "merge")
-    assert client.post(url, json={"other_entity_id": e}, headers=A).status_code == 422
-    assert client.post(url, json={"other_entity_id": "nope"}, headers=A).status_code == 404
-    assert client.post(url, json={"other_entity_id": "x"}, headers=B).status_code in (403, 404)
+    assert client.post(url, json={"other_entity_id": e, "expected_version_id": _ev(client, wid)}, headers=A).status_code == 422
+    assert client.post(url, json={"other_entity_id": "nope", "expected_version_id": _ev(client, wid)}, headers=A).status_code == 404
+    assert client.post(url, json={"other_entity_id": "x", "expected_version_id": _ev(client, wid)}, headers=B).status_code in (403, 404)
 
 
 def test_a_correction_made_against_a_stale_version_is_refused(client, tmp_path):
@@ -369,10 +375,10 @@ def test_a_merge_then_a_split_restores_two_entities_each_rebuilt_from_its_own_ev
     _persisted_run(client, tmp_path, wid)
     chairs = [e for e in _ents(client, wid) if e["ontology_path"].endswith("chair")]
     a, b = chairs[0]["entity_id"], chairs[1]["entity_id"]
-    assert client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b}, headers=A).status_code == 200
+    assert client.post(_url(wid, "run-c", "entities", a, "merge"), json={"other_entity_id": b, "expected_version_id": _ev(client, wid)}, headers=A).status_code == 200
     merged = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"][f"ent-{a}"]
     ids_b = [m for m in chairs[1]["members"] if m in {o["id"] for o in merged["observations"]}]
-    r = client.post(_url(wid, "run-c", "entities", a, "split"), json={"detach_observation_ids": ids_b, "note": "actually two chairs"}, headers=A)
+    r = client.post(_url(wid, "run-c", "entities", a, "split"), json={"detach_observation_ids": ids_b, "note": "actually two chairs", "expected_version_id": _ev(client, wid)}, headers=A)
     assert r.status_code == 200, r.text
     out = r.json()
     world = client.get(_url(wid, "run-c", "world"), headers=A).json()["world"]["entities"]
@@ -389,13 +395,13 @@ def test_split_refuses_bad_requests_and_cannot_empty_the_original(client, tmp_pa
     _persisted_run(client, tmp_path, wid)
     e = _ents(client, wid)[0]
     url = _url(wid, "run-c", "entities", e["entity_id"], "split")
-    assert client.post(url, json={"detach_observation_ids": ["not-an-observation"]}, headers=A).status_code == 422
+    assert client.post(url, json={"detach_observation_ids": ["not-an-observation"], "expected_version_id": _ev(client, wid)}, headers=A).status_code == 422
     detail = client.get(_url(wid, "run-c", "entities", e["entity_id"]), headers=A).json()
     every_bbox = [o["observation"]["observation_id"] for o in detail["observations"] if o["observation"]["quantity"] == "bbox"]
-    r = client.post(url, json={"detach_observation_ids": every_bbox}, headers=A)
+    r = client.post(url, json={"detach_observation_ids": every_bbox, "expected_version_id": _ev(client, wid)}, headers=A)
     assert r.status_code == 422 and "nothing would stay" in r.json()["detail"]
-    assert client.post(_url(wid, "run-c", "entities", "nope", "split"), json={"detach_observation_ids": ["x"]}, headers=A).status_code == 404
-    assert client.post(url, json={"detach_observation_ids": every_bbox[:1]}, headers=B).status_code in (403, 404)
+    assert client.post(_url(wid, "run-c", "entities", "nope", "split"), json={"detach_observation_ids": ["x"], "expected_version_id": _ev(client, wid)}, headers=A).status_code == 404
+    assert client.post(url, json={"detach_observation_ids": every_bbox[:1], "expected_version_id": _ev(client, wid)}, headers=B).status_code in (403, 404)
 
 
 def _commit_head(tmp_path, wid, version_id="v-head1"):
@@ -525,9 +531,9 @@ _PAIRS = [((0, 0, 0), (1, 0, 0)), ((0, 0, 0), (0, 1.5, 0)), ((0, 0, 0), (0, 0, 2
 def test_insufficient_or_contradictory_anchors_change_nothing_and_keep_metric_export_blocked(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-c1")
     head = client.get(_url(wid, "run-c1", "readiness"), headers=A).json()["world"]["version_id"]
-    one = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0])]}, headers=A)
+    one = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0])], "expected_version_id": head}, headers=A)
     assert one.status_code == 409 and one.json()["detail"]["calibration"]["status"] == "insufficient"
-    bad = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0]), _dist(1, *_PAIRS[1], noise=0.5)]}, headers=A)
+    bad = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(0, *_PAIRS[0]), _dist(1, *_PAIRS[1], noise=0.5)], "expected_version_id": head}, headers=A)
     assert bad.status_code == 409 and bad.json()["detail"]["calibration"]["status"] == "failed"
     assert client.post(_url(wid, "run-c1", "calibrate"), json={}, headers=A).status_code == 422
     stale = client.post(_url(wid, "run-c1", "calibrate"), json={"distance_anchors": [_dist(i, *p) for i, p in enumerate(_PAIRS)],
@@ -554,10 +560,10 @@ def test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_onc
     assert gate["status"] == "pass"
     exp = client.post(_url(wid, "run-c2", "export"), json={"format": "glb"}, headers=A)  # no acknowledge_unscaled needed: it IS metric now
     assert exp.status_code == 200 and exp.headers["x-export-scale"] == "metric"
-    again = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": anchors}, headers=A)
+    again = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": anchors, "expected_version_id": gauge}, headers=A)
     assert again.status_code == 200 and again.json()["idempotent"] is True and again.json()["version_id"] == res["version_id"]  # a retry, not a second scaling
     other = [_dist(i, *p, scale=3.0, held=(i == 3)) for i, p in enumerate(_PAIRS)]
-    different = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": other}, headers=A)
+    different = client.post(_url(wid, "run-c2", "calibrate"), json={"distance_anchors": other, "expected_version_id": gauge}, headers=A)
     assert different.status_code == 409 and "different physical calibration" in different.json()["detail"]  # double scaling refused
     from worldstore.store import WorldStore
 
@@ -568,8 +574,9 @@ def test_a_validated_calibration_is_a_new_version_that_unlocks_metric_export_onc
 def test_corrections_on_a_metric_calibrated_version_are_refused_with_guidance(client, tmp_path):
     wid = _gauge_run(client, tmp_path, "run-c3")
     anchors = [_dist(i, *p, held=(i == 3)) for i, p in enumerate(_PAIRS)]
-    assert client.post(_url(wid, "run-c3", "calibrate"), json={"distance_anchors": anchors}, headers=A).status_code == 200
+    gauge = client.get(_url(wid, "run-c3", "readiness"), headers=A).json()["world"]["version_id"]
+    assert client.post(_url(wid, "run-c3", "calibrate"), json={"distance_anchors": anchors, "expected_version_id": gauge}, headers=A).status_code == 200
     ents = client.get(_url(wid, "run-c3", "entities"), headers=A).json()["entities"]
     ids = [e["entity_id"] for e in ents if e["ontology_path"] != "architecture/fused_surface"][:2]
-    r = client.post(_url(wid, "run-c3", "entities", ids[0], "merge"), json={"other_entity_id": ids[-1]}, headers=A)
+    r = client.post(_url(wid, "run-c3", "entities", ids[0], "merge"), json={"other_entity_id": ids[-1], "expected_version_id": client.get(_url(wid, "run-c3", "readiness"), headers=A).json()["world"]["version_id"]}, headers=A)
     assert r.status_code == 409 and "gauge version" in r.json()["detail"], r.text

@@ -57,6 +57,7 @@ def test_as_built_export_unchanged_after_surface_finish_edits(client: TestClient
         json={
             "entity_id": target_id,
             "changes": finish_change,
+            "parent_version_id": client.get(f"/api/worlds/{wid}").json()["current_version_id"],
             "commit_message": "Apply smooth Chantilly Lace paint to accent surface",
             "label": "Option A - Paint Finish",
         },

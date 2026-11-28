@@ -141,7 +141,7 @@ export interface EvidenceCorrectionResult {
 }
 
 /** Reclassify one entity of the run's persisted world. Saves a NEW version; the original evidence is untouched (server-checked). */
-export function reclassifyEvidenceEntity(worldId: string, runId: string, entityId: string, newClass: string, note = "", expectedVersionId?: string) {
+export function reclassifyEvidenceEntity(worldId: string, runId: string, entityId: string, newClass: string, note: string, expectedVersionId: string) {
   return apiPost<EvidenceCorrectionResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/reclassify`,
     { new_class: newClass, note, expected_version_id: expectedVersionId },
@@ -159,7 +159,7 @@ export interface EvidenceMergeResult {
 
 /** Identity correction: "otherEntityId is the same object as entityId". The server rebuilds the merged entity from the raw evidence of
  * both and saves a new version; it refuses (422) two entities detected in the same photograph unless acknowledged. */
-export function mergeEvidenceEntities(worldId: string, runId: string, entityId: string, otherEntityId: string, acknowledgeSameImage = false, note = "", expectedVersionId?: string) {
+export function mergeEvidenceEntities(worldId: string, runId: string, entityId: string, otherEntityId: string, acknowledgeSameImage = false, note: string, expectedVersionId: string) {
   return apiPost<EvidenceMergeResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/merge`,
     { other_entity_id: otherEntityId, note, acknowledge_same_image: acknowledgeSameImage, expected_version_id: expectedVersionId },
@@ -188,7 +188,7 @@ export interface EvidenceSplitResult {
 
 /** Identity correction: "these detections are a different object". The server moves them (and their derived observations) to a NEW
  * entity, rebuilds both from their own raw evidence and saves a new version; it refuses to leave the original with no detection. */
-export function splitEvidenceEntity(worldId: string, runId: string, entityId: string, detachObservationIds: string[], note = "", expectedVersionId?: string) {
+export function splitEvidenceEntity(worldId: string, runId: string, entityId: string, detachObservationIds: string[], note: string, expectedVersionId: string) {
   return apiPost<EvidenceSplitResult>(
     `${base(worldId)}/${encodeURIComponent(runId)}/entities/${encodeURIComponent(entityId)}/split`,
     { detach_observation_ids: detachObservationIds, note, expected_version_id: expectedVersionId },
@@ -202,35 +202,6 @@ export async function getEvidenceWorld(worldId: string, runId: string): Promise<
 export async function listRejectedPredictions(worldId: string, runId: string): Promise<RejectedPrediction[]> {
   return (await apiGet<{ rejected: RejectedPrediction[] }>(`${base(worldId)}/${encodeURIComponent(runId)}/rejected`)).rejected;
 }
-
-export interface SpatialInputsV1Payload {
-  schema_version: "spatial_inputs.v1";
-  run_id: string;
-  storey_id: string | null;
-  scale_state: { basis: string; unit: string; is_metric: boolean };
-  cameras: unknown[];
-  observations: {
-    observation_id: string;
-    evidence_id: string;
-    image_id: string;
-    label: string;
-    category: string;
-    bbox_px: number[] | null;
-    has_mask: boolean;
-    depth_source: string;
-    confidence: number | null;
-    failure_flags: string[];
-  }[];
-  structural_observations: unknown[];
-  cross_view_associations: unknown[];
-  relationships: unknown[];
-  room_hypotheses: unknown[];
-  content_sha256: string;
-}
-
-/** Fetch the validated ``spatial_inputs.v1`` payload emitted by perception for this run (404 when absent). */
-export const getSpatialInputsV1 = (worldId: string, runId: string) =>
-  apiGet<SpatialInputsV1Payload>(`${base(worldId)}/${encodeURIComponent(runId)}/spatial-inputs`);
 
 /** The one sentence a reader may be told about a run. A partial or empty world is never worded as a finished reconstruction. */
 export function evidenceHeadline(r: EvidenceReadiness): string {

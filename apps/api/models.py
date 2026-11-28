@@ -22,8 +22,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -118,35 +116,6 @@ class WorldMeasurement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class WorldShareLink(Base):
-    """Read-only client share link for a world (T-4b.4). Token-scoped, revocable, no account needed."""
-
-    __tablename__ = "world_share_links"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
-    token: Mapped[str] = mapped_column(String(200), unique=True, index=True)
-    label: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class WorldCameraView(Base):
-    """Saved camera view for client decks and walk presets (T-4b.6)."""
-
-    __tablename__ = "world_camera_views"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
-    name: Mapped[str] = mapped_column(String(120))
-    position: Mapped[dict] = mapped_column(JSON)
-    target: Mapped[dict] = mapped_column(JSON)
-    fov_deg: Mapped[float] = mapped_column(Float, default=60.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
 class Session(Base):
     """A capture Session. First-class: may exist without a World."""
 
@@ -193,9 +162,6 @@ class Upload(Base):
     """An artifact upload. Content-addressed on completion."""
 
     __tablename__ = "uploads"
-    __table_args__ = (
-        Index("ix_uploads_team_session_checksum", "team_id", "session_id", "checksum"),
-    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     session_id: Mapped[str | None] = mapped_column(
@@ -217,18 +183,6 @@ class Evidence(Base):
     """Evidence linked to the real evidence/ingestion system."""
 
     __tablename__ = "evidence"
-    __table_args__ = (
-        Index("ix_evidence_team_session_checksum", "team_id", "session_id", "checksum"),
-        Index(
-            "uq_evidence_team_session_checksum",
-            "team_id",
-            "session_id",
-            "checksum",
-            unique=True,
-            sqlite_where=text("session_id IS NOT NULL AND checksum IS NOT NULL"),
-            postgresql_where=text("session_id IS NOT NULL AND checksum IS NOT NULL"),
-        ),
-    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(300))
@@ -274,13 +228,9 @@ class Job(Base):
     """
 
     __tablename__ = "jobs"
-    __table_args__ = (
-        Index("ix_jobs_entity", "entity_type", "entity_id"),
-        Index("ix_jobs_team_id", "team_id"),
-    )
+    __table_args__ = (Index("ix_jobs_entity", "entity_type", "entity_id"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     type: Mapped[str] = mapped_column(String(64), index=True)
     entity_type: Mapped[str] = mapped_column(String(32))
     entity_id: Mapped[str] = mapped_column(String(32))
@@ -360,9 +310,6 @@ class ActivityEvent(Base):
     actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     summary: Mapped[str] = mapped_column(String(500))
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    #: Owning tenant, stamped from the subject when the event is written (apps/api/ownership.py), so an event about a
-    #: deleted or purged entity stays visible to its team. NULL = unowned legacy row (hidden from tenants).
-    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -443,180 +390,60 @@ class SiteAnchor(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class Asset(Base):
-    """An independent, reusable 3D asset extracted from a world entity (T-2.6).
+class WorldEditState(Base):
+    """Per-world redo list (T-6.7). Undo/redo move the world's HEAD along its immutable version chain; the versions that were
+    undone are remembered here, newest last, so redo survives a reload. A new edit makes the list stale (checked on use)."""
 
-    Retains the original entity's geometry, materials, canonical dimensions,
-    and provenance back to the source world and session, leaving the original
-    world untouched.
-    """
+    __tablename__ = "world_edit_state"
 
-    __tablename__ = "assets"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
-    category: Mapped[str] = mapped_column(String(64), default="furniture")
-    source_world_id: Mapped[str] = mapped_column(String(32), index=True)
-    source_entity_id: Mapped[str] = mapped_column(String(128), index=True)
-    dimensions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
-    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
-
-
-class ExportRecord(Base):
-    """Record of an export artifact generated for a tenant (T-6.5 usage metering)."""
-
-    __tablename__ = "export_records"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    tenant_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
-    version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    format: Mapped[str] = mapped_column(String(32), index=True)
-    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class JobLog(Base):
-    """Structured log record for a background job (T-6.6 observability).
-
-    Enables deep post-mortem analysis and operational debugging of failed
-    and running jobs without exposing host server tracebacks or SSH access.
-    """
-
-    __tablename__ = "job_logs"
-    __table_args__ = (
-        Index("ix_job_logs_job_timestamp", "job_id", "timestamp"),
-    )
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    level: Mapped[str] = mapped_column(String(16), default="INFO")
-    message: Mapped[str] = mapped_column(Text)
-    context_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
-
-class WorldEditCommand(Base):
-    """Persistent per-world edit command log for undo/redo (T-6.7 & T-4b.1).
-
-    Replaces volatile client-side history with an auditable, durable command stream.
-    Supports move, rotate, delete, replace, surface finish, etc. Every command is reversible
-    via inverse_params and advances the world's version lineage with provenance GENERATED.
-    """
-
-    __tablename__ = "world_edit_commands"
-    __table_args__ = (
-        Index("ix_world_edit_commands_world_undone", "world_id", "undone"),
-        Index("ix_world_edit_commands_world_seq", "world_id", "sequence"),
-    )
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    command_type: Mapped[str] = mapped_column(String(32))  # move, rotate, delete, replace, surface_finish, transform
-    entity_id: Mapped[str] = mapped_column(String(128), index=True)
-    description: Mapped[str] = mapped_column(String(255))
-    params: Mapped[dict] = mapped_column(JSON)
-    inverse_params: Mapped[dict] = mapped_column(JSON)
-    version_id_before: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    version_id_after: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    undone: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    sequence: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class Tenant(Base):
-    """A customer organization / firm (T-6.4). Primary isolation boundary."""
-
-    __tablename__ = "tenants"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
-    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    status: Mapped[str] = mapped_column(String(32), default="active")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class UserAccount(Base):
-    """An authenticated user belonging to a Tenant (T-6.4)."""
-
-    __tablename__ = "user_accounts"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    full_name: Mapped[str] = mapped_column(String(200))
-    role: Mapped[str] = mapped_column(String(32), default="editor")
-    password_hash: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class TenantInvite(Base):
-    """Pending team invite to join a Tenant (T-6.4)."""
-
-    __tablename__ = "tenant_invites"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
-    email: Mapped[str] = mapped_column(String(255), index=True)
-    role: Mapped[str] = mapped_column(String(32), default="editor")
-    token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    invited_by_user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)  # pending | accepted | revoked | expired
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-class TenantSubscription(Base):
-    """Tenant subscription state and Stripe billing integration (Task T-7.2)."""
-
-    __tablename__ = "tenant_subscriptions"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), unique=True, index=True)
-    tier: Mapped[str] = mapped_column(String(32), default="free")  # free | starter | pro | enterprise
-    status: Mapped[str] = mapped_column(String(32), default="active")  # active | trialing | past_due | canceled
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    stripe_subscription_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), primary_key=True)
+    redo: Mapped[list] = mapped_column(JSON, default=list)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class JobStageRun(Base):
-    """One attempt of one pipeline stage for a job (P103); backs checkpoint reuse and stage diagnostics."""
+class WorldOption(Base):
+    """A named design option (T-4b.3): a plain-language name for one immutable saved version of a world. Saving an option copies
+    nothing; it remembers which version the designer was looking at. Names are unique per world (compared case-insensitively)."""
 
-    __tablename__ = "job_stage_runs"
-    __table_args__ = (
-        UniqueConstraint("job_id", "name", "inputs_hash", "attempt", name="uq_job_stage_runs_job_name_hash_attempt"),
-    )
+    __tablename__ = "world_options"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    name: Mapped[str] = mapped_column(String(64))
-    version: Mapped[str] = mapped_column(String(32))
-    inputs_hash: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(16))
-    attempt: Mapped[int] = mapped_column(Integer, default=1)
-    outputs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    peak_rss_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    version_id: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-from apps.api import ownership  # noqa: E402,F401  -- registers the ActivityEvent owner hook
+class Account(Base):
+    """A person who signs in (hosted use). Belongs to exactly one tenant; the tenant's first account is its owner.
+
+    ``role`` is never admin: ADMIN bypasses tenant isolation (it is the operator role), so signup and invites only hand out
+    editor or viewer. Ownership is a flag here, not a role.
+    """
+
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)   # stored lower-cased
+    password_hash: Mapped[str] = mapped_column(String(300))
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="editor")
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Invite(Base):
+    """A single-use, expiring invitation into a tenant. Only the sha256 of the token is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    email: Mapped[str] = mapped_column(String(254))
+    role: Mapped[str] = mapped_column(String(16), default="editor")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

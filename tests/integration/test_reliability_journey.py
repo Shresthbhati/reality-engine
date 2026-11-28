@@ -177,7 +177,9 @@ class _StageServer:
             import httpx
 
             try:
-                st = self.http.get(f"/api/worlds/{wid}/status", timeout=5).json()
+                resp = self.http.get(f"/api/worlds/{wid}/status", timeout=5)
+                st = resp.json()
+                assert "in_progress" in st, f"/status returned no status dict: HTTP {resp.status_code} {resp.text[:500]}"
             except httpx.TimeoutException:
                 # A boundary inside the event loop freezes the whole server the instant it is reached: an
                 # unanswered request is the signal to look at the marker again, not a failure.

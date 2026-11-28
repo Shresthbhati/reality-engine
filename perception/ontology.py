@@ -16,6 +16,14 @@ import yaml
 
 FALLBACK_PATH = "fallback/unknown_object"
 
+VALID_CAPABILITY_STATUSES = frozenset({
+    "implemented_and_tested",
+    "implemented_unvalidated",
+    "partially_supported",
+    "not_implemented",
+    "not_applicable",
+})
+
 
 @dataclass(frozen=True)
 class OntologyNode:
@@ -36,6 +44,13 @@ class OntologyNode:
     size_m: Tuple[float, float] = (0.01, 500.0)
     small: bool = False
     hosts: Tuple[str, ...] = ()
+    domain: str = ""
+    capability_status: str = "not_implemented"
+    required_evidence: Tuple[str, ...] = ()
+    instance_identity_matters: bool = True
+    can_be_part_of: Tuple[str, ...] = ()
+    occlusion_conditions: Tuple[str, ...] = ()
+    confusion_classes: Tuple[str, ...] = ()
 
     @property
     def group(self) -> str:
@@ -320,6 +335,10 @@ def load_ontology(
 
         aliases = tuple(str(a) for a in item.get("aliases", []))
 
+        cap_status = str(item.get("capability_status", "not_implemented"))
+        if cap_status not in VALID_CAPABILITY_STATUSES:
+            cap_status = "not_implemented"
+
         node = OntologyNode(
             path=p,
             label=str(item.get("label", p)),
@@ -338,6 +357,13 @@ def load_ontology(
             size_m=size_m,
             small=bool(item.get("small", False)),
             hosts=tuple(item.get("hosts", [])),
+            domain=str(item.get("domain", "")),
+            capability_status=cap_status,
+            required_evidence=tuple(item.get("required_evidence", [])),
+            instance_identity_matters=bool(item.get("instance_identity_matters", True)),
+            can_be_part_of=tuple(item.get("can_be_part_of", [])),
+            occlusion_conditions=tuple(item.get("occlusion_conditions", [])),
+            confusion_classes=tuple(item.get("confusion_classes", [])),
         )
         nodes[p] = node
 

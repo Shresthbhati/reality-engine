@@ -153,3 +153,62 @@ def test_polygon_slab_mesh_volume_matches_the_L_footprint(direction):
     assert _volume(v, f) == pytest.approx(24.0 * 0.15)
     zs = [p[2] for p in v]
     assert (min(zs), max(zs)) == pytest.approx((-0.15, 0.0) if direction < 0 else (0.0, 0.15))
+
+
+# ---- B10: footprint from raw wall segments (no forced right angles) ----
+
+def _segs(poly, skip=(), noise=0.0, seed=0, split=False):
+    rng = np.random.default_rng(seed)
+    out = []
+    for i in range(len(poly)):
+        if i in skip:
+            continue
+        p, q = np.array(poly[i], float), np.array(poly[(i + 1) % len(poly)], float)
+        pieces = [(p, (p + q) / 2 - 0.03 * (q - p) / np.linalg.norm(q - p)),
+                  ((p + q) / 2 + 0.03 * (q - p) / np.linalg.norm(q - p), q)] if split else [(p, q)]
+        for a, b in pieces:
+            out.append([a + rng.normal(0, noise, 2), b + rng.normal(0, noise, 2)])
+    return np.array(out)
+
+
+def test_b10_noisy_rectangle_gives_four_edges():
+    from perception.architecture.room_layout import clean_footprint
+    poly = [(0, 0), (5, 0), (5, 4), (0, 4)]
+    r = clean_footprint(_segs(poly, noise=0.01, split=True), np.array([[2.5, 2.0], [1.0, 1.0]]))
+    assert r.status == "closed" and len(r.polygon) == 4
+    assert r.closure_gap_m <= 0.3
+
+
+def test_b10_L_shape_gives_six_edges():
+    from perception.architecture.room_layout import clean_footprint
+    poly = [(0, 0), (6, 0), (6, 2), (3, 2), (3, 5), (0, 5)]
+    r = clean_footprint(_segs(poly, noise=0.01), np.array([[1.0, 1.0], [1.5, 3.5]]))
+    assert r.status == "closed" and len(r.polygon) == 6
+
+
+def test_b10_obtuse_corner_stays_obtuse():
+    from perception.architecture.room_layout import clean_footprint
+    a = math.radians(100)
+    # quadrilateral: bottom edge along x, right edge at 100 deg from it
+    p0, p1 = np.array([0, 0.]), np.array([5, 0.])
+    p2 = p1 + 3 * np.array([math.cos(a), math.sin(a)])
+    p3 = np.array([p2[0] - 5, p2[1]])
+    r = clean_footprint(_segs([tuple(p0), tuple(p1), tuple(p2), tuple(p3)], noise=0.005),
+                        np.array([[(p0[0] + p2[0]) / 2, 1.2]]))
+    assert r.status == "closed" and len(r.polygon) == 4
+    v = np.array(r.polygon)
+    d1, d2 = v[0] - v[1], v[2] - v[1]
+    ang = [math.degrees(math.acos(abs(float(np.dot(np.roll(v, -i, 0)[0] - np.roll(v, -i, 0)[1],
+                                                    np.roll(v, -i, 0)[2] - np.roll(v, -i, 0)[1]))
+                                      / (np.linalg.norm(np.roll(v, -i, 0)[0] - np.roll(v, -i, 0)[1])
+                                         * np.linalg.norm(np.roll(v, -i, 0)[2] - np.roll(v, -i, 0)[1])))))
+           for i in range(4)]
+    assert any(abs(x - 80) < 3 for x in ang) and not all(abs(x - 90) < 3 for x in ang)
+
+
+def test_b10_missing_wall_is_partial_with_gap_reported():
+    from perception.architecture.room_layout import clean_footprint
+    poly = [(0, 0), (5, 0), (5, 4), (0, 4)]
+    r = clean_footprint(_segs(poly, skip=(2,)), np.array([[2.5, 2.0]]))
+    assert r.status == "partial" and r.polygon is None
+    assert abs(r.closure_gap_m - 5.0) < 0.1

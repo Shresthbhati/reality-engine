@@ -352,20 +352,10 @@ def run_for_job(
         facts["surfaces"] = res.snapshot["surfaces"]
     if video_ingestion_facts:
         facts["video_ingestion"] = video_ingestion_facts
-    # Multi-engine intelligence pass: run ALL registered engines (SIFT, LightGlue-ALIKED, etc.)
-    # on the job's evidence and record their combined observations + contradictions. Every engine
-    # feeds into the same evidence architecture — no disconnected demonstrations.
-    try:
-        from perception.multi_engine_stage import run_multi_engine_for_job
-        pairs = None
-        if len(real) >= 2:
-            pairs = [(real[i], real[i + 1]) for i in range(len(real) - 1)]
-        me_facts = run_multi_engine_for_job(
-            sources=real, run_id=job_id, cameras=cameras, pairs=pairs,
-        )
-        facts["multi_engine"] = me_facts
-    except Exception as exc:  # noqa: BLE001 -- multi-engine is additive; never sinks the job
-        facts["multi_engine"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+    # NOTE: the multi-engine pass runs ONCE, above, with ``matrix_root`` set (it is the pass that imports its
+    # observations into this run's Evidence Matrix). Re-running the registry here without ``matrix_root`` used to
+    # overwrite ``facts["multi_engine"]`` with a second, unimported pass -- losing ``matrix_import``/``mask_store_uri``
+    # (the lineage the world inherits) and paying for every engine twice. Do not add a second pass.
     use_si = scene_intelligence if scene_intelligence is not None else (
         os.environ.get("RE_EVIDENCE_WORLD_SCENE_INTEL", "").strip().lower() in ("1", "true", "yes", "on")
     )

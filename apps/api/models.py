@@ -401,6 +401,20 @@ class WorldEditState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorldOption(Base):
+    """A named design option (T-4b.3): a plain-language name for one immutable saved version of a world. Saving an option copies
+    nothing; it remembers which version the designer was looking at. Names are unique per world (compared case-insensitively)."""
+
+    __tablename__ = "world_options"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    version_id: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Account(Base):
     """A person who signs in (hosted use). Belongs to exactly one tenant; the tenant's first account is its owner.
 

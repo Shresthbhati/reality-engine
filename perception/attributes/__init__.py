@@ -1,15 +1,21 @@
-"""Architectural Attributes and Taxonomy Module."""
+"""Architectural attribute taxonomy and evidence-backed attribute recognition."""
 
-from .taxonomy import (
+from perception.attributes.recognizer import (
+    AttributeEvidence,
+    EntityAttributeBundle,
+    extract_observed_attributes,
+    infer_prior_attributes,
+)
+from perception.attributes.taxonomy import (
     AttributeCategory,
     AttributeDefinition,
-    AttributeTaxonomy,
-    VisualAttributePrediction,
 )
 
 __all__ = [
     "AttributeCategory",
     "AttributeDefinition",
-    "AttributeTaxonomy",
-    "VisualAttributePrediction",
+    "AttributeEvidence",
+    "EntityAttributeBundle",
+    "extract_observed_attributes",
+    "infer_prior_attributes",
 ]

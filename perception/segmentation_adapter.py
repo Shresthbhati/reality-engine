@@ -218,15 +218,25 @@ def _sam2_run(image_paths: Sequence[str], **ctx: Any) -> UnifiedEngineOutput:
     except Exception:
         pass
 
-    # A run that produced nothing must say why: an empty result with no message
-    # reads as a silent omission, and a missing box prompt is the usual cause.
-    error_message = "; ".join(errors) if errors else (
-        f"no observation produced: {skipped_no_prompt} of {len(image_paths)} image(s) had no box prompt"
-        if not obs and skipped_no_prompt else None
-    )
+    # Every shortfall is named, and an image that produced no mask is never a
+    # clean success: a run that covered only part of its input is ``partial``
+    # with the counts, so a caller cannot mistake 3 of 40 images for coverage.
+    reasons = list(errors)
+    if skipped_no_prompt:
+        reasons.append(f"{skipped_no_prompt} of {len(image_paths)} image(s) had no box prompt")
+    if obs:
+        error_message = "; ".join(reasons) if reasons else None
+        status = "partial" if reasons else "succeeded"
+    else:
+        # A run that produced nothing must say why: an empty result with no
+        # message reads as a silent omission.
+        error_message = "no observation produced: " + (
+            "; ".join(reasons) if reasons else f"{len(image_paths)} image(s) processed, no mask emitted"
+        )
+        status = "failed"
     return UnifiedEngineOutput(
         engine_id="sam2", run_id=run_id, observations=tuple(obs),
-        status="succeeded" if (obs and not errors) else ("partial" if obs else "failed"),
+        status=status,
         error_message=error_message,
         wall_time_s=time.perf_counter() - t0,
         peak_vram_mb=_get_vram_peak(device),

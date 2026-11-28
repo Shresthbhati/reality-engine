@@ -259,6 +259,28 @@ def test_sam2_adapter_skips_image_without_boxes(tmp_path, monkeypatch):
     assert "no box prompt" in out.error_message
 
 
+def test_skipped_images_report_partial_with_the_count(tmp_path, monkeypatch):
+    """An image without a box prompt makes the run partial, not a clean success.
+
+    reporting ``succeeded`` hid the skip: a caller reading only the status saw a
+    complete run and could not tell 1 of 40 images had been masked.
+    """
+    with_box = _make_png(tmp_path, "with_box.png")
+    without_box = _make_png(tmp_path, "without_box.png")
+    _install_fake_torch(monkeypatch)
+    _install_fake_transformers(monkeypatch, [np.ones((100, 100), bool)])
+
+    out = _sam2_run(
+        [with_box, without_box], run_id="mixed", bboxes={with_box: [(0, 0, 4, 4)]}
+    )
+
+    assert len(out.observations) == 1  # the prompted image was still done
+    assert out.summary["skipped_no_prompt"] == 1
+    assert out.status == "partial", out.error_message
+    # the count is in the message, not only in the summary
+    assert "1 of 2 image(s) had no box prompt" in out.error_message
+
+
 def test_missing_checkpoint_is_unavailable_and_never_downloads(tmp_path, monkeypatch):
     """A cold cache must be reported, never patched over with a network download."""
     path = _make_png(tmp_path)

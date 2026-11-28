@@ -1,0 +1,12 @@
+Using cache found in C:\Users\shres/.cache\torch\hub\intel-isl_MiDaS_master
+C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\timm\models\layers\__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+Using cache found in C:\Users\shres/.cache\torch\hub\rwightman_gen-efficientnet-pytorch_master
+C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\torch\jit\_script.py:1485: FutureWarning: `torch.jit.script` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ingested 28 images, 27 measured baselines
+Loading weights:  None
+vertical slice: 25/28 cameras registered (partial), 121051 points, scale=metric
+  world world-compiled-seed42: 71 entities, 4 measurements, 0 relationships
+  scale: metric scale from known_camera_baseline: IMG_0000<->IMG_0001 measured 0.4400 m / model 1.7902 units = 0.245783 m/unit
+artifacts -> C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\dense-mesh\datasets\mesh_e2e_out

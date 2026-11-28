@@ -69,8 +69,8 @@ def attach_trajectory(world, trajectory, *, frame_map: Optional[Dict[str, Frame]
             "drift": drift.to_dict(), "provenance": trajectory.provenance,
             "pose_columns": ["t_ns", "tx", "ty", "tz", "qw", "qx", "qy", "qz"], "poses": rows,
         },
-        confidence=0.5,   # not measured: a trajectory carries no calibrated confidence of its own
-        uncertainty=Uncertainty(confidence=0.5, note=note),
+        confidence=None,   # not measured: a trajectory carries no calibrated confidence of its own
+        uncertainty=Uncertainty(confidence=0.0, note=note),
     )
     world.observations[obs.id] = obs
     return obs.id

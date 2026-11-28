@@ -259,14 +259,14 @@ def _container(eid, etype, name, wid=None) -> Entity:
     cp = {"composed_by": "compose", "organizational": True, "asserted": False}
     if wid:
         cp["source_world_id"] = wid
-    return Entity(id=eid, type=etype, name=name, provenance=Provenance.INFERRED, confidence=0.5,
+    return Entity(id=eid, type=etype, name=name, provenance=Provenance.INFERRED, confidence=None,
                   statement_state=StatementState.DERIVED, custom_properties=cp)
 
 
 def _link(parent: Entity, child: Entity):
-    parent.relationships.append(Relationship(RelationshipKind.CONTAINS, child.id, confidence=0.5, provenance=Provenance.INFERRED,
+    parent.relationships.append(Relationship(RelationshipKind.CONTAINS, child.id, confidence=None, provenance=Provenance.INFERRED,
                                              metadata={"derived_from": "compose"}))
-    child.relationships.append(Relationship(RelationshipKind.PART_OF, parent.id, confidence=0.5, provenance=Provenance.INFERRED,
+    child.relationships.append(Relationship(RelationshipKind.PART_OF, parent.id, confidence=None, provenance=Provenance.INFERRED,
                                             metadata={"derived_from": "compose"}))
 
 

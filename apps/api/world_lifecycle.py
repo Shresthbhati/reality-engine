@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import worldstore_service
 from apps.api.models import (
     ActivityEvent, CaptureRequest, CompletionProposal, Evidence, EvidenceDecision, Job, Location, Notification,
-    Session, SiteComposite, SitePlacement, Upload, World, WorldIntent, WorldMeasurement, WorldVersion, new_id, utcnow,
+    Session, SiteComposite, SitePlacement, Upload, World, WorldEditState, WorldIntent, WorldMeasurement, WorldOption, WorldVersion, new_id,
+    utcnow,
 )
 from apps.api.routes_assistant import AssistantPlan
 from apps.api.storage import blob_digest, gc_blobs
@@ -103,7 +104,7 @@ async def purge_world(db: AsyncSession, world: World) -> dict:
     await db.execute(delete(Evidence).where(Evidence.session_id.in_(s_ids)))
     await db.execute(delete(Upload).where(Upload.session_id.in_(s_ids)))
     await db.execute(delete(Session).where(Session.world_id == wid))
-    for model in (WorldMeasurement, CompletionProposal, CaptureRequest, AssistantPlan, SitePlacement, SiteComposite):
+    for model in (WorldMeasurement, CompletionProposal, CaptureRequest, AssistantPlan, SitePlacement, SiteComposite, WorldOption, WorldEditState):
         await db.execute(delete(model).where(model.world_id == wid))
     await db.execute(delete(WorldIntent).where(WorldIntent.world_id == wid))
     await db.execute(delete(WorldVersion).where(WorldVersion.world_id == wid))

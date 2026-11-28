@@ -57,11 +57,9 @@ export function getWorldCoverage(worldId: string): Promise<WorldCoverageDto> {
   return apiGet<WorldCoverageDto>(`/api/worlds/${encodeURIComponent(worldId)}/coverage`);
 }
 
-/** Fetch WorldIR for a world's version (current unless ?version= overrides). */
-export async function getWorldIR(worldId: string, version?: string | null): Promise<WorldIRDto> {
-  const q = new URLSearchParams();
-  if (version) q.set("version", version);
-  return apiGet<WorldIRDto>(`/api/worlds/${encodeURIComponent(worldId)}/worldir?${q.toString()}`);
+/** Fetch full WorldIR for a world's current version. */
+export async function getWorldIR(worldId: string): Promise<WorldIRDto> {
+  return apiGet<WorldIRDto>(`/api/worlds/${encodeURIComponent(worldId)}/worldir`);
 }
 
 /** Fetch camera poses for a world's current version. */

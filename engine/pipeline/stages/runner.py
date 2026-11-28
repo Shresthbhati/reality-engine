@@ -13,10 +13,6 @@ from engine.pipeline.stages.base import (
     StageResult,
     StageSpec,
     compute_inputs_hash,
-    LEGAL_TRANSITIONS,
-    is_terminal,
-    is_non_productive,
-    validate_transition,
 )
 
 
@@ -57,6 +53,45 @@ def _run_with_deadline(stage: Stage, ctx: StageContext, timeout_s: float | None)
         ex.shutdown(wait=False, cancel_futures=True)
 
 
+def _cache_result_valid(hit, spec, declared, ctx, inputs_hash: str, manifest) -> bool:
+    """A cached StageResult may be reused ONLY when all integrity checks pass.
+
+    Checks (each one a hard gate, never a heuristic):
+      1. Inputs hash matches the deterministic hash of declared inputs + version
+         + params (model identity / coordinate frame live in params).
+      2. Every declared input is currently present in ctx.artifacts.
+      3. Required outputs are present in the cached result (success is never
+         reported with required outputs absent).
+      4. Producer/consumer lineage: if any output artifact of this stage has
+         since been produced by a DIFFERENT stage in the current run, the
+         cached result is stale and must be discarded (no branch mixing).
+      5. Provenance: cached result carries its own inputs_hash; if it disagrees
+         with the computed hash the entry is corrupt or from another branch.
+    """
+    if hit is None or hit.status != "succeeded":
+        return False
+    if getattr(hit, "inputs_hash", None) != inputs_hash:
+        return False
+    for name in declared:
+        if name not in ctx.artifacts:
+            return False
+    for name in spec.requires_outputs:
+        if name not in hit.outputs:
+            return False
+    lineage = manifest.lineage
+    for artifact in hit.outputs:
+        producer = lineage.producer.get(artifact)
+        if producer is not None and producer != spec.name:
+            # Another stage in THIS run has overwritten an artifact this cached
+            # result claims to own -- stale, do not reuse.
+            return False
+        reads = lineage.reads.get(spec.name, ())
+        consumers = lineage.consumers(artifact)
+        if reads and artifact in reads and spec.name not in consumers:
+            return False
+    return True
+
+
 class CheckpointStore(Protocol):
     def lookup(self, job_id: str, name: str, inputs_hash: str) -> StageResult | None: ...
 
@@ -89,52 +124,16 @@ def run_stages(
         spec = stage.spec
         if should_cancel():
             raise StageCancelled(f"cancelled before stage {spec.name!r}")
-        # Use declared inputs for cache key; unrelated artifacts do not invalidate
-        declared = spec.inputs if spec.inputs is not None else None
-        inputs_hash = compute_inputs_hash(spec.version, ctx.artifacts, ctx.params, declared)
+        # Deterministic input hashing: only DECLARED inputs contribute to the key,
+        # so unrelated artifacts do not spuriously invalidate a stage.
+        declared = spec.inputs if spec.inputs is not None else tuple(ctx.artifacts)
+        input_hashes = {n: ctx.artifacts[n] for n in declared if n in ctx.artifacts}
+        # Model identity and coordinate frame are part of ctx.params (set by the
+        # host) -- including them means a model/frame change MUST invalidate cache.
+        inputs_hash = compute_inputs_hash(spec.version, input_hashes, ctx.params)
         hit = checkpoints.lookup(ctx.job_id, spec.name, inputs_hash)
-        if hit is not None and hit.status == "succeeded":  # only a succeeded stage is reusable
-            # Cache integrity check: verify the cached result's provenance is consistent
-            # with the current run. A cached result must not be reused if:
-            # 1. The stage that produced it is not a predecessor in the current lineage
-            # 2. Any artifact it produced has been overwritten by a later stage
-            # 3. The coordinate frame or model identity has changed
-            # 
-            # Dependency-aware invalidation using lineage graph
-            cached_producer = manifest.lineage.producer.get(hit.outputs) if hit.outputs else None
-            if cached_producer is not None:
-                # Check if the cached producer is compatible with this stage's position in the lineage
-                stage_reads = manifest.lineage.reads.get(spec.name, ())
-                # If the cached producer is not among the stages that read from it,
-                # or if this stage is not a consumer of what the cached producer wrote,
-                # the cache entry is from a different branch and must be discarded
-                if cached_producer not in stage_reads and spec.name not in manifest.lineage.consumers(cached_producer):
-                    # Cache entry is from a different branch - discard it
-                    hit = None
-                else:
-                    # Additional integrity: verify the cached inputs_hash still matches
-                    # the current artifacts for the declared inputs
-                    if declared:
-                        cached_input_match = all(
-                            k in hit.inputs_hash for k in declared
-                        )
-                        # Note: inputs_hash is a sha256 of (version, sorted inputs, params)
-                        # A full match would require comparing each individual artifact hash.
-                        # We verify at least that the declared inputs are represented in the hash.
-                        if not cached_input_match:
-                            # The declared inputs have changed since the cache entry was made
-                            hit = None
-            # Dependency-aware invalidation: check if any artifact this stage reads
-            # has been produced by a different stage since the cache entry was made
-            cached_producer = manifest.lineage.producer.get(hit.outputs) if hit.outputs else None
-            # If the cached result's producer is not a predecessor of this stage,
-            # the cache entry is stale and must be discarded
-            if cached_producer is not None:
-                # Check if the cached producer is an ancestor of this stage in the lineage
-                stage_reads = manifest.lineage.reads.get(spec.name, ())
-                if cached_producer not in stage_reads and spec.name not in manifest.lineage.consumers(cached_producer):
-                    # Cache entry is from a different branch - discard it
-                    hit = None
+        if hit is not None and not _cache_result_valid(hit, spec, declared, ctx, inputs_hash, manifest):
+            hit = None  # invalid cache entry: never reused, no downstream dereference
         if hit is not None and hit.status == "succeeded":  # only a succeeded stage is reusable
             result = hit
         else:
@@ -189,13 +188,8 @@ def run_stages(
             missing = [n for n in spec.requires_outputs if n not in result.outputs]
             if result.status in ("succeeded", "degraded") and missing:  # success is never reported with required outputs absent
                 result.status, result.error = "failed", f"required outputs missing: {', '.join(missing)}"
-            # Validate state transition is legal
-            try:
-                validate_transition(ctx.state.get("last_status", "queued"), result.status)
-            except ValueError as e:
-                # If the transition is illegal, downgrade to failed with the transition error
-                result.status = "failed"
-                result.error = str(e)
+            # Stage-level status is a verdict (succeeded/degraded/skipped/failed),
+            # not a mutable lifecycle state; do NOT run lifecycle transitions here.
             ctx.state["last_status"] = result.status
             checkpoints.record(ctx.job_id, result)
         manifest.stages.append(result)

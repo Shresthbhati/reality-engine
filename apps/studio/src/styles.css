@@ -1,0 +1,147 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: #0b0f16;
+  color: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+html,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#workflow-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-btn {
+  background: #1f2937;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.stage-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+}
+
+.viewport {
+  position: relative;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.side-panel {
+  background: #0f172a;
+  border-left: 1px solid #1f2937;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.card h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #93c5fd;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.layers {
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+
+select,
+input,
+button {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+input,
+select {
+  flex: 1;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.muted {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.status-bar {
+  padding: 6px 14px;
+  font-size: 12px;
+  background: #111827;
+  border-top: 1px solid #1f2937;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+}

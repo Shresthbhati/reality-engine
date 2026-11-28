@@ -145,7 +145,12 @@ mirror row.
    re-expresses the world in a new frame unless the latter places >= `FRAME_CHANGE_MIN_EXTRA_PHOTOS` (2) more photographs.
    The frame shift is measured from the similarity `world_delta` already fits (geometry rules are blind to it by design).
    Tolerances are PROVISIONAL.
-5. Retention: quarantined versions are kept indefinitely; a pruning policy is not decided.
+5. Retention: `WorldStore.prune_quarantine(max_age=30d, keep_last=20, dry_run=True)` (CLI: `store prune`, `--apply` to delete)
+   removes a quarantined record only if it is older than `max_age`, outside the newest `keep_last`, not the parent of a
+   live version, and has no pending adoption intent; live versions/HEAD lineage are never touched. It then deletes
+   `artifacts/` blobs no retained record references (by `artifact_uri` or an `artifact://` uri inside a retained world)
+   that are also older than `max_age` (the age floor protects a blob written just before its record). Dry run is the
+   default, runs under the sequence lock, is idempotent, and is not scheduled automatically (operator-invoked).
 
 Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an orphan is "reconciled into the listing".
 

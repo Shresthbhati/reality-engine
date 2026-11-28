@@ -20,13 +20,19 @@ governing doctrine `.agent/ENGINEERING_CONSTITUTION.md` and
 
 ## Legacy documents
 
-Root-level audit/ledger/matrix documents (REALITY_ENGINE_AUDIT.md,
-BUILD_LEDGER.md, CAPABILITY_MATRIX.md, TEST_MATRIX.md, BUILD_ORDER.md,
-IMPLEMENTATION_MAP.md, REALITY_STUDIO_PRODUCTION_AUDIT.md, DECISIONS.md,
-SYSTEMS_DESIGN.md, WORLD_IR_IMPLEMENTATION.md, INTEGRATION_AUDIT.md,
+Root-level audit/ledger/matrix documents (BUILD_LEDGER.md, CAPABILITY_MATRIX.md, TEST_MATRIX.md, BUILD_ORDER.md,
+IMPLEMENTATION_MAP.md, DECISIONS.md,
+SYSTEMS_DESIGN.md, WORLD_IR_IMPLEMENTATION.md,
 WIRING_POINTS.md, …) are point-in-time audit records: historically
 accurate for their date, but many are now **ARCHIVED/SUPERSEDED** by
-the 2026-09-15 through 2026-09-23 implementation campaigns:
+the 2026-09-15 through 2026-09-23 implementation campaigns.
+Point-in-time audit reports (REALITY_ENGINE_AUDIT, INTEGRATION_AUDIT,
+REALITY_STUDIO_PRODUCTION_AUDIT, the 2026-09-13 per-area audits, the
+2026-09-18 AUDIT_REPORTs and the 2026-09-27 ADVERSARIAL_VALIDATION_REPORT)
+now live in [`archive/audits/`](archive/audits/). Pre-2026-10-17 sprint
+history is in
+[`archive/execution-history/`](archive/execution-history/).
+Other points:
 
 - Physics (`engine/physics/*`, `engine/fire/*`, `engine/fluids/*`,
   `engine/weather/*`, `engine/disasters/*`) was moved to

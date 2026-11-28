@@ -2,7 +2,7 @@
 REASONING: walls/floors/ceilings -- the first automatic assignment of
 WALL/FLOOR/CEILING ontology types in this repo; before this pass the
 extended EntityType vocabulary existed but, per
-docs/REALITY_ENGINE_AUDIT.md, "no code anywhere in this repo assigns
+docs/archive/audits/REALITY_ENGINE_AUDIT.md, "no code anywhere in this repo assigns
 these types automatically").
 
 How it decides (no LLM, no ML, no guessing):

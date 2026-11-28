@@ -4,7 +4,7 @@ sec 19 2D->3D INSTANCE LIFTING).
 Same pattern as IDepthBackend/ISegmentationBackend/IReconstructionBackend:
 no concrete backend (appearance-embedding re-identification, geometric
 consistency via camera poses, or otherwise) implements this yet. Per
-docs/REALITY_ENGINE_AUDIT.md, this addresses a critical missing
+docs/archive/audits/REALITY_ENGINE_AUDIT.md, this addresses a critical missing
 intelligence layer -- today a "chair" detected in frame 1, frame 2, and
 frame 3 becomes three unrelated SegmentedRegions, not one CHAIR entity.
 Nothing here performs that association: no tracking algorithm, no

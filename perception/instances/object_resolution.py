@@ -24,7 +24,7 @@ overlapping observations of one object across many frames -- a purely
 pairwise rule would arbitrarily depend on iteration order.
 
 This is NOT appearance-based (no embeddings — see
-`docs/WORLD_MEMORY_LEARNING_AUDIT.md`'s standing rule against fake
+`docs/archive/audits/WORLD_MEMORY_LEARNING_AUDIT.md`'s standing rule against fake
 embeddings) and NOT multi-view-consistency-verified (no epipolar/
 reprojection check against the source cameras) — both are real,
 larger, separate additions once a caller needs them; this module is

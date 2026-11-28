@@ -1,7 +1,7 @@
 # Technology Registry
 
 Research only — no code in this pass, per the directive's own research-loop
-rule (§30/§37) and `docs/REALITY_ENGINE_AUDIT.md` item 3: licensing/technology
+rule (§30/§37) and `docs/archive/audits/REALITY_ENGINE_AUDIT.md` item 3: licensing/technology
 evaluation happens before any dependency is installed, never after. This
 mirrors `docs/RECONSTRUCTION_BACKEND_DECISION.md`'s format and rigor bar.
 

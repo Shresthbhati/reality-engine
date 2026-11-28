@@ -118,3 +118,15 @@ Details and evidence: [PROGRESSIVE_RECONSTRUCTION.md](PROGRESSIVE_RECONSTRUCTION
 | Video | Frames are sampled uniformly in time (24 max); no blur/overlap-aware selection | Use the contribution measure to pick frames |
 | Confidence defaults | `Observation` / `Relationship` constructors still default to 1.0; depth-frame decode fidelity states 1.0 with its basis | Dedicated pass over constructor defaults |
 
+
+## Open findings carried over from archived audits (2026-10-17)
+
+Source reports: [`archive/audits/ADVERSARIAL_VALIDATION_REPORT.md`](archive/audits/ADVERSARIAL_VALIDATION_REPORT.md) (2026-09-27),
+[`archive/audits/AUDIT_REPORT_2026-09-18.md`](archive/audits/AUDIT_REPORT_2026-09-18.md). Each line was re-checked against the code
+on 2026-10-17; findings the audits raised that were later fixed (COLMAP crash, South Building manifest, frontend build) are not repeated.
+
+| Area | Limitation | Upgrade path |
+|---|---|---|
+| Two WorldIR classes | `world_ir/__init__.py` now exports only the V1 `WorldIR` (the `WorldIRLegacy` re-export was removed; it had no users). The legacy class still exists as `world_ir/world.py` (no `geometries`) and is imported by submodule path in tests, serialization, and the interior compiler; code written against it breaks on topology/incremental/validation paths. See `archive/audits/ADVERSARIAL_VALIDATION_REPORT.md` (Regressions 1-4). | Migrate remaining `world_ir.world` importers to `world_v1`, then delete `world_ir/world.py`. |
+| API authentication (partial) | Bearer-token auth is implemented (`apps/api/auth.py`, `REALITY_API_TOKEN`). Single shared token, no users/roles. With the token unset only loopback clients are served (warning logged); non-loopback clients get 401. Behind a same-host reverse proxy every client looks like loopback, so always set the token there. The Next.js `src/app/api/*` proxy routes send the token server-side via `frontend/src/lib/api/backend.ts` (`REALITY_API_TOKEN`, falling back to `NEXT_PUBLIC_API_TOKEN`); `lib/api/worldir.ts` calls those same-origin proxies, so it needs no token. `NEXT_PUBLIC_API_TOKEN` is visible to the browser (used by `lib/api/client.ts` for direct API calls). | Set the token for any non-local deployment; add per-user auth if multi-user. |
+| Non-convex rooms (partial) | `evidence/promote_rooms.py` traces convex rings first, then falls back to a validated non-convex trace (simple CCW polygon, forward wall traversal, area sanity) that handles simple L/U-shaped rooms; verified on synthetic wall-line sets (`tests/test_room_ring_tracing.py`), not on real reconstructions. NOT handled (fail with UNCLOSED_RING, no room): more than 10 boundary lines, rooms with holes/islands, interior partition walls, a wall revisited by the ring, and rooms whose reflex-corner walls lack inlier support. See `archive/audits/AUDIT_REPORT_2026-09-18.md` (Architectural risks 3). | Validate on real L-shaped captures; partition/hole handling. |

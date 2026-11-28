@@ -30,8 +30,9 @@ pre-existing SAM torch-hub environment failure, `tests/test_sam_backend.py`
 
 ## Current gaps (tracked in backlog)
 
-- P0.18: the real-data acceptance test is manual — needs a marked,
-  committed, opt-in test file.
+- P0.18: committed opt-in acceptance test exists
+  (`tests/integration/test_acceptance_p018.py`); mesh leg and a real
+  measured-scale dataset still missing (see backlog).
 - P7.29: no CI workflows exist; the deterministic tier is CI-ready.
 - P7.28: wheel-contents/clean-install verification not yet performed.
 

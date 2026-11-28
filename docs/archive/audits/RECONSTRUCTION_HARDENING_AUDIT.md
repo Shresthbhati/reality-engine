@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-13. Direct repository inspection.
 
-Scoped against Prompt 2 (Evidence, Camera, Depth & 3D Reconstruction Hardening). Builds on `docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md`'s baseline.
+Scoped against Prompt 2 (Evidence, Camera, Depth & 3D Reconstruction Hardening). Builds on `docs/archive/audits/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md`'s baseline.
 
 | Phase | Status | Evidence |
 |---|---|---|

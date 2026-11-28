@@ -18,7 +18,7 @@ Method (why COLMAP can actually reconstruct these images):
     samples (centimeters to meters), uncorrelated between distant
     positions, identical across viewpoints for the same world point.
     Three measured failure modes motivated this (see
-    docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md):
+    docs/archive/audits/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md):
       - flat color regions: almost no features at all;
       - a pure checkerboard: every corner is descriptor-identical, ~50%
         of matches were cross-room confusions (verified with an

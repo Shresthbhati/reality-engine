@@ -66,7 +66,7 @@ Status legend: [x] done (commit) · [~] in progress · [ ] next · (—) blocked
       (`benchmarks/` harness exists — add simulation benches to it)
 
 ### Campaign B — Reality Studio, Export, Validation & Production Integration
-Key targets: `docs/REALITY_STUDIO_PRODUCTION_AUDIT.md` (phase 0), WorldIR
+Key targets: `docs/archive/audits/REALITY_STUDIO_PRODUCTION_AUDIT.md` (phase 0), WorldIR
 hardening (phase 2), WorldDiff (phase 6 — reuse `BranchManager.compare`),
 export reports (phase 7 — glTF/USD exporters exist, BOX-scope), Blender
 adapter (phase 8), golden scenes 001–006 (phase 10), CLI/headless (phase 17),

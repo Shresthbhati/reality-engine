@@ -4,7 +4,7 @@ sec 11 STANDARDIZED ADAPTERS, sec 15 CAMERA UNDERSTANDING).
 Mirrors reconstruction/backend/interface.py's pattern: any WorldIR-facing
 code depends on IDepthBackend, never on a specific depth model (Depth
 Anything, MiDaS, ZoeDepth, or otherwise). No concrete backend implements
-this yet -- per docs/REALITY_ENGINE_AUDIT.md, `perception/` was README-only
+this yet -- per docs/archive/audits/REALITY_ENGINE_AUDIT.md, `perception/` was README-only
 before this pass, and this is the interface only, not an integration.
 Adding a concrete adapter is separate, real work: research the candidate,
 check its license and model-checkpoint license, benchmark it, then wire it

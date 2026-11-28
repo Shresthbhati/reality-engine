@@ -1,6 +1,6 @@
 """Minimal glTF 2.0 exporter for WorldIR.
 
-Scope (deliberately narrow — see docs/REALITY_ENGINE_AUDIT.md item 34):
+Scope (deliberately narrow — see docs/archive/audits/REALITY_ENGINE_AUDIT.md item 34):
   Exports one glTF node + unit-cube mesh primitive for every WorldIR Entity
   that has BOTH a transform with a position AND at least one Geometry of
   type BOX or PLANE (PLANE added 2026-09-13: evidence/promote_planes.py

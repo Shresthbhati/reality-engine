@@ -161,3 +161,114 @@ def test_12_missing_engine_output_and_multimask_channel_selection() -> None:
 
     # Empty polygon check
     assert extract_mask_polygon_px(np.zeros((20, 20), dtype=bool)) == ()
+
+
+def test_1b_mask_path_runs_with_torch_and_weights_stubbed(monkeypatch, tmp_path) -> None:
+    """The SAM2 mask path is provable where torch and the checkpoint are absent.
+
+    ``test_1`` needs the real optional extra plus cached weights, so it skips on a
+    CI image. This variant stubs torch and transformers and therefore never skips;
+    it also pins that this module stays collectable without torch, which the
+    adapter's former module-level ``import torch`` broke.
+    """
+    import sys
+    import types
+
+    from PIL import Image as PILImage
+
+    class _NoGrad:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    class _Cuda:
+        def is_available(self):
+            return False
+
+        def reset_peak_memory_stats(self, index=0):
+            pass
+
+        def max_memory_allocated(self, index=0):
+            return 0
+
+        def empty_cache(self):
+            pass
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = _Cuda()
+    fake_torch.no_grad = lambda: _NoGrad()
+
+    class _Tensor:
+        def __init__(self, arr):
+            self._arr = np.asarray(arr)
+
+        def detach(self):
+            return self
+
+        def to(self, device):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self._arr
+
+    class _Inputs(dict):
+        def to(self, device):
+            return self
+
+    class _Processor:
+        @classmethod
+        def from_pretrained(cls, name, **kwargs):
+            return cls()
+
+        def __call__(self, images, input_boxes, return_tensors):
+            w, h = images.size
+            return _Inputs({"original_sizes": _Tensor([[h, w]])})
+
+        def post_process_masks(self, pred_masks, original_sizes):
+            return [[_Tensor(np.ones((240, 320), dtype=bool))]]
+
+    class _Model:
+        @classmethod
+        def from_pretrained(cls, name, **kwargs):
+            return cls()
+
+        def __call__(self, **inputs):
+            return types.SimpleNamespace(pred_masks=None, iou_scores=None)
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.Sam2Model = _Model
+    fake_transformers.Sam2Processor = _Processor
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    img = tmp_path / "stub.png"
+    PILImage.fromarray(np.zeros((240, 320, 3), dtype=np.uint8)).save(img)
+
+    out = _sam2_run(
+        [str(img)],
+        bboxes={img.name: [(10.0, 10.0, 100.0, 100.0)]},  # basename prompt resolution
+        run_id="test_sam2_stubbed",
+    )
+
+    assert out.status == "succeeded", out.error_message
+    assert len(out.observations) == 1
+    rec = out.observations[0]
+    assert rec.mask is not None
+    assert rec.mask.shape == (240, 320)
+    assert rec.mask.dtype == bool and rec.mask.all()
+    assert rec.metadata["rle_mask"]["size"] == [240, 320]
+    assert rec.metadata["mask_area_px"] == 240 * 320
+    assert rec.model_id.architecture_id == "sam2"
+    assert rec.model_id.hardware_class == "cpu"
+    assert rec.coordinate_frame.scale_state == "image"

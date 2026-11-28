@@ -837,10 +837,29 @@ def _check_topology(world: WorldIR, issues: List[ValidationIssue]) -> None:
                 comp.append(x)
                 todo.extend(adj[x] - seen)
         comps.append(sorted(comp))
+    _check_door_connectivity(world, issues)
     if len(comps) > 1:
         issues.append(ValidationIssue(ValidationSeverity.WARNING, "topology_disconnected_rooms",
                                       f"{len(rooms)} rooms form {len(comps)} disconnected groups (sizes {sorted(len(c) for c in comps)}); "
                                       "no connecting door/opening/adjacency is evidenced between them"))
+
+
+def _check_door_connectivity(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """Door-based room connectivity (world_ir.room_connectivity). Only WARNINGs, and only when the world has doors/openings:
+    an opening whose other side is not evidenced is reported UNKNOWN -- never assumed exterior, never an error."""
+    from world_ir.room_connectivity import derive_door_connectivity
+
+    res = derive_door_connectivity(world)
+    if len(res["rooms"]) < 2 or not (res["edges"] or res["unresolved_openings"]):
+        return
+    if res["unresolved_openings"]:
+        ids = [u["opening_id"] for u in res["unresolved_openings"]]
+        issues.append(ValidationIssue(ValidationSeverity.WARNING, "topology_opening_connectivity_unknown",
+                                      f"{len(ids)} opening(s) have fewer than two evidenced rooms, so what they connect is unknown "
+                                      f"(not assumed): {ids[:5]}"))
+    if res["rooms_without_door_evidence"]:
+        issues.append(ValidationIssue(ValidationSeverity.WARNING, "topology_room_without_door_evidence",
+                                      f"rooms with no door/opening evidenced to another room: {res['rooms_without_door_evidence'][:5]}"))
 
 
 def validate_world_ir(world: WorldIR) -> WorldValidationReport:

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from world_ir.measure import DIMENSION_STATES, dimension_from_metadata, scale_state_of
 
@@ -160,6 +160,9 @@ def carry_corrections(world, records: Iterable[dict]) -> dict:
                 continue
             ent, matched = scored[0][1], f"nearest ({scored[0][0]:.2f} m)"
         if apply_correction(world, rec, entity=ent):
+            if ent.id != rec.get("entity_id"):
+                from world_ir.correction_log import add_lineage_edge
+                add_lineage_edge(world, str(rec.get("entity_id")), ent.id, "carried_by_anchor_match")
             report["applied"].append({"entity_id": ent.id, "property": rec.get("property"), "value": rec.get("value"),
                                       "matched_by": matched})
             saved.append(rec)
@@ -212,6 +215,7 @@ def reclassify_entity(
         "timestamp": time.time(),
     }
     cp["user_decision"] = decision
+    cp["lineage"] = {"parent_ids": [entity_id], "relation": "reclassify"}   # same id: identity is stable through a reclassify
     ent.custom_properties = cp
 
     # Update semantic labels
@@ -233,18 +237,7 @@ def reclassify_entity(
     return decision
 
 
-def _get_box(ent, world=None) -> Optional[Tuple[List[float], List[float]]]:
-    geoms = getattr(world, "geometries", None) if world is not None else None
-    if isinstance(geoms, dict):
-        for gid in getattr(ent, "geometry_ids", None) or ():
-            g = geoms.get(gid)
-            bmin = getattr(g, "bounds_min", None)
-            bmax = getattr(g, "bounds_max", None)
-            if bmin is not None and bmax is not None:
-                return [
-                    [float(bmin.x), float(bmin.y), float(bmin.z)],
-                    [float(bmax.x), float(bmax.y), float(bmax.z)],
-                ]
+def _get_box(ent) -> Optional[Tuple[List[float], List[float]]]:
     cp = getattr(ent, "custom_properties", None) or {}
     if "bounding_box" in cp and isinstance(cp["bounding_box"], (list, tuple)) and len(cp["bounding_box"]) == 2:
         return [list(cp["bounding_box"][0]), list(cp["bounding_box"][1])]
@@ -282,7 +275,7 @@ def split_entity(
         raise CorrectionError(f"split_ratio {split_ratio} must be between 0.05 and 0.95")
 
     axis_idx = {"x": 0, "y": 1, "z": 2}[axis]
-    box = _get_box(ent, world)
+    box = _get_box(ent)
     b_min, b_max = list(box[0]), list(box[1])
 
     split_coord = b_min[axis_idx] + split_ratio * (b_max[axis_idx] - b_min[axis_idx])
@@ -297,54 +290,27 @@ def split_entity(
     box2_min[axis_idx] = split_coord
     box2 = (tuple(box2_min), tuple(b_max))
 
-    from world_ir.schema_v1 import Entity as WEntity, Geometry as WGeom, GeometryType as WGType, Provenance as WProv, Vector3 as WVec3
+    from world_ir.schema_v1 import Entity as WEntity, Provenance as WProv
 
     id1 = f"{entity_id}_part1"
     id2 = f"{entity_id}_part2"
-    g1_ids: List[str] = []
-    g2_ids: List[str] = []
-
-    geoms = getattr(world, "geometries", None)
-    old_geom_ids = list(getattr(ent, "geometry_ids", None) or [])
-    if isinstance(geoms, dict) and (old_geom_ids or "bounding_box" in (ent.custom_properties or {})):
-        src_geom = geoms.get(old_geom_ids[0]) if old_geom_ids else None
-        raw_gtype = getattr(src_geom, "type", WGType.BOX) if src_geom is not None else WGType.BOX
-        gtype = raw_gtype if isinstance(raw_gtype, WGType) else WGType(str(raw_gtype))
-        gprov = getattr(src_geom, "provenance", WProv.RECONSTRUCTED) if src_geom is not None else WProv.RECONSTRUCTED
-        g1_id = f"{id1}_geom"
-        g2_id = f"{id2}_geom"
-        geoms[g1_id] = WGeom(
-            id=g1_id,
-            type=gtype,
-            bounds_min=WVec3(x=float(box1[0][0]), y=float(box1[0][1]), z=float(box1[0][2])),
-            bounds_max=WVec3(x=float(box1[1][0]), y=float(box1[1][1]), z=float(box1[1][2])),
-            provenance=gprov,
-        )
-        geoms[g2_id] = WGeom(
-            id=g2_id,
-            type=gtype,
-            bounds_min=WVec3(x=float(box2[0][0]), y=float(box2[0][1]), z=float(box2[0][2])),
-            bounds_max=WVec3(x=float(box2[1][0]), y=float(box2[1][1]), z=float(box2[1][2])),
-            provenance=gprov,
-        )
-        g1_ids = [g1_id]
-        g2_ids = [g2_id]
 
     cp1 = dict(ent.custom_properties or {})
     cp1["bounding_box"] = [list(box1[0]), list(box1[1])]
     cp1["split_from"] = entity_id
+    cp1["lineage"] = {"parent_ids": [entity_id], "relation": "split"}
     cp1["decision_basis"] = "user"
 
     cp2 = dict(ent.custom_properties or {})
     cp2["bounding_box"] = [list(box2[0]), list(box2[1])]
     cp2["split_from"] = entity_id
+    cp2["lineage"] = {"parent_ids": [entity_id], "relation": "split"}
     cp2["decision_basis"] = "user"
 
     ent1 = WEntity(
         id=id1,
         type=ent.type,
         name=f"{ent.name} (Part 1)",
-        geometry_ids=g1_ids,
         semantic_labels=list(ent.semantic_labels),
         provenance=WProv.RECONSTRUCTED,
         confidence=None if ent.confidence is None else float(ent.confidence),  # unmeasured stays unmeasured
@@ -355,7 +321,6 @@ def split_entity(
         id=id2,
         type=ent.type,
         name=f"{ent.name} (Part 2)",
-        geometry_ids=g2_ids,
         semantic_labels=list(ent.semantic_labels),
         provenance=WProv.RECONSTRUCTED,
         confidence=None if ent.confidence is None else float(ent.confidence),  # unmeasured stays unmeasured
@@ -371,15 +336,13 @@ def split_entity(
             if rel.target_id == entity_id:
                 rel.target_id = id1
 
-    # Replace in world and clean up unreferenced source geometries
+    # Replace in world
     del world.entities[entity_id]
     world.entities[id1] = ent1
     world.entities[id2] = ent2
-    if isinstance(geoms, dict) and old_geom_ids:
-        still_used = {gid for e in world.entities.values() for gid in (getattr(e, "geometry_ids", None) or ())}
-        for ogid in old_geom_ids:
-            if ogid not in still_used:
-                geoms.pop(ogid, None)
+    from world_ir.correction_log import add_lineage_edge
+    add_lineage_edge(world, entity_id, id1, "split")
+    add_lineage_edge(world, entity_id, id2, "split")
 
     decision = {
         "kind": "split",
@@ -429,9 +392,9 @@ def merge_entities(
     if not secondaries:
         raise CorrectionError("at least one secondary entity must be provided to merge")
 
-    # Union bounding boxes (preferring world.geometries when present)
+    # Union bounding boxes
     all_ents = [primary] + secondaries
-    boxes = [_get_box(e, world) for e in all_ents]
+    boxes = [_get_box(e) for e in all_ents]
     min_x = min(b[0][0] for b in boxes)
     min_y = min(b[0][1] for b in boxes)
     min_z = min(b[0][2] for b in boxes)
@@ -442,15 +405,9 @@ def merge_entities(
     cp = dict(primary.custom_properties or {})
     cp["bounding_box"] = [[min_x, min_y, min_z], [max_x, max_y, max_z]]
     cp["merged_from"] = [s.id for s in secondaries]
+    cp["lineage"] = {"parent_ids": [primary_entity_id] + [s.id for s in secondaries], "relation": "merge"}
     cp["decision_basis"] = "user"
     primary.custom_properties = cp
-
-    geoms = getattr(world, "geometries", None)
-    if isinstance(geoms, dict) and primary.geometry_ids:
-        pg = geoms.get(primary.geometry_ids[0])
-        if pg is not None and getattr(pg, "bounds_min", None) is not None and getattr(pg, "bounds_max", None) is not None:
-            pg.bounds_min.x, pg.bounds_min.y, pg.bounds_min.z = min_x, min_y, min_z
-            pg.bounds_max.x, pg.bounds_max.y, pg.bounds_max.z = max_x, max_y, max_z
 
     if new_name:
         primary.name = new_name.strip()
@@ -477,6 +434,10 @@ def merge_entities(
         for rel in other.relationships:
             if rel.target_id in sec_ids:
                 rel.target_id = primary_entity_id
+
+    from world_ir.correction_log import add_lineage_edge
+    for sec in secondaries:
+        add_lineage_edge(world, sec.id, primary_entity_id, "merge")
 
     # Remove secondaries from world
     for sec in secondaries:
@@ -540,6 +501,8 @@ def carry_decisions(world, decisions: Iterable[dict]) -> dict:
                     saved.append(dec)
                     continue
                 ent, matched = scored[0][1], f"nearest ({scored[0][0]:.2f} m)"
+                from world_ir.correction_log import add_lineage_edge
+                add_lineage_edge(world, str(target_id), ent.id, "carried_by_anchor_match")
 
             clean_class = str(dec.get("new_class") or "").strip()
             if clean_class:

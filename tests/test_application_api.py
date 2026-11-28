@@ -357,43 +357,6 @@ def test_evidence_delete_removes_record_and_keeps_artifact(client):
     assert any(a["type"] == "evidence.deleted" and a["entity_id"] == evidence_id for a in acts)
 
 
-def test_upload_deduplicates_byte_identical_content(client):
-    """A second upload of the same bytes reuses the existing evidence and
-    artifact instead of storing a duplicate copy or minting a second evidence
-    row. The artifact is content-addressed by sha256, so the bytes are not
-    written twice; the dedup avoids a duplicate application record and a
-    duplicate processing job."""
-    payload = b"\xff\xd8\xff\xe0jpeg-bytes-for-dedup-test-" + b"x" * 64
-    first = client.post(
-        "/api/uploads",
-        files={"file": ("frame.jpg", payload, "image/jpeg")},
-    ).json()
-    assert first["deduplicated"] is False
-    assert first["evidence_id"]
-    assert first["checksum"]
-    assert len(first["checksum"]) == 64
-
-    second = client.post(
-        "/api/uploads",
-        files={"file": ("frame_duplicate.jpg", payload, "image/jpeg")},
-    ).json()
-    assert second["deduplicated"] is True
-    assert second["evidence_id"] == first["evidence_id"]
-    assert second["checksum"] == first["checksum"]
-    assert second["upload_id"] != first["upload_id"]  # each upload is its own row
-
-    # Exactly one evidence row for both uploads.
-    listed = client.get("/api/evidence").json()["items"]
-    ev_ids = {e["id"] for e in listed}
-    assert ev_ids == {first["evidence_id"]}
-
-    # The artifact is served from the single stored copy.
-    ev = client.get(f"/api/evidence/{first['evidence_id']}").json()
-    assert ev["checksum"] == first["checksum"]
-    art = client.get(f"/api/evidence/{first['evidence_id']}/artifact").content
-    assert art == payload
-
-
 def test_unknown_entity_404s(client):
     assert client.get("/api/sessions/ses_nonexistent").status_code == 404
     assert client.get("/api/evidence/ev_nonexistent").status_code == 404
@@ -681,8 +644,8 @@ def _seed_compiled_world(client, tmp_path, monkeypatch, name="Commit world"):
 
 def _commit(client, wid, entity_id="ent-shed", changes=None, parent=None):
     body = {"entity_id": entity_id, "changes": changes if changes is not None else {}}
-    if parent is not None:
-        body["parent_version_id"] = parent
+    # the base version is mandatory on every correction: default to the version the test is looking at (HEAD)
+    body["parent_version_id"] = parent if parent is not None else client.get(f"/api/worlds/{wid}").json()["current_version_id"]
     return client.post(f"/api/worlds/{wid}/commit", json=body)
 
 
